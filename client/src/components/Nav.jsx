@@ -16,6 +16,12 @@ export default function Nav() {
         Reports
       </NavLink>
 
+      {session.mode === 'backoffice' && (
+        <NavLink to="/admin/stores" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+          Admin
+        </NavLink>
+      )}
+
       <span className="nav-store-badge">
         {session.mode === 'backoffice' ? '⚙ Back Office' : session.storeName}
       </span>

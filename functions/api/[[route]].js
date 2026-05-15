@@ -178,6 +178,69 @@ export async function onRequest(context) {
     if (!session) return err('Unauthorized', 401)
     const isBO = session.mode === 'backoffice'
 
+    // ── Back-office admin: stores ─────────────────────────────────────────
+    // All /admin/* endpoints require back-office mode.
+
+    if (path === '/admin/stores' && method === 'GET') {
+      if (!isBO) return err('Forbidden', 403)
+      const rows = await db.select('stores', {
+        select: 'id,store_code,store_name,region,is_active,created_at',
+        order:  'store_code.asc'
+      })
+      return json(rows)
+    }
+
+    if (path === '/admin/stores' && method === 'POST') {
+      if (!isBO) return err('Forbidden', 403)
+      const { store_code, store_name, region, pin, is_active } = await request.json()
+      if (!store_code || !store_name) return err('store_code and store_name are required', 400)
+      if (!pin || String(pin).length < 4) return err('PIN must be at least 4 characters', 400)
+
+      // Hash the PIN via the existing bcrypt extension.
+      const [hashRow] = await db.rpc('hash_pin', { pin: String(pin) })
+      if (!hashRow?.hash) return err('Could not hash PIN', 500)
+
+      const inserted = await db.insert('stores', {
+        store_code, store_name,
+        region:    region || null,
+        is_active: is_active !== false,
+        pin_hash:  hashRow.hash
+      })
+      const s = inserted[0] ?? inserted
+      return json({ id: s.id, store_code: s.store_code, store_name: s.store_name, region: s.region, is_active: s.is_active, created_at: s.created_at }, 201)
+    }
+
+    const adminStoreMatch = path.match(/^\/admin\/stores\/([a-f0-9-]+)$/)
+    if (adminStoreMatch && method === 'PATCH') {
+      if (!isBO) return err('Forbidden', 403)
+      const id = adminStoreMatch[1]
+      const body = await request.json()
+      // Whitelist editable fields (never let the client overwrite pin_hash directly here).
+      const updates = {}
+      if (body.store_code !== undefined) updates.store_code = body.store_code
+      if (body.store_name !== undefined) updates.store_name = body.store_name
+      if (body.region     !== undefined) updates.region     = body.region
+      if (body.is_active  !== undefined) updates.is_active  = !!body.is_active
+      if (!Object.keys(updates).length) return err('No editable fields supplied', 400)
+      const updated = await db.update('stores', { id: `eq.${id}` }, updates)
+      if (!updated.length) return err('Store not found', 404)
+      const s = updated[0]
+      return json({ id: s.id, store_code: s.store_code, store_name: s.store_name, region: s.region, is_active: s.is_active })
+    }
+
+    const adminPinMatch = path.match(/^\/admin\/stores\/([a-f0-9-]+)\/reset-pin$/)
+    if (adminPinMatch && method === 'POST') {
+      if (!isBO) return err('Forbidden', 403)
+      const id  = adminPinMatch[1]
+      const { pin } = await request.json()
+      if (!pin || String(pin).length < 4) return err('PIN must be at least 4 characters', 400)
+      const [hashRow] = await db.rpc('hash_pin', { pin: String(pin) })
+      if (!hashRow?.hash) return err('Could not hash PIN', 500)
+      const updated = await db.update('stores', { id: `eq.${id}` }, { pin_hash: hashRow.hash })
+      if (!updated.length) return err('Store not found', 404)
+      return json({ ok: true })
+    }
+
     // GET /task-types
     if (path === '/task-types' && method === 'GET') {
       const rows = await db.select('task_types', {

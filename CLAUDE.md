@@ -49,7 +49,11 @@ New types can be added by inserting into `task_types`. Form schema for each live
 | **2C** | **Tasks C + E + G (Prices)** | ✅ done | C — Wrong Prices (reason_code from lookup_options, optional current_price). E — Price Marked Products (price_marked_price, supplier). G — Promotion Error (promotion_description + promotion_price). All type-specific fields stored in `details` JSONB. |
 | **2D** | **Task F (DRS Errors)** | ✅ done | drs_size dropdown from lookup_options + units_per_package + supplier; persistent "Check for the Return Logo" warning at top of form |
 | **2E** | **Task H (Stock Count)** | ✅ done | product_code + shop_floor_count (≥0) + notes. All 9 task forms now implemented. |
-| 3 | Master admin (back office) | next | CRUD UI for Stores, Suppliers, Reason Codes, DRS Sizes, Products. CSV bulk upload. Photo retention cleanup job. |
+| **3A** | **Stores admin** | ✅ done | Back-office CRUD for stores: add/edit/activate/deactivate, reset PIN. SQL `hash_pin(pin)` RPC added. |
+| 3B | Suppliers admin (+ CSV upload) | next | Suppliers CRUD + bulk CSV import |
+| 3C | Reason Codes + DRS Sizes admin | | lookup_options CRUD with task_types assignment |
+| 3D | Products master admin (CSV upload) | | Bulk CSV import of products |
+| 3E | Settings + photo retention cleanup | | Retention windows UI + scheduled deletion of old photos |
 | 3 | Master admin (back office) | | CRUD UI for Stores, Suppliers, Reason Codes, DRS Sizes, Products. CSV bulk upload |
 | 4 | Reports + Modern Dashboard | | Per-task-type CSV with type-specific columns. Combined "All" report. Multi-filter (stores, task types, datetime). KPIs and charts |
 | 5 | Responsive PC layout | | Sidebar nav on desktop, top nav on mobile. Wider tables on PC. Polish |
@@ -148,7 +152,8 @@ Type-specific fields go in `details jsonb` (e.g. reason_code, current_price, pri
 `backoffice_pin_hash · list_auto_close_hours · scan_record_retention_days · photo_retention_days`
 
 ### SQL functions
-`verify_pin(hash, pin) → table(result boolean)` — runs `crypt(pin, hash) = hash` in-database.
+- `verify_pin(hash, pin) → table(result boolean)` — `crypt(pin, hash) = hash`
+- `hash_pin(pin) → table(hash text)` — `crypt(pin, gen_salt('bf'))`, used by `/admin/stores` to set new PINs
 
 ### Indexes
 `idx_tr_store_id · idx_tr_task_type · idx_tr_status · idx_tr_created_at · idx_tr_store_date · idx_tr_supplier · idx_suppliers_active · idx_lookup_kind`
@@ -173,6 +178,10 @@ Type-specific fields go in `details jsonb` (e.g. reason_code, current_price, pri
 | PATCH  | `/task-records/:id` | auth | store users limited to own store |
 | DELETE | `/task-records/:id` | auth | store users limited to own `store_completed` records |
 | GET    | `/reports/task-records?from=&to=&storeId=&task_type=` | auth | CSV |
+| GET    | `/admin/stores` | back-office | List all stores (active + inactive) |
+| POST   | `/admin/stores` | back-office | Create store. Body: `{store_code, store_name, region?, pin}` |
+| PATCH  | `/admin/stores/:id` | back-office | Edit `store_code`, `store_name`, `region`, `is_active` |
+| POST   | `/admin/stores/:id/reset-pin` | back-office | Body: `{pin}` |
 
 Admin write endpoints for suppliers / task_types / lookup_options are deferred to Phase 3.
 

@@ -4,6 +4,7 @@ import StoreSelector from './components/StoreSelector.jsx'
 import Nav from './components/Nav.jsx'
 import Tasks from './pages/Tasks.jsx'
 import Reports from './pages/Reports.jsx'
+import AdminStores from './pages/AdminStores.jsx'
 import { setToken, clearToken } from './lib/api.js'
 
 export const StoreContext = createContext(null)
@@ -55,9 +56,11 @@ export default function App() {
         <main className="main-content">
           <Routes>
             <Route path="/"        element={<Navigate to="/tasks" replace />} />
-            <Route path="/tasks"   element={<Tasks />} />
-            <Route path="/reports" element={<Reports />} />
-            <Route path="*"        element={<Navigate to="/tasks" replace />} />
+            <Route path="/tasks"         element={<Tasks />} />
+            <Route path="/reports"       element={<Reports />} />
+            <Route path="/admin"         element={<Navigate to="/admin/stores" replace />} />
+            <Route path="/admin/stores"  element={<AdminStores />} />
+            <Route path="*"              element={<Navigate to="/tasks" replace />} />
           </Routes>
         </main>
       </div>

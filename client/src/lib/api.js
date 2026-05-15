@@ -112,3 +112,10 @@ export const updateTaskRecord = (id, updates) =>
 
 export const deleteTaskRecord = (id) =>
   request(`/task-records/${id}`, { method: 'DELETE' })
+
+// ── Admin (back office) ─────────────────────────────────────────────────────
+
+export const adminListStores  = () => request('/admin/stores')
+export const adminCreateStore = (store) => request('/admin/stores', { method: 'POST', body: store })
+export const adminUpdateStore = (id, updates) => request(`/admin/stores/${id}`, { method: 'PATCH', body: updates })
+export const adminResetStorePin = (id, pin) => request(`/admin/stores/${id}/reset-pin`, { method: 'POST', body: { pin } })
