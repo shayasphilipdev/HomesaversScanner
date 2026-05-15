@@ -12,8 +12,7 @@ export const TASK_FORMS = {
   F: { name: 'DRS Errors',           implemented: true,
        warning: '⚠ Check for the Return Logo on the product before scanning.' },
   G: { name: 'Promotion Error',      implemented: true,  warning: null },
-  H: { name: 'Stock Count',          implemented: false, warning: null,
-       comingSoon: 'Phase 2 — simplified count form.' },
+  H: { name: 'Stock Count',          implemented: true,  warning: null },
   I: { name: 'Miscellaneous Tasks',  implemented: true,  warning: null }
 }
 

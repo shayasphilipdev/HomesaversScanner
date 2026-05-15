@@ -48,7 +48,8 @@ New types can be added by inserting into `task_types`. Form schema for each live
 | **2B** | **Tasks D + I (Wrong Description, Miscellaneous)** | ✅ done | Shared TaskDIForm component (identical field sets); product_code + product_name_label + product_barcode + notes |
 | **2C** | **Tasks C + E + G (Prices)** | ✅ done | C — Wrong Prices (reason_code from lookup_options, optional current_price). E — Price Marked Products (price_marked_price, supplier). G — Promotion Error (promotion_description + promotion_price). All type-specific fields stored in `details` JSONB. |
 | **2D** | **Task F (DRS Errors)** | ✅ done | drs_size dropdown from lookup_options + units_per_package + supplier; persistent "Check for the Return Logo" warning at top of form |
-| 2E | Task H (Stock Count) | next | shop_floor_count + notes |
+| **2E** | **Task H (Stock Count)** | ✅ done | product_code + shop_floor_count (≥0) + notes. All 9 task forms now implemented. |
+| 3 | Master admin (back office) | next | CRUD UI for Stores, Suppliers, Reason Codes, DRS Sizes, Products. CSV bulk upload. Photo retention cleanup job. |
 | 3 | Master admin (back office) | | CRUD UI for Stores, Suppliers, Reason Codes, DRS Sizes, Products. CSV bulk upload |
 | 4 | Reports + Modern Dashboard | | Per-task-type CSV with type-specific columns. Combined "All" report. Multi-filter (stores, task types, datetime). KPIs and charts |
 | 5 | Responsive PC layout | | Sidebar nav on desktop, top nav on mobile. Wider tables on PC. Polish |

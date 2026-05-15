@@ -6,6 +6,7 @@ import TaskDIForm from './forms/TaskDIForm.jsx'
 import TaskEForm  from './forms/TaskEForm.jsx'
 import TaskFForm  from './forms/TaskFForm.jsx'
 import TaskGForm  from './forms/TaskGForm.jsx'
+import TaskHForm  from './forms/TaskHForm.jsx'
 
 // Top-level dispatcher: picks the right form component for the chosen task type.
 // Task types not yet implemented render a "coming soon" placeholder.
@@ -46,6 +47,7 @@ export default function TaskForm({ taskType, onSaved }) {
     case 'E': return <TaskEForm onSaved={onSaved} />
     case 'F': return <TaskFForm onSaved={onSaved} />
     case 'G': return <TaskGForm onSaved={onSaved} />
+    case 'H': return <TaskHForm onSaved={onSaved} />
     default:  return <div className="card"><div className="card-body">No form registered for {taskType}.</div></div>
   }
 }
