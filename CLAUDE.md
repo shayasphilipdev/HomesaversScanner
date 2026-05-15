@@ -45,7 +45,8 @@ New types can be added by inserting into `task_types`. Form schema for each live
 | 0 | Foundation | ✅ done | Auth (PIN + HMAC tokens), deploy, Task A baseline, camera/scanner/manual entry |
 | **1** | **Task Types + Suppliers re-foundation** | ✅ done | DB reshape, generic lookup_options master, suppliers master, Task A wired in new model |
 | **2A** | **Task B + photo infrastructure** | ✅ done | `task-photos` Supabase Storage bucket, `/photos/upload` + `/photos` DELETE endpoints, client-side JPEG compression, reusable form widgets (ScannerInput, SupplierPicker, PhotoCapture), TaskBForm |
-| 2B–E | Tasks D, I → C, E, G → F → H | next | Build the remaining form variants on top of the Phase 2A widgets |
+| **2B** | **Tasks D + I (Wrong Description, Miscellaneous)** | ✅ done | Shared TaskDIForm component (identical field sets); product_code + product_name_label + product_barcode + notes |
+| 2C–E | Tasks C, E, G → F → H | next | Remaining form variants on top of Phase 2A widgets |
 | 3 | Master admin (back office) | | CRUD UI for Stores, Suppliers, Reason Codes, DRS Sizes, Products. CSV bulk upload |
 | 4 | Reports + Modern Dashboard | | Per-task-type CSV with type-specific columns. Combined "All" report. Multi-filter (stores, task types, datetime). KPIs and charts |
 | 5 | Responsive PC layout | | Sidebar nav on desktop, top nav on mobile. Wider tables on PC. Polish |

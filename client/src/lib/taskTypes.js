@@ -8,8 +8,7 @@ export const TASK_FORMS = {
   B: { name: 'Non-Scans',            implemented: true,  warning: null },
   C: { name: 'Wrong Prices',         implemented: false, warning: null,
        comingSoon: 'Phase 2 — reason code dropdown + optional current price.' },
-  D: { name: 'Wrong Description',    implemented: false, warning: null,
-       comingSoon: 'Phase 2.' },
+  D: { name: 'Wrong Description',    implemented: true,  warning: null },
   E: { name: 'Price Marked Products', implemented: false, warning: null,
        comingSoon: 'Phase 2.' },
   F: { name: 'DRS Errors',           implemented: false,
@@ -19,8 +18,7 @@ export const TASK_FORMS = {
        comingSoon: 'Phase 2.' },
   H: { name: 'Stock Count',          implemented: false, warning: null,
        comingSoon: 'Phase 2 — simplified count form.' },
-  I: { name: 'Miscellaneous Tasks',  implemented: false, warning: null,
-       comingSoon: 'Phase 2.' }
+  I: { name: 'Miscellaneous Tasks',  implemented: true,  warning: null }
 }
 
 export const FREQUENCY_LABEL = {

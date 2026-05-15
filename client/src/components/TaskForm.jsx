@@ -1,6 +1,7 @@
 import { TASK_FORMS } from '../lib/taskTypes.js'
-import TaskAForm from './forms/TaskAForm.jsx'
-import TaskBForm from './forms/TaskBForm.jsx'
+import TaskAForm  from './forms/TaskAForm.jsx'
+import TaskBForm  from './forms/TaskBForm.jsx'
+import TaskDIForm from './forms/TaskDIForm.jsx'
 
 // Top-level dispatcher: picks the right form component for the chosen task type.
 // Task types not yet implemented render a "coming soon" placeholder.
@@ -35,6 +36,8 @@ export default function TaskForm({ taskType, onSaved }) {
   switch (taskType) {
     case 'A': return <TaskAForm onSaved={onSaved} />
     case 'B': return <TaskBForm onSaved={onSaved} />
+    case 'D':
+    case 'I': return <TaskDIForm taskType={taskType} onSaved={onSaved} />
     default:  return <div className="card"><div className="card-body">No form registered for {taskType}.</div></div>
   }
 }
