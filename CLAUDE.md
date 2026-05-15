@@ -50,10 +50,12 @@ New types can be added by inserting into `task_types`. Form schema for each live
 | **2D** | **Task F (DRS Errors)** | ✅ done | drs_size dropdown from lookup_options + units_per_package + supplier; persistent "Check for the Return Logo" warning at top of form |
 | **2E** | **Task H (Stock Count)** | ✅ done | product_code + shop_floor_count (≥0) + notes. All 9 task forms now implemented. |
 | **3A** | **Stores admin** | ✅ done | Back-office CRUD for stores: add/edit/activate/deactivate, reset PIN. SQL `hash_pin(pin)` RPC added. |
-| 3B | Suppliers admin (+ CSV upload) | next | Suppliers CRUD + bulk CSV import |
-| 3C | Reason Codes + DRS Sizes admin | | lookup_options CRUD with task_types assignment |
+| **3B** | **Suppliers admin (+ CSV upload)** | ✅ done | Suppliers CRUD + bulk CSV import. Tolerant column matching (supplier_code/code, supplier_name/name). AdminNav tabs added. |
+| **4A** | **Reports on screen + review flow** | ✅ done | Reports page renders results below filters. Back-office can review per-row (Complete / No change needed + optional note) or bulk-select pending rows. Records flow back to store with HQ notes. New status: `no_change_needed`. New columns: `review_notes`, `reviewed_at`. |
+| 3C | Reason Codes + DRS Sizes admin | next | lookup_options CRUD with task_types assignment |
 | 3D | Products master admin (CSV upload) | | Bulk CSV import of products |
 | 3E | Settings + photo retention cleanup | | Retention windows UI + scheduled deletion of old photos |
+| 4B | Modern dashboard | | KPIs and charts (per-store, per-task-type counts; recent activity) |
 | 3 | Master admin (back office) | | CRUD UI for Stores, Suppliers, Reason Codes, DRS Sizes, Products. CSV bulk upload |
 | 4 | Reports + Modern Dashboard | | Per-task-type CSV with type-specific columns. Combined "All" report. Multi-filter (stores, task types, datetime). KPIs and charts |
 | 5 | Responsive PC layout | | Sidebar nav on desktop, top nav on mobile. Wider tables on PC. Polish |
@@ -141,7 +143,9 @@ homesavers-scanner/
 
 ### `task_records` (Phase 1 — was `product_records`)
 Common columns:
-`id · store_id (FK) · task_type (FK→task_types) · status · marked_for_deletion · completed_at · store_completed_at · created_at · updated_at`
+`id · store_id (FK) · task_type (FK→task_types) · status · marked_for_deletion · completed_at · store_completed_at · reviewed_at · review_notes · created_at · updated_at`
+
+`status` is plain text (no DB enum). Values: `pending` → `completed` *or* `no_change_needed` → `store_completed`.
 
 Promoted columns (used by ≥2 task types):
 `product_code · product_barcode · product_name_label · description · uom · quantity · supplier_id (FK→suppliers, nullable) · supplier_name_text (free text fallback) · notes · photo_product_url · photo_barcode_url`
@@ -182,6 +186,11 @@ Type-specific fields go in `details jsonb` (e.g. reason_code, current_price, pri
 | POST   | `/admin/stores` | back-office | Create store. Body: `{store_code, store_name, region?, pin}` |
 | PATCH  | `/admin/stores/:id` | back-office | Edit `store_code`, `store_name`, `region`, `is_active` |
 | POST   | `/admin/stores/:id/reset-pin` | back-office | Body: `{pin}` |
+| GET    | `/admin/suppliers` | back-office | List all suppliers |
+| POST   | `/admin/suppliers` | back-office | Create one. Body: `{supplier_code?, supplier_name}` |
+| POST   | `/admin/suppliers/bulk` | back-office | Bulk insert (client-parsed CSV) |
+| PATCH  | `/admin/suppliers/:id` | back-office | Edit `supplier_code`, `supplier_name`, `is_active` |
+| POST   | `/task-records/bulk-review` | back-office | Body: `{ids[], status: completed\|no_change_needed, review_notes?}` |
 
 Admin write endpoints for suppliers / task_types / lookup_options are deferred to Phase 3.
 

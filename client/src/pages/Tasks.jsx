@@ -46,10 +46,11 @@ export default function Tasks() {
   useEffect(() => { if (selectedType) load() }, [load, selectedType])
 
   const filterCounts = {
-    all:             records.length,
-    pending:         records.filter(r => r.status === 'pending').length,
-    completed:       records.filter(r => r.status === 'completed').length,
-    store_completed: records.filter(r => r.status === 'store_completed').length,
+    all:              records.length,
+    pending:          records.filter(r => r.status === 'pending').length,
+    completed:        records.filter(r => r.status === 'completed').length,
+    no_change_needed: records.filter(r => r.status === 'no_change_needed').length,
+    store_completed:  records.filter(r => r.status === 'store_completed').length,
   }
 
   return (
@@ -69,10 +70,11 @@ export default function Tasks() {
 
       <div className="flex-row" style={{ marginBottom: 16, flexWrap: 'wrap', gap: 6 }}>
         {[
-          { key: 'all',             label: 'All' },
-          { key: 'pending',         label: 'Pending' },
-          { key: 'completed',       label: 'HQ completed' },
-          { key: 'store_completed', label: 'Store confirmed' },
+          { key: 'all',              label: 'All' },
+          { key: 'pending',          label: 'Pending' },
+          { key: 'completed',        label: 'HQ completed' },
+          { key: 'no_change_needed', label: 'No change needed' },
+          { key: 'store_completed',  label: 'Store confirmed' },
         ].map(tab => (
           <button
             key={tab.key}

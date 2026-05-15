@@ -1,10 +1,12 @@
+import { Fragment } from 'react'
 import { updateTaskRecord, deleteTaskRecord } from '../lib/api.js'
 import { useStore } from '../App.jsx'
 
 const STATUS_LABEL = {
-  pending:         { label: 'Pending',         cls: 'badge-pending' },
-  completed:       { label: 'Completed by HQ', cls: 'badge-completed' },
-  store_completed: { label: 'Store confirmed', cls: 'badge-store-done' },
+  pending:          { label: 'Pending',          cls: 'badge-pending' },
+  completed:        { label: 'Completed by HQ',  cls: 'badge-completed' },
+  no_change_needed: { label: 'No change needed', cls: 'badge-pending' },
+  store_completed:  { label: 'Store confirmed',  cls: 'badge-store-done' },
 }
 
 function formatDT(iso) {
@@ -72,38 +74,50 @@ export default function TaskRecordList({ records, loading, onRefresh }) {
           </thead>
           <tbody>
             {records.map(r => {
-              const status = STATUS_LABEL[r.status] || STATUS_LABEL.pending
+              const status   = STATUS_LABEL[r.status] || STATUS_LABEL.pending
               const supplier = r.supplier_name_text || r.supplier_id || ''
               const description = r.description || r.product_name_label || ''
+              // Store needs to acknowledge both `completed` and
+              // `no_change_needed` — both are HQ-reviewed states.
+              const reviewed = r.status === 'completed' || r.status === 'no_change_needed'
               return (
-                <tr key={r.id}>
-                  <td><strong>{r.task_type}</strong></td>
-                  <td className="td-code">{r.product_code || r.product_barcode || ''}</td>
-                  <td>{description || <span className="td-muted">—</span>}</td>
-                  <td>
-                    {r.uom || <span className="td-muted">—</span>}
-                    {r.uom === 'Eachs' && (
-                      <span title="Single piece — check pack contents" style={{ marginLeft: 4 }}>⚠️</span>
-                    )}
-                  </td>
-                  <td className="td-right">{r.quantity ?? <span className="td-muted">—</span>}</td>
-                  <td>{supplier || <span className="td-muted">—</span>}</td>
-                  <td><span className={`badge ${status.cls}`}>{status.label}</span></td>
-                  <td className="td-muted">{formatDT(r.created_at)}</td>
-                  <td>
-                    <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>
-                      {isBO && r.status === 'pending' && (
-                        <button className="btn btn-sm btn-primary" onClick={() => markCompleted(r.id)}>Mark complete</button>
+                <Fragment key={r.id}>
+                  <tr>
+                    <td><strong>{r.task_type}</strong></td>
+                    <td className="td-code">{r.product_code || r.product_barcode || ''}</td>
+                    <td>{description || <span className="td-muted">—</span>}</td>
+                    <td>
+                      {r.uom || <span className="td-muted">—</span>}
+                      {r.uom === 'Eachs' && (
+                        <span title="Single piece — check pack contents" style={{ marginLeft: 4 }}>⚠️</span>
                       )}
-                      {!isBO && r.status === 'completed' && (
-                        <button className="btn btn-sm btn-outline" onClick={() => markStoreCompleted(r.id)}>Confirm ✓</button>
-                      )}
-                      {(isBO || r.status === 'store_completed') && (
-                        <button className="btn btn-sm btn-icon btn-outline" title="Delete" onClick={() => handleDelete(r.id)}>🗑</button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
+                    </td>
+                    <td className="td-right">{r.quantity ?? <span className="td-muted">—</span>}</td>
+                    <td>{supplier || <span className="td-muted">—</span>}</td>
+                    <td><span className={`badge ${status.cls}`}>{status.label}</span></td>
+                    <td className="td-muted">{formatDT(r.created_at)}</td>
+                    <td>
+                      <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>
+                        {isBO && r.status === 'pending' && (
+                          <button className="btn btn-sm btn-primary" onClick={() => markCompleted(r.id)}>Mark complete</button>
+                        )}
+                        {!isBO && reviewed && (
+                          <button className="btn btn-sm btn-outline" onClick={() => markStoreCompleted(r.id)}>Confirm ✓</button>
+                        )}
+                        {(isBO || r.status === 'store_completed') && (
+                          <button className="btn btn-sm btn-icon btn-outline" title="Delete" onClick={() => handleDelete(r.id)}>🗑</button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                  {r.review_notes && (
+                    <tr>
+                      <td colSpan={9} style={{ background: 'var(--gray-50, #fafafa)', fontStyle: 'italic', fontSize: 13, color: 'var(--text-muted)', borderTop: 'none' }}>
+                        💬 HQ note: {r.review_notes}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               )
             })}
           </tbody>

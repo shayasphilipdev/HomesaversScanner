@@ -113,6 +113,9 @@ export const updateTaskRecord = (id, updates) =>
 export const deleteTaskRecord = (id) =>
   request(`/task-records/${id}`, { method: 'DELETE' })
 
+export const bulkReviewTaskRecords = ({ ids, status, review_notes }) =>
+  request('/task-records/bulk-review', { method: 'POST', body: { ids, status, review_notes } })
+
 // ── Admin (back office) ─────────────────────────────────────────────────────
 
 export const adminListStores    = () => request('/admin/stores')

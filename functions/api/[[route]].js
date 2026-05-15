@@ -395,17 +395,45 @@ export async function onRequest(context) {
       const queryStoreId = isBO ? p.get('storeId') : session.storeId
       const taskType     = p.get('task_type')
       const status       = p.get('status')
+      const from         = p.get('from')
+      const to           = p.get('to')
 
       const params = {
-        select: 'id,task_type,store_id,supplier_id,supplier_name_text,product_code,product_barcode,product_name_label,description,uom,quantity,notes,photo_product_url,photo_barcode_url,details,status,marked_for_deletion,completed_at,store_completed_at,created_at,updated_at',
+        select: 'id,task_type,store_id,supplier_id,supplier_name_text,product_code,product_barcode,product_name_label,description,uom,quantity,notes,photo_product_url,photo_barcode_url,details,status,review_notes,reviewed_at,marked_for_deletion,completed_at,store_completed_at,created_at,updated_at',
         order: 'created_at.desc'
       }
       if (queryStoreId && queryStoreId !== 'all') params['store_id']  = `eq.${queryStoreId}`
-      if (taskType)                                params['task_type'] = `eq.${taskType}`
+      if (taskType && taskType !== 'all')          params['task_type'] = `eq.${taskType}`
       if (status)                                  params['status']    = `eq.${status}`
+
+      const range = []
+      if (from) range.push(`gte.${new Date(from).toISOString()}`)
+      if (to)   range.push(`lte.${new Date(to).toISOString()}`)
+      if (range.length) params['created_at'] = range
 
       const rows = await db.select('task_records', params)
       return json(rows)
+    }
+
+    // Bulk review (back office) — mark many records as completed or
+    // no_change_needed, with an optional shared review note.
+    if (path === '/task-records/bulk-review' && method === 'POST') {
+      if (!isBO) return err('Forbidden', 403)
+      const { ids, status, review_notes } = await request.json()
+      if (!Array.isArray(ids) || !ids.length)        return err('ids required', 400)
+      if (!['completed', 'no_change_needed'].includes(status))
+                                                     return err('Invalid status', 400)
+      // PostgREST allows only safe-looking UUIDs in filter values.
+      const safeIds = ids.filter(i => /^[a-f0-9-]{36}$/.test(i))
+      if (!safeIds.length) return err('No valid ids', 400)
+
+      const now     = new Date().toISOString()
+      const updates = { status, reviewed_at: now, updated_at: now }
+      if (status === 'completed') updates.completed_at = now
+      if (review_notes !== undefined) updates.review_notes = review_notes || null
+
+      const updated = await db.update('task_records', { id: `in.(${safeIds.join(',')})` }, updates)
+      return json({ updated: updated.length })
     }
 
     if (path === '/task-records' && method === 'POST') {
@@ -444,6 +472,11 @@ export async function onRequest(context) {
       const updates = await request.json()
       const filter  = { id: `eq.${id}` }
       if (!isBO) filter['store_id'] = `eq.${session.storeId}`
+      // If the back office is moving the record to a reviewed status,
+      // stamp reviewed_at automatically so the UI doesn't have to.
+      if (isBO && (updates.status === 'completed' || updates.status === 'no_change_needed') && !updates.reviewed_at) {
+        updates.reviewed_at = new Date().toISOString()
+      }
       const updated = await db.update('task_records', filter, { ...updates, updated_at: new Date().toISOString() })
       if (!updated.length) return err('Record not found or not allowed', 404)
       return json(updated[0])
@@ -474,7 +507,7 @@ export async function onRequest(context) {
       if (to)   range.push(`lte.${new Date(to).toISOString()}`)
 
       const params = {
-        select: 'id,task_type,store_id,supplier_id,supplier_name_text,product_code,product_barcode,product_name_label,description,uom,quantity,notes,details,status,created_at',
+        select: 'id,task_type,store_id,supplier_id,supplier_name_text,product_code,product_barcode,product_name_label,description,uom,quantity,notes,details,status,review_notes,created_at',
         order:  'created_at.asc'
       }
       if (range.length)                            params['created_at'] = range
@@ -498,11 +531,12 @@ export async function onRequest(context) {
         supplier:        r.supplier_id ? (supplierName[r.supplier_id] || '') : (r.supplier_name_text || ''),
         notes:           r.notes || '',
         status:          r.status,
+        review_notes:    r.review_notes || '',
         details:         JSON.stringify(r.details || {}),
         created_at:      r.created_at
       }))
 
-      const cols = ['task_type','store_name','product_code','product_barcode','description','uom','quantity','supplier','notes','status','details','created_at']
+      const cols = ['task_type','store_name','product_code','product_barcode','description','uom','quantity','supplier','notes','status','review_notes','details','created_at']
       const csv  = toCSV(flat, cols)
       const filename = `task-records-${(from || 'start').slice(0,10)}-to-${(to || 'now').slice(0,10)}.csv`
 
