@@ -17,7 +17,6 @@ export default function ProductData() {
     try {
       const data = await getProductRecords({
         storeId: session.storeId,
-        mode: session.mode,
         filters: filter !== 'all' ? { status: filter } : {}
       })
       setRecords(data)

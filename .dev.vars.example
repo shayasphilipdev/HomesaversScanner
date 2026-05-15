@@ -1,6 +1,10 @@
 # Local development environment variables for Cloudflare Pages Functions.
-# Copy this file to .dev.vars and fill in your Supabase values.
+# Copy this file to .dev.vars and fill in your values.
 # .dev.vars is in .gitignore — never commit it.
 
 SUPABASE_URL=https://your-project-ref.supabase.co
 SUPABASE_ANON_KEY=your-anon-key-here
+
+# Random string used to sign session tokens. Generate with:
+#   -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 64 | % {[char]$_})
+SESSION_SECRET=your-random-64-char-secret-here

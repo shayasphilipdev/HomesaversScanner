@@ -23,9 +23,14 @@ export default function StoreSelector({ onLogin }) {
     if (!pin) return setError('Please enter the store PIN.')
     setLoading(true); setError('')
     try {
-      await verifyStorePin(storeId, pin)
-      const store = stores.find(s => s.id === storeId)
-      onLogin({ mode: 'store', storeId, storeName: store.store_name, storeCode: store.store_code })
+      const { token, store } = await verifyStorePin(storeId, pin)
+      onLogin({
+        mode:      'store',
+        storeId:   store.id,
+        storeName: store.store_name,
+        storeCode: store.store_code,
+        token
+      })
     } catch {
       setError('Incorrect PIN. Please try again.')
     } finally {
@@ -38,8 +43,8 @@ export default function StoreSelector({ onLogin }) {
     if (!pin) return setError('Please enter the back office PIN.')
     setLoading(true); setError('')
     try {
-      await verifyBackofficePin(pin)
-      onLogin({ mode: 'backoffice', storeName: 'Back Office' })
+      const { token } = await verifyBackofficePin(pin)
+      onLogin({ mode: 'backoffice', storeName: 'Back Office', token })
     } catch {
       setError('Incorrect PIN. Please try again.')
     } finally {

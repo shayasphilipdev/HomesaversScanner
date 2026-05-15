@@ -5,21 +5,29 @@ import { useStore } from '../App.jsx'
 
 const EMPTY = { productCode: '', description: '', uom: '', quantity: '' }
 
+// Same confirmation gate the original v1 app used — N consecutive identical
+// reads before accepting a camera detection, to filter out partial scans.
+const CAMERA_CONFIRM_COUNT = 3
+const CAMERA_MIN_LENGTH    = 4
+const CAMERA_MAX_LENGTH    = 80
+
 export default function ProductForm({ onSaved }) {
   const { session } = useStore()
   const [form, setForm] = useState(EMPTY)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [lookupLoading, setLookupLoading] = useState(false)
-  const codeRef = useRef(null)
+  const [cameraOn, setCameraOn] = useState(false)
+  const [cameraStatus, setCameraStatus] = useState('')
+  const codeRef    = useRef(null)
+  const scannerRef = useRef(null)
 
-  // Scanner gun: capture rapid keystrokes into the product code field
+  // Scanner gun: capture rapid keystrokes anywhere on the page into the form.
   useEffect(() => {
     let buffer = ''
-    let timer = null
+    let timer  = null
 
     const onKey = (e) => {
-      // If any input/select/textarea is focused, let it handle its own input
       const tag = document.activeElement?.tagName
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return
 
@@ -42,6 +50,66 @@ export default function ProductForm({ onSaved }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  // Camera lifecycle: lazy-load html5-qrcode only when the user opens it.
+  useEffect(() => {
+    if (!cameraOn) return
+
+    let cancelled  = false
+    let candidate  = ''
+    let candidateN = 0
+
+    ;(async () => {
+      try {
+        setCameraStatus('Loading camera library…')
+        const mod = await import('html5-qrcode')
+        if (cancelled) return
+
+        const Html5Qrcode = mod.Html5Qrcode || mod.default?.Html5Qrcode
+        if (!Html5Qrcode) throw new Error('html5-qrcode loaded but Html5Qrcode constructor missing')
+
+        const scanner = new Html5Qrcode('reader')
+        scannerRef.current = scanner
+
+        setCameraStatus('Requesting camera permission…')
+        await scanner.start(
+          { facingMode: 'environment' },
+          { fps: 5, qrbox: { width: 260, height: 140 } },
+          (decoded) => {
+            const code = String(decoded || '').trim()
+            if (code.length < CAMERA_MIN_LENGTH || code.length > CAMERA_MAX_LENGTH) return
+
+            if (code === candidate) candidateN += 1
+            else { candidate = code; candidateN = 1 }
+
+            setCameraStatus(`Reading: ${code}  (${candidateN}/${CAMERA_CONFIRM_COUNT})`)
+
+            if (candidateN >= CAMERA_CONFIRM_COUNT) {
+              setForm(f => ({ ...f, productCode: code }))
+              triggerLookup(code)
+              setCameraStatus('Saved code — close camera or scan another.')
+              candidate = ''
+              candidateN = 0
+            }
+          },
+          () => { /* per-frame errors are normal while searching */ }
+        )
+        setCameraStatus('Point the box at a barcode.')
+      } catch (e) {
+        setCameraStatus(cameraErrorMessage(e))
+      }
+    })()
+
+    return () => {
+      cancelled = true
+      if (scannerRef.current) {
+        scannerRef.current.stop().catch(() => {}).finally(() => {
+          try { scannerRef.current.clear() } catch {}
+          scannerRef.current = null
+        })
+      }
+    }
+  }, [cameraOn])
+
   const triggerLookup = async (code) => {
     if (!code || code.length < 4) return
     setLookupLoading(true)
@@ -51,11 +119,11 @@ export default function ProductForm({ onSaved }) {
         setForm(f => ({
           ...f,
           description: product.description || f.description,
-          uom: product.uom || f.uom
+          uom:         product.uom         || f.uom
         }))
       }
     } catch {
-      // No match is fine — user fills in manually
+      // No match is fine — user fills in manually.
     } finally {
       setLookupLoading(false)
     }
@@ -78,17 +146,19 @@ export default function ProductForm({ onSaved }) {
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!form.productCode.trim()) return setError('Product code is required.')
-    if (!form.uom) return setError('Please select a UOM.')
-    if (form.quantity === '' || isNaN(Number(form.quantity))) return setError('Quantity must be a number.')
+    if (!form.uom)                return setError('Please select a UOM.')
+    if (form.quantity === '' || isNaN(Number(form.quantity)))
+      return setError('Quantity must be a number.')
+
     setSaving(true); setError('')
     try {
       await createProductRecord({
-        store_id: session.storeId || null,
+        store_id:     session.storeId || null,
         product_code: form.productCode.trim(),
-        description: form.description.trim(),
-        uom: form.uom,
-        quantity: Number(form.quantity),
-        status: 'pending'
+        description:  form.description.trim(),
+        uom:          form.uom,
+        quantity:     Number(form.quantity),
+        status:       'pending'
       })
       setForm(EMPTY)
       codeRef.current?.focus()
@@ -121,7 +191,7 @@ export default function ProductForm({ onSaved }) {
                   onChange={set('productCode')}
                   onBlur={handleCodeBlur}
                   onKeyDown={handleCodeKeyDown}
-                  placeholder="Scan or type code…"
+                  placeholder="Scan with gun, type, or use camera…"
                   autoComplete="off"
                   spellCheck={false}
                 />
@@ -130,6 +200,18 @@ export default function ProductForm({ onSaved }) {
                     <span className="spinner spinner-dark" />
                   </span>
                 )}
+              </div>
+              <div className="flex-row" style={{ gap: 8, marginTop: 6 }}>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${cameraOn ? 'btn-danger' : 'btn-outline'}`}
+                  onClick={() => setCameraOn(v => !v)}
+                >
+                  {cameraOn ? '✕ Stop camera' : '📷 Use camera'}
+                </button>
+                <span className="note" style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                  Scanner gun and typing work without enabling the camera.
+                </span>
               </div>
             </div>
 
@@ -170,6 +252,16 @@ export default function ProductForm({ onSaved }) {
 
           </div>
 
+          {/* Camera area — only rendered when enabled */}
+          {cameraOn && (
+            <div className="mt-12">
+              <div id="reader" style={{ width: '100%', maxWidth: 480, minHeight: 240, background: '#eee', borderRadius: 10, overflow: 'hidden' }} />
+              <div className="note mt-12" style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                {cameraStatus || 'Starting camera…'}
+              </div>
+            </div>
+          )}
+
           {/* Eachs warning */}
           {showEachsWarning && (
             <div className="warning-box mt-12">
@@ -197,4 +289,13 @@ export default function ProductForm({ onSaved }) {
       </div>
     </div>
   )
+}
+
+function cameraErrorMessage(error) {
+  const text = String((error && (error.name || error.message)) || error || 'Unknown error')
+  if (/NotAllowed|Permission|denied/i.test(text))   return 'Camera permission denied. Allow camera for this site in your browser.'
+  if (/NotFound|DevicesNotFound|no camera/i.test(text)) return 'No camera found on this device.'
+  if (/NotReadable|TrackStart|busy/i.test(text))    return 'Camera is busy. Close other apps using the camera.'
+  if (/Overconstrained|Constraint/i.test(text))     return 'Back camera could not start — try refreshing.'
+  return 'Camera could not start: ' + text
 }

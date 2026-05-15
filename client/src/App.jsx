@@ -1,26 +1,50 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { useState, useEffect, createContext, useContext } from 'react'
+import { useState, createContext, useContext } from 'react'
 import StoreSelector from './components/StoreSelector.jsx'
 import Nav from './components/Nav.jsx'
 import ProductData from './pages/ProductData.jsx'
 import Reports from './pages/Reports.jsx'
+import { setToken, clearToken } from './lib/api.js'
 
 export const StoreContext = createContext(null)
 export const useStore = () => useContext(StoreContext)
 
-export default function App() {
-  const [session, setSession] = useState(() => {
-    const saved = localStorage.getItem('hs_session')
-    return saved ? JSON.parse(saved) : null
-  })
+const SESSION_KEY = 'hs_session'
 
-  const login = (sessionData) => {
-    localStorage.setItem('hs_session', JSON.stringify(sessionData))
+// Back-office sessions live in sessionStorage (clears on tab close);
+// store sessions persist in localStorage so people can keep working.
+function loadSession() {
+  const bo = sessionStorage.getItem(SESSION_KEY)
+  if (bo) return JSON.parse(bo)
+  const store = localStorage.getItem(SESSION_KEY)
+  if (store) return JSON.parse(store)
+  return null
+}
+
+function saveSession(s) {
+  sessionStorage.removeItem(SESSION_KEY)
+  localStorage.removeItem(SESSION_KEY)
+  const target = s.mode === 'backoffice' ? sessionStorage : localStorage
+  target.setItem(SESSION_KEY, JSON.stringify(s))
+}
+
+function clearSession() {
+  sessionStorage.removeItem(SESSION_KEY)
+  localStorage.removeItem(SESSION_KEY)
+}
+
+export default function App() {
+  const [session, setSession] = useState(loadSession)
+
+  const login = ({ token, ...sessionData }) => {
+    setToken(token, sessionData.mode)
+    saveSession(sessionData)
     setSession(sessionData)
   }
 
   const logout = () => {
-    localStorage.removeItem('hs_session')
+    clearToken()
+    clearSession()
     setSession(null)
   }
 
