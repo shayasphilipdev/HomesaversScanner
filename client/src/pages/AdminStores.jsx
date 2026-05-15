@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useStore } from '../App.jsx'
 import { adminListStores, adminCreateStore, adminUpdateStore, adminResetStorePin } from '../lib/api.js'
+import AdminNav from '../components/AdminNav.jsx'
 
 // Back-office only — Stores admin.
 // - Lists all stores (active + inactive)
@@ -45,6 +46,8 @@ export default function AdminStores() {
           <div className="page-subtitle">Manage stores · {stores.length} total</div>
         </div>
       </div>
+
+      <AdminNav />
 
       <div className="flex-row" style={{ marginBottom: 16, gap: 8 }}>
         <button className="btn btn-primary btn-sm" onClick={() => setShowAdd(v => !v)}>

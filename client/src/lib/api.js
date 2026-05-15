@@ -115,7 +115,12 @@ export const deleteTaskRecord = (id) =>
 
 // ── Admin (back office) ─────────────────────────────────────────────────────
 
-export const adminListStores  = () => request('/admin/stores')
-export const adminCreateStore = (store) => request('/admin/stores', { method: 'POST', body: store })
-export const adminUpdateStore = (id, updates) => request(`/admin/stores/${id}`, { method: 'PATCH', body: updates })
+export const adminListStores    = () => request('/admin/stores')
+export const adminCreateStore   = (store) => request('/admin/stores', { method: 'POST', body: store })
+export const adminUpdateStore   = (id, updates) => request(`/admin/stores/${id}`, { method: 'PATCH', body: updates })
 export const adminResetStorePin = (id, pin) => request(`/admin/stores/${id}/reset-pin`, { method: 'POST', body: { pin } })
+
+export const adminListSuppliers  = () => request('/admin/suppliers')
+export const adminCreateSupplier = (supplier) => request('/admin/suppliers', { method: 'POST', body: supplier })
+export const adminUpdateSupplier = (id, updates) => request(`/admin/suppliers/${id}`, { method: 'PATCH', body: updates })
+export const adminBulkSuppliers  = (rows) => request('/admin/suppliers/bulk', { method: 'POST', body: rows })

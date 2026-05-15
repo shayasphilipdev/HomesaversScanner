@@ -228,6 +228,65 @@ export async function onRequest(context) {
       return json({ id: s.id, store_code: s.store_code, store_name: s.store_name, region: s.region, is_active: s.is_active })
     }
 
+    // ── Back-office admin: suppliers ─────────────────────────────────────
+
+    if (path === '/admin/suppliers' && method === 'GET') {
+      if (!isBO) return err('Forbidden', 403)
+      const rows = await db.select('suppliers', {
+        select: 'id,supplier_code,supplier_name,is_active,created_at,updated_at',
+        order:  'supplier_name.asc'
+      })
+      return json(rows)
+    }
+
+    if (path === '/admin/suppliers' && method === 'POST') {
+      if (!isBO) return err('Forbidden', 403)
+      const { supplier_code, supplier_name, is_active } = await request.json()
+      if (!supplier_name) return err('supplier_name required', 400)
+      const inserted = await db.insert('suppliers', {
+        supplier_code: supplier_code || null,
+        supplier_name,
+        is_active:     is_active !== false
+      })
+      return json(inserted[0] ?? inserted, 201)
+    }
+
+    // Bulk insert from a client-parsed CSV: body is an array of rows.
+    // Each row: { supplier_code?, supplier_name }
+    // Duplicates by supplier_code are upserted; supplier_name-only rows are
+    // inserted as new (no dedupe — that's the admin's job for now).
+    if (path === '/admin/suppliers/bulk' && method === 'POST') {
+      if (!isBO) return err('Forbidden', 403)
+      const rows = await request.json()
+      if (!Array.isArray(rows) || !rows.length) return err('Empty payload', 400)
+      const clean = rows
+        .filter(r => r && typeof r.supplier_name === 'string' && r.supplier_name.trim())
+        .map(r => ({
+          supplier_code: r.supplier_code?.trim() || null,
+          supplier_name: r.supplier_name.trim(),
+          is_active: true
+        }))
+      if (!clean.length) return err('No valid rows', 400)
+      const inserted = await db.insert('suppliers', clean)
+      return json({ inserted: inserted.length }, 201)
+    }
+
+    const adminSupplierMatch = path.match(/^\/admin\/suppliers\/([a-f0-9-]+)$/)
+    if (adminSupplierMatch && method === 'PATCH') {
+      if (!isBO) return err('Forbidden', 403)
+      const id = adminSupplierMatch[1]
+      const body = await request.json()
+      const updates = {}
+      if (body.supplier_code !== undefined) updates.supplier_code = body.supplier_code
+      if (body.supplier_name !== undefined) updates.supplier_name = body.supplier_name
+      if (body.is_active     !== undefined) updates.is_active     = !!body.is_active
+      if (!Object.keys(updates).length) return err('No editable fields supplied', 400)
+      updates.updated_at = new Date().toISOString()
+      const updated = await db.update('suppliers', { id: `eq.${id}` }, updates)
+      if (!updated.length) return err('Supplier not found', 404)
+      return json(updated[0])
+    }
+
     const adminPinMatch = path.match(/^\/admin\/stores\/([a-f0-9-]+)\/reset-pin$/)
     if (adminPinMatch && method === 'POST') {
       if (!isBO) return err('Forbidden', 403)
