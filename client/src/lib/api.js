@@ -3,11 +3,8 @@
 // short-lived HMAC-signed session token returned by /verify-pin.
 
 const base = '/api'
-
 const TOKEN_KEY = 'hs_token'
 
-// Token lives wherever the session lives — sessionStorage for back office
-// (clears on tab close), localStorage for store users (persists).
 export const getToken = () =>
   sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY)
 
@@ -33,7 +30,6 @@ async function request(path, options = {}) {
     body: options.body ? JSON.stringify(options.body) : undefined
   })
 
-  // Session expired or invalid — wipe everything and bounce to login.
   if (res.status === 401) {
     clearToken()
     sessionStorage.removeItem('hs_session')
@@ -47,38 +43,44 @@ async function request(path, options = {}) {
   return data
 }
 
-// ── Stores ──────────────────────────────────────────────────────────────────
+// ── Auth & stores ───────────────────────────────────────────────────────────
 
-export const getStores = () =>
-  request('/stores')
+export const getStores            = () => request('/stores')
+export const verifyStorePin       = (storeId, pin) => request('/stores/verify-pin', { method: 'POST', body: { storeId, pin } })
+export const verifyBackofficePin  = (pin) => request('/backoffice/verify-pin', { method: 'POST', body: { pin } })
 
-export const verifyStorePin = (storeId, pin) =>
-  request('/stores/verify-pin', { method: 'POST', body: { storeId, pin } })
+// ── Reference data ──────────────────────────────────────────────────────────
 
-export const verifyBackofficePin = (pin) =>
-  request('/backoffice/verify-pin', { method: 'POST', body: { pin } })
-
-// ── Product records ─────────────────────────────────────────────────────────
-// mode / storeId are no longer sent — the server derives them from the token.
-// Back office can pass storeId to narrow results.
-
-export const getProductRecords = ({ storeId, filters = {} } = {}) => {
+export const getTaskTypes      = () => request('/task-types')
+export const getLookupOptions  = ({ kind, task_type } = {}) => {
   const q = new URLSearchParams()
-  if (storeId) q.set('storeId', storeId)
-  for (const [k, v] of Object.entries(filters)) q.set(k, v)
-  return request('/product-records' + (q.toString() ? `?${q}` : ''))
+  if (kind)      q.set('kind', kind)
+  if (task_type) q.set('task_type', task_type)
+  return request(`/lookup-options?${q}`)
 }
-
-export const createProductRecord = (record) =>
-  request('/product-records', { method: 'POST', body: record })
-
-export const updateProductRecord = (id, updates) =>
-  request(`/product-records/${id}`, { method: 'PATCH', body: updates })
-
-export const deleteProductRecord = (id) =>
-  request(`/product-records/${id}`, { method: 'DELETE' })
+export const getSuppliers      = () => request('/suppliers')
 
 // ── Products master lookup ──────────────────────────────────────────────────
 
 export const lookupProduct = (productCode) =>
   request(`/products/lookup?code=${encodeURIComponent(productCode)}`)
+
+// ── Task records ────────────────────────────────────────────────────────────
+
+export const getTaskRecords = ({ storeId, taskType, status, filters = {} } = {}) => {
+  const q = new URLSearchParams()
+  if (storeId)  q.set('storeId', storeId)
+  if (taskType) q.set('task_type', taskType)
+  if (status)   q.set('status', status)
+  for (const [k, v] of Object.entries(filters)) q.set(k, v)
+  return request('/task-records' + (q.toString() ? `?${q}` : ''))
+}
+
+export const createTaskRecord = (record) =>
+  request('/task-records', { method: 'POST', body: record })
+
+export const updateTaskRecord = (id, updates) =>
+  request(`/task-records/${id}`, { method: 'PATCH', body: updates })
+
+export const deleteTaskRecord = (id) =>
+  request(`/task-records/${id}`, { method: 'DELETE' })

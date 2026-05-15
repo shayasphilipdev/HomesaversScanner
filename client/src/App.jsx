@@ -2,7 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { useState, createContext, useContext } from 'react'
 import StoreSelector from './components/StoreSelector.jsx'
 import Nav from './components/Nav.jsx'
-import ProductData from './pages/ProductData.jsx'
+import Tasks from './pages/Tasks.jsx'
 import Reports from './pages/Reports.jsx'
 import { setToken, clearToken } from './lib/api.js'
 
@@ -11,8 +11,6 @@ export const useStore = () => useContext(StoreContext)
 
 const SESSION_KEY = 'hs_session'
 
-// Back-office sessions live in sessionStorage (clears on tab close);
-// store sessions persist in localStorage so people can keep working.
 function loadSession() {
   const bo = sessionStorage.getItem(SESSION_KEY)
   if (bo) return JSON.parse(bo)
@@ -48,9 +46,7 @@ export default function App() {
     setSession(null)
   }
 
-  if (!session) {
-    return <StoreSelector onLogin={login} />
-  }
+  if (!session) return <StoreSelector onLogin={login} />
 
   return (
     <StoreContext.Provider value={{ session, logout }}>
@@ -58,9 +54,10 @@ export default function App() {
         <Nav />
         <main className="main-content">
           <Routes>
-            <Route path="/" element={<Navigate to="/products" replace />} />
-            <Route path="/products" element={<ProductData />} />
+            <Route path="/"        element={<Navigate to="/tasks" replace />} />
+            <Route path="/tasks"   element={<Tasks />} />
             <Route path="/reports" element={<Reports />} />
+            <Route path="*"        element={<Navigate to="/tasks" replace />} />
           </Routes>
         </main>
       </div>

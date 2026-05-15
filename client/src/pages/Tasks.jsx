@@ -1,23 +1,39 @@
 import { useState, useEffect, useCallback } from 'react'
-import { getProductRecords } from '../lib/api.js'
 import { useStore } from '../App.jsx'
-import ProductForm from '../components/ProductForm.jsx'
-import ProductList from '../components/ProductList.jsx'
+import { getTaskRecords, getTaskTypes } from '../lib/api.js'
+import TaskTypePicker from '../components/TaskTypePicker.jsx'
+import TaskForm from '../components/TaskForm.jsx'
+import TaskRecordList from '../components/TaskRecordList.jsx'
 
-export default function ProductData() {
+export default function Tasks() {
   const { session } = useStore()
   const isBO = session.mode === 'backoffice'
 
+  const [taskTypes, setTaskTypes] = useState([])
+  const [selectedType, setSelectedType] = useState(null)
+  const [filter, setFilter] = useState('all')
   const [records, setRecords] = useState([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState('all')  // all | pending | completed | store_completed
+
+  useEffect(() => {
+    getTaskTypes()
+      .then(rows => {
+        setTaskTypes(rows)
+        // Default selection: first daily, first available type
+        const first = rows.find(t => t.frequency === 'daily') || rows[0]
+        if (first && !selectedType) setSelectedType(first.code)
+      })
+      .catch(() => setTaskTypes([]))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await getProductRecords({
-        storeId: session.storeId,
-        filters: filter !== 'all' ? { status: filter } : {}
+      const data = await getTaskRecords({
+        storeId:  session.storeId,
+        taskType: selectedType,
+        status:   filter !== 'all' ? filter : undefined
       })
       setRecords(data)
     } catch (e) {
@@ -25,9 +41,9 @@ export default function ProductData() {
     } finally {
       setLoading(false)
     }
-  }, [session, filter])
+  }, [session, selectedType, filter])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { if (selectedType) load() }, [load, selectedType])
 
   const filterCounts = {
     all:             records.length,
@@ -36,23 +52,21 @@ export default function ProductData() {
     store_completed: records.filter(r => r.status === 'store_completed').length,
   }
 
-  const displayed = filter === 'all' ? records : records.filter(r => r.status === filter)
-
   return (
     <div>
       <div className="page-header">
         <div>
-          <div className="page-title">Product Data</div>
+          <div className="page-title">Tasks</div>
           <div className="page-subtitle">
             {isBO ? 'All stores' : session.storeName} · {records.length} record{records.length !== 1 ? 's' : ''}
           </div>
         </div>
       </div>
 
-      {/* Only store users and back office in store context can add records */}
-      {!isBO && <ProductForm onSaved={load} />}
+      <TaskTypePicker taskTypes={taskTypes} selected={selectedType} onSelect={setSelectedType} />
 
-      {/* Filter tabs */}
+      {selectedType && !isBO && <TaskForm taskType={selectedType} onSaved={load} />}
+
       <div className="flex-row" style={{ marginBottom: 16, flexWrap: 'wrap', gap: 6 }}>
         {[
           { key: 'all',             label: 'All' },
@@ -70,9 +84,7 @@ export default function ProductData() {
               marginLeft: 4,
               background: filter === tab.key ? 'rgba(255,255,255,.25)' : 'var(--gray-200)',
               color: filter === tab.key ? '#fff' : 'var(--text-muted)',
-              borderRadius: 20,
-              padding: '0 7px',
-              fontSize: 11
+              borderRadius: 20, padding: '0 7px', fontSize: 11
             }}>
               {filterCounts[tab.key]}
             </span>
@@ -84,7 +96,7 @@ export default function ProductData() {
         </button>
       </div>
 
-      <ProductList records={displayed} loading={loading} onRefresh={load} />
+      <TaskRecordList records={records} loading={loading} onRefresh={load} />
     </div>
   )
 }
