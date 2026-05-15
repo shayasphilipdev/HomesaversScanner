@@ -65,6 +65,34 @@ export const getSuppliers      = () => request('/suppliers')
 export const lookupProduct = (productCode) =>
   request(`/products/lookup?code=${encodeURIComponent(productCode)}`)
 
+// ── Photos ──────────────────────────────────────────────────────────────────
+// Note: photo upload uses multipart/form-data so we bypass the JSON `request`.
+
+export async function uploadPhoto({ file, slot, tempId }) {
+  const fd = new FormData()
+  fd.append('file', file)
+  fd.append('slot', slot)
+  fd.append('tempId', tempId)
+  const res = await fetch(`${base}/photos/upload`, {
+    method:  'POST',
+    headers: { Authorization: `Bearer ${getToken()}` },
+    body:    fd
+  })
+  if (res.status === 401) {
+    clearToken()
+    sessionStorage.removeItem('hs_session')
+    localStorage.removeItem('hs_session')
+    if (typeof window !== 'undefined') window.location.reload()
+    throw new Error('Session expired')
+  }
+  const data = await res.json()
+  if (!res.ok) throw new Error(data.error || 'Upload failed')
+  return data
+}
+
+export const deletePhoto = (objectPath) =>
+  request(`/photos?path=${encodeURIComponent(objectPath)}`, { method: 'DELETE' })
+
 // ── Task records ────────────────────────────────────────────────────────────
 
 export const getTaskRecords = ({ storeId, taskType, status, filters = {} } = {}) => {

@@ -44,7 +44,8 @@ New types can be added by inserting into `task_types`. Form schema for each live
 |---|---|---|---|
 | 0 | Foundation | ✅ done | Auth (PIN + HMAC tokens), deploy, Task A baseline, camera/scanner/manual entry |
 | **1** | **Task Types + Suppliers re-foundation** | ✅ done | DB reshape, generic lookup_options master, suppliers master, Task A wired in new model |
-| 2 | Per-task-type forms (B–I) | next | Build each form. Includes Task B photos (Supabase Storage bucket) |
+| **2A** | **Task B + photo infrastructure** | ✅ done | `task-photos` Supabase Storage bucket, `/photos/upload` + `/photos` DELETE endpoints, client-side JPEG compression, reusable form widgets (ScannerInput, SupplierPicker, PhotoCapture), TaskBForm |
+| 2B–E | Tasks D, I → C, E, G → F → H | next | Build the remaining form variants on top of the Phase 2A widgets |
 | 3 | Master admin (back office) | | CRUD UI for Stores, Suppliers, Reason Codes, DRS Sizes, Products. CSV bulk upload |
 | 4 | Reports + Modern Dashboard | | Per-task-type CSV with type-specific columns. Combined "All" report. Multi-filter (stores, task types, datetime). KPIs and charts |
 | 5 | Responsive PC layout | | Sidebar nav on desktop, top nav on mobile. Wider tables on PC. Polish |
@@ -85,13 +86,20 @@ homesavers-scanner/
 │       │   ├── Nav.jsx
 │       │   ├── StoreSelector.jsx
 │       │   ├── TaskTypePicker.jsx     chips grouped by frequency
-│       │   ├── TaskForm.jsx           top-level form, switches by task type
-│       │   └── TaskRecordList.jsx     table with task_type column
+│       │   ├── TaskForm.jsx           slim dispatcher → forms/Task*Form.jsx
+│       │   ├── TaskRecordList.jsx     table with task_type column
+│       │   └── forms/
+│       │       ├── ScannerInput.jsx   scanner-gun + camera + lookup widget
+│       │       ├── SupplierPicker.jsx supplier dropdown + free-text fallback
+│       │       ├── PhotoCapture.jsx   compress + preview + retake
+│       │       ├── TaskAForm.jsx      UOM Errors
+│       │       └── TaskBForm.jsx      Non-Scans (with 2 mandatory photos)
 │       ├── pages/
 │       │   ├── Tasks.jsx              picker + form + list
 │       │   └── Reports.jsx            CSV with task_type filter
 │       ├── lib/
 │       │   ├── api.js                 fetch wrapper, token handling, 401 auto-logout
+│       │   ├── photos.js              compressImage + tempId helper
 │       │   ├── taskTypes.js           per-type form schema metadata
 │       │   └── uom.js                 UOM dropdown + Eachs warning
 │       ├── App.jsx                    routes + session split (BO=sessionStorage, store=localStorage)
@@ -154,6 +162,8 @@ Type-specific fields go in `details jsonb` (e.g. reason_code, current_price, pri
 | GET    | `/lookup-options?kind=reason_code&task_type=C` | auth | dropdown options |
 | GET    | `/suppliers` | auth | active suppliers for dropdown |
 | GET    | `/products/lookup?code=…` | auth | Product Master lookup |
+| POST   | `/photos/upload` | auth | multipart/form-data: `file`, `slot=product\|barcode`, `tempId`. Returns `{ url, path }` |
+| DELETE | `/photos?path=…` | auth | cleanup (used on save failure) |
 | GET    | `/task-records?task_type=A&status=pending&storeId=…` | auth | store users always scoped to own store |
 | POST   | `/task-records` | auth | server forces `store_id = token.storeId` for store users |
 | PATCH  | `/task-records/:id` | auth | store users limited to own store |

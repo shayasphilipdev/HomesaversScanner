@@ -209,6 +209,53 @@ export async function onRequest(context) {
       return json(rows)
     }
 
+    // ── Photos ────────────────────────────────────────────────────────────
+    // POST /photos/upload   multipart/form-data: file, slot, tempId
+    if (path === '/photos/upload' && method === 'POST') {
+      const form   = await request.formData()
+      const file   = form.get('file')
+      const slot   = String(form.get('slot') || '')
+      const tempId = String(form.get('tempId') || '')
+
+      if (!file || !slot || !tempId) return err('file, slot, tempId required', 400)
+      if (!['product', 'barcode'].includes(slot)) return err('slot must be product or barcode', 400)
+      if (!/^[a-zA-Z0-9-]{8,64}$/.test(tempId))   return err('Invalid tempId', 400)
+
+      const objectPath = `${tempId}/${slot}.jpg`
+      const uploadUrl  = `${env.SUPABASE_URL}/storage/v1/object/task-photos/${objectPath}`
+
+      const upRes = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: {
+          'apikey':        env.SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`,
+          'Content-Type':  file.type || 'image/jpeg',
+          'x-upsert':      'true'
+        },
+        body: await file.arrayBuffer()
+      })
+      if (!upRes.ok) return err(`Storage upload failed: ${await upRes.text()}`, 500)
+
+      return json({
+        url:  `${env.SUPABASE_URL}/storage/v1/object/public/task-photos/${objectPath}`,
+        path: objectPath
+      })
+    }
+
+    // DELETE /photos?path=<objectPath>   — cleanup on cancel / save failure
+    if (path === '/photos' && method === 'DELETE') {
+      const objectPath = url.searchParams.get('path') || ''
+      if (!/^[a-zA-Z0-9-]{8,64}\/(product|barcode)\.jpg$/.test(objectPath))
+        return err('Invalid path', 400)
+      const delUrl = `${env.SUPABASE_URL}/storage/v1/object/task-photos/${objectPath}`
+      const dRes   = await fetch(delUrl, {
+        method:  'DELETE',
+        headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}` }
+      })
+      if (!dRes.ok && dRes.status !== 404) return err(`Storage delete failed: ${await dRes.text()}`, 500)
+      return json({ ok: true })
+    }
+
     // GET /products/lookup
     if (path === '/products/lookup' && method === 'GET') {
       const code = url.searchParams.get('code')

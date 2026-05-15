@@ -5,8 +5,7 @@
 
 export const TASK_FORMS = {
   A: { name: 'UOM Errors',           implemented: true,  warning: null },
-  B: { name: 'Non-Scans',            implemented: false, warning: null,
-       comingSoon: 'Phase 2 — includes mandatory product + barcode photos.' },
+  B: { name: 'Non-Scans',            implemented: true,  warning: null },
   C: { name: 'Wrong Prices',         implemented: false, warning: null,
        comingSoon: 'Phase 2 — reason code dropdown + optional current price.' },
   D: { name: 'Wrong Description',    implemented: false, warning: null,
