@@ -1,0 +1,17 @@
+name = "homesavers-scanner"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+pages_build_output_dir = "client/dist"
+
+# Local dev: run `npx wrangler pages dev --proxy 5173`
+# while `cd client && npm run dev` runs on port 5173.
+#
+# Production env vars set in:
+# Cloudflare Dashboard → Pages → homesavers-scanner → Settings → Environment Variables
+#   SUPABASE_URL   = https://xxxx.supabase.co
+#   SUPABASE_ANON_KEY = eyJ...
+#
+# Local dev env vars: create a `.dev.vars` file in the root (already in .gitignore):
+#   SUPABASE_URL=https://xxxx.supabase.co
+#   SUPABASE_ANON_KEY=eyJ...

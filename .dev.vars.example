@@ -1,0 +1,6 @@
+# Local development environment variables for Cloudflare Pages Functions.
+# Copy this file to .dev.vars and fill in your Supabase values.
+# .dev.vars is in .gitignore — never commit it.
+
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_ANON_KEY=your-anon-key-here
