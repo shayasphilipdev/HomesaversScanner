@@ -4,14 +4,13 @@ compatibility_flags = ["nodejs_compat"]
 
 pages_build_output_dir = "client/dist"
 
-# Local dev: run `npx wrangler pages dev --proxy 5173`
-# while `cd client && npm run dev` runs on port 5173.
-#
-# Production env vars set in:
-# Cloudflare Dashboard → Pages → homesavers-scanner → Settings → Environment Variables
-#   SUPABASE_URL   = https://xxxx.supabase.co
-#   SUPABASE_ANON_KEY = eyJ...
-#
-# Local dev env vars: create a `.dev.vars` file in the root (already in .gitignore):
-#   SUPABASE_URL=https://xxxx.supabase.co
+# Non-secret env vars (visible in repo — safe values only).
+# SUPABASE_ANON_KEY is set as an encrypted Secret in the Cloudflare dashboard.
+[vars]
+SUPABASE_URL = "https://eggspkdengnxktwkdwpw.supabase.co"
+
+# Local dev: create a `.dev.vars` file in the root (gitignored) with:
+#   SUPABASE_URL=https://eggspkdengnxktwkdwpw.supabase.co
 #   SUPABASE_ANON_KEY=eyJ...
+# Then run: npx wrangler pages dev --proxy 5173
+# while `cd client && npm run dev` runs on :5173.
