@@ -121,19 +121,37 @@ const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'comm
 const ADMIN_ROLES    = ['director', 'buying_manager']
 const TASK_CREATORS  = ['buying_manager', 'area_manager', 'commercial_manager', 'director']
 
+// Effective roles = the primary role + any additional `roles` tags
+// (Phase 9B2). Auth checks should always use this set, not just `role`,
+// so an employee who holds (e.g.) both buying_manager and
+// commercial_manager gets both permission sets.
+function effectiveRoles(s) {
+  if (!s) return []
+  const out = new Set()
+  if (s.role) out.add(s.role)
+  if (Array.isArray(s.roles)) s.roles.forEach(r => r && out.add(r))
+  return [...out]
+}
+function hasAnyRole(s, allowed) {
+  const set = effectiveRoles(s)
+  return allowed.some(r => set.includes(r))
+}
+
 function isBackOffice(s) {
   if (!s) return false
-  if (s.role && BO_ROLES.includes(s.role)) return true
+  if (hasAnyRole(s, BO_ROLES)) return true
   // Backward-compat: pre-9B tokens only had `mode`.
   return s.mode === 'backoffice'
 }
-function isAdminRole(s)    { return !!s && (ADMIN_ROLES.includes(s.role)   || s.mode === 'backoffice') }
-function canCreateTasks(s) { return !!s && TASK_CREATORS.includes(s.role) }
+function isAdminRole(s)    { return !!s && (hasAnyRole(s, ADMIN_ROLES)   || s.mode === 'backoffice') }
+function canCreateTasks(s) { return !!s && hasAnyRole(s, TASK_CREATORS) }
 
 async function buildSessionForUser(db, user) {
-  // Pull the user's area memberships (only matters for area_manager).
+  // Pull the user's area memberships. Area manager OR any user with
+  // area_manager in their tag set might want their area list available.
+  const allRoles = [user.role, ...(Array.isArray(user.roles) ? user.roles : [])]
   let area_ids = []
-  if (user.role === 'area_manager') {
+  if (allRoles.includes('area_manager')) {
     const rows = await db.select('user_areas', { select: 'area_id', user_id: `eq.${user.id}` })
     area_ids = rows.map(r => r.area_id)
   }
@@ -141,7 +159,8 @@ async function buildSessionForUser(db, user) {
     user_id:      user.id,
     username:     user.username,
     display_name: user.display_name,
-    role:         user.role,
+    role:         user.role,                                  // primary role
+    roles:        Array.isArray(user.roles) ? user.roles : [], // extra tags
     storeId:      user.store_id || null,
     area_ids,
     // legacy `mode` for any code still checking it
@@ -306,7 +325,7 @@ export async function onRequest(context) {
         { ...session, exp: Date.now() + BACKOFFICE_TOKEN_HOURS * 3600_000 },
         env.SESSION_SECRET
       )
-      return json({ ok: true, token, user: { id: user.id, display_name: user.display_name, role: user.role } })
+      return json({ ok: true, token, user: { id: user.id, display_name: user.display_name, role: user.role, roles: user.roles || [] } })
     }
 
     // New: staff login (username + PIN). Used by every non-store role and
@@ -326,7 +345,7 @@ export async function onRequest(context) {
       const token = await signToken({ ...session, exp: Date.now() + hours * 3600_000 }, env.SESSION_SECRET)
       return json({
         ok: true, token,
-        user: { id: user.id, display_name: user.display_name, role: user.role, store_id: user.store_id }
+        user: { id: user.id, display_name: user.display_name, role: user.role, roles: user.roles || [], store_id: user.store_id }
       })
     }
 
@@ -459,13 +478,27 @@ export async function onRequest(context) {
 
     // ── Back-office admin: users ─────────────────────────────────────────
 
+    const USER_LIST_SELECT = 'id,username,display_name,role,roles,store_id,email,phone,department,employee_code,start_date,notes,is_active,created_at,updated_at'
+
     if (path === '/admin/users' && method === 'GET') {
       if (!isAdminRole(session)) return err('Forbidden', 403)
+      const rows = await db.select('users', { select: USER_LIST_SELECT, order: 'role.asc,username.asc' })
+      const links = await db.select('user_areas', { select: 'user_id,area_id' })
+      const byUser = {}
+      for (const l of links) (byUser[l.user_id] ||= []).push(l.area_id)
+      return json(rows.map(r => ({ ...r, area_ids: byUser[r.id] || [] })))
+    }
+
+    // Employees view — same data as /admin/users but filtered to HQ /
+    // back-office staff (not the per-store sales_assistants).
+    if (path === '/admin/employees' && method === 'GET') {
+      if (!isAdminRole(session)) return err('Forbidden', 403)
       const rows = await db.select('users', {
-        select: 'id,username,display_name,role,store_id,is_active,created_at,updated_at',
-        order:  'role.asc,username.asc'
+        select: USER_LIST_SELECT,
+        // PostgREST: role=in.(a,b,c)
+        role: `in.(${BO_ROLES.join(',')})`,
+        order: 'display_name.asc'
       })
-      // attach area_ids per user (only matters for area_managers, but cheap)
       const links = await db.select('user_areas', { select: 'user_id,area_id' })
       const byUser = {}
       for (const l of links) (byUser[l.user_id] ||= []).push(l.area_id)
@@ -474,53 +507,82 @@ export async function onRequest(context) {
 
     if (path === '/admin/users' && method === 'POST') {
       if (!isAdminRole(session)) return err('Forbidden', 403)
-      const { username, display_name, role, store_id, area_ids, pin, is_active } = await request.json()
-      if (!username || !display_name || !role) return err('username, display_name and role are required', 400)
-      if (!pin || String(pin).length < 4) return err('PIN must be at least 4 characters', 400)
-      if (![...STORE_ROLES, ...BO_ROLES].includes(role)) return err('Unknown role', 400)
+      const b = await request.json()
+      if (!b.username || !b.display_name || !b.role) return err('username, display_name and role are required', 400)
+      if (!b.pin || String(b.pin).length < 4) return err('PIN must be at least 4 characters', 400)
+      if (![...STORE_ROLES, ...BO_ROLES].includes(b.role)) return err('Unknown role', 400)
 
-      const [hashRow] = await db.rpc('hash_pin', { pin: String(pin) })
+      // Validate any extra role tags
+      const extraRoles = Array.isArray(b.roles)
+        ? b.roles.filter(r => [...STORE_ROLES, ...BO_ROLES].includes(r) && r !== b.role)
+        : []
+
+      const [hashRow] = await db.rpc('hash_pin', { pin: String(b.pin) })
       if (!hashRow?.hash) return err('Could not hash PIN', 500)
 
       const inserted = await db.insert('users', {
-        username: String(username).trim(),
-        display_name: String(display_name).trim(),
-        role,
-        store_id: store_id || null,
-        pin_hash: hashRow.hash,
-        is_active: is_active !== false
+        username:      String(b.username).trim(),
+        display_name:  String(b.display_name).trim(),
+        role:          b.role,
+        roles:         extraRoles,
+        store_id:      b.store_id || null,
+        email:         b.email || null,
+        phone:         b.phone || null,
+        department:    b.department || null,
+        employee_code: b.employee_code || null,
+        start_date:    b.start_date || null,
+        notes:         b.notes || null,
+        pin_hash:      hashRow.hash,
+        is_active:     b.is_active !== false
       })
       const u = inserted[0] ?? inserted
 
-      if (role === 'area_manager' && Array.isArray(area_ids) && area_ids.length) {
-        await db.insert('user_areas', area_ids.filter(a => /^[a-f0-9-]{36}$/.test(a)).map(area_id => ({ user_id: u.id, area_id })))
+      // area_ids accepted for area_manager (primary role) OR if the role
+      // tags include area_manager.
+      const allRoles = [u.role, ...(u.roles || [])]
+      if (allRoles.includes('area_manager') && Array.isArray(b.area_ids) && b.area_ids.length) {
+        await db.insert('user_areas', b.area_ids
+          .filter(a => /^[a-f0-9-]{36}$/.test(a))
+          .map(area_id => ({ user_id: u.id, area_id })))
       }
-      return json({ id: u.id, username: u.username, display_name: u.display_name, role: u.role, store_id: u.store_id, is_active: u.is_active }, 201)
+      return json(u, 201)
     }
 
     const adminUserMatch = path.match(/^\/admin\/users\/([a-f0-9-]+)$/)
     if (adminUserMatch && method === 'PATCH') {
       if (!isAdminRole(session)) return err('Forbidden', 403)
       const id = adminUserMatch[1]
-      const body = await request.json()
+      const b  = await request.json()
       const updates = {}
-      if (body.username     !== undefined) updates.username     = String(body.username).trim()
-      if (body.display_name !== undefined) updates.display_name = String(body.display_name).trim()
-      if (body.role         !== undefined) {
-        if (![...STORE_ROLES, ...BO_ROLES].includes(body.role)) return err('Unknown role', 400)
-        updates.role = body.role
+
+      if (b.username     !== undefined) updates.username     = String(b.username).trim()
+      if (b.display_name !== undefined) updates.display_name = String(b.display_name).trim()
+      if (b.role         !== undefined) {
+        if (![...STORE_ROLES, ...BO_ROLES].includes(b.role)) return err('Unknown role', 400)
+        updates.role = b.role
       }
-      if (body.store_id     !== undefined) updates.store_id     = body.store_id || null
-      if (body.is_active    !== undefined) updates.is_active    = !!body.is_active
+      if (Array.isArray(b.roles)) {
+        const primary = b.role !== undefined ? b.role : null
+        updates.roles = b.roles.filter(r => [...STORE_ROLES, ...BO_ROLES].includes(r) && r !== primary)
+      }
+      if (b.store_id      !== undefined) updates.store_id      = b.store_id || null
+      if (b.email         !== undefined) updates.email         = b.email || null
+      if (b.phone         !== undefined) updates.phone         = b.phone || null
+      if (b.department    !== undefined) updates.department    = b.department || null
+      if (b.employee_code !== undefined) updates.employee_code = b.employee_code || null
+      if (b.start_date    !== undefined) updates.start_date    = b.start_date || null
+      if (b.notes         !== undefined) updates.notes         = b.notes || null
+      if (b.is_active     !== undefined) updates.is_active     = !!b.is_active
+
       if (Object.keys(updates).length) {
         updates.updated_at = new Date().toISOString()
         const updated = await db.update('users', { id: `eq.${id}` }, updates)
         if (!updated.length) return err('User not found', 404)
       }
       // Replace area assignments if explicitly supplied.
-      if (Array.isArray(body.area_ids)) {
+      if (Array.isArray(b.area_ids)) {
         await db.remove('user_areas', { user_id: `eq.${id}` })
-        const safe = body.area_ids.filter(a => /^[a-f0-9-]{36}$/.test(a))
+        const safe = b.area_ids.filter(a => /^[a-f0-9-]{36}$/.test(a))
         if (safe.length) {
           await db.insert('user_areas', safe.map(area_id => ({ user_id: id, area_id })))
         }

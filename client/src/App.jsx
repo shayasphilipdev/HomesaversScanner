@@ -14,6 +14,7 @@ import AdminTaskTemplates from './pages/AdminTaskTemplates.jsx'
 import AdminStores from './pages/AdminStores.jsx'
 import AdminAreas from './pages/AdminAreas.jsx'
 import AdminUsers from './pages/AdminUsers.jsx'
+import AdminEmployees from './pages/AdminEmployees.jsx'
 import AdminSuppliers from './pages/AdminSuppliers.jsx'
 import AdminLookups from './pages/AdminLookups.jsx'
 import AdminProducts from './pages/AdminProducts.jsx'
@@ -101,6 +102,7 @@ function Shell() {
             <Route path="/admin/stores"     element={<AdminStores />} />
             <Route path="/admin/areas"      element={<AdminAreas />} />
             <Route path="/admin/users"      element={<AdminUsers />} />
+            <Route path="/admin/employees"  element={<AdminEmployees />} />
             <Route path="/admin/suppliers"  element={<AdminSuppliers />} />
             <Route path="/admin/lookups"    element={<AdminLookups />} />
             <Route path="/admin/products"   element={<AdminProducts />} />

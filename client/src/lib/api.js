@@ -187,6 +187,8 @@ export const adminCreateUser    = (user) => request('/admin/users', { method: 'P
 export const adminUpdateUser    = (id, updates) => request(`/admin/users/${id}`, { method: 'PATCH', body: updates })
 export const adminResetUserPin  = (id, pin) => request(`/admin/users/${id}/reset-pin`, { method: 'POST', body: { pin } })
 
+export const adminListEmployees = () => request('/admin/employees')
+
 // ── Store tasks (Phase 9D + 9E) ─────────────────────────────────────────────
 
 export const adminListTemplates   = () => request('/admin/task-templates')

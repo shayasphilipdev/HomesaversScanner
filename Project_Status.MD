@@ -3,6 +3,11 @@
 A full snapshot of the app as it stands today. Intended as a self-contained
 orientation doc for any Claude session that opens this repo cold.
 
+> **What changed in Phase 9B2** (latest, live):
+> - HR-style fields added to `users`: `email`, `phone`, `department`, `employee_code` (unique when set), `start_date`, `notes`.
+> - New `roles text[]` column on `users` — primary `role` stays; extra roles are tags. All auth helpers (`isBackOffice` / `isAdminRole` / `canCreateTasks`) now union both.
+> - New **Employees** admin page at `/admin/employees`. Filters to HQ / back-office users, exposes HR fields and a primary-role + additional-role-tags picker. The lower-level `/admin/users` page is still there for store-attached accounts.
+>
 > **What changed in Phase 9** (all live):
 > - **9A — Areas admin UI** at `/admin/areas`. Store admin now uses a real Area dropdown (was free-text Region).
 > - **9B — Users + role-aware auth.** New `users` table; the existing store-PIN flow still works because every store has a backfilled `sales_assistant` user. Back-office PIN → `director` user. New **Staff / HQ** login tab (username + PIN) for any non-store role. Token now carries `role`, `user_id`, `area_ids`. Token shape changed — existing logged-in sessions need to log in once.
