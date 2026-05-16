@@ -195,6 +195,28 @@ body {
   font-weight: 500;
 }
 
+.offline-pill {
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 99px;
+  border: 1px solid transparent;
+  font-weight: 600;
+  letter-spacing: .1px;
+  white-space: nowrap;
+}
+.offline-pill-off {
+  background: var(--amber-soft);
+  color: #6D4F10;
+  border-color: rgba(180, 127, 30, .35);
+}
+[data-theme="dark"] .offline-pill-off { color: var(--amber); }
+.offline-pill-on  {
+  background: var(--primary-tint);
+  color: var(--primary-dark);
+  border-color: var(--primary-soft);
+}
+[data-theme="dark"] .offline-pill-on { color: var(--primary); }
+
 .nav-theme-toggle, .nav-logout {
   background: transparent;
   border: 1px solid var(--border-strong);

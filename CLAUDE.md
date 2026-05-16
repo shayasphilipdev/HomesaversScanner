@@ -60,7 +60,7 @@ New types can be added by inserting into `task_types`. Form schema for each live
 | 4 | Reports + Modern Dashboard | | Per-task-type CSV with type-specific columns. Combined "All" report. Multi-filter (stores, task types, datetime). KPIs and charts |
 | **5** | **Responsive PC layout** | ✅ done | Reports + Dashboard widen to 1600px on PC. Three-tier nav: bottom-nav on phones (<720px), top-bar links on tablets (720–1023px), left sidebar on desktops (≥1024px). Thumb-friendly ≥44px targets, iOS-safe input font-size. Toast notifications. Skeleton loaders on Dashboard KPIs. |
 | 6 | Frequency grouping & scheduling | | Daily/Weekly/Monthly/Once-Off groups. Optional scheduling rules |
-| 7 | Offline queue | | IndexedDB queue + service worker. Scan offline, sync on reconnect |
+| **7** | **Offline queue + PWA** | ✅ done | `client/public/sw.js` (stale-while-revalidate for SPA shell, cache-first for hashed assets, never intercept /api/*). `client/public/manifest.webmanifest`. IDB outbox at `client/src/lib/outbox.js` queues task records (and Task B's two photo Blobs) when the network fails; auto-drains on `online` event. `OfflineIndicator` pill in the nav. Forms return `{queued:true}` so Tasks page shows "Saved offline — will sync…" instead of "Saved." |
 
 ### Decisions on record (Q1–Q6)
 

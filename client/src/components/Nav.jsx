@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom'
 import { useState } from 'react'
 import { useStore } from '../App.jsx'
 import { resolvedTheme, setTheme } from '../lib/theme.js'
+import OfflineIndicator from './OfflineIndicator.jsx'
 
 export default function Nav() {
   const { session, logout } = useStore()
@@ -24,6 +25,8 @@ export default function Nav() {
       {session.mode === 'backoffice' && (
         <NavLink to="/admin/stores" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Admin</NavLink>
       )}
+
+      <OfflineIndicator />
 
       <span className="nav-store-badge">
         {session.mode === 'backoffice' ? '⚙ Back Office' : session.storeName}

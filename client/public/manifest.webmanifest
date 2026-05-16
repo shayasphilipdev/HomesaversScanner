@@ -1,0 +1,19 @@
+{
+  "name": "Homesavers Scanner",
+  "short_name": "Scanner",
+  "description": "Scan barcodes and report task records for Homesavers stores.",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FAF9F5",
+  "theme_color": "#C96442",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

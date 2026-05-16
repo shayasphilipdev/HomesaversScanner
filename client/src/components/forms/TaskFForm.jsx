@@ -46,7 +46,7 @@ export default function TaskFForm({ onSaved }) {
 
     setSaving(true); setError('')
     try {
-      await createTaskRecord({
+      const res = await createTaskRecord({
         task_type:          'F',
         store_id:           session.storeId || null,
         product_code:       form.product_code.trim(),
@@ -60,7 +60,7 @@ export default function TaskFForm({ onSaved }) {
         status: 'pending'
       })
       setForm(EMPTY)
-      onSaved?.()
+      onSaved?.({ queued: !!res?.queued })
     } catch (err) {
       setError(err.message)
     } finally {

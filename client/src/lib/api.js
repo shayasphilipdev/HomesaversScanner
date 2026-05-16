@@ -24,11 +24,18 @@ async function request(path, options = {}) {
   const token = getToken()
   if (token) headers.Authorization = `Bearer ${token}`
 
-  const res = await fetch(`${base}${path}`, {
-    headers,
-    ...options,
-    body: options.body ? JSON.stringify(options.body) : undefined
-  })
+  let res
+  try {
+    res = await fetch(`${base}${path}`, {
+      headers,
+      ...options,
+      body: options.body ? JSON.stringify(options.body) : undefined
+    })
+  } catch (e) {
+    // Network failure (offline, DNS, dropped TLS). Bubble up a recognisable
+    // error so the caller can decide whether to enqueue.
+    throw new Error('Network error: ' + (e?.message || 'request failed'))
+  }
 
   if (res.status === 401) {
     clearToken()
@@ -112,8 +119,22 @@ export const getTaskRecords = ({ storeId, taskType, status, filters = {} } = {})
   return request('/task-records' + (q.toString() ? `?${q}` : ''))
 }
 
-export const createTaskRecord = (record) =>
-  request('/task-records', { method: 'POST', body: record })
+// Tries the network first; on offline / network failure the request is
+// queued in IndexedDB (see lib/outbox.js) and replayed when we come back
+// online. Returns { queued: true, id } in that case so forms can show
+// "Saved offline" instead of "Saved".
+export const createTaskRecord = async (record) => {
+  try {
+    return await request('/task-records', { method: 'POST', body: record })
+  } catch (e) {
+    const { isOfflineError, add: outboxAdd } = await import('./outbox.js')
+    if (isOfflineError(e)) {
+      const id = await outboxAdd({ kind: 'simple', body: record })
+      return { queued: true, id }
+    }
+    throw e
+  }
+}
 
 export const updateTaskRecord = (id, updates) =>
   request(`/task-records/${id}`, { method: 'PATCH', body: updates })

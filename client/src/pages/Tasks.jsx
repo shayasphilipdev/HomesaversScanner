@@ -71,7 +71,11 @@ export default function Tasks() {
       {selectedType && !isBO && (
         <TaskForm
           taskType={selectedType}
-          onSaved={() => { toast.success('Record saved.'); load() }}
+          onSaved={(info) => {
+            if (info?.queued) toast.info('Saved offline — will sync when you’re back online.')
+            else              toast.success('Record saved.')
+            load()
+          }}
         />
       )}
 

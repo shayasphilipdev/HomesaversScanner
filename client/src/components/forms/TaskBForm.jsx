@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { UOM_OPTIONS, PACK_WARNING_TRIGGER, EACHS_WARNING } from '../../lib/uom.js'
 import { createTaskRecord, uploadPhoto, deletePhoto, lookupProduct } from '../../lib/api.js'
 import { newPhotoNamespace } from '../../lib/photos.js'
+import { add as outboxAdd, isOfflineError } from '../../lib/outbox.js'
 import { useStore } from '../../App.jsx'
 import ScannerInput from './ScannerInput.jsx'
 import SupplierPicker from './SupplierPicker.jsx'
@@ -49,38 +50,50 @@ export default function TaskBForm({ onSaved }) {
 
     setSaving(true); setError('')
     const tempId = newPhotoNamespace()
-    let productUrl = null, barcodeUrl = null, productPath = null, barcodePath = null
+    let productPath = null, barcodePath = null
+
+    const body = {
+      task_type:          'B',
+      store_id:           session.storeId || null,
+      product_barcode:    form.product_barcode.trim(),
+      description:        form.description.trim(),
+      uom:                form.uom,
+      quantity:           Number(form.quantity),
+      supplier_id:        form.supplier_id || null,
+      supplier_name_text: form.supplier_name_text.trim() || null,
+      notes:              form.notes.trim() || null,
+      status:             'pending'
+    }
 
     try {
       setSavingStep('Uploading product photo…')
-      ;({ url: productUrl, path: productPath } = await uploadPhoto({ file: productPhoto, slot: 'product', tempId }))
+      const p = await uploadPhoto({ file: productPhoto, slot: 'product', tempId })
+      productPath = p.path
 
       setSavingStep('Uploading barcode photo…')
-      ;({ url: barcodeUrl, path: barcodePath } = await uploadPhoto({ file: barcodePhoto, slot: 'barcode', tempId }))
+      const b = await uploadPhoto({ file: barcodePhoto, slot: 'barcode', tempId })
+      barcodePath = b.path
 
       setSavingStep('Saving record…')
-      await createTaskRecord({
-        task_type:          'B',
-        store_id:           session.storeId || null,
-        product_barcode:    form.product_barcode.trim(),
-        description:        form.description.trim(),
-        uom:                form.uom,
-        quantity:           Number(form.quantity),
-        supplier_id:        form.supplier_id || null,
-        supplier_name_text: form.supplier_name_text.trim() || null,
-        notes:              form.notes.trim() || null,
-        photo_product_url:  productUrl,
-        photo_barcode_url:  barcodeUrl,
-        status:             'pending'
-      })
+      await createTaskRecord({ ...body, photo_product_url: p.url, photo_barcode_url: b.url })
 
       setForm(EMPTY); setProductPhoto(null); setBarcodePhoto(null)
-      onSaved?.()
+      onSaved?.({ queued: false })
     } catch (err) {
-      setError(err.message || 'Save failed')
-      // Roll back any photos already uploaded
-      if (productPath) deletePhoto(productPath).catch(() => {})
-      if (barcodePath) deletePhoto(barcodePath).catch(() => {})
+      if (isOfflineError(err)) {
+        // Queue the full operation (body + both photo Blobs) and clear the form.
+        await outboxAdd({ kind: 'with_photos', body, photos: { product: productPhoto, barcode: barcodePhoto } })
+        setForm(EMPTY); setProductPhoto(null); setBarcodePhoto(null)
+        // Clean up any partial photo uploads that did make it through before
+        // the connection dropped — they'd otherwise be orphans.
+        if (productPath) deletePhoto(productPath).catch(() => {})
+        if (barcodePath) deletePhoto(barcodePath).catch(() => {})
+        onSaved?.({ queued: true })
+      } else {
+        setError(err.message || 'Save failed')
+        if (productPath) deletePhoto(productPath).catch(() => {})
+        if (barcodePath) deletePhoto(barcodePath).catch(() => {})
+      }
     } finally {
       setSaving(false)
       setSavingStep('')
