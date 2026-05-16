@@ -52,9 +52,9 @@ New types can be added by inserting into `task_types`. Form schema for each live
 | **3A** | **Stores admin** | ✅ done | Back-office CRUD for stores: add/edit/activate/deactivate, reset PIN. SQL `hash_pin(pin)` RPC added. |
 | **3B** | **Suppliers admin (+ CSV upload)** | ✅ done | Suppliers CRUD + bulk CSV import. Tolerant column matching (supplier_code/code, supplier_name/name). AdminNav tabs added. |
 | **4A** | **Reports on screen + review flow** | ✅ done | Reports page renders results below filters. Back-office can review per-row (Complete / No change needed + optional note) or bulk-select pending rows. Records flow back to store with HQ notes. New status: `no_change_needed`. New columns: `review_notes`, `reviewed_at`. |
-| 3C | Reason Codes + DRS Sizes admin | next | lookup_options CRUD with task_types assignment |
-| 3D | Products master admin (CSV upload) | | Bulk CSV import of products |
-| 3E | Settings + photo retention cleanup | | Retention windows UI + scheduled deletion of old photos |
+| **3C** | **Reason Codes + DRS Sizes admin** | ✅ done | lookup_options CRUD with task_types multi-select. Reason Codes and DRS Sizes editable from one page. |
+| **3D** | **Products master admin (CSV upload)** | ✅ done | Search + bulk CSV upsert by `product_id`. Tolerant columns (id/barcode, name/description). |
+| **3E** | **Settings + photo retention cleanup** | ✅ done | Edit app_settings (retention windows etc). "Run photo cleanup now" button uses `list_old_photos` SQL function + Supabase Storage REST DELETE. |
 | **4B** | **Modern dashboard + design refresh** | ✅ done | Glass-style light theme, warm orange accent. New Dashboard page at `/dashboard` with KPIs, 14-day activity chart (inline SVG), by-task-type bars, by-store bars (BO), recent activity feed. `GET /dashboard/stats` aggregates server-side. |
 | 3 | Master admin (back office) | | CRUD UI for Stores, Suppliers, Reason Codes, DRS Sizes, Products. CSV bulk upload |
 | 4 | Reports + Modern Dashboard | | Per-task-type CSV with type-specific columns. Combined "All" report. Multi-filter (stores, task types, datetime). KPIs and charts |
@@ -158,6 +158,7 @@ Type-specific fields go in `details jsonb` (e.g. reason_code, current_price, pri
 ### SQL functions
 - `verify_pin(hash, pin) → table(result boolean)` — `crypt(pin, hash) = hash`
 - `hash_pin(pin) → table(hash text)` — `crypt(pin, gen_salt('bf'))`, used by `/admin/stores` to set new PINs
+- `list_old_photos(days int) → table(name text, created_at timestamptz)` — used by `/admin/cleanup/photos` to find photos past the retention window in the `task-photos` bucket
 
 ### Indexes
 `idx_tr_store_id · idx_tr_task_type · idx_tr_status · idx_tr_created_at · idx_tr_store_date · idx_tr_supplier · idx_suppliers_active · idx_lookup_kind`
@@ -190,6 +191,16 @@ Type-specific fields go in `details jsonb` (e.g. reason_code, current_price, pri
 | POST   | `/admin/suppliers` | back-office | Create one. Body: `{supplier_code?, supplier_name}` |
 | POST   | `/admin/suppliers/bulk` | back-office | Bulk insert (client-parsed CSV) |
 | PATCH  | `/admin/suppliers/:id` | back-office | Edit `supplier_code`, `supplier_name`, `is_active` |
+| GET    | `/admin/lookup-options?kind=` | back-office | List reason codes / DRS sizes |
+| POST   | `/admin/lookup-options` | back-office | Create option. Body: `{kind, label, task_types[], sort_order?}` |
+| PATCH  | `/admin/lookup-options/:id` | back-office | Edit label/task_types/sort/is_active |
+| DELETE | `/admin/lookup-options/:id` | back-office | Hard delete |
+| GET    | `/admin/products?q=&limit=` | back-office | Search/list products master |
+| GET    | `/admin/products/count` | back-office | Total products row count |
+| POST   | `/admin/products/bulk` | back-office | Upsert (on `product_id`) — CSV bulk import |
+| GET    | `/admin/settings` | back-office | List app_settings (excluding back-office PIN hash) |
+| PATCH  | `/admin/settings` | back-office | Body: `{key: value, …}` — upserts |
+| POST   | `/admin/cleanup/photos` | back-office | Delete photos older than `photo_retention_days` |
 | POST   | `/task-records/bulk-review` | back-office | Body: `{ids[], status: completed\|no_change_needed, review_notes?}` |
 | GET    | `/dashboard/stats?from=&to=&storeId=` | auth | Aggregated KPIs, by_task_type, by_store, by_day (14d), recent |
 

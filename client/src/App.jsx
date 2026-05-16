@@ -7,6 +7,9 @@ import Tasks from './pages/Tasks.jsx'
 import Reports from './pages/Reports.jsx'
 import AdminStores from './pages/AdminStores.jsx'
 import AdminSuppliers from './pages/AdminSuppliers.jsx'
+import AdminLookups from './pages/AdminLookups.jsx'
+import AdminProducts from './pages/AdminProducts.jsx'
+import AdminSettings from './pages/AdminSettings.jsx'
 import { setToken, clearToken } from './lib/api.js'
 
 export const StoreContext = createContext(null)
@@ -64,6 +67,9 @@ export default function App() {
             <Route path="/admin"            element={<Navigate to="/admin/stores" replace />} />
             <Route path="/admin/stores"     element={<AdminStores />} />
             <Route path="/admin/suppliers"  element={<AdminSuppliers />} />
+            <Route path="/admin/lookups"    element={<AdminLookups />} />
+            <Route path="/admin/products"   element={<AdminProducts />} />
+            <Route path="/admin/settings"   element={<AdminSettings />} />
             <Route path="*"                 element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </main>

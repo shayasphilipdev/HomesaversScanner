@@ -135,3 +135,21 @@ export const adminListSuppliers  = () => request('/admin/suppliers')
 export const adminCreateSupplier = (supplier) => request('/admin/suppliers', { method: 'POST', body: supplier })
 export const adminUpdateSupplier = (id, updates) => request(`/admin/suppliers/${id}`, { method: 'PATCH', body: updates })
 export const adminBulkSuppliers  = (rows) => request('/admin/suppliers/bulk', { method: 'POST', body: rows })
+
+export const adminListLookups   = (kind) => request('/admin/lookup-options' + (kind ? `?kind=${kind}` : ''))
+export const adminCreateLookup  = (opt) => request('/admin/lookup-options', { method: 'POST', body: opt })
+export const adminUpdateLookup  = (id, updates) => request(`/admin/lookup-options/${id}`, { method: 'PATCH', body: updates })
+export const adminDeleteLookup  = (id) => request(`/admin/lookup-options/${id}`, { method: 'DELETE' })
+
+export const adminListProducts  = ({ limit, q } = {}) => {
+  const p = new URLSearchParams()
+  if (limit) p.set('limit', limit)
+  if (q)     p.set('q', q)
+  return request('/admin/products' + (p.toString() ? `?${p}` : ''))
+}
+export const adminProductsCount = () => request('/admin/products/count')
+export const adminBulkProducts  = (rows) => request('/admin/products/bulk', { method: 'POST', body: rows })
+
+export const adminGetSettings    = () => request('/admin/settings')
+export const adminUpdateSettings = (updates) => request('/admin/settings', { method: 'PATCH', body: updates })
+export const adminCleanupPhotos  = () => request('/admin/cleanup/photos', { method: 'POST' })

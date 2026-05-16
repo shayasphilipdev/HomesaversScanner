@@ -287,6 +287,166 @@ export async function onRequest(context) {
       return json(updated[0])
     }
 
+    // ── Back-office admin: lookup_options (reason codes, DRS sizes) ──────
+
+    if (path === '/admin/lookup-options' && method === 'GET') {
+      if (!isBO) return err('Forbidden', 403)
+      const kind = url.searchParams.get('kind')
+      const params = {
+        select: 'id,kind,label,task_types,sort_order,is_active,created_at',
+        order:  'kind.asc,sort_order.asc,label.asc'
+      }
+      if (kind) params.kind = `eq.${kind}`
+      return json(await db.select('lookup_options', params))
+    }
+
+    if (path === '/admin/lookup-options' && method === 'POST') {
+      if (!isBO) return err('Forbidden', 403)
+      const { kind, label, task_types = [], sort_order = 0 } = await request.json()
+      if (!kind || !label) return err('kind and label required', 400)
+      const inserted = await db.insert('lookup_options', {
+        kind, label, task_types, sort_order, is_active: true
+      })
+      return json(inserted[0] ?? inserted, 201)
+    }
+
+    const adminLookupMatch = path.match(/^\/admin\/lookup-options\/([a-f0-9-]+)$/)
+    if (adminLookupMatch && method === 'PATCH') {
+      if (!isBO) return err('Forbidden', 403)
+      const id   = adminLookupMatch[1]
+      const body = await request.json()
+      const updates = {}
+      if (body.label       !== undefined) updates.label       = body.label
+      if (body.task_types  !== undefined) updates.task_types  = body.task_types
+      if (body.sort_order  !== undefined) updates.sort_order  = Number(body.sort_order) || 0
+      if (body.is_active   !== undefined) updates.is_active   = !!body.is_active
+      if (!Object.keys(updates).length) return err('No editable fields supplied', 400)
+      const updated = await db.update('lookup_options', { id: `eq.${id}` }, updates)
+      if (!updated.length) return err('Option not found', 404)
+      return json(updated[0])
+    }
+
+    if (adminLookupMatch && method === 'DELETE') {
+      if (!isBO) return err('Forbidden', 403)
+      await db.remove('lookup_options', { id: `eq.${adminLookupMatch[1]}` })
+      return json({ ok: true })
+    }
+
+    // ── Back-office admin: products master ───────────────────────────────
+
+    if (path === '/admin/products' && method === 'GET') {
+      if (!isBO) return err('Forbidden', 403)
+      const limit = url.searchParams.get('limit') || '100'
+      const q     = url.searchParams.get('q')
+      const params = {
+        select: 'id,product_id,description,uom,category,is_active,updated_at',
+        order:  'updated_at.desc',
+        limit
+      }
+      if (q) params['or'] = `(product_id.ilike.*${q}*,description.ilike.*${q}*)`
+      return json(await db.select('products', params))
+    }
+
+    if (path === '/admin/products/count' && method === 'GET') {
+      if (!isBO) return err('Forbidden', 403)
+      // Use a HEAD request with count=exact to get just the total
+      const headRes = await fetch(`${env.SUPABASE_URL}/rest/v1/products?select=id`, {
+        method: 'HEAD',
+        headers: {
+          'apikey':         env.SUPABASE_ANON_KEY,
+          'Authorization':  `Bearer ${env.SUPABASE_ANON_KEY}`,
+          'Prefer':         'count=exact',
+          'Range-Unit':     'items',
+          'Range':          '0-0'
+        }
+      })
+      const cr = headRes.headers.get('content-range') || ''
+      const total = Number(cr.split('/')[1]) || 0
+      return json({ count: total })
+    }
+
+    // Bulk upsert from a client-parsed CSV (key = product_id).
+    if (path === '/admin/products/bulk' && method === 'POST') {
+      if (!isBO) return err('Forbidden', 403)
+      const rows = await request.json()
+      if (!Array.isArray(rows) || !rows.length) return err('Empty payload', 400)
+      const now = new Date().toISOString()
+      const clean = rows
+        .filter(r => r?.product_id && String(r.product_id).trim())
+        .map(r => ({
+          product_id:  String(r.product_id).trim(),
+          description: r.description?.trim() || null,
+          uom:         r.uom?.trim() || null,
+          category:    r.category?.trim() || null,
+          is_active:   true,
+          updated_at:  now
+        }))
+      if (!clean.length) return err('No valid rows', 400)
+      const upsertRes = await fetch(`${env.SUPABASE_URL}/rest/v1/products?on_conflict=product_id`, {
+        method: 'POST',
+        headers: {
+          'apikey':        env.SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`,
+          'Content-Type':  'application/json',
+          'Prefer':        'return=representation,resolution=merge-duplicates'
+        },
+        body: JSON.stringify(clean)
+      })
+      if (!upsertRes.ok) throw new Error(await upsertRes.text())
+      const written = await upsertRes.json()
+      return json({ written: written.length })
+    }
+
+    // ── Back-office admin: settings ──────────────────────────────────────
+
+    if (path === '/admin/settings' && method === 'GET') {
+      if (!isBO) return err('Forbidden', 403)
+      const rows = await db.select('app_settings', { select: 'key,value,updated_at', order: 'key.asc' })
+      // Hide the back-office PIN hash — it's a secret.
+      return json(rows.filter(r => r.key !== 'backoffice_pin_hash'))
+    }
+
+    if (path === '/admin/settings' && method === 'PATCH') {
+      if (!isBO) return err('Forbidden', 403)
+      const updates = await request.json()  // { key: value, ... }
+      const now = new Date().toISOString()
+      const rows = Object.entries(updates)
+        .filter(([k]) => k !== 'backoffice_pin_hash')
+        .map(([key, value]) => ({ key, value: String(value), updated_at: now }))
+      if (!rows.length) return err('Nothing to update', 400)
+      const upsertRes = await fetch(`${env.SUPABASE_URL}/rest/v1/app_settings?on_conflict=key`, {
+        method: 'POST',
+        headers: {
+          'apikey':        env.SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`,
+          'Content-Type':  'application/json',
+          'Prefer':        'return=representation,resolution=merge-duplicates'
+        },
+        body: JSON.stringify(rows)
+      })
+      if (!upsertRes.ok) throw new Error(await upsertRes.text())
+      return json(await upsertRes.json())
+    }
+
+    // POST /admin/cleanup/photos — delete photos older than photo_retention_days.
+    if (path === '/admin/cleanup/photos' && method === 'POST') {
+      if (!isBO) return err('Forbidden', 403)
+      const [setting] = await db.select('app_settings', { select: 'value', key: 'eq.photo_retention_days' })
+      const days = Math.max(1, Number(setting?.value || 7))
+
+      const old = await db.rpc('list_old_photos', { days })
+      let deleted = 0, failed = 0
+      for (const o of old) {
+        const dRes = await fetch(`${env.SUPABASE_URL}/storage/v1/object/task-photos/${o.name}`, {
+          method:  'DELETE',
+          headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}` }
+        })
+        if (dRes.ok || dRes.status === 404) deleted++
+        else failed++
+      }
+      return json({ deleted, failed, days, scanned: old.length })
+    }
+
     const adminPinMatch = path.match(/^\/admin\/stores\/([a-f0-9-]+)\/reset-pin$/)
     if (adminPinMatch && method === 'POST') {
       if (!isBO) return err('Forbidden', 403)
