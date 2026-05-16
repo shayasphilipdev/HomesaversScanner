@@ -58,7 +58,7 @@ New types can be added by inserting into `task_types`. Form schema for each live
 | **4B** | **Modern dashboard + design refresh** | ✅ done | Claude-style design (warm ivory + coral, Fraunces serif, Inter body). Light theme uses glass morphism (translucent cards + backdrop-blur over a soft body gradient). Dark theme: high-contrast for bright store lighting (deep navy bg, brighter coral + status colors, no blur). Theme toggle in nav, persisted in localStorage, respects OS preference on first load. Reports + Dashboard widen to 1600px on PC. Touch targets ≥ 44px on phones; iOS-safe input font-size. |
 | 3 | Master admin (back office) | | CRUD UI for Stores, Suppliers, Reason Codes, DRS Sizes, Products. CSV bulk upload |
 | 4 | Reports + Modern Dashboard | | Per-task-type CSV with type-specific columns. Combined "All" report. Multi-filter (stores, task types, datetime). KPIs and charts |
-| 5 | Responsive PC layout — partial | 🟡 in progress | Reports + Dashboard widen to 1600px on PC. Mobile: bottom-nav (4 tabs, safe-area inset), thumb-friendly ≥44px targets, iOS-safe input font-size. Toast notifications. Skeleton loaders on Dashboard KPIs. Sidebar nav on desktop still TODO. |
+| **5** | **Responsive PC layout** | ✅ done | Reports + Dashboard widen to 1600px on PC. Three-tier nav: bottom-nav on phones (<720px), top-bar links on tablets (720–1023px), left sidebar on desktops (≥1024px). Thumb-friendly ≥44px targets, iOS-safe input font-size. Toast notifications. Skeleton loaders on Dashboard KPIs. |
 | 6 | Frequency grouping & scheduling | | Daily/Weekly/Monthly/Once-Off groups. Optional scheduling rules |
 | 7 | Offline queue | | IndexedDB queue + service worker. Scan offline, sync on reconnect |
 

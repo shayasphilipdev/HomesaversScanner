@@ -2,6 +2,7 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useState, createContext, useContext } from 'react'
 import StoreSelector from './components/StoreSelector.jsx'
 import Nav from './components/Nav.jsx'
+import Sidebar from './components/Sidebar.jsx'
 import BottomNav from './components/BottomNav.jsx'
 import { ToastProvider } from './components/Toast.jsx'
 import Dashboard from './pages/Dashboard.jsx'
@@ -80,8 +81,10 @@ function Shell() {
   return (
     <div className="app">
       <Nav />
-      <main className={`main-content${wide ? ' main-content--wide' : ''}`}>
-        <Routes>
+      <div className="app-body">
+        <Sidebar />
+        <main className={`main-content${wide ? ' main-content--wide' : ''}`}>
+          <Routes>
             <Route path="/"              element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard"     element={<Dashboard />} />
             <Route path="/tasks"         element={<Tasks />} />
@@ -94,7 +97,8 @@ function Shell() {
             <Route path="/admin/settings"   element={<AdminSettings />} />
           <Route path="*"                 element={<Navigate to="/dashboard" replace />} />
         </Routes>
-      </main>
+        </main>
+      </div>
       <BottomNav />
     </div>
   )

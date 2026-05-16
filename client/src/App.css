@@ -120,12 +120,21 @@ body {
    - Reports + Dashboard get a wider container on PC                    */
 .app { display: flex; flex-direction: column; min-height: 100vh; }
 
+/* Wraps the sidebar + main; sits below the top nav. */
+.app-body {
+  display: flex;
+  flex: 1;
+  width: 100%;
+  align-items: stretch;
+}
+
 .main-content {
   flex: 1;
   width: 100%;
   margin: 0 auto;
   padding: 28px 22px 80px;
   max-width: 1180px;
+  min-width: 0; /* prevents the wide table from blowing out the flex layout */
 }
 
 .main-content--wide { max-width: 1600px; }
@@ -633,6 +642,63 @@ tbody tr:hover { background: var(--bg-soft); }
   color: var(--text-muted);
 }
 .chip-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--primary); }
+
+/* ── Sidebar (desktop only) ── */
+.sidebar {
+  display: none;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 220px;
+  flex-shrink: 0;
+  padding: 22px 14px;
+  background: var(--surface-warm);
+  border-right: 1px solid var(--border);
+  position: sticky;
+  top: 62px;                                   /* sits just under the top nav */
+  align-self: flex-start;
+  height: calc(100vh - 62px);
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 14px;
+  transition: background .15s, color .15s;
+  min-height: 42px;
+}
+.sidebar-link:hover { background: var(--bg-soft); color: var(--text); }
+.sidebar-link.active {
+  background: var(--primary-tint);
+  color: var(--primary);
+}
+[data-theme="dark"] .sidebar-link.active { background: var(--primary-soft); }
+
+.sidebar-icon { font-size: 16px; width: 20px; text-align: center; opacity: .85; }
+.sidebar-label { flex: 1; }
+
+.sidebar-footer {
+  padding: 10px 14px 4px;
+  border-top: 1px solid var(--border-soft);
+}
+
+/* Hide top-nav page links once the sidebar is visible, and ask the
+   sidebar to show itself. */
+@media (min-width: 1024px) {
+  .sidebar { display: flex; }
+  .nav > .nav-link { display: none; }
+}
 
 /* ── Toast notifications (stack, bottom-right desktop / bottom-center phone) ── */
 .toast-stack {
