@@ -4,6 +4,7 @@ import {
   getStores, getTaskTypes, getToken, getTaskRecords,
   updateTaskRecord, bulkReviewTaskRecords
 } from '../lib/api.js'
+import { useToast } from '../components/Toast.jsx'
 
 function toLocalInput(d) {
   const pad = n => String(n).padStart(2, '0')
@@ -26,6 +27,7 @@ const STATUS_LABEL = {
 
 export default function Reports() {
   const { session } = useStore()
+  const toast = useToast()
   const isBO = session.mode === 'backoffice'
 
   const now      = new Date()
@@ -123,11 +125,14 @@ export default function Reports() {
     }
     setBusy(true); setError('')
     try {
-      await bulkReviewTaskRecords({ ids: [...selected], status, review_notes: note || null })
+      const res = await bulkReviewTaskRecords({ ids: [...selected], status, review_notes: note || null })
+      const n = res.updated ?? selected.size
+      const label = status === 'completed' ? 'completed' : 'marked "no change needed"'
+      toast.success(`${n} record${n === 1 ? '' : 's'} ${label}.`)
       setSelected(new Set())
       await runReport()
     } catch (e) {
-      setError(e.message)
+      setError(e.message); toast.error(e.message)
     } finally {
       setBusy(false)
     }
@@ -141,10 +146,11 @@ export default function Reports() {
         review_notes: reviewRowId === id && reviewNote.trim() ? reviewNote.trim() : null,
         ...(status === 'completed' ? { completed_at: new Date().toISOString() } : {})
       })
+      toast.success(status === 'completed' ? 'Marked complete.' : 'Marked "no change needed".')
       setReviewRowId(null); setReviewNote('')
       await runReport()
     } catch (e) {
-      setError(e.message)
+      setError(e.message); toast.error(e.message)
     } finally {
       setBusy(false)
     }

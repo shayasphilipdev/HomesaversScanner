@@ -3,6 +3,7 @@ import { useStore } from '../App.jsx'
 import { adminListProducts, adminProductsCount, adminBulkProducts } from '../lib/api.js'
 import { parseCSV } from '../lib/csv.js'
 import AdminNav from '../components/AdminNav.jsx'
+import { useToast } from '../components/Toast.jsx'
 
 // Back-office only — Product Master admin.
 // - Shows the most-recent N products + a search box.
@@ -99,6 +100,7 @@ export default function AdminProducts() {
 }
 
 function BulkUpload({ onDone }) {
+  const toast = useToast()
   const [preview, setPreview] = useState(null)
   const [saving, setSaving]   = useState(false)
   const [err, setErr]         = useState('')
@@ -144,9 +146,9 @@ function BulkUpload({ onDone }) {
     try {
       const res = await adminBulkProducts(preview.rows)
       setPreview(null)
-      alert(`Upserted ${res.written} product(s).`)
+      toast.success(`Upserted ${res.written} product${res.written === 1 ? '' : 's'}.`)
       onDone()
-    } catch (e) { setErr(e.message) } finally { setSaving(false) }
+    } catch (e) { setErr(e.message); toast.error(e.message) } finally { setSaving(false) }
   }
 
   return (

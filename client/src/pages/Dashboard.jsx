@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useStore } from '../App.jsx'
 import { getDashboardStats, getStores } from '../lib/api.js'
+import Skeleton from '../components/Skeleton.jsx'
 
 const STATUS_LABEL = {
   pending:          'Pending',
@@ -84,10 +85,10 @@ export default function Dashboard() {
       {error && <div className="login-error">{error}</div>}
 
       <div className="kpi-grid">
-        <KpiCard label="Total records"    value={totals.all}             feature  sub={isBO ? 'All stores' : session.storeName} />
-        <KpiCard label="Pending review"   value={totals.pending}         sub="Awaiting HQ action" />
-        <KpiCard label="HQ reviewed"      value={reviewed}               sub={`${totals.completed} complete · ${totals.no_change_needed} no change`} />
-        <KpiCard label="Store confirmed"  value={totals.store_completed} sub="Loop closed" />
+        <KpiCard loading={loading} label="Total records"    value={totals.all}             feature sub={isBO ? 'All stores' : session.storeName} />
+        <KpiCard loading={loading} label="Pending review"   value={totals.pending}         sub="Awaiting HQ action" />
+        <KpiCard loading={loading} label="HQ reviewed"      value={reviewed}               sub={`${totals.completed} complete · ${totals.no_change_needed} no change`} />
+        <KpiCard loading={loading} label="Store confirmed"  value={totals.store_completed} sub="Loop closed" />
       </div>
 
       <div className="dash-row">
@@ -106,12 +107,14 @@ export default function Dashboard() {
   )
 }
 
-function KpiCard({ label, value, sub, feature }) {
+function KpiCard({ label, value, sub, feature, loading }) {
   return (
     <div className={`kpi-card${feature ? ' kpi-feature' : ''}`}>
       <div className="kpi-label">{label}</div>
-      <div className="kpi-value">{Number(value || 0).toLocaleString('en-IE')}</div>
-      {sub && <div className="kpi-sub">{sub}</div>}
+      <div className="kpi-value">
+        {loading ? <Skeleton w={80} h={28} /> : Number(value || 0).toLocaleString('en-IE')}
+      </div>
+      {sub && <div className="kpi-sub">{loading ? <Skeleton w={140} h={12} /> : sub}</div>}
     </div>
   )
 }

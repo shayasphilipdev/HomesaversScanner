@@ -4,9 +4,11 @@ import { getTaskRecords, getTaskTypes } from '../lib/api.js'
 import TaskTypePicker from '../components/TaskTypePicker.jsx'
 import TaskForm from '../components/TaskForm.jsx'
 import TaskRecordList from '../components/TaskRecordList.jsx'
+import { useToast } from '../components/Toast.jsx'
 
 export default function Tasks() {
   const { session } = useStore()
+  const toast = useToast()
   const isBO = session.mode === 'backoffice'
 
   const [taskTypes, setTaskTypes] = useState([])
@@ -66,7 +68,12 @@ export default function Tasks() {
 
       <TaskTypePicker taskTypes={taskTypes} selected={selectedType} onSelect={setSelectedType} />
 
-      {selectedType && !isBO && <TaskForm taskType={selectedType} onSaved={load} />}
+      {selectedType && !isBO && (
+        <TaskForm
+          taskType={selectedType}
+          onSaved={() => { toast.success('Record saved.'); load() }}
+        />
+      )}
 
       <div className="flex-row" style={{ marginBottom: 16, flexWrap: 'wrap', gap: 6 }}>
         {[

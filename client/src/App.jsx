@@ -2,6 +2,8 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useState, createContext, useContext } from 'react'
 import StoreSelector from './components/StoreSelector.jsx'
 import Nav from './components/Nav.jsx'
+import BottomNav from './components/BottomNav.jsx'
+import { ToastProvider } from './components/Toast.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Tasks from './pages/Tasks.jsx'
 import Reports from './pages/Reports.jsx'
@@ -52,11 +54,19 @@ export default function App() {
     setSession(null)
   }
 
-  if (!session) return <StoreSelector onLogin={login} />
+  if (!session) {
+    return (
+      <ToastProvider>
+        <StoreSelector onLogin={login} />
+      </ToastProvider>
+    )
+  }
 
   return (
     <StoreContext.Provider value={{ session, logout }}>
-      <Shell />
+      <ToastProvider>
+        <Shell />
+      </ToastProvider>
     </StoreContext.Provider>
   )
 }
@@ -85,6 +95,7 @@ function Shell() {
           <Route path="*"                 element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </main>
+      <BottomNav />
     </div>
   )
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useStore } from '../App.jsx'
 import { adminGetSettings, adminUpdateSettings, adminCleanupPhotos } from '../lib/api.js'
 import AdminNav from '../components/AdminNav.jsx'
+import { useToast } from '../components/Toast.jsx'
 
 // Friendly labels for the known app_settings keys. New keys default to a
 // generic label so back office can still see/edit them without a redeploy.
@@ -22,6 +23,7 @@ const KEY_META = {
 
 export default function AdminSettings() {
   const { session } = useStore()
+  const toast = useToast()
   const isBO = session.mode === 'backoffice'
 
   const [settings, setSettings] = useState([])
@@ -58,8 +60,9 @@ export default function AdminSettings() {
       const changed  = Object.fromEntries(Object.entries(values).filter(([k, v]) => v !== original[k]))
       if (!Object.keys(changed).length) { setDirty(false); return }
       await adminUpdateSettings(changed)
+      toast.success('Settings saved.')
       await load()
-    } catch (e) { setError(e.message) } finally { setSaving(false) }
+    } catch (e) { setError(e.message); toast.error(e.message) } finally { setSaving(false) }
   }
 
   const runCleanup = async () => {
@@ -68,7 +71,8 @@ export default function AdminSettings() {
     try {
       const res = await adminCleanupPhotos()
       setCleanupResult(res)
-    } catch (e) { setError(e.message) } finally { setCleanupBusy(false) }
+      toast.success(`Photo cleanup complete — ${res.deleted} deleted.`)
+    } catch (e) { setError(e.message); toast.error(e.message) } finally { setCleanupBusy(false) }
   }
 
   if (!isBO) {

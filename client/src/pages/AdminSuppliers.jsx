@@ -5,6 +5,7 @@ import {
 } from '../lib/api.js'
 import { parseCSV } from '../lib/csv.js'
 import AdminNav from '../components/AdminNav.jsx'
+import { useToast } from '../components/Toast.jsx'
 
 // Back-office only — Suppliers admin.
 // - List all suppliers (active + inactive)
@@ -144,6 +145,7 @@ function AddSupplier({ onCreated }) {
 }
 
 function BulkUpload({ onDone }) {
+  const toast = useToast()
   const [preview, setPreview] = useState(null)  // { rows: [{supplier_code?, supplier_name}], warnings: [] }
   const [saving, setSaving]   = useState(false)
   const [err, setErr]         = useState('')
@@ -186,8 +188,8 @@ function BulkUpload({ onDone }) {
       const res = await adminBulkSuppliers(preview.rows)
       setPreview(null)
       onDone()
-      alert(`Imported ${res.inserted} supplier(s).`)
-    } catch (e) { setErr(e.message) } finally { setSaving(false) }
+      toast.success(`Imported ${res.inserted} supplier${res.inserted === 1 ? '' : 's'}.`)
+    } catch (e) { setErr(e.message); toast.error(e.message) } finally { setSaving(false) }
   }
 
   return (
