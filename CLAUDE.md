@@ -145,11 +145,11 @@ Instance generation: lazy — `ensureInstancesExist(db, storeId, date)` called b
 |---|---|---|
 | 0–7 | Foundation → PWA/offline | ✅ done |
 | 8 | Old roles/areas design | ⏸ superseded |
-| 9A | Areas table + admin UI | 📐 planned |
-| 9B | Users table + role-aware auth | 📐 planned |
-| 9C | Task templates (CRUD + 47 seeds) | 📐 planned |
-| 9D | Store tasks page + completion | 📐 planned |
-| 9E | Store task reporting + dashboard | 📐 planned |
+| 9A | Areas admin UI + store dropdown | ✅ done |
+| 9B | Users table + role-aware auth + Staff/HQ login tab | ✅ done |
+| 9C | products.supplier_id + lookup join + admin dropdown | ✅ done |
+| 9D | Task templates table + admin CRUD + create modal | ✅ done |
+| 9E | Store tasks page + completion + lazy generator + stats | ✅ done (no template seeds shipped) |
 
 ---
 

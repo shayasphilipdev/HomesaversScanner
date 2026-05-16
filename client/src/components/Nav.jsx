@@ -19,8 +19,9 @@ export default function Nav() {
       <span className="nav-brand">Homesavers</span>
 
       <NavLink to="/dashboard" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Dashboard</NavLink>
-      <NavLink to="/tasks"     className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Tasks</NavLink>
-      <NavLink to="/reports"   className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Reports</NavLink>
+      <NavLink to="/tasks"        className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>HQ Tasks</NavLink>
+      <NavLink to="/store-tasks"  className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Store Tasks</NavLink>
+      <NavLink to="/reports"      className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Reports</NavLink>
 
       {session.mode === 'backoffice' && (
         <NavLink to="/admin/stores" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Admin</NavLink>

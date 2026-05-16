@@ -9,6 +9,8 @@ import Dashboard from './pages/Dashboard.jsx'
 import Tasks from './pages/Tasks.jsx'
 import Reports from './pages/Reports.jsx'
 import Sync from './pages/Sync.jsx'
+import StoreTasks from './pages/StoreTasks.jsx'
+import AdminTaskTemplates from './pages/AdminTaskTemplates.jsx'
 import AdminStores from './pages/AdminStores.jsx'
 import AdminAreas from './pages/AdminAreas.jsx'
 import AdminUsers from './pages/AdminUsers.jsx'
@@ -93,6 +95,8 @@ function Shell() {
             <Route path="/tasks"         element={<Tasks />} />
             <Route path="/reports"       element={<Reports />} />
             <Route path="/sync"          element={<Sync />} />
+            <Route path="/store-tasks"   element={<StoreTasks />} />
+            <Route path="/admin/task-templates" element={<AdminTaskTemplates />} />
             <Route path="/admin"            element={<Navigate to="/admin/stores" replace />} />
             <Route path="/admin/stores"     element={<AdminStores />} />
             <Route path="/admin/areas"      element={<AdminAreas />} />

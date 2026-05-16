@@ -10,7 +10,8 @@ export default function BottomNav() {
 
   const items = [
     { to: '/dashboard',     icon: '◧', label: 'Home' },
-    { to: '/tasks',         icon: '✚', label: 'Tasks' },
+    { to: '/store-tasks',   icon: '☑', label: 'Tasks' },
+    { to: '/tasks',         icon: '✚', label: 'HQ' },
     { to: '/reports',       icon: '▤', label: 'Reports' }
   ]
   if (isBO) items.push({ to: '/admin/stores', icon: '⚙', label: 'Admin' })

@@ -156,6 +156,80 @@ const json = (data, status = 200) =>
 
 const err = (msg, status = 400) => json({ error: msg }, status)
 
+// ── Store task period helpers (Phase 9E) ─────────────────────────────────
+// period_key formats: '2026-05-17' daily · '2026-W21' weekly ·
+// '2026-05' monthly · '2026' yearly · 'once_<template_id>' once-off.
+function isoWeek(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
+  const dayNum = d.getUTCDay() || 7
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum)
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1))
+  const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7)
+  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`
+}
+function periodKeyFor(template, date) {
+  const iso = date.toISOString().slice(0, 10)
+  switch (template.frequency) {
+    case 'daily':    return iso
+    case 'weekly':   return isoWeek(date)
+    case 'monthly':  return iso.slice(0, 7)
+    case 'yearly':   return iso.slice(0, 4)
+    case 'once_off': return `once_${template.id}`
+    default:         return iso
+  }
+}
+function templateAppliesToStore(template, store) {
+  switch (template.applies_to) {
+    case 'all':    return true
+    case 'area':   return Array.isArray(template.area_ids)  && template.area_ids.includes(store.area_id)
+    case 'stores':
+    case 'one':    return Array.isArray(template.store_ids) && template.store_ids.includes(store.id)
+    default:       return false
+  }
+}
+
+// Lazy generator — called by /store-tasks/today. Reads active templates,
+// figures out which ones apply to this store for the given date's period
+// keys, and inserts any missing instances. Idempotent thanks to the
+// UNIQUE (template_id, store_id, period_key) constraint.
+async function ensureInstancesExist(db, env, storeId, date) {
+  const [store] = await db.select('stores', { select: 'id,area_id', id: `eq.${storeId}`, limit: '1' })
+  if (!store) return 0
+
+  const templates = await db.select('store_task_templates', {
+    select: 'id,frequency,applies_to,area_ids,store_ids,is_active',
+    is_active: 'eq.true'
+  })
+  const dueIso = date.toISOString().slice(0, 10)
+  const toInsert = []
+  for (const t of templates) {
+    if (!templateAppliesToStore(t, store)) continue
+    toInsert.push({
+      template_id: t.id,
+      store_id:    store.id,
+      period_key:  periodKeyFor(t, date),
+      due_date:    dueIso,
+      status:      'pending'
+    })
+  }
+  if (!toInsert.length) return 0
+
+  // Upsert ignoring conflicts on (template_id, store_id, period_key).
+  const upsertRes = await fetch(`${env.SUPABASE_URL}/rest/v1/store_task_instances?on_conflict=template_id,store_id,period_key`, {
+    method: 'POST',
+    headers: {
+      'apikey':        env.SUPABASE_ANON_KEY,
+      'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`,
+      'Content-Type':  'application/json',
+      'Prefer':        'return=representation,resolution=ignore-duplicates'
+    },
+    body: JSON.stringify(toInsert)
+  })
+  if (!upsertRes.ok) return 0
+  const written = await upsertRes.json()
+  return Array.isArray(written) ? written.length : 0
+}
+
 // CSV builder with custom column list. Each row is a flat object.
 function toCSV(rows, cols) {
   const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`
@@ -719,6 +793,219 @@ export async function onRequest(context) {
       return json({ ok: true })
     }
 
+    // ── Store task templates (Phase 9D) ──────────────────────────────────
+
+    if (path === '/admin/task-templates' && method === 'GET') {
+      if (!canCreateTasks(session) && !isAdminRole(session)) return err('Forbidden', 403)
+      const rows = await db.select('store_task_templates', {
+        select: '*',
+        order: 'sort_order.asc,title.asc'
+      })
+      return json(rows)
+    }
+
+    if (path === '/admin/task-templates' && method === 'POST') {
+      if (!canCreateTasks(session)) return err('Forbidden', 403)
+      const b = await request.json()
+      if (!b.title || !b.title.trim()) return err('Title is required', 400)
+      if (!['daily','weekly','monthly','yearly','once_off'].includes(b.frequency || 'daily'))
+        return err('Invalid frequency', 400)
+      if (!['all','area','stores','one'].includes(b.applies_to || 'all'))
+        return err('Invalid applies_to', 400)
+
+      const inserted = await db.insert('store_task_templates', {
+        title:            b.title.trim(),
+        description:      b.description || null,
+        instructions:     b.instructions || null,
+        category:         b.category || null,
+        frequency:        b.frequency || 'daily',
+        due_window:       b.due_window || null,
+        requires_photo:   !!b.requires_photo,
+        requires_notes:   !!b.requires_notes,
+        applies_to:       b.applies_to || 'all',
+        area_ids:         Array.isArray(b.area_ids)  ? b.area_ids.filter(x => /^[a-f0-9-]{36}$/.test(x))  : [],
+        store_ids:        Array.isArray(b.store_ids) ? b.store_ids.filter(x => /^[a-f0-9-]{36}$/.test(x)) : [],
+        assigned_to_role: b.assigned_to_role || 'all',
+        priority:         b.priority || null,
+        is_active:        b.is_active !== false,
+        sort_order:       Number(b.sort_order) || 0,
+        created_by:       session.user_id || null
+      })
+      return json(inserted[0] ?? inserted, 201)
+    }
+
+    const adminTemplateMatch = path.match(/^\/admin\/task-templates\/([a-f0-9-]+)$/)
+    if (adminTemplateMatch && method === 'PATCH') {
+      if (!canCreateTasks(session)) return err('Forbidden', 403)
+      const id = adminTemplateMatch[1]
+      const b  = await request.json()
+      const u  = { updated_at: new Date().toISOString() }
+      for (const k of ['title','description','instructions','category','frequency','due_window','applies_to','assigned_to_role','priority']) {
+        if (b[k] !== undefined) u[k] = b[k]
+      }
+      if (b.requires_photo !== undefined) u.requires_photo = !!b.requires_photo
+      if (b.requires_notes !== undefined) u.requires_notes = !!b.requires_notes
+      if (b.is_active      !== undefined) u.is_active      = !!b.is_active
+      if (b.sort_order     !== undefined) u.sort_order     = Number(b.sort_order) || 0
+      if (Array.isArray(b.area_ids))  u.area_ids  = b.area_ids.filter(x => /^[a-f0-9-]{36}$/.test(x))
+      if (Array.isArray(b.store_ids)) u.store_ids = b.store_ids.filter(x => /^[a-f0-9-]{36}$/.test(x))
+      const updated = await db.update('store_task_templates', { id: `eq.${id}` }, u)
+      if (!updated.length) return err('Template not found', 404)
+      return json(updated[0])
+    }
+
+    if (adminTemplateMatch && method === 'DELETE') {
+      if (!canCreateTasks(session)) return err('Forbidden', 403)
+      // Soft delete — keep instance history intact.
+      const updated = await db.update('store_task_templates', { id: `eq.${adminTemplateMatch[1]}` }, { is_active: false, updated_at: new Date().toISOString() })
+      if (!updated.length) return err('Template not found', 404)
+      return json({ ok: true })
+    }
+
+    // ── Store task instances (Phase 9E) ──────────────────────────────────
+
+    // Read-only catalogue of templates for the picker (lighter than admin view).
+    if (path === '/task-templates' && method === 'GET') {
+      const rows = await db.select('store_task_templates', {
+        select: 'id,title,frequency,category,applies_to,assigned_to_role,is_active,sort_order',
+        is_active: 'eq.true',
+        order: 'sort_order.asc,title.asc'
+      })
+      return json(rows)
+    }
+
+    if (path === '/store-tasks/today' && method === 'GET') {
+      // Sales assistants / store managers see their own store. BO sees an
+      // optional storeId. Area managers default to all stores in their area.
+      const storeId = isBO ? url.searchParams.get('storeId') : session.storeId
+      const today   = new Date()
+      const todayIso = today.toISOString().slice(0, 10)
+      if (!storeId || storeId === 'all') {
+        // Aggregate view — return all instances due today across all
+        // visible stores. Used by stats / inbox-style listings.
+        const params = {
+          select: 'id,template_id,store_id,period_key,due_date,status,completed_at,photo_url,notes,store_task_templates(title,category,frequency,due_window,requires_photo,requires_notes,assigned_to_role,priority)',
+          due_date: `eq.${todayIso}`,
+          order: 'created_at.asc',
+          limit: '500'
+        }
+        // For area_manager — scope to their area's stores.
+        if (session.role === 'area_manager' && session.area_ids?.length) {
+          const stores = await db.select('stores', { select: 'id', area_id: `in.(${session.area_ids.join(',')})` })
+          const ids = stores.map(s => s.id)
+          if (!ids.length) return json([])
+          params['store_id'] = `in.(${ids.join(',')})`
+        }
+        const rows = await db.select('store_task_instances', params)
+        return json(rows)
+      }
+      // Single-store path — ensure instances exist, then return them.
+      await ensureInstancesExist(db, env, storeId, today)
+      const rows = await db.select('store_task_instances', {
+        select: 'id,template_id,store_id,period_key,due_date,status,completed_at,photo_url,notes,store_task_templates(title,category,frequency,due_window,requires_photo,requires_notes,assigned_to_role,priority)',
+        store_id: `eq.${storeId}`,
+        due_date: `eq.${todayIso}`,
+        order: 'created_at.asc'
+      })
+      return json(rows)
+    }
+
+    // POST /store-tasks/generate — manual trigger (BO / task creators).
+    if (path === '/store-tasks/generate' && method === 'POST') {
+      if (!canCreateTasks(session)) return err('Forbidden', 403)
+      const b   = await request.json().catch(() => ({}))
+      const day = b.date ? new Date(b.date) : new Date()
+      const targetStoreId = b.storeId
+
+      let stores = []
+      if (targetStoreId && targetStoreId !== 'all') {
+        stores = [{ id: targetStoreId }]
+      } else {
+        stores = await db.select('stores', { select: 'id,area_id', is_active: 'eq.true' })
+      }
+      let created = 0
+      for (const s of stores) {
+        created += await ensureInstancesExist(db, env, s.id, day)
+      }
+      return json({ created, day: day.toISOString().slice(0, 10), stores: stores.length })
+    }
+
+    // PATCH /store-tasks/:id/complete  body: { photo_url?, notes? }
+    const instCompleteMatch = path.match(/^\/store-tasks\/([a-f0-9-]+)\/complete$/)
+    if (instCompleteMatch && method === 'PATCH') {
+      const id = instCompleteMatch[1]
+      const body = await request.json().catch(() => ({}))
+
+      // Load the instance + its template so we can enforce requires_photo/notes.
+      const [inst] = await db.select('store_task_instances', {
+        select: 'id,store_id,template_id,status,store_task_templates(requires_photo,requires_notes)',
+        id: `eq.${id}`,
+        limit: '1'
+      })
+      if (!inst) return err('Instance not found', 404)
+
+      // Authorization: store users can only complete their own store's items.
+      if (!isBO && inst.store_id !== session.storeId) return err('Forbidden', 403)
+
+      const t = inst.store_task_templates
+      if (t?.requires_photo && !body.photo_url) return err('A photo is required for this task.', 400)
+      if (t?.requires_notes && !(body.notes && String(body.notes).trim())) return err('Notes are required for this task.', 400)
+
+      const updated = await db.update('store_task_instances', { id: `eq.${id}` }, {
+        status:       'completed',
+        photo_url:    body.photo_url || null,
+        notes:        body.notes ? String(body.notes).trim() : null,
+        completed_by: session.user_id || null,
+        completed_at: new Date().toISOString()
+      })
+      if (!updated.length) return err('Instance not found', 404)
+      return json(updated[0])
+    }
+
+    // GET /store-tasks/stats?storeId=&from=&to=
+    if (path === '/store-tasks/stats' && method === 'GET') {
+      const p = url.searchParams
+      const from = p.get('from') || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)
+      const to   = p.get('to')   || new Date().toISOString().slice(0, 10)
+      const storeId = isBO ? p.get('storeId') : session.storeId
+
+      const params = {
+        select: 'store_id,status',
+        and: `(due_date.gte.${from},due_date.lte.${to})`,
+        limit: '5000'
+      }
+      if (storeId && storeId !== 'all') params['store_id'] = `eq.${storeId}`
+      if (!storeId && session.role === 'area_manager' && session.area_ids?.length) {
+        const stores = await db.select('stores', { select: 'id', area_id: `in.(${session.area_ids.join(',')})` })
+        const ids = stores.map(s => s.id)
+        if (ids.length) params['store_id'] = `in.(${ids.join(',')})`
+        else return json({ per_store: [], overall: { total: 0, completed: 0, pending: 0, missed: 0 } })
+      }
+
+      const rows = await db.select('store_task_instances', params)
+      const perStore = {}
+      let total = 0, completed = 0, pending = 0, missed = 0
+      for (const r of rows) {
+        total++
+        if (r.status === 'completed') completed++
+        else if (r.status === 'missed') missed++
+        else pending++
+        const k = r.store_id
+        if (!perStore[k]) perStore[k] = { store_id: k, total: 0, completed: 0, pending: 0, missed: 0 }
+        perStore[k].total++
+        perStore[k][r.status] = (perStore[k][r.status] || 0) + 1
+      }
+      // Join store names
+      const stores = await db.select('stores', { select: 'id,store_name' })
+      const nameOf = Object.fromEntries(stores.map(s => [s.id, s.store_name]))
+      const per_store = Object.values(perStore).map(s => ({
+        ...s,
+        store_name: nameOf[s.store_id] || '',
+        completion_pct: s.total ? Math.round((s.completed * 100) / s.total) : 0
+      })).sort((a, b) => b.total - a.total)
+      return json({ per_store, overall: { total, completed, pending, missed, completion_pct: total ? Math.round((completed * 100) / total) : 0 } })
+    }
+
     // GET /dashboard/stats?from=&to=&storeId=
     if (path === '/dashboard/stats' && method === 'GET') {
       const p = url.searchParams
@@ -830,10 +1117,14 @@ export async function onRequest(context) {
       const tempId = String(form.get('tempId') || '')
 
       if (!file || !slot || !tempId) return err('file, slot, tempId required', 400)
-      if (!['product', 'barcode'].includes(slot)) return err('slot must be product or barcode', 400)
+      if (!['product', 'barcode', 'store_task'].includes(slot)) return err('Invalid slot', 400)
       if (!/^[a-zA-Z0-9-]{8,64}$/.test(tempId))   return err('Invalid tempId', 400)
 
-      const objectPath = `${tempId}/${slot}.jpg`
+      // store_task photos live under their own prefix so the existing
+      // retention rules can target each kind separately if needed.
+      const objectPath = slot === 'store_task'
+        ? `store-tasks/${tempId}.jpg`
+        : `${tempId}/${slot}.jpg`
       const uploadUrl  = `${env.SUPABASE_URL}/storage/v1/object/task-photos/${objectPath}`
 
       const upRes = await fetch(uploadUrl, {
@@ -857,8 +1148,9 @@ export async function onRequest(context) {
     // DELETE /photos?path=<objectPath>   — cleanup on cancel / save failure
     if (path === '/photos' && method === 'DELETE') {
       const objectPath = url.searchParams.get('path') || ''
-      if (!/^[a-zA-Z0-9-]{8,64}\/(product|barcode)\.jpg$/.test(objectPath))
-        return err('Invalid path', 400)
+      const isProductPhoto = /^[a-zA-Z0-9-]{8,64}\/(product|barcode)\.jpg$/.test(objectPath)
+      const isStorePhoto   = /^store-tasks\/[a-zA-Z0-9-]{8,64}\.jpg$/.test(objectPath)
+      if (!isProductPhoto && !isStorePhoto) return err('Invalid path', 400)
       const delUrl = `${env.SUPABASE_URL}/storage/v1/object/task-photos/${objectPath}`
       const dRes   = await fetch(delUrl, {
         method:  'DELETE',

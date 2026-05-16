@@ -186,3 +186,27 @@ export const adminListUsers     = () => request('/admin/users')
 export const adminCreateUser    = (user) => request('/admin/users', { method: 'POST', body: user })
 export const adminUpdateUser    = (id, updates) => request(`/admin/users/${id}`, { method: 'PATCH', body: updates })
 export const adminResetUserPin  = (id, pin) => request(`/admin/users/${id}/reset-pin`, { method: 'POST', body: { pin } })
+
+// ── Store tasks (Phase 9D + 9E) ─────────────────────────────────────────────
+
+export const adminListTemplates   = () => request('/admin/task-templates')
+export const adminCreateTemplate  = (tpl) => request('/admin/task-templates', { method: 'POST', body: tpl })
+export const adminUpdateTemplate  = (id, updates) => request(`/admin/task-templates/${id}`, { method: 'PATCH', body: updates })
+export const adminDeleteTemplate  = (id) => request(`/admin/task-templates/${id}`, { method: 'DELETE' })
+
+export const getStoreTasksToday = ({ storeId } = {}) => {
+  const q = new URLSearchParams()
+  if (storeId) q.set('storeId', storeId)
+  return request('/store-tasks/today' + (q.toString() ? `?${q}` : ''))
+}
+export const completeStoreTask  = (id, { photo_url, notes } = {}) =>
+  request(`/store-tasks/${id}/complete`, { method: 'PATCH', body: { photo_url, notes } })
+export const getStoreTaskStats  = ({ from, to, storeId } = {}) => {
+  const q = new URLSearchParams()
+  if (from)    q.set('from', from)
+  if (to)      q.set('to', to)
+  if (storeId) q.set('storeId', storeId)
+  return request('/store-tasks/stats' + (q.toString() ? `?${q}` : ''))
+}
+export const generateStoreTasks = ({ date, storeId } = {}) =>
+  request('/store-tasks/generate', { method: 'POST', body: { date, storeId } })

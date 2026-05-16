@@ -10,9 +10,10 @@ export default function Sidebar() {
   const { pathname } = useLocation()
 
   const items = [
-    { to: '/dashboard',     icon: '◧', label: 'Dashboard' },
-    { to: '/tasks',         icon: '✚', label: 'Tasks' },
-    { to: '/reports',       icon: '▤', label: 'Reports' }
+    { to: '/dashboard',    icon: '◧', label: 'Dashboard' },
+    { to: '/tasks',        icon: '✚', label: 'HQ Tasks' },
+    { to: '/store-tasks',  icon: '☑', label: 'Store Tasks' },
+    { to: '/reports',      icon: '▤', label: 'Reports' }
   ]
   if (isBO) items.push({ to: '/admin/stores', icon: '⚙', label: 'Admin', match: '/admin' })
 

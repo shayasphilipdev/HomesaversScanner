@@ -3,6 +3,15 @@
 A full snapshot of the app as it stands today. Intended as a self-contained
 orientation doc for any Claude session that opens this repo cold.
 
+> **What changed in Phase 9** (all live):
+> - **9A — Areas admin UI** at `/admin/areas`. Store admin now uses a real Area dropdown (was free-text Region).
+> - **9B — Users + role-aware auth.** New `users` table; the existing store-PIN flow still works because every store has a backfilled `sales_assistant` user. Back-office PIN → `director` user. New **Staff / HQ** login tab (username + PIN) for any non-store role. Token now carries `role`, `user_id`, `area_ids`. Token shape changed — existing logged-in sessions need to log in once.
+> - **9C — `products.supplier_id`** + `/products/lookup` joins suppliers + admin dropdown + CSV `supplier_name` column. Scan result subtly shows the supplier.
+> - **9D — Task templates** (`store_task_templates`). Admin page at `/admin/task-templates`, visible to task creators (`buying_manager`, `area_manager`, `commercial_manager`, `director`). Targeting: all / area / specific stores. Per-role or "everyone" assignment.
+> - **9E — Store tasks page** at `/store-tasks` for everyone; store users see today's checklist with photo + notes completion, managers see compliance % per store. Lazy instance generation via `ensureInstancesExist(db, env, storeId, date)`.
+> - Nav split: "HQ Tasks" (the existing error reporting) vs "Store Tasks" (the new operational checklist).
+> - No seed templates were shipped — admins create from scratch via the new admin page.
+
 ---
 
 ## 1. What it is
