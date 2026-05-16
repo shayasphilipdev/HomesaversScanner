@@ -61,7 +61,7 @@ export default function Tasks() {
         <div>
           <div className="page-title">Tasks</div>
           <div className="page-subtitle">
-            {isBO ? 'All stores' : session.storeName} · {records.length} record{records.length !== 1 ? 's' : ''}
+            {isBO ? 'All stores' : session.storeName} · {records.length} record{records.length !== 1 ? 's' : ''} shown
           </div>
         </div>
       </div>
@@ -109,7 +109,12 @@ export default function Tasks() {
         </button>
       </div>
 
-      <TaskRecordList records={records} loading={loading} onRefresh={load} />
+      <TaskRecordList
+        records={records}
+        loading={loading}
+        onRefresh={load}
+        onOptimisticRemove={(id) => setRecords(rs => rs.filter(r => r.id !== id))}
+      />
     </div>
   )
 }

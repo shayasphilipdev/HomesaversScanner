@@ -16,7 +16,7 @@ function formatDT(iso) {
     + ' ' + d.toLocaleTimeString('en-IE', { hour: '2-digit', minute: '2-digit' })
 }
 
-export default function TaskRecordList({ records, loading, onRefresh }) {
+export default function TaskRecordList({ records, loading, onRefresh, onOptimisticRemove }) {
   const { session } = useStore()
   const isBO = session.mode === 'backoffice'
 
@@ -36,8 +36,15 @@ export default function TaskRecordList({ records, loading, onRefresh }) {
 
   const handleDelete = async (id) => {
     if (!confirm('Delete this record? This can’t be undone.')) return
-    await deleteTaskRecord(id)
-    onRefresh()
+    // Optimistic — drop the row from the table immediately. If the server
+    // rejects, onRefresh() re-fetches and the row reappears.
+    onOptimisticRemove?.(id)
+    try {
+      await deleteTaskRecord(id)
+    } catch (e) {
+      onRefresh()
+      alert('Could not delete: ' + (e?.message || 'unknown error'))
+    }
   }
 
   if (loading) {

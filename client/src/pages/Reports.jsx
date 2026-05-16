@@ -190,7 +190,7 @@ export default function Reports() {
       <div className="page-header">
         <div>
           <div className="page-title">Reports</div>
-          <div className="page-subtitle">View, review and export task records</div>
+          <div className="page-subtitle">View, review and export task records — refine the filters and hit Run report</div>
         </div>
       </div>
 
