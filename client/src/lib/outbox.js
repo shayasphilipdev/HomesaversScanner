@@ -126,6 +126,23 @@ export async function failedCount() {
   return all.filter(r => r.status === 'failed').length
 }
 
+// Clear the failed flag on a single record so the next drain picks it
+// back up. Used by the Sync inspector's per-row "Retry" button.
+export async function markRetry(id) {
+  const db = await openDB()
+  const { store, done } = tx(db, 'readwrite')
+  const get = store.get(id)
+  await new Promise(res => { get.onsuccess = () => res() })
+  const rec = get.result
+  if (rec) {
+    rec.status   = undefined
+    rec.attempts = 0
+    store.put(rec)
+  }
+  await done
+  notifyChanged()
+}
+
 // ── Sync ────────────────────────────────────────────────────────────────────
 
 async function uploadPhotoRaw(blob, slot, tempId, token) {

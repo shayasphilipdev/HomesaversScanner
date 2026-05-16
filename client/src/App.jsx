@@ -8,6 +8,7 @@ import { ToastProvider } from './components/Toast.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Tasks from './pages/Tasks.jsx'
 import Reports from './pages/Reports.jsx'
+import Sync from './pages/Sync.jsx'
 import AdminStores from './pages/AdminStores.jsx'
 import AdminSuppliers from './pages/AdminSuppliers.jsx'
 import AdminLookups from './pages/AdminLookups.jsx'
@@ -89,6 +90,7 @@ function Shell() {
             <Route path="/dashboard"     element={<Dashboard />} />
             <Route path="/tasks"         element={<Tasks />} />
             <Route path="/reports"       element={<Reports />} />
+            <Route path="/sync"          element={<Sync />} />
             <Route path="/admin"            element={<Navigate to="/admin/stores" replace />} />
             <Route path="/admin/stores"     element={<AdminStores />} />
             <Route path="/admin/suppliers"  element={<AdminSuppliers />} />
