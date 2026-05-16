@@ -66,6 +66,7 @@ export const getLookupOptions  = ({ kind, task_type } = {}) => {
   return request(`/lookup-options?${q}`)
 }
 export const getSuppliers      = () => request('/suppliers')
+export const getAreas          = () => request('/areas')
 
 export const getDashboardStats = ({ from, to, storeId } = {}) => {
   const q = new URLSearchParams()
@@ -170,7 +171,12 @@ export const adminListProducts  = ({ limit, q } = {}) => {
 }
 export const adminProductsCount = () => request('/admin/products/count')
 export const adminBulkProducts  = (rows) => request('/admin/products/bulk', { method: 'POST', body: rows })
+export const adminUpdateProduct = (id, updates) => request(`/admin/products/${id}`, { method: 'PATCH', body: updates })
 
 export const adminGetSettings    = () => request('/admin/settings')
 export const adminUpdateSettings = (updates) => request('/admin/settings', { method: 'PATCH', body: updates })
 export const adminCleanupPhotos  = () => request('/admin/cleanup/photos', { method: 'POST' })
+
+export const adminListAreas   = () => request('/admin/areas')
+export const adminCreateArea  = (area) => request('/admin/areas', { method: 'POST', body: area })
+export const adminUpdateArea  = (id, updates) => request(`/admin/areas/${id}`, { method: 'PATCH', body: updates })

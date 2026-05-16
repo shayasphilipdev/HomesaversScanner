@@ -184,7 +184,7 @@ export async function onRequest(context) {
     if (path === '/admin/stores' && method === 'GET') {
       if (!isBO) return err('Forbidden', 403)
       const rows = await db.select('stores', {
-        select: 'id,store_code,store_name,region,is_active,created_at',
+        select: 'id,store_code,store_name,region,area_id,is_active,created_at',
         order:  'store_code.asc'
       })
       return json(rows)
@@ -192,7 +192,7 @@ export async function onRequest(context) {
 
     if (path === '/admin/stores' && method === 'POST') {
       if (!isBO) return err('Forbidden', 403)
-      const { store_code, store_name, region, pin, is_active } = await request.json()
+      const { store_code, store_name, region, area_id, pin, is_active } = await request.json()
       if (!store_code || !store_name) return err('store_code and store_name are required', 400)
       if (!pin || String(pin).length < 4) return err('PIN must be at least 4 characters', 400)
 
@@ -203,11 +203,12 @@ export async function onRequest(context) {
       const inserted = await db.insert('stores', {
         store_code, store_name,
         region:    region || null,
+        area_id:   area_id || null,
         is_active: is_active !== false,
         pin_hash:  hashRow.hash
       })
       const s = inserted[0] ?? inserted
-      return json({ id: s.id, store_code: s.store_code, store_name: s.store_name, region: s.region, is_active: s.is_active, created_at: s.created_at }, 201)
+      return json({ id: s.id, store_code: s.store_code, store_name: s.store_name, region: s.region, area_id: s.area_id, is_active: s.is_active, created_at: s.created_at }, 201)
     }
 
     const adminStoreMatch = path.match(/^\/admin\/stores\/([a-f0-9-]+)$/)
@@ -220,6 +221,7 @@ export async function onRequest(context) {
       if (body.store_code !== undefined) updates.store_code = body.store_code
       if (body.store_name !== undefined) updates.store_name = body.store_name
       if (body.region     !== undefined) updates.region     = body.region
+      if (body.area_id    !== undefined) updates.area_id    = body.area_id || null
       if (body.is_active  !== undefined) updates.is_active  = !!body.is_active
       if (!Object.keys(updates).length) return err('No editable fields supplied', 400)
       const updated = await db.update('stores', { id: `eq.${id}` }, updates)
@@ -287,6 +289,56 @@ export async function onRequest(context) {
       return json(updated[0])
     }
 
+    // ── Areas (read-only for any logged-in user — used in store forms) ───
+
+    if (path === '/areas' && method === 'GET') {
+      const rows = await db.select('areas', {
+        select: 'id,area_code,area_name,is_active',
+        is_active: 'eq.true',
+        order: 'area_name.asc'
+      })
+      return json(rows)
+    }
+
+    // ── Back-office admin: areas ─────────────────────────────────────────
+
+    if (path === '/admin/areas' && method === 'GET') {
+      if (!isBO) return err('Forbidden', 403)
+      const rows = await db.select('areas', {
+        select: 'id,area_code,area_name,is_active,created_at,updated_at',
+        order:  'area_name.asc'
+      })
+      return json(rows)
+    }
+
+    if (path === '/admin/areas' && method === 'POST') {
+      if (!isBO) return err('Forbidden', 403)
+      const { area_code, area_name, is_active } = await request.json()
+      if (!area_name) return err('area_name is required', 400)
+      const inserted = await db.insert('areas', {
+        area_code: area_code || null,
+        area_name,
+        is_active: is_active !== false
+      })
+      return json(inserted[0] ?? inserted, 201)
+    }
+
+    const adminAreaMatch = path.match(/^\/admin\/areas\/([a-f0-9-]+)$/)
+    if (adminAreaMatch && method === 'PATCH') {
+      if (!isBO) return err('Forbidden', 403)
+      const id = adminAreaMatch[1]
+      const body = await request.json()
+      const updates = {}
+      if (body.area_code !== undefined) updates.area_code = body.area_code
+      if (body.area_name !== undefined) updates.area_name = body.area_name
+      if (body.is_active !== undefined) updates.is_active = !!body.is_active
+      if (!Object.keys(updates).length) return err('No editable fields supplied', 400)
+      updates.updated_at = new Date().toISOString()
+      const updated = await db.update('areas', { id: `eq.${id}` }, updates)
+      if (!updated.length) return err('Area not found', 404)
+      return json(updated[0])
+    }
+
     // ── Back-office admin: lookup_options (reason codes, DRS sizes) ──────
 
     if (path === '/admin/lookup-options' && method === 'GET') {
@@ -339,12 +391,33 @@ export async function onRequest(context) {
       const limit = url.searchParams.get('limit') || '100'
       const q     = url.searchParams.get('q')
       const params = {
-        select: 'id,product_id,description,uom,category,is_active,updated_at',
+        select: 'id,product_id,description,uom,category,supplier_id,suppliers(supplier_name),is_active,updated_at',
         order:  'updated_at.desc',
         limit
       }
       if (q) params['or'] = `(product_id.ilike.*${q}*,description.ilike.*${q}*)`
-      return json(await db.select('products', params))
+      const rows = await db.select('products', params)
+      return json(rows.map(r => ({ ...r, supplier_name: r.suppliers?.supplier_name || null, suppliers: undefined })))
+    }
+
+    // PATCH /admin/products/:id — used by the inline supplier picker on the
+    // products admin page.
+    const adminProductMatch = path.match(/^\/admin\/products\/([a-f0-9-]+)$/)
+    if (adminProductMatch && method === 'PATCH') {
+      if (!isBO) return err('Forbidden', 403)
+      const id   = adminProductMatch[1]
+      const body = await request.json()
+      const updates = {}
+      if (body.description !== undefined) updates.description = body.description || null
+      if (body.uom         !== undefined) updates.uom         = body.uom         || null
+      if (body.category    !== undefined) updates.category    = body.category    || null
+      if (body.supplier_id !== undefined) updates.supplier_id = body.supplier_id || null
+      if (body.is_active   !== undefined) updates.is_active   = !!body.is_active
+      if (!Object.keys(updates).length) return err('No editable fields supplied', 400)
+      updates.updated_at = new Date().toISOString()
+      const updated = await db.update('products', { id: `eq.${id}` }, updates)
+      if (!updated.length) return err('Product not found', 404)
+      return json(updated[0])
     }
 
     if (path === '/admin/products/count' && method === 'GET') {
@@ -366,21 +439,41 @@ export async function onRequest(context) {
     }
 
     // Bulk upsert from a client-parsed CSV (key = product_id).
+    // Optional supplier_name column is resolved to supplier_id by name match
+    // (case-insensitive) against active suppliers; unknown names are ignored.
     if (path === '/admin/products/bulk' && method === 'POST') {
       if (!isBO) return err('Forbidden', 403)
       const rows = await request.json()
       if (!Array.isArray(rows) || !rows.length) return err('Empty payload', 400)
       const now = new Date().toISOString()
+
+      // Pre-load suppliers once for the supplier_name → supplier_id map.
+      const allSuppliers = await db.select('suppliers', { select: 'id,supplier_name,is_active' })
+      const supplierByName = new Map(
+        allSuppliers
+          .filter(s => s.is_active)
+          .map(s => [s.supplier_name.trim().toLowerCase(), s.id])
+      )
+
       const clean = rows
         .filter(r => r?.product_id && String(r.product_id).trim())
-        .map(r => ({
-          product_id:  String(r.product_id).trim(),
-          description: r.description?.trim() || null,
-          uom:         r.uom?.trim() || null,
-          category:    r.category?.trim() || null,
-          is_active:   true,
-          updated_at:  now
-        }))
+        .map(r => {
+          // Either explicit supplier_id, or look up by supplier_name.
+          let supplier_id = r.supplier_id && /^[a-f0-9-]{36}$/.test(r.supplier_id) ? r.supplier_id : null
+          if (!supplier_id && r.supplier_name) {
+            const key = String(r.supplier_name).trim().toLowerCase()
+            supplier_id = supplierByName.get(key) || null
+          }
+          return {
+            product_id:  String(r.product_id).trim(),
+            description: r.description?.trim() || null,
+            uom:         r.uom?.trim() || null,
+            category:    r.category?.trim() || null,
+            supplier_id,
+            is_active:   true,
+            updated_at:  now
+          }
+        })
       if (!clean.length) return err('No valid rows', 400)
       const upsertRes = await fetch(`${env.SUPABASE_URL}/rest/v1/products?on_conflict=product_id`, {
         method: 'POST',
@@ -610,13 +703,24 @@ export async function onRequest(context) {
     }
 
     // GET /products/lookup
+    // Joins suppliers so the scan-result UI can show "Supplier: X" subtly.
     if (path === '/products/lookup' && method === 'GET') {
       const code = url.searchParams.get('code')
       if (!code) return json(null)
       const rows = await db.select('products', {
-        select: 'product_id,description,uom', product_id: `eq.${code}`, limit: '1'
+        select: 'product_id,description,uom,supplier_id,suppliers(supplier_name)',
+        product_id: `eq.${code}`,
+        limit: '1'
       })
-      return json(rows[0] ?? null)
+      const r = rows[0]
+      if (!r) return json(null)
+      return json({
+        product_id:    r.product_id,
+        description:   r.description,
+        uom:           r.uom,
+        supplier_id:   r.supplier_id,
+        supplier_name: r.suppliers?.supplier_name || null
+      })
     }
 
     // ── Task records ──────────────────────────────────────────────────────

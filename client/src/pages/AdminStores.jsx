@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useStore } from '../App.jsx'
-import { adminListStores, adminCreateStore, adminUpdateStore, adminResetStorePin } from '../lib/api.js'
+import {
+  adminListStores, adminCreateStore, adminUpdateStore, adminResetStorePin,
+  adminListAreas
+} from '../lib/api.js'
 import AdminNav from '../components/AdminNav.jsx'
 
 // Back-office only — Stores admin.
@@ -13,6 +16,7 @@ export default function AdminStores() {
   const isBO = session.mode === 'backoffice'
 
   const [stores, setStores]     = useState([])
+  const [areas, setAreas]       = useState([])
   const [loading, setLoading]   = useState(true)
   const [error, setError]       = useState('')
   const [editingId, setEditingId] = useState(null)
@@ -21,7 +25,10 @@ export default function AdminStores() {
 
   const load = async () => {
     setLoading(true); setError('')
-    try { setStores(await adminListStores()) }
+    try {
+      const [s, a] = await Promise.all([adminListStores(), adminListAreas()])
+      setStores(s); setAreas(a)
+    }
     catch (e) { setError(e.message) }
     finally { setLoading(false) }
   }
@@ -56,7 +63,7 @@ export default function AdminStores() {
         <button className="btn btn-outline btn-sm" onClick={load}>↻ Refresh</button>
       </div>
 
-      {showAdd && <AddStore onCreated={() => { setShowAdd(false); load() }} />}
+      {showAdd && <AddStore areas={areas} onCreated={() => { setShowAdd(false); load() }} />}
 
       {error && <div className="login-error mt-12">{error}</div>}
 
@@ -72,7 +79,7 @@ export default function AdminStores() {
                 <tr>
                   <th>Code</th>
                   <th>Name</th>
-                  <th>Region</th>
+                  <th>Area</th>
                   <th>Status</th>
                   <th></th>
                 </tr>
@@ -82,6 +89,7 @@ export default function AdminStores() {
                   <StoreRow
                     key={s.id}
                     store={s}
+                    areas={areas}
                     editing={editingId === s.id}
                     resettingPin={pinResetId === s.id}
                     onEdit={() => { setEditingId(s.id); setPinResetId(null) }}
@@ -100,8 +108,8 @@ export default function AdminStores() {
   )
 }
 
-function AddStore({ onCreated }) {
-  const [form, setForm] = useState({ store_code: '', store_name: '', region: '', pin: '' })
+function AddStore({ onCreated, areas = [] }) {
+  const [form, setForm] = useState({ store_code: '', store_name: '', region: '', area_id: '', pin: '' })
   const [saving, setSaving] = useState(false)
   const [err, setErr]       = useState('')
 
@@ -116,9 +124,10 @@ function AddStore({ onCreated }) {
         store_code: form.store_code.trim(),
         store_name: form.store_name.trim(),
         region:     form.region.trim() || null,
+        area_id:    form.area_id || null,
         pin:        form.pin
       })
-      setForm({ store_code: '', store_name: '', region: '', pin: '' })
+      setForm({ store_code: '', store_name: '', region: '', area_id: '', pin: '' })
       onCreated()
     } catch (e) {
       setErr(e.message)
@@ -142,8 +151,13 @@ function AddStore({ onCreated }) {
               <input value={form.store_name} onChange={e => setForm(f => ({ ...f, store_name: e.target.value }))} placeholder="e.g. Cork" />
             </div>
             <div className="form-group">
-              <label>Region</label>
-              <input value={form.region} onChange={e => setForm(f => ({ ...f, region: e.target.value }))} placeholder="e.g. Area 2" />
+              <label>Area</label>
+              <select value={form.area_id} onChange={e => setForm(f => ({ ...f, area_id: e.target.value }))}>
+                <option value="">— Select area —</option>
+                {areas.filter(a => a.is_active).map(a => (
+                  <option key={a.id} value={a.id}>{a.area_name}</option>
+                ))}
+              </select>
             </div>
             <div className="form-group">
               <label>Initial PIN *</label>
@@ -162,8 +176,13 @@ function AddStore({ onCreated }) {
   )
 }
 
-function StoreRow({ store, editing, resettingPin, onEdit, onCancelEdit, onResetPin, onCancelResetPin, onSaved }) {
-  const [form, setForm]   = useState({ store_code: store.store_code, store_name: store.store_name, region: store.region || '' })
+function StoreRow({ store, areas = [], editing, resettingPin, onEdit, onCancelEdit, onResetPin, onCancelResetPin, onSaved }) {
+  const [form, setForm]   = useState({
+    store_code: store.store_code,
+    store_name: store.store_name,
+    region:     store.region || '',
+    area_id:    store.area_id || ''
+  })
   const [newPin, setNewPin] = useState('')
   const [saving, setSaving] = useState(false)
   const [err, setErr]       = useState('')
@@ -174,7 +193,8 @@ function StoreRow({ store, editing, resettingPin, onEdit, onCancelEdit, onResetP
       await adminUpdateStore(store.id, {
         store_code: form.store_code.trim(),
         store_name: form.store_name.trim(),
-        region:     form.region.trim() || null
+        region:     form.region.trim() || null,
+        area_id:    form.area_id || null
       })
       onSaved()
     } catch (e) { setErr(e.message) } finally { setSaving(false) }
@@ -193,12 +213,21 @@ function StoreRow({ store, editing, resettingPin, onEdit, onCancelEdit, onResetP
     catch (e) { setErr(e.message) } finally { setSaving(false) }
   }
 
+  const areaName = (id) => areas.find(a => a.id === id)?.area_name || ''
+
   if (editing) {
     return (
       <tr>
         <td><input value={form.store_code} onChange={e => setForm(f => ({ ...f, store_code: e.target.value }))} style={{ width: 90 }} /></td>
         <td><input value={form.store_name} onChange={e => setForm(f => ({ ...f, store_name: e.target.value }))} /></td>
-        <td><input value={form.region}     onChange={e => setForm(f => ({ ...f, region: e.target.value }))} /></td>
+        <td>
+          <select value={form.area_id} onChange={e => setForm(f => ({ ...f, area_id: e.target.value }))}>
+            <option value="">— None —</option>
+            {areas.filter(a => a.is_active).map(a => (
+              <option key={a.id} value={a.id}>{a.area_name}</option>
+            ))}
+          </select>
+        </td>
         <td>{store.is_active ? <span className="badge badge-completed">Active</span> : <span className="badge badge-pending">Inactive</span>}</td>
         <td>
           {err && <div className="login-error" style={{ marginBottom: 6, fontSize: 12 }}>{err}</div>}
@@ -218,7 +247,7 @@ function StoreRow({ store, editing, resettingPin, onEdit, onCancelEdit, onResetP
       <tr>
         <td className="td-code">{store.store_code}</td>
         <td>{store.store_name}</td>
-        <td>{store.region || <span className="td-muted">—</span>}</td>
+        <td>{areaName(store.area_id) || store.region || <span className="td-muted">—</span>}</td>
         <td>{store.is_active ? <span className="badge badge-completed">Active</span> : <span className="badge badge-pending">Inactive</span>}</td>
         <td>
           {err && <div className="login-error" style={{ marginBottom: 6, fontSize: 12 }}>{err}</div>}
@@ -238,7 +267,7 @@ function StoreRow({ store, editing, resettingPin, onEdit, onCancelEdit, onResetP
     <tr>
       <td className="td-code">{store.store_code}</td>
       <td>{store.store_name}</td>
-      <td>{store.region || <span className="td-muted">—</span>}</td>
+      <td>{areaName(store.area_id) || store.region || <span className="td-muted">—</span>}</td>
       <td>{store.is_active ? <span className="badge badge-completed">Active</span> : <span className="badge badge-pending">Inactive</span>}</td>
       <td>
         <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>

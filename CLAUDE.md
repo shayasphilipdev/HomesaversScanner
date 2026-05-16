@@ -1,237 +1,175 @@
-# Homesavers Scanner App
+# Homesavers Scanner App — CLAUDE.md
 
-## Project overview
-
-Retail Task / Error reporting app for Homesavers Ireland — 55 stores.
-**Stack:** React 18 + Vite (frontend) · Cloudflare Pages Functions (backend API) · Supabase PostgreSQL (database).
-**Deploy:** Cloudflare Pages only — single project, auto-deploys on every GitHub push.
-**No Supabase Auth. No RLS.** Access controlled by PIN, isolation enforced at application layer via HMAC-signed session tokens.
-
-Live URL: https://homesaversscanner.pages.dev/
-GitHub: https://github.com/shayasphilipdev/HomesaversScanner
+Lightweight orientation. Full detail: `Project_Status.MD` · `docs/phase9-store-tasks-and-roles.md` · `CLAUDE_CODE_INSTRUCTIONS.md`
 
 ---
 
-## Concept
+## What it is
 
-The app collects **task records** from store staff. There are many **task types** (A–I, expandable), each with its own form fields. Records flow:
+Retail task/error reporting PWA for Homesavers Ireland (8 stores now → 55).  
+Store staff scan products and log issues. Back office reviews. Phase 9 adds store self-managed operational checklists.
 
-```
-pending  ──► completed (HQ)  ──► store_completed (store confirms)
-```
-
-### Task types
-
-| Code | Name | Frequency | Form fields |
-|---|---|---|---|
-| A | UOM Errors | daily | product_code, description (opt), uom, quantity, supplier, notes |
-| B | Non-Scans | daily | barcode, description, uom, quantity, **2 mandatory photos** (product + barcode), supplier, notes |
-| C | Wrong Prices | daily | product_code, reason_code (master), current_price (opt), notes |
-| D | Wrong Description | daily | product_code, product_name_on_product, barcode, notes |
-| E | Price Marked Products | daily | product_code, price_marked_price, supplier, notes |
-| F | DRS Errors | daily | product_code, drs_size (master), units_per_package, supplier, notes — warning *"Check for Return Logo"* |
-| G | Promotion Error | daily | product_code, promotion_description, promotion_price, notes |
-| H | Stock Count | once_off | product_code, shop_floor_count, notes |
-| I | Miscellaneous Tasks | once_off | product_code, product_name_on_product, barcode, notes |
-
-New types can be added by inserting into `task_types`. Form schema for each lives in `client/src/lib/taskTypes.js`.
+Live: https://homesaversscanner.pages.dev  
+Repo: https://github.com/shayasphilipdev/HomesaversScanner  
+Local: `C:\Scraping\homesavers-scanner`  
+Supabase: `eggspkdengnxktwkdwpw`  
+Cloudflare: `565191064c74a1e202aa0211133c895d`
 
 ---
 
-## Phased roadmap
+## Stack
 
-| Phase | Title | Status | Scope |
-|---|---|---|---|
-| 0 | Foundation | ✅ done | Auth (PIN + HMAC tokens), deploy, Task A baseline, camera/scanner/manual entry |
-| **1** | **Task Types + Suppliers re-foundation** | ✅ done | DB reshape, generic lookup_options master, suppliers master, Task A wired in new model |
-| **2A** | **Task B + photo infrastructure** | ✅ done | `task-photos` Supabase Storage bucket, `/photos/upload` + `/photos` DELETE endpoints, client-side JPEG compression, reusable form widgets (ScannerInput, SupplierPicker, PhotoCapture), TaskBForm |
-| **2B** | **Tasks D + I (Wrong Description, Miscellaneous)** | ✅ done | Shared TaskDIForm component (identical field sets); product_code + product_name_label + product_barcode + notes |
-| **2C** | **Tasks C + E + G (Prices)** | ✅ done | C — Wrong Prices (reason_code from lookup_options, optional current_price). E — Price Marked Products (price_marked_price, supplier). G — Promotion Error (promotion_description + promotion_price). All type-specific fields stored in `details` JSONB. |
-| **2D** | **Task F (DRS Errors)** | ✅ done | drs_size dropdown from lookup_options + units_per_package + supplier; persistent "Check for the Return Logo" warning at top of form |
-| **2E** | **Task H (Stock Count)** | ✅ done | product_code + shop_floor_count (≥0) + notes. All 9 task forms now implemented. |
-| **3A** | **Stores admin** | ✅ done | Back-office CRUD for stores: add/edit/activate/deactivate, reset PIN. SQL `hash_pin(pin)` RPC added. |
-| **3B** | **Suppliers admin (+ CSV upload)** | ✅ done | Suppliers CRUD + bulk CSV import. Tolerant column matching (supplier_code/code, supplier_name/name). AdminNav tabs added. |
-| **4A** | **Reports on screen + review flow** | ✅ done | Reports page renders results below filters. Back-office can review per-row (Complete / No change needed + optional note) or bulk-select pending rows. Records flow back to store with HQ notes. New status: `no_change_needed`. New columns: `review_notes`, `reviewed_at`. |
-| **3C** | **Reason Codes + DRS Sizes admin** | ✅ done | lookup_options CRUD with task_types multi-select. Reason Codes and DRS Sizes editable from one page. |
-| **3D** | **Products master admin (CSV upload)** | ✅ done | Search + bulk CSV upsert by `product_id`. Tolerant columns (id/barcode, name/description). |
-| **3E** | **Settings + photo retention cleanup** | ✅ done | Edit app_settings (retention windows etc). "Run photo cleanup now" button uses `list_old_photos` SQL function + Supabase Storage REST DELETE. |
-| **4B** | **Modern dashboard + design refresh** | ✅ done | Claude-style design (warm ivory + coral, Fraunces serif, Inter body). Light theme uses glass morphism (translucent cards + backdrop-blur over a soft body gradient). Dark theme: high-contrast for bright store lighting (deep navy bg, brighter coral + status colors, no blur). Theme toggle in nav, persisted in localStorage, respects OS preference on first load. Reports + Dashboard widen to 1600px on PC. Touch targets ≥ 44px on phones; iOS-safe input font-size. |
-| 3 | Master admin (back office) | | CRUD UI for Stores, Suppliers, Reason Codes, DRS Sizes, Products. CSV bulk upload |
-| 4 | Reports + Modern Dashboard | | Per-task-type CSV with type-specific columns. Combined "All" report. Multi-filter (stores, task types, datetime). KPIs and charts |
-| **5** | **Responsive PC layout** | ✅ done | Reports + Dashboard widen to 1600px on PC. Three-tier nav: bottom-nav on phones (<720px), top-bar links on tablets (720–1023px), left sidebar on desktops (≥1024px). Thumb-friendly ≥44px targets, iOS-safe input font-size. Toast notifications. Skeleton loaders on Dashboard KPIs. |
-| 6 | Frequency grouping & scheduling | | Daily/Weekly/Monthly/Once-Off groups. Optional scheduling rules |
-| **7** | **Offline queue + PWA** | ✅ done | `client/public/sw.js` (stale-while-revalidate for SPA shell, cache-first for hashed assets, never intercept /api/*). PNG icons (192 + 512) + maskable variant in `client/public/manifest.webmanifest`. IDB outbox at `client/src/lib/outbox.js` queues task records (and Task B's two photo Blobs) when the network fails. **Sync triggers (event-driven, no polling):** `online` event · `visibilitychange` → visible · first-mount drain. **Bounded retries** — server-side failures count toward attempts (max 5), then the record is marked `failed` and skipped by auto-sync. Pure network errors never count against attempts. `OfflineIndicator` pill in the nav (offline / pending / failed states) → opens a dedicated `/sync` page that lists every queued item with per-row Retry/Remove and a "Sync now" button — the safety valve for "nothing held forever". |
-| **8** | Roles, areas, assigned tasks | 📐 design only | Schema, permissions matrix, migration path written to [docs/phase8-roles-and-scoped-tasks.md](docs/phase8-roles-and-scoped-tasks.md). No code yet — react to the doc before building. |
-
-### Decisions on record (Q1–Q6)
-
-- **Q1** Frequency stored on `task_types.frequency`; UI grouping in Phase 6, scheduling rules optional later.
-- **Q2 + Q3** Reason Codes and DRS Sizes use a generic `lookup_options` master with a `task_types[]` array — each option can apply to multiple task types.
-- **Q4** Supplier = dropdown from master + free-text fallback. Record stores either `supplier_id` or `supplier_name_text`. Reports COALESCE.
-- **Q5** Existing test records wiped during Phase 1.
-- **Q6** Task B requires **2 mandatory photos** (one product, one barcode), camera or gallery. Retention 7 days per `app_settings`.
+React 18 + Vite · plain JS · react-router-dom v6  
+Cloudflare Pages static + Pages Function (`functions/api/[[route]].js`)  
+Supabase PostgreSQL (no RLS, no Supabase Auth)  
+Supabase Storage `task-photos` (public-read)  
+PWA: `sw.js` + `manifest.webmanifest` · Offline: IndexedDB outbox  
+Auth: PIN → HMAC-signed token (Web Crypto)
 
 ---
 
-## Architecture
+## Roles (Phase 9 — current definitive list)
 
-```
-Browser (React SPA)
-  │  /api/* requests, Authorization: Bearer <HMAC token>
-  ▼
-Cloudflare Pages (serves client/dist + functions/)
-  │  functions/api/[[route]].js — auth, routing, all backend logic
-  │  reads SUPABASE_URL (wrangler.toml [vars]), SUPABASE_ANON_KEY (secret),
-  │  SESSION_SECRET (secret) for HMAC
-  ▼
-Supabase REST API  (PostgreSQL, no RLS)
-```
+| Display name | System key | Notes |
+|---|---|---|
+| Sales Assistant | `sales_assistant` | Basic store staff. Submit HQ tasks; complete store tasks. |
+| Store Manager | `store_manager` | + store task completion stats; own store reports |
+| Area Manager | `area_manager` | Area-wide stats; **can create tasks** |
+| Store Support Administrator | `support_admin` | Review/process HQ task records |
+| Buying Manager | `buying_manager` | Former "Operations Manager". Full back office + **can create tasks** |
+| Commercial Manager | `commercial_manager` | All-store reports + **can create tasks** |
+| Director | `director` | Full system access + **can create tasks** |
 
-### Repo
+**Task creators:** `buying_manager` · `area_manager` · `commercial_manager` · `director`
 
-```
-homesavers-scanner/
-├── client/                            React + Vite (mobile-first, PC-friendly)
-│   └── src/
-│       ├── components/
-│       │   ├── Nav.jsx
-│       │   ├── StoreSelector.jsx
-│       │   ├── TaskTypePicker.jsx     chips grouped by frequency
-│       │   ├── TaskForm.jsx           slim dispatcher → forms/Task*Form.jsx
-│       │   ├── TaskRecordList.jsx     table with task_type column
-│       │   └── forms/
-│       │       ├── ScannerInput.jsx   scanner-gun + camera + lookup widget
-│       │       ├── SupplierPicker.jsx supplier dropdown + free-text fallback
-│       │       ├── PhotoCapture.jsx   compress + preview + retake
-│       │       ├── TaskAForm.jsx      UOM Errors
-│       │       └── TaskBForm.jsx      Non-Scans (with 2 mandatory photos)
-│       ├── pages/
-│       │   ├── Tasks.jsx              picker + form + list
-│       │   └── Reports.jsx            CSV with task_type filter
-│       ├── lib/
-│       │   ├── api.js                 fetch wrapper, token handling, 401 auto-logout
-│       │   ├── photos.js              compressImage + tempId helper
-│       │   ├── taskTypes.js           per-type form schema metadata
-│       │   └── uom.js                 UOM dropdown + Eachs warning
-│       ├── App.jsx                    routes + session split (BO=sessionStorage, store=localStorage)
-│       └── App.css
-├── functions/
-│   └── api/[[route]].js               Pages Function — catch-all router
-├── supabase-schema.sql                initial schema (Phase 0)
-├── .dev.vars.example                  template — SUPABASE_URL/_ANON_KEY/SESSION_SECRET
-├── wrangler.toml                      Pages config + [vars] SUPABASE_URL
-└── CLAUDE.md                          this file
-```
+**⚠ Rename history:** `operations_manager` → `buying_manager` · `store_colleague` → `sales_assistant`. Search the entire codebase for old strings before making changes.
 
 ---
 
-## Database schema (current)
+## Two task systems
 
-### `stores`
-`id · store_code (unique) · store_name · region · pin_hash · is_active · created_at`
+### System 1 — HQ task records (existing, Phases 0–7)
+Store submits error (UOM, price, non-scan, etc.) → back office reviews → marks complete or no change. Task types A–I.
 
-### `products` (Product Master)
-`id · product_id (unique text) · description · uom · category · is_active · updated_at`
+### System 2 — Store operational tasks (Phase 9, new)
+Self-managed checklists. No back office review. Store users see own store only. Area Manager+ see aggregate compliance %.  
+47 standard templates across 6 frequencies. See `docs/phase9-store-tasks-and-roles.md`.
 
-### `suppliers` (Supplier Master — Phase 1)
-`id · supplier_code · supplier_name · is_active · created_at · updated_at`
-
-### `task_types` (Phase 1 — reference table)
-`code (PK, 'A'..'I') · name · frequency (daily|weekly|monthly|once_off) · sort_order · is_active`
-
-### `lookup_options` (Phase 1 — generic master for dropdowns)
-`id · kind ('reason_code'|'drs_size'|…) · label · task_types[] (which task types use this option) · sort_order · is_active`
-
-### `task_records` (Phase 1 — was `product_records`)
-Common columns:
-`id · store_id (FK) · task_type (FK→task_types) · status · marked_for_deletion · completed_at · store_completed_at · reviewed_at · review_notes · created_at · updated_at`
-
-`status` is plain text (no DB enum). Values: `pending` → `completed` *or* `no_change_needed` → `store_completed`.
-
-Promoted columns (used by ≥2 task types):
-`product_code · product_barcode · product_name_label · description · uom · quantity · supplier_id (FK→suppliers, nullable) · supplier_name_text (free text fallback) · notes · photo_product_url · photo_barcode_url`
-
-Type-specific fields go in `details jsonb` (e.g. reason_code, current_price, price_marked_price, drs_size, units_per_package, promotion_description, promotion_price, shop_floor_count).
-
-### `app_settings` (key/value)
-`backoffice_pin_hash · list_auto_close_hours · scan_record_retention_days · photo_retention_days`
-
-### SQL functions
-- `verify_pin(hash, pin) → table(result boolean)` — `crypt(pin, hash) = hash`
-- `hash_pin(pin) → table(hash text)` — `crypt(pin, gen_salt('bf'))`, used by `/admin/stores` to set new PINs
-- `list_old_photos(days int) → table(name text, created_at timestamptz)` — used by `/admin/cleanup/photos` to find photos past the retention window in the `task-photos` bucket
-
-### Indexes
-`idx_tr_store_id · idx_tr_task_type · idx_tr_status · idx_tr_created_at · idx_tr_store_date · idx_tr_supplier · idx_suppliers_active · idx_lookup_kind`
+**Task targeting (when creating):**
+- Store scope: `all` / `area` (area_ids[]) / `stores` (store_ids[]) / `one` (store_ids with 1 entry)
+- Assigned-to role: any role key, or `all` — back-office roles ignore store scope
 
 ---
 
-## API surface (current)
+## Products — supplier link (Phase 9)
 
-| Method | Path | Auth | Notes |
-|---|---|---|---|
-| GET    | `/stores` | public | login screen |
-| POST   | `/stores/verify-pin` | public | returns `{ ok, token, store }` |
-| POST   | `/backoffice/verify-pin` | public | returns `{ ok, token }` |
-| GET    | `/task-types` | auth | reference data |
-| GET    | `/lookup-options?kind=reason_code&task_type=C` | auth | dropdown options |
-| GET    | `/suppliers` | auth | active suppliers for dropdown |
-| GET    | `/products/lookup?code=…` | auth | Product Master lookup |
-| POST   | `/photos/upload` | auth | multipart/form-data: `file`, `slot=product\|barcode`, `tempId`. Returns `{ url, path }` |
-| DELETE | `/photos?path=…` | auth | cleanup (used on save failure) |
-| GET    | `/task-records?task_type=A&status=pending&storeId=…` | auth | store users always scoped to own store |
-| POST   | `/task-records` | auth | server forces `store_id = token.storeId` for store users |
-| PATCH  | `/task-records/:id` | auth | store users limited to own store |
-| DELETE | `/task-records/:id` | auth | store users limited to own `store_completed` records |
-| GET    | `/reports/task-records?from=&to=&storeId=&task_type=` | auth | CSV |
-| GET    | `/admin/stores` | back-office | List all stores (active + inactive) |
-| POST   | `/admin/stores` | back-office | Create store. Body: `{store_code, store_name, region?, pin}` |
-| PATCH  | `/admin/stores/:id` | back-office | Edit `store_code`, `store_name`, `region`, `is_active` |
-| POST   | `/admin/stores/:id/reset-pin` | back-office | Body: `{pin}` |
-| GET    | `/admin/suppliers` | back-office | List all suppliers |
-| POST   | `/admin/suppliers` | back-office | Create one. Body: `{supplier_code?, supplier_name}` |
-| POST   | `/admin/suppliers/bulk` | back-office | Bulk insert (client-parsed CSV) |
-| PATCH  | `/admin/suppliers/:id` | back-office | Edit `supplier_code`, `supplier_name`, `is_active` |
-| GET    | `/admin/lookup-options?kind=` | back-office | List reason codes / DRS sizes |
-| POST   | `/admin/lookup-options` | back-office | Create option. Body: `{kind, label, task_types[], sort_order?}` |
-| PATCH  | `/admin/lookup-options/:id` | back-office | Edit label/task_types/sort/is_active |
-| DELETE | `/admin/lookup-options/:id` | back-office | Hard delete |
-| GET    | `/admin/products?q=&limit=` | back-office | Search/list products master |
-| GET    | `/admin/products/count` | back-office | Total products row count |
-| POST   | `/admin/products/bulk` | back-office | Upsert (on `product_id`) — CSV bulk import |
-| GET    | `/admin/settings` | back-office | List app_settings (excluding back-office PIN hash) |
-| PATCH  | `/admin/settings` | back-office | Body: `{key: value, …}` — upserts |
-| POST   | `/admin/cleanup/photos` | back-office | Delete photos older than `photo_retention_days` |
-| POST   | `/task-records/bulk-review` | back-office | Body: `{ids[], status: completed\|no_change_needed, review_notes?}` |
-| GET    | `/dashboard/stats?from=&to=&storeId=` | auth | Aggregated KPIs, by_task_type, by_store, by_day (14d), recent |
+`products.supplier_id` (uuid, nullable FK → `suppliers.id`) added in Phase 9.
 
-Admin write endpoints for suppliers / task_types / lookup_options are deferred to Phase 3.
+When a Sales Assistant scans a product, the lookup response includes `supplier_name` (joined from `suppliers`). Displayed as a subtle secondary line in the scan result. If no supplier linked, line is omitted.
+
+Admin Products page: supplier dropdown in product edit form; CSV bulk-upsert accepts optional `supplier_name` column (resolved to `supplier_id` by name match).
+
+---
+
+## Database tables
+
+### Existing (Phases 0–7)
+`stores` · `products` · `suppliers` · `task_types` · `lookup_options` · `task_records` · `app_settings`
+
+### Phase 9 additions
+`areas` · `users` · `store_task_templates` · `store_task_instances`
+
+#### products change
+```sql
+ALTER TABLE products ADD COLUMN IF NOT EXISTS supplier_id uuid REFERENCES suppliers(id) ON DELETE SET NULL;
+```
+
+#### store_task_templates
+```
+id · title · description · instructions · category · frequency · due_window
+requires_photo · requires_notes · applies_to · area_ids · store_ids
+assigned_to_role · is_active · sort_order · created_at · updated_at
+```
+frequency: `daily | weekly | monthly | yearly | once_off`  
+applies_to: `all | area | stores | one`
+
+#### store_task_instances
+```
+id · template_id · store_id · period_key · due_date · status
+completed_by · completed_at · photo_url · notes · created_at
+UNIQUE (template_id, store_id, period_key)
+```
+status: `pending | completed | missed`  
+period_key examples: `2025-05-16` (daily) · `2025-W21` (weekly) · `2025-05` (monthly) · `2025` (yearly) · `once_<ulid>` (once-off)
+
+---
+
+## API surface
+
+All `/api/*` → `functions/api/[[route]].js` · Auth: `Authorization: Bearer <token>`
+
+### Phase 9 new routes
+| Method | Path | Guard |
+|---|---|---|
+| GET/POST | `/admin/task-templates` | `buying_manager`, `area_manager`, `commercial_manager`, `director` |
+| PATCH/DELETE | `/admin/task-templates/:id` | same |
+| GET | `/store-tasks/today` | auth |
+| PATCH | `/store-tasks/:id/complete` | auth |
+| GET | `/store-tasks/stats` | auth |
+| POST | `/store-tasks/generate` | task creators |
+
+Instance generation: lazy — `ensureInstancesExist(db, storeId, date)` called by `/store-tasks/today`, not a scheduler.
+
+---
+
+## Frontend pages
+
+### Phase 9 new pages
+| Route | Visible to |
+|---|---|
+| `/store-tasks` | all roles |
+| `/store-tasks/history` | `store_manager`+ |
+| `/store-tasks/stats` | `store_manager`+ |
+| `/admin/task-templates` | task creators |
+| `/admin/areas` | `buying_manager`, `director` |
+| `/admin/users` | `buying_manager`, `director` |
+
+### Existing pages (unchanged routes)
+`/dashboard` · `/tasks` · `/reports` · `/sync` · `/admin/stores` · `/admin/suppliers` · `/admin/lookups` · `/admin/products` · `/admin/settings`
+
+---
+
+## Phase status
+
+| Phase | Title | Status |
+|---|---|---|
+| 0–7 | Foundation → PWA/offline | ✅ done |
+| 8 | Old roles/areas design | ⏸ superseded |
+| 9A | Areas table + admin UI | 📐 planned |
+| 9B | Users table + role-aware auth | 📐 planned |
+| 9C | Task templates (CRUD + 47 seeds) | 📐 planned |
+| 9D | Store tasks page + completion | 📐 planned |
+| 9E | Store task reporting + dashboard | 📐 planned |
 
 ---
 
 ## Local dev
 
-```bash
-cd client && npm install && npm run dev          # Vite on :5173
-cp .dev.vars.example .dev.vars                    # add SUPABASE_URL/_ANON_KEY/SESSION_SECRET
-npx wrangler pages dev --proxy 5173               # CF Pages on :8788
+```powershell
+cd C:\Scraping\homesavers-scanner\client && npm run dev   # Vite :5173
+cd C:\Scraping\homesavers-scanner
+npx wrangler pages dev --proxy 5173                        # Pages :8788
 ```
 
-`SUPABASE_URL` lives in `wrangler.toml [vars]`; `SUPABASE_ANON_KEY` and `SESSION_SECRET` are Cloudflare Pages Secrets (set in dashboard).
+`.dev.vars`: `SUPABASE_URL` · `SUPABASE_ANON_KEY` · `SESSION_SECRET`
 
----
+## Deploy
 
-## Session credentials (current)
+Push to `main` → Cloudflare Pages auto-deploys (~1–2 min).  
+Build: `cd client && npm install && npm run build` → `client/dist`
 
-- **Back office**: PIN `hjd456*`
-- **Store 1015 (Tallaght)**: PIN `9876`
+## Known limitations
 
----
-
-## Coding conventions
-
-- Plain ES5/ES2020 JS — no TypeScript, no module bundler config beyond Vite defaults.
-- React functional components + hooks.
-- No CSS framework; all styles in `App.css` using CSS custom properties.
-- Cloudflare Pages Function uses Web Crypto (`crypto.subtle`) — no Node-only deps.
-- Mobile-first CSS; PC sidebar nav lands in Phase 5.
+- `/dashboard/stats` fetches up to 5k records and aggregates in JS — add SQL aggregation past ~50k records
+- `/task-records` GET has no pagination — add limit + cursor when needed
+- PIN brute force is unrate-limited — add Cloudflare WAF rule when scaling

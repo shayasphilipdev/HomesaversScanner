@@ -18,14 +18,18 @@ export default function TaskAForm({ onSaved }) {
   const [saving, setSaving]               = useState(false)
   const [error, setError]                 = useState('')
   const [lookupLoading, setLookupLoading] = useState(false)
+  const [lookupInfo, setLookupInfo]       = useState(null)   // {description, uom, supplier_name}
 
   const triggerLookup = async (code) => {
-    if (!code || code.length < 4) return
+    if (!code || code.length < 4) { setLookupInfo(null); return }
     setLookupLoading(true)
     try {
       const p = await lookupProduct(code)
       if (p) {
         setForm(f => ({ ...f, description: p.description || f.description, uom: p.uom || f.uom }))
+        setLookupInfo(p)
+      } else {
+        setLookupInfo(null)
       }
     } catch {} finally { setLookupLoading(false) }
   }
@@ -76,6 +80,14 @@ export default function TaskAForm({ onSaved }) {
               lookupLoading={lookupLoading}
               readerId="reader-a"
             />
+
+            {lookupInfo?.supplier_name && (
+              <div className="form-group full" style={{ marginTop: -6 }}>
+                <span className="note" style={{ fontSize: 12.5 }}>
+                  Supplier: <strong>{lookupInfo.supplier_name}</strong>
+                </span>
+              </div>
+            )}
 
             <div className="form-group">
               <label>UOM *</label>

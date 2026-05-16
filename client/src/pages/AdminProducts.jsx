@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useStore } from '../App.jsx'
-import { adminListProducts, adminProductsCount, adminBulkProducts } from '../lib/api.js'
+import {
+  adminListProducts, adminProductsCount, adminBulkProducts, adminUpdateProduct,
+  getSuppliers
+} from '../lib/api.js'
 import { parseCSV } from '../lib/csv.js'
 import AdminNav from '../components/AdminNav.jsx'
 import { useToast } from '../components/Toast.jsx'
@@ -10,23 +13,27 @@ import { useToast } from '../components/Toast.jsx'
 // - Bulk CSV upsert by product_id (existing rows are updated, new rows inserted).
 export default function AdminProducts() {
   const { session } = useStore()
+  const toast = useToast()
   const isBO = session.mode === 'backoffice'
 
   const [count, setCount]       = useState(0)
   const [products, setProducts] = useState([])
+  const [suppliers, setSuppliers] = useState([])
   const [q, setQ]               = useState('')
   const [loading, setLoading]   = useState(true)
   const [error, setError]       = useState('')
   const [showBulk, setShowBulk] = useState(false)
+  const [editingId, setEditingId] = useState(null)
 
   const load = async () => {
     setLoading(true); setError('')
     try {
-      const [c, p] = await Promise.all([
+      const [c, p, s] = await Promise.all([
         adminProductsCount(),
-        adminListProducts({ limit: 100, q: q || undefined })
+        adminListProducts({ limit: 100, q: q || undefined }),
+        getSuppliers().catch(() => [])
       ])
-      setCount(c.count); setProducts(p)
+      setCount(c.count); setProducts(p); setSuppliers(s)
     } catch (e) { setError(e.message) } finally { setLoading(false) }
   }
 
@@ -61,6 +68,10 @@ export default function AdminProducts() {
 
       {showBulk && <BulkUpload onDone={() => { setShowBulk(false); load() }} />}
 
+      {!loading && !!products.length && (
+        <p className="note" style={{ marginBottom: 10 }}>Click a row to edit the supplier or other fields.</p>
+      )}
+
       {error && <div className="login-error mt-12">{error}</div>}
 
       {loading ? (
@@ -77,18 +88,23 @@ export default function AdminProducts() {
                   <th>Description</th>
                   <th>UOM</th>
                   <th>Category</th>
+                  <th>Supplier</th>
                   <th>Updated</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
                 {products.map(p => (
-                  <tr key={p.id}>
-                    <td className="td-code">{p.product_id}</td>
-                    <td>{p.description || <span className="td-muted">—</span>}</td>
-                    <td>{p.uom || <span className="td-muted">—</span>}</td>
-                    <td>{p.category || <span className="td-muted">—</span>}</td>
-                    <td className="td-muted">{p.updated_at ? new Date(p.updated_at).toLocaleDateString('en-IE') : '—'}</td>
-                  </tr>
+                  <ProductRow
+                    key={p.id}
+                    product={p}
+                    suppliers={suppliers}
+                    editing={editingId === p.id}
+                    onEdit={() => setEditingId(p.id)}
+                    onCancel={() => setEditingId(null)}
+                    onSaved={() => { setEditingId(null); load() }}
+                    toast={toast}
+                  />
                 ))}
               </tbody>
             </table>
@@ -113,10 +129,11 @@ function BulkUpload({ onDone }) {
       const text = await file.text()
       const { headers, rows } = parseCSV(text)
       const lower = headers.map(h => h.toLowerCase())
-      const idIdx   = lower.findIndex(h => h === 'product_id' || h === 'id' || h === 'barcode')
-      const descIdx = lower.findIndex(h => h === 'description' || h === 'name')
-      const uomIdx  = lower.findIndex(h => h === 'uom')
-      const catIdx  = lower.findIndex(h => h === 'category')
+      const idIdx       = lower.findIndex(h => h === 'product_id' || h === 'id' || h === 'barcode')
+      const descIdx     = lower.findIndex(h => h === 'description' || h === 'name')
+      const uomIdx      = lower.findIndex(h => h === 'uom')
+      const catIdx      = lower.findIndex(h => h === 'category')
+      const supplierIdx = lower.findIndex(h => h === 'supplier_name' || h === 'supplier')
       if (idIdx === -1) {
         setErr('CSV must include a "product_id" (or "id"/"barcode") column.')
         return
@@ -126,10 +143,11 @@ function BulkUpload({ onDone }) {
         const id = (r[headers[idIdx]] || '').trim()
         if (!id) { warnings.push(`Row ${i + 2}: missing product_id — skipped`); return null }
         return {
-          product_id:  id,
-          description: descIdx > -1 ? (r[headers[descIdx]] || '').trim() : '',
-          uom:         uomIdx  > -1 ? (r[headers[uomIdx]]  || '').trim() : '',
-          category:    catIdx  > -1 ? (r[headers[catIdx]]  || '').trim() : ''
+          product_id:    id,
+          description:   descIdx     > -1 ? (r[headers[descIdx]]     || '').trim() : '',
+          uom:           uomIdx      > -1 ? (r[headers[uomIdx]]      || '').trim() : '',
+          category:      catIdx      > -1 ? (r[headers[catIdx]]      || '').trim() : '',
+          supplier_name: supplierIdx > -1 ? (r[headers[supplierIdx]] || '').trim() : ''
         }
       }).filter(Boolean)
       setPreview({ rows: clean, warnings })
@@ -156,7 +174,7 @@ function BulkUpload({ onDone }) {
       <div className="card-header">Bulk CSV upload (upsert by product_id)</div>
       <div className="card-body">
         <p className="note" style={{ marginTop: 0 }}>
-          Required: <code>product_id</code>. Optional: <code>description</code>, <code>uom</code>, <code>category</code>. Existing rows with the same <code>product_id</code> are updated.
+          Required: <code>product_id</code>. Optional: <code>description</code>, <code>uom</code>, <code>category</code>, <code>supplier_name</code> (matched against active suppliers; unknown names are ignored). Existing rows are updated by <code>product_id</code>.
         </p>
         {!preview && <input type="file" accept=".csv,text/csv" onChange={handleFile} />}
         {preview && (
@@ -176,7 +194,7 @@ function BulkUpload({ onDone }) {
             )}
             <div style={{ maxHeight: 240, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8, marginBottom: 12 }}>
               <table style={{ fontSize: 13 }}>
-                <thead><tr><th>Product ID</th><th>Description</th><th>UOM</th><th>Category</th></tr></thead>
+                <thead><tr><th>Product ID</th><th>Description</th><th>UOM</th><th>Category</th><th>Supplier</th></tr></thead>
                 <tbody>
                   {preview.rows.slice(0, 100).map((r, i) => (
                     <tr key={i}>
@@ -184,6 +202,7 @@ function BulkUpload({ onDone }) {
                       <td>{r.description || ''}</td>
                       <td>{r.uom || ''}</td>
                       <td>{r.category || ''}</td>
+                      <td>{r.supplier_name || ''}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -201,5 +220,76 @@ function BulkUpload({ onDone }) {
         {err && <div className="login-error mt-12">{err}</div>}
       </div>
     </div>
+  )
+}
+
+function ProductRow({ product, suppliers, editing, onEdit, onCancel, onSaved, toast }) {
+  const [form, setForm] = useState({
+    description: product.description || '',
+    uom:         product.uom || '',
+    category:    product.category || '',
+    supplier_id: product.supplier_id || ''
+  })
+  const [saving, setSaving] = useState(false)
+  const [err, setErr]       = useState('')
+
+  const supplierName = (id) =>
+    suppliers.find(s => s.id === id)?.supplier_name || product.supplier_name || ''
+
+  const save = async () => {
+    setSaving(true); setErr('')
+    try {
+      await adminUpdateProduct(product.id, {
+        description: form.description.trim() || null,
+        uom:         form.uom.trim() || null,
+        category:    form.category.trim() || null,
+        supplier_id: form.supplier_id || null
+      })
+      toast.success('Product updated.')
+      onSaved()
+    } catch (e) { setErr(e.message); toast.error(e.message) } finally { setSaving(false) }
+  }
+
+  if (editing) {
+    return (
+      <tr>
+        <td className="td-code">{product.product_id}</td>
+        <td><input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} /></td>
+        <td><input value={form.uom} onChange={e => setForm(f => ({ ...f, uom: e.target.value }))} style={{ width: 90 }} /></td>
+        <td><input value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} style={{ width: 120 }} /></td>
+        <td>
+          <select value={form.supplier_id} onChange={e => setForm(f => ({ ...f, supplier_id: e.target.value }))}>
+            <option value="">— None —</option>
+            {suppliers.filter(s => s.is_active).map(s => (
+              <option key={s.id} value={s.id}>{s.supplier_name}</option>
+            ))}
+          </select>
+        </td>
+        <td className="td-muted">{product.updated_at ? new Date(product.updated_at).toLocaleDateString('en-IE') : '—'}</td>
+        <td>
+          {err && <div className="login-error" style={{ marginBottom: 6, fontSize: 12 }}>{err}</div>}
+          <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>
+            <button className="btn btn-sm btn-outline" onClick={onCancel} disabled={saving}>Cancel</button>
+            <button className="btn btn-sm btn-primary" onClick={save} disabled={saving}>
+              {saving ? <span className="spinner" /> : 'Save'}
+            </button>
+          </div>
+        </td>
+      </tr>
+    )
+  }
+
+  return (
+    <tr>
+      <td className="td-code">{product.product_id}</td>
+      <td>{product.description || <span className="td-muted">—</span>}</td>
+      <td>{product.uom || <span className="td-muted">—</span>}</td>
+      <td>{product.category || <span className="td-muted">—</span>}</td>
+      <td>{supplierName(product.supplier_id) || <span className="td-muted">—</span>}</td>
+      <td className="td-muted">{product.updated_at ? new Date(product.updated_at).toLocaleDateString('en-IE') : '—'}</td>
+      <td>
+        <button className="btn btn-sm btn-outline" onClick={onEdit}>Edit</button>
+      </td>
+    </tr>
   )
 }

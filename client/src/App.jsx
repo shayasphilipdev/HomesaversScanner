@@ -10,6 +10,7 @@ import Tasks from './pages/Tasks.jsx'
 import Reports from './pages/Reports.jsx'
 import Sync from './pages/Sync.jsx'
 import AdminStores from './pages/AdminStores.jsx'
+import AdminAreas from './pages/AdminAreas.jsx'
 import AdminSuppliers from './pages/AdminSuppliers.jsx'
 import AdminLookups from './pages/AdminLookups.jsx'
 import AdminProducts from './pages/AdminProducts.jsx'
@@ -93,6 +94,7 @@ function Shell() {
             <Route path="/sync"          element={<Sync />} />
             <Route path="/admin"            element={<Navigate to="/admin/stores" replace />} />
             <Route path="/admin/stores"     element={<AdminStores />} />
+            <Route path="/admin/areas"      element={<AdminAreas />} />
             <Route path="/admin/suppliers"  element={<AdminSuppliers />} />
             <Route path="/admin/lookups"    element={<AdminLookups />} />
             <Route path="/admin/products"   element={<AdminProducts />} />
