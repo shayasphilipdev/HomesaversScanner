@@ -144,7 +144,7 @@ function AddLookup({ kind, taskTypes, onCreated }) {
   }
 
   return (
-    <form onSubmit={submit} style={{ marginBottom: 16, padding: 14, background: 'rgba(255,255,255,.6)', border: '1px solid var(--glass-border)', borderRadius: 12 }}>
+    <form onSubmit={submit} style={{ marginBottom: 16, padding: 14, background: 'var(--surface-warm)', border: '1px solid var(--border)', borderRadius: 12 }}>
       <div className="form-grid">
         <div className="form-group full">
           <label>Label *</label>

@@ -138,12 +138,12 @@ function ActivityChart({ byDay, loading }) {
           <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: '100%', height: 180, display: 'block' }}>
             <defs>
               <linearGradient id="bg-bar" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#F77E1B" stopOpacity="1" />
-                <stop offset="100%" stopColor="#F77E1B" stopOpacity=".4" />
+                <stop offset="0%"   stopColor="#C96442" stopOpacity=".95" />
+                <stop offset="100%" stopColor="#C96442" stopOpacity=".55" />
               </linearGradient>
             </defs>
             {/* baseline */}
-            <line x1={P} y1={H - P} x2={W - P} y2={H - P} stroke="#e5e7eb" strokeWidth="1" />
+            <line x1={P} y1={H - P} x2={W - P} y2={H - P} stroke="#E8E1D2" strokeWidth="1" />
             {byDay.map((d, i) => {
               const h = d.count === 0 ? 2 : ((H - P * 2) * d.count) / max
               const x = P + i * bw + 3
@@ -153,7 +153,7 @@ function ActivityChart({ byDay, loading }) {
                 <g key={d.date}>
                   <rect x={x} y={y} width={w} height={h} rx="4" fill="url(#bg-bar)" />
                   {(i === 0 || i === byDay.length - 1 || i === Math.floor(byDay.length / 2)) && (
-                    <text x={x + w / 2} y={H - 6} textAnchor="middle" fill="#9ca3af" fontSize="10">
+                    <text x={x + w / 2} y={H - 6} textAnchor="middle" fill="#8C8779" fontSize="10">
                       {new Date(d.date).toLocaleDateString('en-IE', { day: '2-digit', month: 'short' })}
                     </text>
                   )}
@@ -227,7 +227,7 @@ function RecentList({ rows, loading, isBO }) {
         ) : (
           rows.map(r => (
             <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderBottom: '1px solid rgba(0,0,0,.04)' }}>
-              <div style={{ width: 32, height: 32, borderRadius: 10, background: 'var(--primary-light)', color: 'var(--primary)', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{r.task_type}</div>
+              <div style={{ width: 34, height: 34, borderRadius: 10, background: 'var(--primary-tint)', color: 'var(--primary-dark)', fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{r.task_type}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {r.product || '—'} {isBO && r.store_name && <span style={{ fontWeight: 500, color: 'var(--text-muted)' }}>· {r.store_name}</span>}

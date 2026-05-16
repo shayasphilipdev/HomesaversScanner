@@ -10,7 +10,7 @@ const TABS = [
 
 export default function AdminNav() {
   return (
-    <div className="flex-row" style={{ flexWrap: 'wrap', gap: 6, marginBottom: 16, borderBottom: '1px solid var(--gray-200)', paddingBottom: 10 }}>
+    <div className="flex-row" style={{ flexWrap: 'wrap', gap: 6, marginBottom: 18, borderBottom: '1px solid var(--border)', paddingBottom: 12 }}>
       {TABS.map(t => (
         <NavLink
           key={t.to}

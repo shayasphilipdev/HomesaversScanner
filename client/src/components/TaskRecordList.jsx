@@ -112,7 +112,7 @@ export default function TaskRecordList({ records, loading, onRefresh }) {
                   </tr>
                   {r.review_notes && (
                     <tr>
-                      <td colSpan={9} style={{ background: 'var(--gray-50, #fafafa)', fontStyle: 'italic', fontSize: 13, color: 'var(--text-muted)', borderTop: 'none' }}>
+                      <td colSpan={9} style={{ background: 'var(--surface-warm)', fontStyle: 'italic', fontSize: 13, color: 'var(--text-muted)', borderTop: 'none' }}>
                         💬 HQ note: {r.review_notes}
                       </td>
                     </tr>

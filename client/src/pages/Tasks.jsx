@@ -84,7 +84,7 @@ export default function Tasks() {
             {tab.label}
             <span style={{
               marginLeft: 4,
-              background: filter === tab.key ? 'rgba(255,255,255,.25)' : 'var(--gray-200)',
+              background: filter === tab.key ? 'rgba(255,255,255,.22)' : 'var(--bg-soft)',
               color: filter === tab.key ? '#fff' : 'var(--text-muted)',
               borderRadius: 20, padding: '0 7px', fontSize: 11
             }}>

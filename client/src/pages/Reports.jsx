@@ -220,7 +220,7 @@ export default function Reports() {
 
           {/* Bulk action bar — back office only */}
           {isBO && selected.size > 0 && (
-            <div className="flex-row" style={{ padding: '10px 16px', background: 'var(--gray-100, #f4f4f4)', borderBottom: '1px solid var(--gray-200)', gap: 8, flexWrap: 'wrap' }}>
+            <div className="flex-row" style={{ padding: '12px 18px', background: 'var(--surface-warm)', borderBottom: '1px solid var(--border)', gap: 8, flexWrap: 'wrap' }}>
               <strong>{selected.size} selected</strong>
               <span style={{ marginLeft: 'auto' }} />
               <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => bulkReview('completed')}>
@@ -298,7 +298,7 @@ export default function Reports() {
                       {/* Inline note input for per-row "No change needed" */}
                       {isBO && reviewRowId === r.id && (
                         <tr>
-                          <td colSpan={isBO ? 8 : 7} style={{ background: 'var(--gray-50, #fafafa)' }}>
+                          <td colSpan={isBO ? 8 : 7} style={{ background: 'var(--surface-warm)' }}>
                             <div className="flex-row" style={{ gap: 6, padding: '6px 0' }}>
                               <input
                                 type="text"
@@ -319,7 +319,7 @@ export default function Reports() {
                       {/* Review-notes echo for records that already have one */}
                       {r.review_notes && !(isBO && reviewRowId === r.id) && (
                         <tr>
-                          <td colSpan={isBO ? 8 : 7} style={{ background: 'var(--gray-50, #fafafa)', fontStyle: 'italic', fontSize: 13, color: 'var(--text-muted)' }}>
+                          <td colSpan={isBO ? 8 : 7} style={{ background: 'var(--surface-warm)', fontStyle: 'italic', fontSize: 13, color: 'var(--text-muted)' }}>
                             HQ note: {r.review_notes}
                           </td>
                         </tr>

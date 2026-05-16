@@ -58,7 +58,7 @@ export default function PhotoCapture({ label, value, onChange, required }) {
       )}
       {value && (
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <img src={preview} alt="" style={{ width: 96, height: 96, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--gray-200)' }} />
+          <img src={preview} alt="" style={{ width: 96, height: 96, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <span className="note" style={{ fontSize: 12 }}>Captured ({Math.round(value.size / 1024)} KB)</span>
             <div style={{ display: 'flex', gap: 6 }}>

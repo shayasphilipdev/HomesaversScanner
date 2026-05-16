@@ -215,7 +215,7 @@ function BulkUpload({ onDone }) {
                 </div>
               </div>
             )}
-            <div style={{ maxHeight: 200, overflow: 'auto', border: '1px solid var(--gray-200)', borderRadius: 6, marginBottom: 12 }}>
+            <div style={{ maxHeight: 200, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8, marginBottom: 12 }}>
               <table style={{ fontSize: 13 }}>
                 <thead><tr><th>Code</th><th>Name</th></tr></thead>
                 <tbody>
