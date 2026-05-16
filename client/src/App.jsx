@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useState, createContext, useContext } from 'react'
 import StoreSelector from './components/StoreSelector.jsx'
 import Nav from './components/Nav.jsx'
@@ -56,10 +56,22 @@ export default function App() {
 
   return (
     <StoreContext.Provider value={{ session, logout }}>
-      <div className="app">
-        <Nav />
-        <main className="main-content">
-          <Routes>
+      <Shell />
+    </StoreContext.Provider>
+  )
+}
+
+// Sits inside the Router so we can read the current path and widen the
+// main content area for data-dense pages (Reports, Dashboard).
+function Shell() {
+  const { pathname } = useLocation()
+  const wide = pathname.startsWith('/reports') || pathname.startsWith('/dashboard')
+
+  return (
+    <div className="app">
+      <Nav />
+      <main className={`main-content${wide ? ' main-content--wide' : ''}`}>
+        <Routes>
             <Route path="/"              element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard"     element={<Dashboard />} />
             <Route path="/tasks"         element={<Tasks />} />
@@ -70,10 +82,9 @@ export default function App() {
             <Route path="/admin/lookups"    element={<AdminLookups />} />
             <Route path="/admin/products"   element={<AdminProducts />} />
             <Route path="/admin/settings"   element={<AdminSettings />} />
-            <Route path="*"                 element={<Navigate to="/dashboard" replace />} />
-          </Routes>
-        </main>
-      </div>
-    </StoreContext.Provider>
+          <Route path="*"                 element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </main>
+    </div>
   )
 }
