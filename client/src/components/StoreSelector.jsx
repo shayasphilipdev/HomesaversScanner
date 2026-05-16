@@ -1,10 +1,17 @@
 import { useState, useEffect } from 'react'
-import { getStores, verifyStorePin, verifyBackofficePin } from '../lib/api.js'
+import { getStores, verifyStorePin, verifyUserPin } from '../lib/api.js'
 
+// Login. Two tabs since Phase 9B:
+//   - Store        : pick store + PIN → resolves to that store's default
+//                    sales_assistant user (UX unchanged from earlier).
+//   - Staff / HQ   : username + PIN → any other user (store_manager,
+//                    area_manager, support_admin, buying_manager,
+//                    commercial_manager, director).
 export default function StoreSelector({ onLogin }) {
-  const [tab, setTab] = useState('store')          // 'store' | 'backoffice'
+  const [tab, setTab] = useState('store')      // 'store' | 'staff'
   const [stores, setStores] = useState([])
   const [storeId, setStoreId] = useState('')
+  const [username, setUsername] = useState('')
   const [pin, setPin] = useState('')
   const [loading, setLoading] = useState(false)
   const [loadingStores, setLoadingStores] = useState(true)
@@ -20,15 +27,18 @@ export default function StoreSelector({ onLogin }) {
   const handleStoreLogin = async (e) => {
     e.preventDefault()
     if (!storeId) return setError('Please select a store.')
-    if (!pin) return setError('Please enter the store PIN.')
+    if (!pin)     return setError('Please enter the store PIN.')
     setLoading(true); setError('')
     try {
-      const { token, store } = await verifyStorePin(storeId, pin)
+      const { token, store, user } = await verifyStorePin(storeId, pin)
       onLogin({
-        mode:      'store',
-        storeId:   store.id,
-        storeName: store.store_name,
-        storeCode: store.store_code,
+        mode:        'store',
+        storeId:     store.id,
+        storeName:   store.store_name,
+        storeCode:   store.store_code,
+        role:        user?.role || 'sales_assistant',
+        displayName: user?.display_name || store.store_name,
+        userId:      user?.id || null,
         token
       })
     } catch {
@@ -38,15 +48,25 @@ export default function StoreSelector({ onLogin }) {
     }
   }
 
-  const handleBackofficeLogin = async (e) => {
+  const handleStaffLogin = async (e) => {
     e.preventDefault()
-    if (!pin) return setError('Please enter the back office PIN.')
+    if (!username.trim()) return setError('Please enter your username.')
+    if (!pin)             return setError('Please enter your PIN.')
     setLoading(true); setError('')
     try {
-      const { token } = await verifyBackofficePin(pin)
-      onLogin({ mode: 'backoffice', storeName: 'Back Office', token })
+      const { token, user } = await verifyUserPin(username.trim(), pin)
+      const isStoreRole = user?.role === 'sales_assistant' || user?.role === 'store_manager'
+      onLogin({
+        mode:        isStoreRole ? 'store' : 'backoffice',
+        storeId:     user?.store_id || null,
+        storeName:   user?.display_name || username.trim(),
+        role:        user?.role,
+        displayName: user?.display_name || username.trim(),
+        userId:      user?.id || null,
+        token
+      })
     } catch {
-      setError('That PIN doesn’t match — try again.')
+      setError('Username or PIN doesn’t match — try again or ask HQ to reset it.')
     } finally {
       setLoading(false)
     }
@@ -64,8 +84,8 @@ export default function StoreSelector({ onLogin }) {
           <button className={`login-tab ${tab === 'store' ? 'active' : ''}`} onClick={() => { setTab('store'); setError(''); setPin('') }}>
             Store
           </button>
-          <button className={`login-tab ${tab === 'backoffice' ? 'active' : ''}`} onClick={() => { setTab('backoffice'); setError(''); setPin('') }}>
-            Back Office
+          <button className={`login-tab ${tab === 'staff' ? 'active' : ''}`} onClick={() => { setTab('staff'); setError(''); setPin('') }}>
+            Staff / HQ
           </button>
         </div>
 
@@ -95,15 +115,28 @@ export default function StoreSelector({ onLogin }) {
           </form>
         )}
 
-        {tab === 'backoffice' && (
-          <form onSubmit={handleBackofficeLogin}>
+        {tab === 'staff' && (
+          <form onSubmit={handleStaffLogin}>
+            <div className="form-group" style={{ marginBottom: 14 }}>
+              <label>Username</label>
+              <input
+                type="text" autoCapitalize="none" autoCorrect="off" autoComplete="username"
+                value={username} onChange={e => setUsername(e.target.value)}
+                placeholder="e.g. director"
+                required
+              />
+            </div>
             <div className="form-group" style={{ marginBottom: 20 }}>
-              <label>Back Office PIN</label>
-              <input type="password" value={pin} onChange={e => setPin(e.target.value)} placeholder="PIN" maxLength={12} autoFocus required />
+              <label>PIN</label>
+              <input type="password" value={pin} onChange={e => setPin(e.target.value)} placeholder="PIN" maxLength={12} required />
             </div>
             <button className="btn btn-primary" type="submit" style={{ width: '100%' }} disabled={loading}>
-              {loading ? <span className="spinner" /> : 'Sign in to Back Office'}
+              {loading ? <span className="spinner" /> : 'Sign in'}
             </button>
+            <p className="note" style={{ marginTop: 12, fontSize: 12, textAlign: 'center' }}>
+              For Store Managers, Area Managers, Support Admins, Buying Managers,<br />
+              Commercial Managers, and the Director.
+            </p>
           </form>
         )}
       </div>

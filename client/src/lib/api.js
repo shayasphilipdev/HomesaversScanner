@@ -55,6 +55,7 @@ async function request(path, options = {}) {
 export const getStores            = () => request('/stores')
 export const verifyStorePin       = (storeId, pin) => request('/stores/verify-pin', { method: 'POST', body: { storeId, pin } })
 export const verifyBackofficePin  = (pin) => request('/backoffice/verify-pin', { method: 'POST', body: { pin } })
+export const verifyUserPin        = (username, pin) => request('/users/verify-pin', { method: 'POST', body: { username, pin } })
 
 // ── Reference data ──────────────────────────────────────────────────────────
 
@@ -180,3 +181,8 @@ export const adminCleanupPhotos  = () => request('/admin/cleanup/photos', { meth
 export const adminListAreas   = () => request('/admin/areas')
 export const adminCreateArea  = (area) => request('/admin/areas', { method: 'POST', body: area })
 export const adminUpdateArea  = (id, updates) => request(`/admin/areas/${id}`, { method: 'PATCH', body: updates })
+
+export const adminListUsers     = () => request('/admin/users')
+export const adminCreateUser    = (user) => request('/admin/users', { method: 'POST', body: user })
+export const adminUpdateUser    = (id, updates) => request(`/admin/users/${id}`, { method: 'PATCH', body: updates })
+export const adminResetUserPin  = (id, pin) => request(`/admin/users/${id}/reset-pin`, { method: 'POST', body: { pin } })

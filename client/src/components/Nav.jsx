@@ -28,8 +28,8 @@ export default function Nav() {
 
       <OfflineIndicator />
 
-      <span className="nav-store-badge">
-        {session.mode === 'backoffice' ? '⚙ Back Office' : session.storeName}
+      <span className="nav-store-badge" title={session.role ? `Role: ${session.role}` : ''}>
+        {session.displayName || (session.mode === 'backoffice' ? '⚙ Back Office' : session.storeName)}
       </span>
 
       <button

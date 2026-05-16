@@ -115,6 +115,40 @@ async function authenticate(request, env) {
   return verifyTokenSig(token, env.SESSION_SECRET)
 }
 
+// ── Role helpers (Phase 9B) ────────────────────────────────────────────────
+const STORE_ROLES    = ['sales_assistant', 'store_manager']
+const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'commercial_manager', 'director']
+const ADMIN_ROLES    = ['director', 'buying_manager']
+const TASK_CREATORS  = ['buying_manager', 'area_manager', 'commercial_manager', 'director']
+
+function isBackOffice(s) {
+  if (!s) return false
+  if (s.role && BO_ROLES.includes(s.role)) return true
+  // Backward-compat: pre-9B tokens only had `mode`.
+  return s.mode === 'backoffice'
+}
+function isAdminRole(s)    { return !!s && (ADMIN_ROLES.includes(s.role)   || s.mode === 'backoffice') }
+function canCreateTasks(s) { return !!s && TASK_CREATORS.includes(s.role) }
+
+async function buildSessionForUser(db, user) {
+  // Pull the user's area memberships (only matters for area_manager).
+  let area_ids = []
+  if (user.role === 'area_manager') {
+    const rows = await db.select('user_areas', { select: 'area_id', user_id: `eq.${user.id}` })
+    area_ids = rows.map(r => r.area_id)
+  }
+  return {
+    user_id:      user.id,
+    username:     user.username,
+    display_name: user.display_name,
+    role:         user.role,
+    storeId:      user.store_id || null,
+    area_ids,
+    // legacy `mode` for any code still checking it
+    mode:         STORE_ROLES.includes(user.role) ? 'store' : 'backoffice'
+  }
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 const json = (data, status = 200) =>
@@ -147,36 +181,85 @@ export async function onRequest(context) {
       return json(rows)
     }
 
+    // Store login: pick a store + PIN. Resolves to that store's default
+    // user (the seeded sales_assistant). Same UX as before; backed by the
+    // users table since Phase 9B.
     if (path === '/stores/verify-pin' && method === 'POST') {
       const { storeId, pin } = await request.json()
       if (!storeId || !pin) return err('storeId and pin required', 400)
-      const [store] = await db.select('stores', { select: 'id,store_code,store_name,region,pin_hash', id: `eq.${storeId}` })
+      const [store] = await db.select('stores', { select: 'id,store_code,store_name,region,area_id', id: `eq.${storeId}` })
       if (!store) return err('Store not found', 404)
-      if (!await verifyPin(db, store.pin_hash, String(pin))) return err('Incorrect PIN', 401)
+
+      // Find the default user for this store (sales_assistant, active).
+      // If multiple users exist for the store we still pick sales_assistant —
+      // managers will log in via the new Staff tab with their own username.
+      const users = await db.select('users', {
+        select: 'id,username,display_name,role,store_id,pin_hash,is_active',
+        store_id: `eq.${storeId}`,
+        is_active: 'eq.true',
+        order: 'role.asc'
+      })
+      // Try sales_assistant first, then any other store-attached active user.
+      const user = users.find(u => u.role === 'sales_assistant') || users[0]
+      if (!user) return err('No active user for this store', 404)
+      if (!await verifyPin(db, user.pin_hash, String(pin))) return err('Incorrect PIN', 401)
+
+      const session = await buildSessionForUser(db, user)
       const token = await signToken(
-        { mode: 'store', storeId: store.id, exp: Date.now() + STORE_TOKEN_HOURS * 3600_000 },
+        { ...session, exp: Date.now() + STORE_TOKEN_HOURS * 3600_000 },
         env.SESSION_SECRET
       )
-      return json({ ok: true, token, store: { id: store.id, store_code: store.store_code, store_name: store.store_name, region: store.region } })
+      return json({
+        ok: true, token,
+        store: { id: store.id, store_code: store.store_code, store_name: store.store_name, region: store.region, area_id: store.area_id },
+        user:  { id: user.id, display_name: user.display_name, role: user.role }
+      })
     }
 
+    // Legacy back-office PIN flow (preserved for backward compat with any
+    // bookmarked clients). Resolves to the director user.
     if (path === '/backoffice/verify-pin' && method === 'POST') {
       const { pin } = await request.json()
       if (!pin) return err('pin required', 400)
-      const [setting] = await db.select('app_settings', { select: 'value', key: 'eq.backoffice_pin_hash' })
-      if (!setting?.value) return err('Back office PIN not configured', 500)
-      if (!await verifyPin(db, setting.value, String(pin))) return err('Incorrect PIN', 401)
+      const [user] = await db.select('users', {
+        select: 'id,username,display_name,role,store_id,pin_hash,is_active',
+        username: 'eq.director', is_active: 'eq.true'
+      })
+      if (!user) return err('Back office user not configured', 500)
+      if (!await verifyPin(db, user.pin_hash, String(pin))) return err('Incorrect PIN', 401)
+      const session = await buildSessionForUser(db, user)
       const token = await signToken(
-        { mode: 'backoffice', storeId: null, exp: Date.now() + BACKOFFICE_TOKEN_HOURS * 3600_000 },
+        { ...session, exp: Date.now() + BACKOFFICE_TOKEN_HOURS * 3600_000 },
         env.SESSION_SECRET
       )
-      return json({ ok: true, token })
+      return json({ ok: true, token, user: { id: user.id, display_name: user.display_name, role: user.role } })
+    }
+
+    // New: staff login (username + PIN). Used by every non-store role and
+    // by any extra named user attached to a store.
+    if (path === '/users/verify-pin' && method === 'POST') {
+      const { username, pin } = await request.json()
+      if (!username || !pin) return err('username and pin required', 400)
+      const [user] = await db.select('users', {
+        select: 'id,username,display_name,role,store_id,pin_hash,is_active',
+        username: `eq.${String(username).trim()}`,
+        is_active: 'eq.true'
+      })
+      if (!user) return err('Unknown user', 401)
+      if (!await verifyPin(db, user.pin_hash, String(pin))) return err('Incorrect PIN', 401)
+      const session = await buildSessionForUser(db, user)
+      const hours = STORE_ROLES.includes(user.role) ? STORE_TOKEN_HOURS : BACKOFFICE_TOKEN_HOURS
+      const token = await signToken({ ...session, exp: Date.now() + hours * 3600_000 }, env.SESSION_SECRET)
+      return json({
+        ok: true, token,
+        user: { id: user.id, display_name: user.display_name, role: user.role, store_id: user.store_id }
+      })
     }
 
     // ── Authenticated ─────────────────────────────────────────────────────
     const session = await authenticate(request, env)
     if (!session) return err('Unauthorized', 401)
-    const isBO = session.mode === 'backoffice'
+    const isBO = isBackOffice(session)
 
     // ── Back-office admin: stores ─────────────────────────────────────────
     // All /admin/* endpoints require back-office mode.
@@ -298,6 +381,89 @@ export async function onRequest(context) {
         order: 'area_name.asc'
       })
       return json(rows)
+    }
+
+    // ── Back-office admin: users ─────────────────────────────────────────
+
+    if (path === '/admin/users' && method === 'GET') {
+      if (!isAdminRole(session)) return err('Forbidden', 403)
+      const rows = await db.select('users', {
+        select: 'id,username,display_name,role,store_id,is_active,created_at,updated_at',
+        order:  'role.asc,username.asc'
+      })
+      // attach area_ids per user (only matters for area_managers, but cheap)
+      const links = await db.select('user_areas', { select: 'user_id,area_id' })
+      const byUser = {}
+      for (const l of links) (byUser[l.user_id] ||= []).push(l.area_id)
+      return json(rows.map(r => ({ ...r, area_ids: byUser[r.id] || [] })))
+    }
+
+    if (path === '/admin/users' && method === 'POST') {
+      if (!isAdminRole(session)) return err('Forbidden', 403)
+      const { username, display_name, role, store_id, area_ids, pin, is_active } = await request.json()
+      if (!username || !display_name || !role) return err('username, display_name and role are required', 400)
+      if (!pin || String(pin).length < 4) return err('PIN must be at least 4 characters', 400)
+      if (![...STORE_ROLES, ...BO_ROLES].includes(role)) return err('Unknown role', 400)
+
+      const [hashRow] = await db.rpc('hash_pin', { pin: String(pin) })
+      if (!hashRow?.hash) return err('Could not hash PIN', 500)
+
+      const inserted = await db.insert('users', {
+        username: String(username).trim(),
+        display_name: String(display_name).trim(),
+        role,
+        store_id: store_id || null,
+        pin_hash: hashRow.hash,
+        is_active: is_active !== false
+      })
+      const u = inserted[0] ?? inserted
+
+      if (role === 'area_manager' && Array.isArray(area_ids) && area_ids.length) {
+        await db.insert('user_areas', area_ids.filter(a => /^[a-f0-9-]{36}$/.test(a)).map(area_id => ({ user_id: u.id, area_id })))
+      }
+      return json({ id: u.id, username: u.username, display_name: u.display_name, role: u.role, store_id: u.store_id, is_active: u.is_active }, 201)
+    }
+
+    const adminUserMatch = path.match(/^\/admin\/users\/([a-f0-9-]+)$/)
+    if (adminUserMatch && method === 'PATCH') {
+      if (!isAdminRole(session)) return err('Forbidden', 403)
+      const id = adminUserMatch[1]
+      const body = await request.json()
+      const updates = {}
+      if (body.username     !== undefined) updates.username     = String(body.username).trim()
+      if (body.display_name !== undefined) updates.display_name = String(body.display_name).trim()
+      if (body.role         !== undefined) {
+        if (![...STORE_ROLES, ...BO_ROLES].includes(body.role)) return err('Unknown role', 400)
+        updates.role = body.role
+      }
+      if (body.store_id     !== undefined) updates.store_id     = body.store_id || null
+      if (body.is_active    !== undefined) updates.is_active    = !!body.is_active
+      if (Object.keys(updates).length) {
+        updates.updated_at = new Date().toISOString()
+        const updated = await db.update('users', { id: `eq.${id}` }, updates)
+        if (!updated.length) return err('User not found', 404)
+      }
+      // Replace area assignments if explicitly supplied.
+      if (Array.isArray(body.area_ids)) {
+        await db.remove('user_areas', { user_id: `eq.${id}` })
+        const safe = body.area_ids.filter(a => /^[a-f0-9-]{36}$/.test(a))
+        if (safe.length) {
+          await db.insert('user_areas', safe.map(area_id => ({ user_id: id, area_id })))
+        }
+      }
+      return json({ ok: true })
+    }
+
+    const adminUserPinMatch = path.match(/^\/admin\/users\/([a-f0-9-]+)\/reset-pin$/)
+    if (adminUserPinMatch && method === 'POST') {
+      if (!isAdminRole(session)) return err('Forbidden', 403)
+      const id = adminUserPinMatch[1]
+      const { pin } = await request.json()
+      if (!pin || String(pin).length < 4) return err('PIN must be at least 4 characters', 400)
+      const [hashRow] = await db.rpc('hash_pin', { pin: String(pin) })
+      const updated = await db.update('users', { id: `eq.${id}` }, { pin_hash: hashRow.hash, updated_at: new Date().toISOString() })
+      if (!updated.length) return err('User not found', 404)
+      return json({ ok: true })
     }
 
     // ── Back-office admin: areas ─────────────────────────────────────────
