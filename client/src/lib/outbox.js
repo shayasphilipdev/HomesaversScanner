@@ -81,14 +81,49 @@ export async function remove(id) {
   notifyChanged()
 }
 
+// Server-side failure: bump the attempt counter and (after the cap) mark
+// the item as 'failed' so the auto-drain stops trying it. The user can
+// reset and retry by tapping the offline pill — see resetFailed() below.
+const MAX_ATTEMPTS = 5
+
 async function bump(id) {
   const db = await openDB()
   const { store, done } = tx(db, 'readwrite')
   const get = store.get(id)
   await new Promise(res => { get.onsuccess = () => res() })
   const rec = get.result
-  if (rec) { rec.attempts = (rec.attempts || 0) + 1; store.put(rec) }
+  if (rec) {
+    rec.attempts = (rec.attempts || 0) + 1
+    if (rec.attempts >= MAX_ATTEMPTS) rec.status = 'failed'
+    store.put(rec)
+  }
   await done
+}
+
+export async function resetFailed() {
+  const db = await openDB()
+  const all = await new Promise((resolve, reject) => {
+    const t = db.transaction(STORE, 'readonly')
+    const req = t.objectStore(STORE).getAll()
+    req.onsuccess = () => resolve(req.result)
+    req.onerror   = () => reject(req.error)
+  })
+  const stuck = all.filter(r => r.status === 'failed')
+  if (!stuck.length) return 0
+  const { store, done } = tx(db, 'readwrite')
+  for (const r of stuck) {
+    r.status   = undefined
+    r.attempts = 0
+    store.put(r)
+  }
+  await done
+  notifyChanged()
+  return stuck.length
+}
+
+export async function failedCount() {
+  const all = await getAll()
+  return all.filter(r => r.status === 'failed').length
 }
 
 // ── Sync ────────────────────────────────────────────────────────────────────
@@ -128,9 +163,13 @@ export async function drain() {
     if (!navigator.onLine) return { synced: 0, failed: 0, offline: true }
 
     const items = await getAll()
-    let synced = 0, failed = 0
+    let synced = 0, failed = 0, skipped = 0
 
     for (const item of items) {
+      // Honour the failed flag — these are dead-letter until the user
+      // taps the pill (resetFailed) or removes them.
+      if (item.status === 'failed') { skipped++; continue }
+
       try {
         if (item.kind === 'with_photos' && item.photos) {
           const { product, barcode } = item.photos
@@ -144,12 +183,17 @@ export async function drain() {
         synced++
       } catch (e) {
         failed++
+        if (isOfflineError(e) || !navigator.onLine) {
+          // Pure network failure — leave the item untouched and stop the
+          // drain. We'll try again on the next online / visibility event.
+          break
+        }
+        // Server-side error: it counts against this record's attempts.
         await bump(item.id)
-        if (!navigator.onLine) break   // stop early if connection dropped
       }
     }
     if (synced) notifyChanged()
-    return { synced, failed }
+    return { synced, failed, skipped }
   } finally {
     _draining = false
   }

@@ -196,6 +196,7 @@ body {
 }
 
 .offline-pill {
+  font-family: inherit;
   font-size: 12px;
   padding: 5px 12px;
   border-radius: 99px;
@@ -203,19 +204,31 @@ body {
   font-weight: 600;
   letter-spacing: .1px;
   white-space: nowrap;
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s, opacity .15s;
 }
+.offline-pill:disabled { opacity: .6; cursor: progress; }
+.offline-pill:hover:not(:disabled) { filter: brightness(.97); }
+
 .offline-pill-off {
   background: var(--amber-soft);
   color: #6D4F10;
   border-color: rgba(180, 127, 30, .35);
 }
 [data-theme="dark"] .offline-pill-off { color: var(--amber); }
-.offline-pill-on  {
+
+.offline-pill-on {
   background: var(--primary-tint);
   color: var(--primary-dark);
   border-color: var(--primary-soft);
 }
 [data-theme="dark"] .offline-pill-on { color: var(--primary); }
+
+.offline-pill-warn {
+  background: var(--red-soft);
+  color: var(--red);
+  border-color: rgba(181, 68, 58, .35);
+}
 
 .nav-theme-toggle, .nav-logout {
   background: transparent;
