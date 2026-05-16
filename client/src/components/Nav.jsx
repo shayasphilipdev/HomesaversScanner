@@ -8,6 +8,10 @@ export default function Nav() {
     <nav className="nav">
       <span className="nav-brand">Homesavers</span>
 
+      <NavLink to="/dashboard" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+        Dashboard
+      </NavLink>
+
       <NavLink to="/tasks" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
         Tasks
       </NavLink>

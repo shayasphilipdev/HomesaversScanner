@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { useState, createContext, useContext } from 'react'
 import StoreSelector from './components/StoreSelector.jsx'
 import Nav from './components/Nav.jsx'
+import Dashboard from './pages/Dashboard.jsx'
 import Tasks from './pages/Tasks.jsx'
 import Reports from './pages/Reports.jsx'
 import AdminStores from './pages/AdminStores.jsx'
@@ -56,13 +57,14 @@ export default function App() {
         <Nav />
         <main className="main-content">
           <Routes>
-            <Route path="/"        element={<Navigate to="/tasks" replace />} />
+            <Route path="/"              element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard"     element={<Dashboard />} />
             <Route path="/tasks"         element={<Tasks />} />
             <Route path="/reports"       element={<Reports />} />
             <Route path="/admin"            element={<Navigate to="/admin/stores" replace />} />
             <Route path="/admin/stores"     element={<AdminStores />} />
             <Route path="/admin/suppliers"  element={<AdminSuppliers />} />
-            <Route path="*"                 element={<Navigate to="/tasks" replace />} />
+            <Route path="*"                 element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </main>
       </div>

@@ -300,6 +300,77 @@ export async function onRequest(context) {
       return json({ ok: true })
     }
 
+    // GET /dashboard/stats?from=&to=&storeId=
+    if (path === '/dashboard/stats' && method === 'GET') {
+      const p = url.searchParams
+      const from = p.get('from')
+      const to   = p.get('to')
+      const queryStoreId = isBO ? p.get('storeId') : session.storeId
+
+      const params = {
+        select: 'id,task_type,store_id,product_code,product_barcode,status,created_at',
+        order:  'created_at.desc',
+        limit:  '5000'
+      }
+      const range = []
+      if (from) range.push(`gte.${new Date(from).toISOString()}`)
+      if (to)   range.push(`lte.${new Date(to).toISOString()}`)
+      if (range.length)                            params['created_at'] = range
+      if (queryStoreId && queryStoreId !== 'all') params['store_id']   = `eq.${queryStoreId}`
+
+      const records = await db.select('task_records', params)
+
+      const totals = { all: records.length, pending: 0, completed: 0, no_change_needed: 0, store_completed: 0 }
+      const byTask = {}, byStore = {}, byDay = {}
+
+      // Build a continuous 14-day window so the line chart has flat days too.
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      for (let i = 13; i >= 0; i--) {
+        const d = new Date(today.getTime() - i * 86400000)
+        byDay[d.toISOString().slice(0, 10)] = 0
+      }
+
+      for (const r of records) {
+        totals[r.status] = (totals[r.status] || 0) + 1
+        byTask[r.task_type] = (byTask[r.task_type] || 0) + 1
+        if (r.store_id) byStore[r.store_id] = (byStore[r.store_id] || 0) + 1
+        const d = String(r.created_at).slice(0, 10)
+        if (d in byDay) byDay[d] = (byDay[d] || 0) + 1
+      }
+
+      const [taskTypes, stores] = await Promise.all([
+        db.select('task_types', { select: 'code,name' }),
+        isBO ? db.select('stores', { select: 'id,store_name' }) : Promise.resolve([])
+      ])
+      const taskName  = Object.fromEntries(taskTypes.map(t => [t.code, t.name]))
+      const storeName = Object.fromEntries(stores.map(s => [s.id, s.store_name]))
+
+      return json({
+        totals,
+        by_task_type: Object.entries(byTask)
+          .map(([code, count]) => ({ code, name: taskName[code] || code, count }))
+          .sort((a, b) => b.count - a.count),
+        by_store: isBO
+          ? Object.entries(byStore)
+              .map(([id, count]) => ({ id, store_name: storeName[id] || '', count }))
+              .sort((a, b) => b.count - a.count)
+          : [],
+        by_day: Object.entries(byDay)
+          .map(([date, count]) => ({ date, count }))
+          .sort((a, b) => a.date.localeCompare(b.date)),
+        recent: records.slice(0, 10).map(r => ({
+          id:           r.id,
+          task_type:    r.task_type,
+          store_id:     r.store_id,
+          store_name:   storeName[r.store_id] || '',
+          product:      r.product_code || r.product_barcode || '',
+          status:       r.status,
+          created_at:   r.created_at
+        }))
+      })
+    }
+
     // GET /task-types
     if (path === '/task-types' && method === 'GET') {
       const rows = await db.select('task_types', {

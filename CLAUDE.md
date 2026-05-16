@@ -55,7 +55,7 @@ New types can be added by inserting into `task_types`. Form schema for each live
 | 3C | Reason Codes + DRS Sizes admin | next | lookup_options CRUD with task_types assignment |
 | 3D | Products master admin (CSV upload) | | Bulk CSV import of products |
 | 3E | Settings + photo retention cleanup | | Retention windows UI + scheduled deletion of old photos |
-| 4B | Modern dashboard | | KPIs and charts (per-store, per-task-type counts; recent activity) |
+| **4B** | **Modern dashboard + design refresh** | ✅ done | Glass-style light theme, warm orange accent. New Dashboard page at `/dashboard` with KPIs, 14-day activity chart (inline SVG), by-task-type bars, by-store bars (BO), recent activity feed. `GET /dashboard/stats` aggregates server-side. |
 | 3 | Master admin (back office) | | CRUD UI for Stores, Suppliers, Reason Codes, DRS Sizes, Products. CSV bulk upload |
 | 4 | Reports + Modern Dashboard | | Per-task-type CSV with type-specific columns. Combined "All" report. Multi-filter (stores, task types, datetime). KPIs and charts |
 | 5 | Responsive PC layout | | Sidebar nav on desktop, top nav on mobile. Wider tables on PC. Polish |
@@ -191,6 +191,7 @@ Type-specific fields go in `details jsonb` (e.g. reason_code, current_price, pri
 | POST   | `/admin/suppliers/bulk` | back-office | Bulk insert (client-parsed CSV) |
 | PATCH  | `/admin/suppliers/:id` | back-office | Edit `supplier_code`, `supplier_name`, `is_active` |
 | POST   | `/task-records/bulk-review` | back-office | Body: `{ids[], status: completed\|no_change_needed, review_notes?}` |
+| GET    | `/dashboard/stats?from=&to=&storeId=` | auth | Aggregated KPIs, by_task_type, by_store, by_day (14d), recent |
 
 Admin write endpoints for suppliers / task_types / lookup_options are deferred to Phase 3.
 
