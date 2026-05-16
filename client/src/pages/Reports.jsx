@@ -116,6 +116,26 @@ export default function Reports() {
     setSelected(next)
   }
 
+  // Apply a status change locally and remember how to undo it.
+  // Returns a snapshot of the previous record state for the affected ids
+  // so the caller can revert on server failure.
+  const applyOptimisticReview = (ids, status, note) => {
+    const idSet = new Set(ids)
+    const now   = new Date().toISOString()
+    const prev  = records.map(r => idSet.has(r.id) ? { id: r.id, status: r.status, review_notes: r.review_notes, reviewed_at: r.reviewed_at } : null).filter(Boolean)
+    setRecords(rs => rs.map(r => idSet.has(r.id)
+      ? { ...r, status, review_notes: note ?? r.review_notes, reviewed_at: now, ...(status === 'completed' ? { completed_at: now } : {}) }
+      : r
+    ))
+    return prev
+  }
+
+  const revertOptimistic = (snapshot) => {
+    if (!snapshot?.length) return
+    const map = new Map(snapshot.map(s => [s.id, s]))
+    setRecords(rs => rs.map(r => map.has(r.id) ? { ...r, ...map.get(r.id) } : r))
+  }
+
   const bulkReview = async (status) => {
     if (!selected.size) return
     let note = null
@@ -123,34 +143,43 @@ export default function Reports() {
       note = window.prompt(`Optional note for ${selected.size} record(s) (shown to store):`, '')
       if (note === null) return  // cancel
     }
+    const ids = [...selected]
+    const n   = ids.length
+    const label = status === 'completed' ? 'completed' : 'marked “no change needed”'
+
+    // Update the table instantly, clear selection, show feedback.
+    const snapshot = applyOptimisticReview(ids, status, note?.trim() || null)
+    setSelected(new Set())
+    toast.success(`${n} record${n === 1 ? '' : 's'} ${label}.`)
+
+    // Then sync to server in the background.
     setBusy(true); setError('')
     try {
-      const res = await bulkReviewTaskRecords({ ids: [...selected], status, review_notes: note || null })
-      const n = res.updated ?? selected.size
-      const label = status === 'completed' ? 'completed' : 'marked "no change needed"'
-      toast.success(`${n} record${n === 1 ? '' : 's'} ${label}.`)
-      setSelected(new Set())
-      await runReport()
+      await bulkReviewTaskRecords({ ids, status, review_notes: note || null })
     } catch (e) {
-      setError(e.message); toast.error(e.message)
+      revertOptimistic(snapshot)
+      setError(e.message); toast.error(`Reverted — ${e.message}`)
     } finally {
       setBusy(false)
     }
   }
 
   const reviewOne = async (id, status) => {
+    const note = reviewRowId === id && reviewNote.trim() ? reviewNote.trim() : null
+    const snapshot = applyOptimisticReview([id], status, note)
+    setReviewRowId(null); setReviewNote('')
+    toast.success(status === 'completed' ? 'Marked complete.' : 'Marked “no change needed”.')
+
     setBusy(true); setError('')
     try {
       await updateTaskRecord(id, {
         status,
-        review_notes: reviewRowId === id && reviewNote.trim() ? reviewNote.trim() : null,
+        review_notes: note,
         ...(status === 'completed' ? { completed_at: new Date().toISOString() } : {})
       })
-      toast.success(status === 'completed' ? 'Marked complete.' : 'Marked "no change needed".')
-      setReviewRowId(null); setReviewNote('')
-      await runReport()
     } catch (e) {
-      setError(e.message); toast.error(e.message)
+      revertOptimistic(snapshot)
+      setError(e.message); toast.error(`Reverted — ${e.message}`)
     } finally {
       setBusy(false)
     }

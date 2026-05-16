@@ -63,7 +63,7 @@ export default function Dashboard() {
       <div className="page-header">
         <div>
           <div className="page-title">Welcome back{isBO ? '' : `, ${session.storeName}`}</div>
-          <div className="page-subtitle">Here's how things look in your scanner data</div>
+          <div className="page-subtitle">Here’s how your scanner activity is looking</div>
         </div>
         <div className="flex-row" style={{ gap: 6, flexWrap: 'wrap' }}>
           {RANGES.map(r => (

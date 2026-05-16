@@ -35,7 +35,7 @@ export default function TaskRecordList({ records, loading, onRefresh }) {
   }
 
   const handleDelete = async (id) => {
-    if (!confirm('Delete this record?')) return
+    if (!confirm('Delete this record? This can’t be undone.')) return
     await deleteTaskRecord(id)
     onRefresh()
   }
@@ -49,7 +49,10 @@ export default function TaskRecordList({ records, loading, onRefresh }) {
       <div className="card">
         <div className="empty-state">
           <div className="empty-state-icon">📦</div>
-          <p>No records yet. Pick a task type and scan a product to get started.</p>
+          <p>Nothing here yet.</p>
+          <p className="note" style={{ marginTop: 6 }}>
+            Pick a task type above and scan a product to log your first entry.
+          </p>
         </div>
       </div>
     )

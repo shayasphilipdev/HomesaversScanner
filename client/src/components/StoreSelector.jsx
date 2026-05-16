@@ -32,7 +32,7 @@ export default function StoreSelector({ onLogin }) {
         token
       })
     } catch {
-      setError('Incorrect PIN. Please try again.')
+      setError('That PIN doesn’t match — try again or ask HQ to reset it.')
     } finally {
       setLoading(false)
     }
@@ -46,7 +46,7 @@ export default function StoreSelector({ onLogin }) {
       const { token } = await verifyBackofficePin(pin)
       onLogin({ mode: 'backoffice', storeName: 'Back Office', token })
     } catch {
-      setError('Incorrect PIN. Please try again.')
+      setError('That PIN doesn’t match — try again.')
     } finally {
       setLoading(false)
     }
