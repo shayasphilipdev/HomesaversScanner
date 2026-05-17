@@ -201,8 +201,8 @@ export const getStoreTasksToday = ({ storeId } = {}) => {
   if (storeId) q.set('storeId', storeId)
   return request('/store-tasks/today' + (q.toString() ? `?${q}` : ''))
 }
-export const completeStoreTask  = (id, { photo_url, notes } = {}) =>
-  request(`/store-tasks/${id}/complete`, { method: 'PATCH', body: { photo_url, notes } })
+export const completeStoreTask  = (id, { photo_url, notes, answers } = {}) =>
+  request(`/store-tasks/${id}/complete`, { method: 'PATCH', body: { photo_url, notes, answers } })
 export const getStoreTaskStats  = ({ from, to, storeId } = {}) => {
   const q = new URLSearchParams()
   if (from)    q.set('from', from)

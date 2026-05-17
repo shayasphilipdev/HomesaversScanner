@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react'
 import { useStore } from '../App.jsx'
 import {
   adminListTemplates, adminCreateTemplate, adminUpdateTemplate, adminDeleteTemplate,
-  adminListAreas, adminListStores
+  adminListAreas, adminListStores, adminListUsers
 } from '../lib/api.js'
 import { useToast } from '../components/Toast.jsx'
 import AdminNav from '../components/AdminNav.jsx'
+import BlockBuilder from '../components/forms/BlockBuilder.jsx'
 
 // Templates page (Phase 9D). Visible to task creators.
 const ROLE_OPTIONS = [
@@ -47,6 +48,7 @@ export default function AdminTaskTemplates() {
   const [templates, setTemplates] = useState([])
   const [areas, setAreas]   = useState([])
   const [stores, setStores] = useState([])
+  const [users, setUsers]   = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState('')
   const [editing, setEditing] = useState(null)   // template object or {} for new
@@ -54,8 +56,11 @@ export default function AdminTaskTemplates() {
   const load = async () => {
     setLoading(true); setError('')
     try {
-      const [t, a, s] = await Promise.all([adminListTemplates(), adminListAreas(), adminListStores()])
-      setTemplates(t); setAreas(a); setStores(s)
+      const [t, a, s, u] = await Promise.all([
+        adminListTemplates(), adminListAreas(), adminListStores(),
+        adminListUsers().catch(() => [])
+      ])
+      setTemplates(t); setAreas(a); setStores(s); setUsers(u)
     } catch (e) { setError(e.message) } finally { setLoading(false) }
   }
 
@@ -86,7 +91,7 @@ export default function AdminTaskTemplates() {
       {editing && (
         <TemplateForm
           template={editing.id ? editing : null}
-          areas={areas} stores={stores}
+          areas={areas} stores={stores} users={users}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); load() }}
           toast={toast}
@@ -156,6 +161,14 @@ export default function AdminTaskTemplates() {
   )
 }
 
+// ISO timestamp → datetime-local string in the browser's local time.
+function toLocalDT(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const pad = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 function describeScope(t, areas, stores) {
   if (t.applies_to === 'all')  return 'All stores'
   if (t.applies_to === 'area') {
@@ -169,22 +182,27 @@ function describeScope(t, areas, stores) {
   return t.applies_to
 }
 
-function TemplateForm({ template, areas, stores, onClose, onSaved, toast }) {
+function TemplateForm({ template, areas, stores, users, onClose, onSaved, toast }) {
   const [form, setForm] = useState(() => ({
-    title:            template?.title || '',
-    description:      template?.description || '',
-    instructions:     template?.instructions || '',
-    category:         template?.category || '',
-    frequency:        template?.frequency || 'daily',
-    due_window:       template?.due_window || '',
-    requires_photo:   !!template?.requires_photo,
-    requires_notes:   !!template?.requires_notes,
-    applies_to:       template?.applies_to || 'all',
-    area_ids:         template?.area_ids || [],
-    store_ids:        template?.store_ids || [],
-    assigned_to_role: template?.assigned_to_role || 'all',
-    priority:         template?.priority || '',
-    sort_order:       template?.sort_order || 0
+    title:                template?.title || '',
+    description:          template?.description || '',
+    instructions:         template?.instructions || '',
+    category:             template?.category || '',
+    frequency:            template?.frequency || 'daily',
+    due_window:           template?.due_window || '',
+    requires_photo:       !!template?.requires_photo,
+    requires_notes:       !!template?.requires_notes,
+    applies_to:           template?.applies_to || 'all',
+    area_ids:             template?.area_ids || [],
+    store_ids:            template?.store_ids || [],
+    assigned_to_role:     template?.assigned_to_role || 'all',
+    assigned_to_roles:    template?.assigned_to_roles || [],
+    assigned_to_user_ids: template?.assigned_to_user_ids || [],
+    start_at:             template?.start_at ? toLocalDT(template.start_at) : '',
+    end_at:               template?.end_at   ? toLocalDT(template.end_at)   : '',
+    blocks:               template?.blocks || [],
+    priority:             template?.priority || '',
+    sort_order:           template?.sort_order || 0
   }))
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
@@ -192,18 +210,20 @@ function TemplateForm({ template, areas, stores, onClose, onSaved, toast }) {
   const submit = async (e) => {
     e.preventDefault()
     if (!form.title.trim()) return setErr('Title is required')
-    if (form.applies_to === 'area' && !form.area_ids.length)   return setErr('Pick at least one area')
+    if (form.applies_to === 'area'   && !form.area_ids.length)  return setErr('Pick at least one area')
     if (form.applies_to === 'stores' && !form.store_ids.length) return setErr('Pick at least one store')
     setSaving(true); setErr('')
     try {
       const payload = {
         ...form,
-        title: form.title.trim(),
-        description: form.description.trim() || null,
+        title:        form.title.trim(),
+        description:  form.description.trim() || null,
         instructions: form.instructions.trim() || null,
-        category: form.category.trim() || null,
-        due_window: form.due_window.trim() || null,
-        priority: form.priority || null
+        category:     form.category.trim() || null,
+        due_window:   form.due_window.trim() || null,
+        priority:     form.priority || null,
+        start_at:     form.start_at ? new Date(form.start_at).toISOString() : null,
+        end_at:       form.end_at   ? new Date(form.end_at).toISOString()   : null
       }
       if (template?.id) {
         await adminUpdateTemplate(template.id, payload)
@@ -220,6 +240,15 @@ function TemplateForm({ template, areas, stores, onClose, onSaved, toast }) {
     ...f,
     [key]: f[key].includes(id) ? f[key].filter(x => x !== id) : [...f[key], id]
   }))
+
+  // Eligible "assignee" users: store_manager / sales_assistant when scope
+  // targets specific stores, otherwise everyone.
+  const eligibleUsers = (users || []).filter(u => {
+    if (!u.is_active) return false
+    if (form.applies_to === 'stores' || form.applies_to === 'one')
+      return form.store_ids.includes(u.store_id)
+    return true
+  })
 
   return (
     <div className="card" style={{ marginBottom: 16 }}>
@@ -266,10 +295,62 @@ function TemplateForm({ template, areas, stores, onClose, onSaved, toast }) {
               </select>
             </div>
             <div className="form-group">
-              <label>Assign to role</label>
+              <label>Primary assignee role</label>
               <select value={form.assigned_to_role} onChange={e => setForm(f => ({ ...f, assigned_to_role: e.target.value }))}>
                 {ROLE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
+            </div>
+
+            <div className="form-group full">
+              <label>Also visible to these roles (optional)</label>
+              <div className="flex-row" style={{ flexWrap: 'wrap', gap: 6 }}>
+                {ROLE_OPTIONS.filter(o => o.value !== 'all' && o.value !== form.assigned_to_role).map(o => {
+                  const on = form.assigned_to_roles.includes(o.value)
+                  return (
+                    <button type="button" key={o.value}
+                      className={`btn btn-sm ${on ? 'btn-primary' : 'btn-outline'}`}
+                      onClick={() => toggleId('assigned_to_roles', o.value)}>
+                      {on ? '✓ ' : '+ '}{o.label}
+                    </button>
+                  )
+                })}
+              </div>
+              <span className="note" style={{ fontSize: 12 }}>Anyone with one of these roles will also see this task.</span>
+            </div>
+
+            {/* Specific employees */}
+            <div className="form-group full">
+              <label>Assign to specific people (optional)</label>
+              {!eligibleUsers.length ? (
+                <span className="note" style={{ fontSize: 12 }}>
+                  {form.applies_to === 'stores' || form.applies_to === 'one'
+                    ? 'Pick the target stores first to see eligible employees.'
+                    : 'No active users yet.'}
+                </span>
+              ) : (
+                <div className="flex-row" style={{ flexWrap: 'wrap', gap: 6 }}>
+                  {eligibleUsers.map(u => {
+                    const on = form.assigned_to_user_ids.includes(u.id)
+                    return (
+                      <button type="button" key={u.id}
+                        className={`btn btn-sm ${on ? 'btn-primary' : 'btn-outline'}`}
+                        onClick={() => toggleId('assigned_to_user_ids', u.id)}>
+                        {on ? '✓ ' : ''}{u.display_name}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+              <span className="note" style={{ fontSize: 12 }}>If picked, only these people see the task (instead of the role filter).</span>
+            </div>
+
+            <div className="form-group">
+              <label>Starts at (date &amp; time, optional)</label>
+              <input type="datetime-local" value={form.start_at} onChange={e => setForm(f => ({ ...f, start_at: e.target.value }))} />
+            </div>
+            <div className="form-group">
+              <label>Ends at (date &amp; time, optional)</label>
+              <input type="datetime-local" value={form.end_at} onChange={e => setForm(f => ({ ...f, end_at: e.target.value }))} />
             </div>
             {form.applies_to === 'area' && (
               <div className="form-group full">
@@ -305,6 +386,7 @@ function TemplateForm({ template, areas, stores, onClose, onSaved, toast }) {
                 <input type="checkbox" checked={form.requires_photo} onChange={e => setForm(f => ({ ...f, requires_photo: e.target.checked }))} />
                 <span className="note">Completer must attach a photo</span>
               </label>
+              <span className="note" style={{ fontSize: 11 }}>Ignored when blocks are defined below.</span>
             </div>
             <div className="form-group">
               <label>Requires notes</label>
@@ -312,6 +394,15 @@ function TemplateForm({ template, areas, stores, onClose, onSaved, toast }) {
                 <input type="checkbox" checked={form.requires_notes} onChange={e => setForm(f => ({ ...f, requires_notes: e.target.checked }))} />
                 <span className="note">Completer must add a note</span>
               </label>
+              <span className="note" style={{ fontSize: 11 }}>Ignored when blocks are defined below.</span>
+            </div>
+
+            <div className="form-group full">
+              <label>Form blocks</label>
+              <span className="note" style={{ fontSize: 12, marginBottom: 8 }}>
+                Build a custom form the completer will fill in. Mix text, numbers, choice questions, dates, photos.
+              </span>
+              <BlockBuilder value={form.blocks} onChange={blocks => setForm(f => ({ ...f, blocks }))} />
             </div>
           </div>
           {err && <div className="login-error mt-12">{err}</div>}

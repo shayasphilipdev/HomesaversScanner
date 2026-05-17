@@ -151,6 +151,7 @@ Instance generation: lazy — `ensureInstancesExist(db, storeId, date)` called b
 | 9C | products.supplier_id + lookup join + admin dropdown | ✅ done |
 | 9D | Task templates table + admin CRUD + create modal | ✅ done |
 | 9E | Store tasks page + completion + lazy generator + stats | ✅ done (no template seeds shipped) |
+| 9F | Store task form-builder + advanced targeting | ✅ done — `blocks` jsonb on templates; `answers` jsonb on instances. Block types: text · long text · number · amount · date · time · yes/no · single choice · multi choice · photo. Targeting: multi-role + specific employees + start/end window. **Only Store Tasks** (Phase 9D/9E system); HQ task records (Task Types A–I) untouched. |
 
 ---
 

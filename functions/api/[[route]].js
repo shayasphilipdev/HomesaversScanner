@@ -198,6 +198,25 @@ function templateAppliesToStore(template, store) {
   }
 }
 
+// Active in time? start_at/end_at form an optional window; null means open.
+function templateActiveOnDate(template, date) {
+  if (template.start_at && new Date(template.start_at) > date) return false
+  if (template.end_at   && new Date(template.end_at)   < date) return false
+  return true
+}
+
+// Does this template target the current logged-in user? Three rules:
+//   - assigned_to_user_ids contains my user_id (explicit pick), OR
+//   - assigned_to_roles array contains my role, OR
+//   - legacy assigned_to_role matches my role or is 'all'.
+function templateTargetsUser(template, session) {
+  if (!session) return false
+  if (Array.isArray(template.assigned_to_user_ids) && session.user_id && template.assigned_to_user_ids.includes(session.user_id)) return true
+  if (Array.isArray(template.assigned_to_roles) && template.assigned_to_roles.length && template.assigned_to_roles.includes(session.role)) return true
+  const role = template.assigned_to_role || 'all'
+  return role === 'all' || role === session.role
+}
+
 // Lazy generator — called by /store-tasks/today. Reads active templates,
 // figures out which ones apply to this store for the given date's period
 // keys, and inserts any missing instances. Idempotent thanks to the
@@ -207,13 +226,14 @@ async function ensureInstancesExist(db, env, storeId, date) {
   if (!store) return 0
 
   const templates = await db.select('store_task_templates', {
-    select: 'id,frequency,applies_to,area_ids,store_ids,is_active',
+    select: 'id,frequency,applies_to,area_ids,store_ids,is_active,start_at,end_at',
     is_active: 'eq.true'
   })
   const dueIso = date.toISOString().slice(0, 10)
   const toInsert = []
   for (const t of templates) {
     if (!templateAppliesToStore(t, store)) continue
+    if (!templateActiveOnDate(t, date))    continue
     toInsert.push({
       template_id: t.id,
       store_id:    store.id,
@@ -856,22 +876,27 @@ export async function onRequest(context) {
         return err('Invalid applies_to', 400)
 
       const inserted = await db.insert('store_task_templates', {
-        title:            b.title.trim(),
-        description:      b.description || null,
-        instructions:     b.instructions || null,
-        category:         b.category || null,
-        frequency:        b.frequency || 'daily',
-        due_window:       b.due_window || null,
-        requires_photo:   !!b.requires_photo,
-        requires_notes:   !!b.requires_notes,
-        applies_to:       b.applies_to || 'all',
-        area_ids:         Array.isArray(b.area_ids)  ? b.area_ids.filter(x => /^[a-f0-9-]{36}$/.test(x))  : [],
-        store_ids:        Array.isArray(b.store_ids) ? b.store_ids.filter(x => /^[a-f0-9-]{36}$/.test(x)) : [],
-        assigned_to_role: b.assigned_to_role || 'all',
-        priority:         b.priority || null,
-        is_active:        b.is_active !== false,
-        sort_order:       Number(b.sort_order) || 0,
-        created_by:       session.user_id || null
+        title:                b.title.trim(),
+        description:          b.description || null,
+        instructions:         b.instructions || null,
+        category:             b.category || null,
+        frequency:            b.frequency || 'daily',
+        due_window:           b.due_window || null,
+        requires_photo:       !!b.requires_photo,
+        requires_notes:       !!b.requires_notes,
+        applies_to:           b.applies_to || 'all',
+        area_ids:             Array.isArray(b.area_ids)  ? b.area_ids.filter(x => /^[a-f0-9-]{36}$/.test(x))  : [],
+        store_ids:            Array.isArray(b.store_ids) ? b.store_ids.filter(x => /^[a-f0-9-]{36}$/.test(x)) : [],
+        assigned_to_role:     b.assigned_to_role || 'all',
+        assigned_to_roles:    Array.isArray(b.assigned_to_roles)    ? b.assigned_to_roles    : [],
+        assigned_to_user_ids: Array.isArray(b.assigned_to_user_ids) ? b.assigned_to_user_ids.filter(x => /^[a-f0-9-]{36}$/.test(x)) : [],
+        start_at:             b.start_at || null,
+        end_at:               b.end_at || null,
+        blocks:               Array.isArray(b.blocks) ? b.blocks : [],
+        priority:             b.priority || null,
+        is_active:            b.is_active !== false,
+        sort_order:           Number(b.sort_order) || 0,
+        created_by:           session.user_id || null
       })
       return json(inserted[0] ?? inserted, 201)
     }
@@ -882,15 +907,18 @@ export async function onRequest(context) {
       const id = adminTemplateMatch[1]
       const b  = await request.json()
       const u  = { updated_at: new Date().toISOString() }
-      for (const k of ['title','description','instructions','category','frequency','due_window','applies_to','assigned_to_role','priority']) {
+      for (const k of ['title','description','instructions','category','frequency','due_window','applies_to','assigned_to_role','priority','start_at','end_at']) {
         if (b[k] !== undefined) u[k] = b[k]
       }
       if (b.requires_photo !== undefined) u.requires_photo = !!b.requires_photo
       if (b.requires_notes !== undefined) u.requires_notes = !!b.requires_notes
       if (b.is_active      !== undefined) u.is_active      = !!b.is_active
       if (b.sort_order     !== undefined) u.sort_order     = Number(b.sort_order) || 0
-      if (Array.isArray(b.area_ids))  u.area_ids  = b.area_ids.filter(x => /^[a-f0-9-]{36}$/.test(x))
-      if (Array.isArray(b.store_ids)) u.store_ids = b.store_ids.filter(x => /^[a-f0-9-]{36}$/.test(x))
+      if (Array.isArray(b.area_ids))             u.area_ids             = b.area_ids.filter(x => /^[a-f0-9-]{36}$/.test(x))
+      if (Array.isArray(b.store_ids))            u.store_ids            = b.store_ids.filter(x => /^[a-f0-9-]{36}$/.test(x))
+      if (Array.isArray(b.assigned_to_roles))    u.assigned_to_roles    = b.assigned_to_roles
+      if (Array.isArray(b.assigned_to_user_ids)) u.assigned_to_user_ids = b.assigned_to_user_ids.filter(x => /^[a-f0-9-]{36}$/.test(x))
+      if (Array.isArray(b.blocks))               u.blocks               = b.blocks
       const updated = await db.update('store_task_templates', { id: `eq.${id}` }, u)
       if (!updated.length) return err('Template not found', 404)
       return json(updated[0])
@@ -922,16 +950,13 @@ export async function onRequest(context) {
       const storeId = isBO ? url.searchParams.get('storeId') : session.storeId
       const today   = new Date()
       const todayIso = today.toISOString().slice(0, 10)
+
+      const SELECT = 'id,template_id,store_id,period_key,due_date,status,completed_at,photo_url,notes,answers,' +
+        'store_task_templates(title,description,instructions,category,frequency,due_window,requires_photo,requires_notes,assigned_to_role,assigned_to_roles,assigned_to_user_ids,blocks,priority)'
+
       if (!storeId || storeId === 'all') {
-        // Aggregate view — return all instances due today across all
-        // visible stores. Used by stats / inbox-style listings.
-        const params = {
-          select: 'id,template_id,store_id,period_key,due_date,status,completed_at,photo_url,notes,store_task_templates(title,category,frequency,due_window,requires_photo,requires_notes,assigned_to_role,priority)',
-          due_date: `eq.${todayIso}`,
-          order: 'created_at.asc',
-          limit: '500'
-        }
-        // For area_manager — scope to their area's stores.
+        // Aggregate view — for managers/HQ scanning everything.
+        const params = { select: SELECT, due_date: `eq.${todayIso}`, order: 'created_at.asc', limit: '500' }
         if (session.role === 'area_manager' && session.area_ids?.length) {
           const stores = await db.select('stores', { select: 'id', area_id: `in.(${session.area_ids.join(',')})` })
           const ids = stores.map(s => s.id)
@@ -941,15 +966,18 @@ export async function onRequest(context) {
         const rows = await db.select('store_task_instances', params)
         return json(rows)
       }
-      // Single-store path — ensure instances exist, then return them.
+
+      // Single-store path — ensure instances exist, then return only
+      // those that target THIS logged-in user.
       await ensureInstancesExist(db, env, storeId, today)
       const rows = await db.select('store_task_instances', {
-        select: 'id,template_id,store_id,period_key,due_date,status,completed_at,photo_url,notes,store_task_templates(title,category,frequency,due_window,requires_photo,requires_notes,assigned_to_role,priority)',
+        select: SELECT,
         store_id: `eq.${storeId}`,
         due_date: `eq.${todayIso}`,
         order: 'created_at.asc'
       })
-      return json(rows)
+      const visible = rows.filter(r => templateTargetsUser(r.store_task_templates || {}, session))
+      return json(visible)
     }
 
     // POST /store-tasks/generate — manual trigger (BO / task creators).
@@ -972,31 +1000,45 @@ export async function onRequest(context) {
       return json({ created, day: day.toISOString().slice(0, 10), stores: stores.length })
     }
 
-    // PATCH /store-tasks/:id/complete  body: { photo_url?, notes? }
+    // PATCH /store-tasks/:id/complete  body: { photo_url?, notes?, answers? }
     const instCompleteMatch = path.match(/^\/store-tasks\/([a-f0-9-]+)\/complete$/)
     if (instCompleteMatch && method === 'PATCH') {
-      const id = instCompleteMatch[1]
+      const id   = instCompleteMatch[1]
       const body = await request.json().catch(() => ({}))
 
-      // Load the instance + its template so we can enforce requires_photo/notes.
       const [inst] = await db.select('store_task_instances', {
-        select: 'id,store_id,template_id,status,store_task_templates(requires_photo,requires_notes)',
+        select: 'id,store_id,template_id,status,store_task_templates(requires_photo,requires_notes,blocks)',
         id: `eq.${id}`,
         limit: '1'
       })
       if (!inst) return err('Instance not found', 404)
-
-      // Authorization: store users can only complete their own store's items.
       if (!isBO && inst.store_id !== session.storeId) return err('Forbidden', 403)
 
-      const t = inst.store_task_templates
-      if (t?.requires_photo && !body.photo_url) return err('A photo is required for this task.', 400)
-      if (t?.requires_notes && !(body.notes && String(body.notes).trim())) return err('Notes are required for this task.', 400)
+      const t      = inst.store_task_templates || {}
+      const blocks = Array.isArray(t.blocks) ? t.blocks : []
+      const answers = body.answers && typeof body.answers === 'object' ? body.answers : {}
+
+      // Legacy mode (no blocks): enforce the simple requires_photo / notes flags.
+      if (!blocks.length) {
+        if (t.requires_photo && !body.photo_url) return err('A photo is required for this task.', 400)
+        if (t.requires_notes && !(body.notes && String(body.notes).trim())) return err('Notes are required for this task.', 400)
+      } else {
+        // Block-builder mode: validate required answers per block type.
+        for (const b of blocks) {
+          if (!b.required) continue
+          const v = answers[b.id]
+          const empty =
+            v === undefined || v === null || v === '' ||
+            (Array.isArray(v) && v.length === 0)
+          if (empty) return err(`"${b.label || b.type}" is required.`, 400)
+        }
+      }
 
       const updated = await db.update('store_task_instances', { id: `eq.${id}` }, {
         status:       'completed',
         photo_url:    body.photo_url || null,
         notes:        body.notes ? String(body.notes).trim() : null,
+        answers,
         completed_by: session.user_id || null,
         completed_at: new Date().toISOString()
       })

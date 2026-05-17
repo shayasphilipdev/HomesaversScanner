@@ -3,6 +3,7 @@ import { useStore } from '../App.jsx'
 import { getStoreTasksToday, completeStoreTask, getStoreTaskStats, uploadPhoto } from '../lib/api.js'
 import { compressImage, newPhotoNamespace } from '../lib/photos.js'
 import { useToast } from '../components/Toast.jsx'
+import BlockRenderer from '../components/forms/BlockRenderer.jsx'
 
 // Store tasks (Phase 9E). Two views by role:
 // - Sales Assistant / Store Manager : today's checklist for their store.
@@ -80,12 +81,16 @@ function StoreTodayView() {
 function TaskCard({ item, toast, onCompleted }) {
   const t = item.store_task_templates || {}
   const done = item.status === 'completed'
-  const [expanded, setExpanded] = useState(!done && (t.requires_photo || t.requires_notes))
-  const [photo, setPhoto] = useState(null)
+  const blocks = Array.isArray(t.blocks) ? t.blocks : []
+  const hasBlocks = blocks.length > 0
+
+  const [expanded, setExpanded] = useState(!done && (hasBlocks || t.requires_photo || t.requires_notes))
+  const [answers, setAnswers]   = useState(item.answers || {})
+  const [photo, setPhoto]       = useState(null)
   const [photoUrl, setPhotoUrl] = useState(item.photo_url || '')
-  const [notes, setNotes] = useState(item.notes || '')
-  const [busy, setBusy] = useState(false)
-  const [err, setErr]   = useState('')
+  const [notes, setNotes]       = useState(item.notes || '')
+  const [busy, setBusy]         = useState(false)
+  const [err, setErr]           = useState('')
 
   const pickPhoto = async (file) => {
     if (!file) return
@@ -101,14 +106,19 @@ function TaskCard({ item, toast, onCompleted }) {
     setBusy(true); setErr('')
     try {
       let url = item.photo_url || null
-      if (photo && !item.photo_url) {
+      // Legacy single photo (only when not using blocks).
+      if (!hasBlocks && photo && !item.photo_url) {
         const tempId = newPhotoNamespace()
         const r = await uploadPhoto({ file: photo, slot: 'store_task', tempId })
         url = r.url
       }
-      const updated = await completeStoreTask(item.id, { photo_url: url, notes: notes.trim() || null })
+      const updated = await completeStoreTask(item.id, {
+        photo_url: url,
+        notes:     notes.trim() || null,
+        answers:   hasBlocks ? answers : undefined
+      })
       toast.success('Task completed.')
-      onCompleted(item.id, { status: 'completed', completed_at: updated.completed_at, photo_url: url, notes })
+      onCompleted(item.id, { status: 'completed', completed_at: updated.completed_at, photo_url: url, notes, answers })
     } catch (e) { setErr(e.message); toast.error(e.message) } finally { setBusy(false) }
   }
 
@@ -123,6 +133,7 @@ function TaskCard({ item, toast, onCompleted }) {
           </span>
           <div style={{ flex: 1 }}>
             <div style={{ fontWeight: 600 }}>{t.title || '(untitled)'}</div>
+            {t.description && <div className="note" style={{ fontSize: 12.5, marginTop: 2 }}>{t.description}</div>}
             {t.category && <span className="chip" style={{ marginTop: 4 }}>{t.category}</span>}
             {t.due_window && !done && <span className="note" style={{ marginLeft: 6, fontSize: 12 }}>Due by {t.due_window}</span>}
             {done && item.completed_at && (
@@ -144,25 +155,26 @@ function TaskCard({ item, toast, onCompleted }) {
               <p className="note" style={{ marginBottom: 10 }}>{t.instructions}</p>
             )}
 
-            {t.requires_photo && (
-              <div className="form-group" style={{ marginBottom: 10 }}>
-                <label>Photo {t.requires_photo && <span style={{ color: 'var(--red)' }}>*</span>}</label>
-                {photoUrl && <img src={photoUrl} alt="" style={{ maxWidth: 160, borderRadius: 8, marginBottom: 8, display: 'block' }} />}
-                <input type="file" accept="image/*" capture="environment" onChange={e => pickPhoto(e.target.files?.[0])} />
-              </div>
-            )}
-
-            {t.requires_notes && (
-              <div className="form-group" style={{ marginBottom: 10 }}>
-                <label>Notes {t.requires_notes && <span style={{ color: 'var(--red)' }}>*</span>}</label>
-                <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="What did you do / what did you find?" />
-              </div>
-            )}
-            {!t.requires_notes && (
-              <div className="form-group" style={{ marginBottom: 10 }}>
-                <label>Notes (optional)</label>
-                <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Anything to add?" />
-              </div>
+            {hasBlocks ? (
+              <BlockRenderer
+                blocks={blocks}
+                answers={answers}
+                onAnswer={(id, v) => setAnswers(a => ({ ...a, [id]: v }))}
+              />
+            ) : (
+              <>
+                {t.requires_photo && (
+                  <div className="form-group" style={{ marginBottom: 10 }}>
+                    <label>Photo <span style={{ color: 'var(--red)' }}>*</span></label>
+                    {photoUrl && <img src={photoUrl} alt="" style={{ maxWidth: 160, borderRadius: 8, marginBottom: 8, display: 'block' }} />}
+                    <input type="file" accept="image/*" capture="environment" onChange={e => pickPhoto(e.target.files?.[0])} />
+                  </div>
+                )}
+                <div className="form-group" style={{ marginBottom: 10 }}>
+                  <label>Notes {t.requires_notes && <span style={{ color: 'var(--red)' }}>*</span>}</label>
+                  <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder={t.requires_notes ? 'What did you do / what did you find?' : 'Anything to add? (optional)'} />
+                </div>
+              </>
             )}
 
             {err && <div className="login-error mt-12">{err}</div>}

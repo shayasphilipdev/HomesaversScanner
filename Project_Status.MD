@@ -3,7 +3,13 @@
 A full snapshot of the app as it stands today. Intended as a self-contained
 orientation doc for any Claude session that opens this repo cold.
 
-> **What changed in Phase 9B3** (latest, live):
+> **What changed in Phase 9F** (latest, live — Store Tasks only):
+> - **Form-builder** for Store Task templates. New `store_task_templates.blocks` (jsonb) holds an ordered list of input blocks: text · long text · number · amount (€) · date · time · yes/no · single choice · multi choice · photo. Each block can be marked required and the server enforces it on completion.
+> - **Advanced targeting**: `assigned_to_roles[]` (multi-role) and `assigned_to_user_ids[]` (specific employees) added alongside the existing `assigned_to_role`. New `start_at` / `end_at` window for when the template is active.
+> - **Completion**: `store_task_instances.answers` (jsonb) keyed by block id. Legacy `requires_photo` / `requires_notes` still work when a template has no blocks (backward compat).
+> - **HQ Tasks (Task Types A–I, `task_records`) are NOT affected** — this round only touches the Store Tasks system from Phase 9D/9E.
+>
+> **Phase 9B3**:
 > - **Role renames**: `director` → `admin` · `commercial_manager` → `buying_head`. Full key + label change across DB (`users.role`, `store_task_templates.assigned_to_role`), backend constants, frontend role catalogue, and admin UIs. The seeded back-office login still uses **username `director`** — only the *role* is now `admin`.
 >
 > **Phase 9B2**:
