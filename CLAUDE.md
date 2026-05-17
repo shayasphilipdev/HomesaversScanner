@@ -147,7 +147,7 @@ Instance generation: lazy — `ensureInstancesExist(db, storeId, date)` called b
 | 8 | Old roles/areas design | ⏸ superseded |
 | 9A | Areas admin UI + store dropdown | ✅ done |
 | 9B | Users table + role-aware auth + Staff/HQ login tab | ✅ done |
-| 9B2 | Employees + multi-role tagging | ✅ done — HR fields on `users` (email, phone, department, employee_code, start_date, notes) + `roles text[]` for extra access tags. New `/admin/employees` page filters to HQ staff and exposes role chips. |
+| 9B2 | Employees admin (single role per employee) | ✅ done — HR fields on `users` (email, phone, department, employee_code, start_date, notes). One role per employee. New `/admin/employees` page filters to HQ staff with single-role dropdown and an inline "what can this role do?" reference. Role catalogue lives in `client/src/lib/roles.js`. The earlier multi-role `roles[]` column is unused; left in the schema. |
 | 9C | products.supplier_id + lookup join + admin dropdown | ✅ done |
 | 9D | Task templates table + admin CRUD + create modal | ✅ done |
 | 9E | Store tasks page + completion + lazy generator + stats | ✅ done (no template seeds shipped) |

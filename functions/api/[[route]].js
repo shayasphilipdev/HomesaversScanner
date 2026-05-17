@@ -121,37 +121,26 @@ const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'comm
 const ADMIN_ROLES    = ['director', 'buying_manager']
 const TASK_CREATORS  = ['buying_manager', 'area_manager', 'commercial_manager', 'director']
 
-// Effective roles = the primary role + any additional `roles` tags
-// (Phase 9B2). Auth checks should always use this set, not just `role`,
-// so an employee who holds (e.g.) both buying_manager and
-// commercial_manager gets both permission sets.
-function effectiveRoles(s) {
-  if (!s) return []
-  const out = new Set()
-  if (s.role) out.add(s.role)
-  if (Array.isArray(s.roles)) s.roles.forEach(r => r && out.add(r))
-  return [...out]
-}
-function hasAnyRole(s, allowed) {
-  const set = effectiveRoles(s)
-  return allowed.some(r => set.includes(r))
+// Single role per user. The legacy `roles text[]` column on users is
+// no longer read or written; it stays in the schema until a cleanup
+// migration.
+function hasRole(s, allowed) {
+  return !!s && !!s.role && allowed.includes(s.role)
 }
 
 function isBackOffice(s) {
   if (!s) return false
-  if (hasAnyRole(s, BO_ROLES)) return true
+  if (hasRole(s, BO_ROLES)) return true
   // Backward-compat: pre-9B tokens only had `mode`.
   return s.mode === 'backoffice'
 }
-function isAdminRole(s)    { return !!s && (hasAnyRole(s, ADMIN_ROLES)   || s.mode === 'backoffice') }
-function canCreateTasks(s) { return !!s && hasAnyRole(s, TASK_CREATORS) }
+function isAdminRole(s)    { return !!s && (hasRole(s, ADMIN_ROLES)   || s.mode === 'backoffice') }
+function canCreateTasks(s) { return !!s && hasRole(s, TASK_CREATORS) }
 
 async function buildSessionForUser(db, user) {
-  // Pull the user's area memberships. Area manager OR any user with
-  // area_manager in their tag set might want their area list available.
-  const allRoles = [user.role, ...(Array.isArray(user.roles) ? user.roles : [])]
+  // Area managers need their area list available for scoped views.
   let area_ids = []
-  if (allRoles.includes('area_manager')) {
+  if (user.role === 'area_manager') {
     const rows = await db.select('user_areas', { select: 'area_id', user_id: `eq.${user.id}` })
     area_ids = rows.map(r => r.area_id)
   }
@@ -159,8 +148,7 @@ async function buildSessionForUser(db, user) {
     user_id:      user.id,
     username:     user.username,
     display_name: user.display_name,
-    role:         user.role,                                  // primary role
-    roles:        Array.isArray(user.roles) ? user.roles : [], // extra tags
+    role:         user.role,
     storeId:      user.store_id || null,
     area_ids,
     // legacy `mode` for any code still checking it
@@ -325,7 +313,7 @@ export async function onRequest(context) {
         { ...session, exp: Date.now() + BACKOFFICE_TOKEN_HOURS * 3600_000 },
         env.SESSION_SECRET
       )
-      return json({ ok: true, token, user: { id: user.id, display_name: user.display_name, role: user.role, roles: user.roles || [] } })
+      return json({ ok: true, token, user: { id: user.id, display_name: user.display_name, role: user.role } })
     }
 
     // New: staff login (username + PIN). Used by every non-store role and
@@ -345,7 +333,7 @@ export async function onRequest(context) {
       const token = await signToken({ ...session, exp: Date.now() + hours * 3600_000 }, env.SESSION_SECRET)
       return json({
         ok: true, token,
-        user: { id: user.id, display_name: user.display_name, role: user.role, roles: user.roles || [], store_id: user.store_id }
+        user: { id: user.id, display_name: user.display_name, role: user.role, store_id: user.store_id }
       })
     }
 
@@ -478,7 +466,7 @@ export async function onRequest(context) {
 
     // ── Back-office admin: users ─────────────────────────────────────────
 
-    const USER_LIST_SELECT = 'id,username,display_name,role,roles,store_id,email,phone,department,employee_code,start_date,notes,is_active,created_at,updated_at'
+    const USER_LIST_SELECT = 'id,username,display_name,role,store_id,email,phone,department,employee_code,start_date,notes,is_active,created_at,updated_at'
 
     if (path === '/admin/users' && method === 'GET') {
       if (!isAdminRole(session)) return err('Forbidden', 403)
@@ -512,11 +500,6 @@ export async function onRequest(context) {
       if (!b.pin || String(b.pin).length < 4) return err('PIN must be at least 4 characters', 400)
       if (![...STORE_ROLES, ...BO_ROLES].includes(b.role)) return err('Unknown role', 400)
 
-      // Validate any extra role tags
-      const extraRoles = Array.isArray(b.roles)
-        ? b.roles.filter(r => [...STORE_ROLES, ...BO_ROLES].includes(r) && r !== b.role)
-        : []
-
       const [hashRow] = await db.rpc('hash_pin', { pin: String(b.pin) })
       if (!hashRow?.hash) return err('Could not hash PIN', 500)
 
@@ -524,7 +507,6 @@ export async function onRequest(context) {
         username:      String(b.username).trim(),
         display_name:  String(b.display_name).trim(),
         role:          b.role,
-        roles:         extraRoles,
         store_id:      b.store_id || null,
         email:         b.email || null,
         phone:         b.phone || null,
@@ -537,10 +519,8 @@ export async function onRequest(context) {
       })
       const u = inserted[0] ?? inserted
 
-      // area_ids accepted for area_manager (primary role) OR if the role
-      // tags include area_manager.
-      const allRoles = [u.role, ...(u.roles || [])]
-      if (allRoles.includes('area_manager') && Array.isArray(b.area_ids) && b.area_ids.length) {
+      // area_ids only meaningful when role === 'area_manager'.
+      if (u.role === 'area_manager' && Array.isArray(b.area_ids) && b.area_ids.length) {
         await db.insert('user_areas', b.area_ids
           .filter(a => /^[a-f0-9-]{36}$/.test(a))
           .map(area_id => ({ user_id: u.id, area_id })))
@@ -560,10 +540,6 @@ export async function onRequest(context) {
       if (b.role         !== undefined) {
         if (![...STORE_ROLES, ...BO_ROLES].includes(b.role)) return err('Unknown role', 400)
         updates.role = b.role
-      }
-      if (Array.isArray(b.roles)) {
-        const primary = b.role !== undefined ? b.role : null
-        updates.roles = b.roles.filter(r => [...STORE_ROLES, ...BO_ROLES].includes(r) && r !== primary)
       }
       if (b.store_id      !== undefined) updates.store_id      = b.store_id || null
       if (b.email         !== undefined) updates.email         = b.email || null

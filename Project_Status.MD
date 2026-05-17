@@ -5,8 +5,9 @@ orientation doc for any Claude session that opens this repo cold.
 
 > **What changed in Phase 9B2** (latest, live):
 > - HR-style fields added to `users`: `email`, `phone`, `department`, `employee_code` (unique when set), `start_date`, `notes`.
-> - New `roles text[]` column on `users` — primary `role` stays; extra roles are tags. All auth helpers (`isBackOffice` / `isAdminRole` / `canCreateTasks`) now union both.
-> - New **Employees** admin page at `/admin/employees`. Filters to HQ / back-office users, exposes HR fields and a primary-role + additional-role-tags picker. The lower-level `/admin/users` page is still there for store-attached accounts.
+> - **One role per employee.** The role catalogue + per-role permissions live in `client/src/lib/roles.js` (and mirror the server-side guards in `[[route]].js`).
+> - New **Employees** admin page at `/admin/employees`: HQ-only users with a single-role dropdown and an inline "What does this role do?" reference card. The lower-level `/admin/users` page still manages every account.
+> - The unused `roles text[]` column added during an earlier multi-role experiment stays in the schema for now (no code reads or writes it).
 >
 > **What changed in Phase 9** (all live):
 > - **9A — Areas admin UI** at `/admin/areas`. Store admin now uses a real Area dropdown (was free-text Region).

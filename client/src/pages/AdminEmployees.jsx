@@ -4,26 +4,13 @@ import {
   adminListEmployees, adminCreateUser, adminUpdateUser, adminResetUserPin,
   adminListAreas
 } from '../lib/api.js'
+import { ROLES, HQ_ROLE_KEYS, roleLabel } from '../lib/roles.js'
 import { useToast } from '../components/Toast.jsx'
 import AdminNav from '../components/AdminNav.jsx'
 
-// Phase 9B2 — Employees admin.
-//
-// "Employees" here = HQ / Back-office staff. The page reads from the
-// same users table but filters to back-office roles. Store-attached
-// sales_assistants are managed in /admin/users instead.
-//
-// Each employee has a primary role + optional extra role tags
-// (multi-select), plus light HR fields.
-const ROLE_LABELS = {
-  area_manager:       'Area Manager',
-  support_admin:      'Store Support Administrator',
-  buying_manager:     'Buying Manager',
-  commercial_manager: 'Commercial Manager',
-  director:           'Director'
-}
-const HQ_ROLES = ['area_manager', 'support_admin', 'buying_manager', 'commercial_manager', 'director']
-
+// Employees admin — HQ / Back-office staff. Single role per employee.
+// The role list and what each one can do live in lib/roles.js so the UI
+// and server stay in sync (manually — small list).
 export default function AdminEmployees() {
   const { session } = useStore()
   const toast = useToast()
@@ -35,6 +22,7 @@ export default function AdminEmployees() {
   const [error, setError]         = useState('')
   const [editing, setEditing]     = useState(null)     // employee object or {} for new
   const [pinResetId, setPinResetId] = useState(null)
+  const [showHelp, setShowHelp]   = useState(false)
 
   const load = async () => {
     setLoading(true); setError('')
@@ -55,16 +43,23 @@ export default function AdminEmployees() {
       <div className="page-header">
         <div>
           <div className="page-title">Employees</div>
-          <div className="page-subtitle">{employees.length} Head Office staff · tag roles to control access</div>
+          <div className="page-subtitle">
+            {employees.length} Head Office staff · each employee has a single role
+          </div>
         </div>
       </div>
 
       <AdminNav />
 
-      <div className="flex-row" style={{ marginBottom: 16, gap: 8 }}>
+      <div className="flex-row" style={{ marginBottom: 16, gap: 8, flexWrap: 'wrap' }}>
         <button className="btn btn-primary btn-sm" onClick={() => setEditing({})}>+ Add employee</button>
+        <button className="btn btn-outline btn-sm" onClick={() => setShowHelp(v => !v)}>
+          {showHelp ? '✕ Hide roles' : '? What can each role do?'}
+        </button>
         <button className="btn btn-outline btn-sm" onClick={load}>↻ Refresh</button>
       </div>
+
+      {showHelp && <RolesHelp />}
 
       {editing && (
         <EmployeeForm
@@ -93,7 +88,7 @@ export default function AdminEmployees() {
                 <tr>
                   <th>Name</th>
                   <th>Username</th>
-                  <th>Roles</th>
+                  <th>Role</th>
                   <th>Department</th>
                   <th>Contact</th>
                   <th>Status</th>
@@ -101,45 +96,64 @@ export default function AdminEmployees() {
                 </tr>
               </thead>
               <tbody>
-                {employees.map(e => {
-                  const allRoles = [e.role, ...(e.roles || [])].filter(Boolean)
-                  return (
-                    <tr key={e.id}>
-                      <td>
-                        <strong>{e.display_name}</strong>
-                        {e.employee_code && <span className="td-muted" style={{ marginLeft: 6, fontSize: 12 }}>#{e.employee_code}</span>}
-                      </td>
-                      <td className="td-code">{e.username}</td>
-                      <td>
-                        <div className="flex-row" style={{ flexWrap: 'wrap', gap: 4 }}>
-                          {allRoles.map(r => <span key={r} className="chip">{ROLE_LABELS[r] || r}</span>)}
+                {employees.map(e => (
+                  <tr key={e.id}>
+                    <td>
+                      <strong>{e.display_name}</strong>
+                      {e.employee_code && <span className="td-muted" style={{ marginLeft: 6, fontSize: 12 }}>#{e.employee_code}</span>}
+                    </td>
+                    <td className="td-code">{e.username}</td>
+                    <td><span className="chip">{roleLabel(e.role)}</span></td>
+                    <td>{e.department || <span className="td-muted">—</span>}</td>
+                    <td>
+                      {e.email && <div style={{ fontSize: 13 }}>{e.email}</div>}
+                      {e.phone && <div className="td-muted" style={{ fontSize: 12 }}>{e.phone}</div>}
+                      {!e.email && !e.phone && <span className="td-muted">—</span>}
+                    </td>
+                    <td>{e.is_active ? <span className="badge badge-completed">Active</span> : <span className="badge badge-pending">Inactive</span>}</td>
+                    <td>
+                      {pinResetId === e.id ? (
+                        <PinResetInline id={e.id} onCancel={() => setPinResetId(null)} onDone={() => { setPinResetId(null); load() }} toast={toast} />
+                      ) : (
+                        <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>
+                          <button className="btn btn-sm btn-outline" onClick={() => setEditing(e)}>Edit</button>
+                          <button className="btn btn-sm btn-outline" onClick={() => setPinResetId(e.id)}>Reset PIN</button>
                         </div>
-                      </td>
-                      <td>{e.department || <span className="td-muted">—</span>}</td>
-                      <td>
-                        {e.email && <div style={{ fontSize: 13 }}>{e.email}</div>}
-                        {e.phone && <div className="td-muted" style={{ fontSize: 12 }}>{e.phone}</div>}
-                        {!e.email && !e.phone && <span className="td-muted">—</span>}
-                      </td>
-                      <td>{e.is_active ? <span className="badge badge-completed">Active</span> : <span className="badge badge-pending">Inactive</span>}</td>
-                      <td>
-                        {pinResetId === e.id ? (
-                          <PinResetInline id={e.id} onCancel={() => setPinResetId(null)} onDone={() => { setPinResetId(null); load() }} toast={toast} />
-                        ) : (
-                          <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>
-                            <button className="btn btn-sm btn-outline" onClick={() => setEditing(e)}>Edit</button>
-                            <button className="btn btn-sm btn-outline" onClick={() => setPinResetId(e.id)}>Reset PIN</button>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
+                      )}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// Reference card — shows what each role gets, so creating an employee
+// becomes a real decision rather than a guess.
+function RolesHelp() {
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card-header">Roles &amp; access</div>
+      <div className="card-body">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
+          {HQ_ROLE_KEYS.map(k => {
+            const r = ROLES[k]
+            return (
+              <div key={k} style={{ border: '1px solid var(--border-soft)', borderRadius: 10, padding: 14, background: 'var(--surface-warm)' }}>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>{r.label}</div>
+                <div className="note" style={{ fontSize: 12.5, marginBottom: 8 }}>{r.summary}</div>
+                <ul style={{ paddingLeft: 18, fontSize: 12.5, color: 'var(--text-muted)' }}>
+                  {r.can.map((c, i) => <li key={i} style={{ marginBottom: 2 }}>{c}</li>)}
+                </ul>
+              </div>
+            )
+          })}
+        </div>
+      </div>
     </div>
   )
 }
@@ -168,7 +182,6 @@ function EmployeeForm({ employee, areas, toast, onClose, onSaved }) {
     username:      employee?.username || '',
     display_name:  employee?.display_name || '',
     role:          employee?.role || 'support_admin',
-    roles:         employee?.roles || [],
     email:         employee?.email || '',
     phone:         employee?.phone || '',
     department:    employee?.department || '',
@@ -182,15 +195,8 @@ function EmployeeForm({ employee, areas, toast, onClose, onSaved }) {
   const [saving, setSaving] = useState(false)
   const [err, setErr]       = useState('')
 
-  // Effective area_manager check (primary or tag).
-  const allRoles = [form.role, ...form.roles]
-  const showAreas = allRoles.includes('area_manager')
-
-  const toggleTag = (r) => {
-    if (r === form.role) return  // can't tag the primary role
-    setForm(f => ({ ...f, roles: f.roles.includes(r) ? f.roles.filter(x => x !== r) : [...f.roles, r] }))
-  }
-  const setPrimary = (r) => setForm(f => ({ ...f, role: r, roles: f.roles.filter(x => x !== r) }))
+  const showAreas = form.role === 'area_manager'
+  const roleMeta  = ROLES[form.role]
 
   const submit = async (e) => {
     e.preventDefault()
@@ -204,7 +210,6 @@ function EmployeeForm({ employee, areas, toast, onClose, onSaved }) {
         username:      form.username.trim(),
         display_name:  form.display_name.trim(),
         role:          form.role,
-        roles:         form.roles,
         email:         form.email.trim() || null,
         phone:         form.phone.trim() || null,
         department:    form.department.trim() || null,
@@ -239,6 +244,43 @@ function EmployeeForm({ employee, areas, toast, onClose, onSaved }) {
               <label>Username (for login) *</label>
               <input value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value }))} placeholder="e.g. jdoe" />
             </div>
+
+            <div className="form-group full">
+              <label>Role *</label>
+              <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value, area_ids: [] }))}>
+                {HQ_ROLE_KEYS.map(k => (
+                  <option key={k} value={k}>{ROLES[k].label}</option>
+                ))}
+              </select>
+              {roleMeta && (
+                <div style={{ marginTop: 8, padding: 10, background: 'var(--surface-warm)', border: '1px solid var(--border-soft)', borderRadius: 8 }}>
+                  <div className="note" style={{ fontSize: 12.5, marginBottom: 6 }}>{roleMeta.summary}</div>
+                  <ul style={{ paddingLeft: 18, fontSize: 12.5, color: 'var(--text-muted)', margin: 0 }}>
+                    {roleMeta.can.map((c, i) => <li key={i} style={{ marginBottom: 2 }}>{c}</li>)}
+                  </ul>
+                </div>
+              )}
+            </div>
+
+            {showAreas && (
+              <div className="form-group full">
+                <label>Areas covered *</label>
+                <div className="flex-row" style={{ flexWrap: 'wrap', gap: 6 }}>
+                  {areas.filter(a => a.is_active).map(a => {
+                    const on = form.area_ids.includes(a.id)
+                    return (
+                      <button type="button" key={a.id}
+                        className={`btn btn-sm ${on ? 'btn-primary' : 'btn-outline'}`}
+                        onClick={() => setForm(f => ({ ...f, area_ids: on ? f.area_ids.filter(x => x !== a.id) : [...f.area_ids, a.id] }))}>
+                        {a.area_name}
+                      </button>
+                    )
+                  })}
+                </div>
+                <span className="note" style={{ fontSize: 12 }}>This Area Manager will see stats for these areas.</span>
+              </div>
+            )}
+
             <div className="form-group">
               <label>Email</label>
               <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="name@homesavers.ie" />
@@ -266,55 +308,6 @@ function EmployeeForm({ employee, areas, toast, onClose, onSaved }) {
                 <span className="note">Can sign in</span>
               </label>
             </div>
-
-            <div className="form-group full">
-              <label>Primary role *</label>
-              <div className="flex-row" style={{ flexWrap: 'wrap', gap: 6 }}>
-                {HQ_ROLES.map(r => (
-                  <button key={r} type="button"
-                    className={`btn btn-sm ${form.role === r ? 'btn-primary' : 'btn-outline'}`}
-                    onClick={() => setPrimary(r)}>
-                    {ROLE_LABELS[r]}
-                  </button>
-                ))}
-              </div>
-              <span className="note" style={{ fontSize: 12 }}>The primary role determines the default UI experience.</span>
-            </div>
-
-            <div className="form-group full">
-              <label>Additional role tags</label>
-              <div className="flex-row" style={{ flexWrap: 'wrap', gap: 6 }}>
-                {HQ_ROLES.filter(r => r !== form.role).map(r => {
-                  const on = form.roles.includes(r)
-                  return (
-                    <button key={r} type="button"
-                      className={`btn btn-sm ${on ? 'btn-primary' : 'btn-outline'}`}
-                      onClick={() => toggleTag(r)}>
-                      {on ? '✓ ' : '+ '}{ROLE_LABELS[r]}
-                    </button>
-                  )
-                })}
-              </div>
-              <span className="note" style={{ fontSize: 12 }}>Tap to grant the matching access without changing the primary role.</span>
-            </div>
-
-            {showAreas && (
-              <div className="form-group full">
-                <label>Areas covered (for Area Manager scope)</label>
-                <div className="flex-row" style={{ flexWrap: 'wrap', gap: 6 }}>
-                  {areas.filter(a => a.is_active).map(a => {
-                    const on = form.area_ids.includes(a.id)
-                    return (
-                      <button type="button" key={a.id}
-                        className={`btn btn-sm ${on ? 'btn-primary' : 'btn-outline'}`}
-                        onClick={() => setForm(f => ({ ...f, area_ids: on ? f.area_ids.filter(x => x !== a.id) : [...f.area_ids, a.id] }))}>
-                        {a.area_name}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
 
             <div className="form-group full">
               <label>Notes</label>

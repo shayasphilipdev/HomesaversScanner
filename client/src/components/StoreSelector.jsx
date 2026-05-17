@@ -37,7 +37,6 @@ export default function StoreSelector({ onLogin }) {
         storeName:   store.store_name,
         storeCode:   store.store_code,
         role:        user?.role || 'sales_assistant',
-        roles:       user?.roles || [],
         displayName: user?.display_name || store.store_name,
         userId:      user?.id || null,
         token
@@ -62,7 +61,6 @@ export default function StoreSelector({ onLogin }) {
         storeId:     user?.store_id || null,
         storeName:   user?.display_name || username.trim(),
         role:        user?.role,
-        roles:       user?.roles || [],
         displayName: user?.display_name || username.trim(),
         userId:      user?.id || null,
         token
