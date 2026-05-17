@@ -37,12 +37,12 @@ Auth: PIN → HMAC-signed token (Web Crypto)
 | Area Manager | `area_manager` | Area-wide stats; **can create tasks** |
 | Store Support Administrator | `support_admin` | Review/process HQ task records |
 | Buying Manager | `buying_manager` | Former "Operations Manager". Full back office + **can create tasks** |
-| Commercial Manager | `commercial_manager` | All-store reports + **can create tasks** |
-| Director | `director` | Full system access + **can create tasks** |
+| Buying Head | `buying_head` | All-store reports + **can create tasks** _(renamed from Commercial Manager in 9B3)_ |
+| Admin | `admin` | Full system access + **can create tasks** _(renamed from Director in 9B3)_ |
 
-**Task creators:** `buying_manager` · `area_manager` · `commercial_manager` · `director`
+**Task creators:** `buying_manager` · `area_manager` · `buying_head` · `admin`
 
-**⚠ Rename history:** `operations_manager` → `buying_manager` · `store_colleague` → `sales_assistant`. Search the entire codebase for old strings before making changes.
+**⚠ Rename history:** `operations_manager` → `buying_manager` · `store_colleague` → `sales_assistant` · `director` → `admin` · `commercial_manager` → `buying_head` _(latest, Phase 9B3)_. Search the entire codebase for old strings before making changes.
 
 ---
 
@@ -111,7 +111,7 @@ All `/api/*` → `functions/api/[[route]].js` · Auth: `Authorization: Bearer <t
 ### Phase 9 new routes
 | Method | Path | Guard |
 |---|---|---|
-| GET/POST | `/admin/task-templates` | `buying_manager`, `area_manager`, `commercial_manager`, `director` |
+| GET/POST | `/admin/task-templates` | `buying_manager`, `area_manager`, `buying_head`, `admin` |
 | PATCH/DELETE | `/admin/task-templates/:id` | same |
 | GET | `/store-tasks/today` | auth |
 | PATCH | `/store-tasks/:id/complete` | auth |
@@ -131,8 +131,8 @@ Instance generation: lazy — `ensureInstancesExist(db, storeId, date)` called b
 | `/store-tasks/history` | `store_manager`+ |
 | `/store-tasks/stats` | `store_manager`+ |
 | `/admin/task-templates` | task creators |
-| `/admin/areas` | `buying_manager`, `director` |
-| `/admin/users` | `buying_manager`, `director` |
+| `/admin/areas` | `buying_manager`, `admin` |
+| `/admin/users` | `buying_manager`, `admin` |
 
 ### Existing pages (unchanged routes)
 `/dashboard` · `/tasks` · `/reports` · `/sync` · `/admin/stores` · `/admin/suppliers` · `/admin/lookups` · `/admin/products` · `/admin/settings`

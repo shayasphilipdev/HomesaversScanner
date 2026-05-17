@@ -116,10 +116,13 @@ async function authenticate(request, env) {
 }
 
 // ── Role helpers (Phase 9B) ────────────────────────────────────────────────
+// Role keys: sales_assistant · store_manager · area_manager ·
+// support_admin · buying_manager · buying_head · admin.
+// (Director→admin and Commercial Manager→buying_head as of Phase 9B3.)
 const STORE_ROLES    = ['sales_assistant', 'store_manager']
-const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'commercial_manager', 'director']
-const ADMIN_ROLES    = ['director', 'buying_manager']
-const TASK_CREATORS  = ['buying_manager', 'area_manager', 'commercial_manager', 'director']
+const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
+const ADMIN_ROLES    = ['admin', 'buying_manager']
+const TASK_CREATORS  = ['buying_manager', 'area_manager', 'buying_head', 'admin']
 
 // Single role per user. The legacy `roles text[]` column on users is
 // no longer read or written; it stays in the schema until a cleanup
@@ -298,7 +301,8 @@ export async function onRequest(context) {
     }
 
     // Legacy back-office PIN flow (preserved for backward compat with any
-    // bookmarked clients). Resolves to the director user.
+    // bookmarked clients). Resolves to the seeded admin user
+    // (username='director' kept as the login handle for continuity).
     if (path === '/backoffice/verify-pin' && method === 'POST') {
       const { pin } = await request.json()
       if (!pin) return err('pin required', 400)

@@ -10,12 +10,12 @@ export const ROLE_KEYS = [
   'area_manager',
   'support_admin',
   'buying_manager',
-  'commercial_manager',
-  'director'
+  'buying_head',
+  'admin'
 ]
 
 export const STORE_ROLE_KEYS = ['sales_assistant', 'store_manager']
-export const HQ_ROLE_KEYS    = ['area_manager', 'support_admin', 'buying_manager', 'commercial_manager', 'director']
+export const HQ_ROLE_KEYS    = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
 
 export const ROLES = {
   sales_assistant: {
@@ -69,20 +69,20 @@ export const ROLES = {
       'Review HQ task records · run reports'
     ]
   },
-  commercial_manager: {
-    key:    'commercial_manager',
-    label:  'Commercial Manager',
+  buying_head: {
+    key:    'buying_head',
+    label:  'Buying Head',
     scope:  'hq',
-    summary: 'Commercial leadership. Sees all-store reports; can create tasks.',
+    summary: 'Buying leadership. All-store reports; can create tasks.',
     can: [
       'All-store reports + dashboard',
       'Create / edit store task templates (any scope)',
       'Review HQ task records'
     ]
   },
-  director: {
-    key:    'director',
-    label:  'Director',
+  admin: {
+    key:    'admin',
+    label:  'Admin',
     scope:  'hq',
     summary: 'Top-level full access — everything the app exposes.',
     can: [
@@ -95,9 +95,9 @@ export const ROLES = {
 
 // Which roles each "permission" gate uses. The server enforces — these
 // labels are the same checks expressed for the UI.
-export const ADMIN_ROLES          = ['director', 'buying_manager']
-export const TASK_CREATOR_ROLES   = ['director', 'buying_manager', 'commercial_manager', 'area_manager']
-export const TASK_REVIEWER_ROLES  = ['director', 'buying_manager', 'commercial_manager', 'support_admin']
+export const ADMIN_ROLES          = ['admin', 'buying_manager']
+export const TASK_CREATOR_ROLES   = ['admin', 'buying_manager', 'buying_head', 'area_manager']
+export const TASK_REVIEWER_ROLES  = ['admin', 'buying_manager', 'buying_head', 'support_admin']
 
 export const roleLabel = (key) => ROLES[key]?.label || key
 export const roleScope = (key) => ROLES[key]?.scope || 'unknown'

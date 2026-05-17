@@ -135,7 +135,7 @@ export default function StoreSelector({ onLogin }) {
             </button>
             <p className="note" style={{ marginTop: 12, fontSize: 12, textAlign: 'center' }}>
               For Store Managers, Area Managers, Support Admins, Buying Managers,<br />
-              Commercial Managers, and the Director.
+              Buying Heads, and the Admin.
             </p>
           </form>
         )}

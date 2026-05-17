@@ -16,11 +16,11 @@ const ROLE_LABELS = {
   area_manager:       'Area Manager',
   support_admin:      'Store Support Administrator',
   buying_manager:     'Buying Manager',
-  commercial_manager: 'Commercial Manager',
-  director:           'Director'
+  buying_head:        'Buying Head',
+  admin:              'Admin'
 }
 const STORE_ROLES = ['sales_assistant', 'store_manager']
-const HQ_ROLES    = ['area_manager', 'support_admin', 'buying_manager', 'commercial_manager', 'director']
+const HQ_ROLES    = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
 
 export default function AdminUsers() {
   const { session } = useStore()

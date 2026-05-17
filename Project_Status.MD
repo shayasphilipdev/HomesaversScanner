@@ -3,7 +3,10 @@
 A full snapshot of the app as it stands today. Intended as a self-contained
 orientation doc for any Claude session that opens this repo cold.
 
-> **What changed in Phase 9B2** (latest, live):
+> **What changed in Phase 9B3** (latest, live):
+> - **Role renames**: `director` → `admin` · `commercial_manager` → `buying_head`. Full key + label change across DB (`users.role`, `store_task_templates.assigned_to_role`), backend constants, frontend role catalogue, and admin UIs. The seeded back-office login still uses **username `director`** — only the *role* is now `admin`.
+>
+> **Phase 9B2**:
 > - HR-style fields added to `users`: `email`, `phone`, `department`, `employee_code` (unique when set), `start_date`, `notes`.
 > - **One role per employee.** The role catalogue + per-role permissions live in `client/src/lib/roles.js` (and mirror the server-side guards in `[[route]].js`).
 > - New **Employees** admin page at `/admin/employees`: HQ-only users with a single-role dropdown and an inline "What does this role do?" reference card. The lower-level `/admin/users` page still manages every account.

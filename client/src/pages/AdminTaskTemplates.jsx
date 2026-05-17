@@ -15,8 +15,8 @@ const ROLE_OPTIONS = [
   { value: 'area_manager',       label: 'Area Managers' },
   { value: 'support_admin',      label: 'Store Support Administrators' },
   { value: 'buying_manager',     label: 'Buying Managers' },
-  { value: 'commercial_manager', label: 'Commercial Managers' },
-  { value: 'director',           label: 'Director' }
+  { value: 'buying_head',        label: 'Buying Heads' },
+  { value: 'admin',              label: 'Admin' }
 ]
 const FREQ_OPTIONS = [
   { value: 'daily',    label: 'Daily' },
@@ -37,7 +37,7 @@ const PRIORITY_OPTIONS = [
   { value: 'low',    label: '🟢 Low' }
 ]
 
-const TASK_CREATOR_ROLES = ['buying_manager', 'area_manager', 'commercial_manager', 'director']
+const TASK_CREATOR_ROLES = ['buying_manager', 'area_manager', 'buying_head', 'admin']
 
 export default function AdminTaskTemplates() {
   const { session } = useStore()
