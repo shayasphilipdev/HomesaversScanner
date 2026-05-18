@@ -309,21 +309,34 @@ export async function onRequest(context) {
       if (!Array.isArray(rows) || !rows.length) return err('Empty payload', 400)
 
       const now = new Date().toISOString()
-      const allSuppliers = await db.select('suppliers', { select: 'id,supplier_name,is_active' })
+      const allSuppliers = await db.select('suppliers', { select: 'id,supplier_code,supplier_name,is_active' })
       const supplierByName = new Map(
-        allSuppliers.filter(s => s.is_active).map(s => [s.supplier_name.trim().toLowerCase(), s.id])
+        allSuppliers.filter(s => s.is_active && s.supplier_name).map(s => [s.supplier_name.trim().toLowerCase(), s.id])
+      )
+      const supplierByCode = new Map(
+        allSuppliers.filter(s => s.is_active && s.supplier_code).map(s => [s.supplier_code.trim().toLowerCase(), s.id])
       )
 
-      // Same dedup-by-id logic as the manual /admin/products/bulk endpoint.
+      // Filtering rule (user request): a product row is only synced when its
+      // supplier_code matches an active supplier in the suppliers table.
+      // Anything else is dropped, which trims the 100k-row source file down
+      // to the products we actually care about.
       const byId = new Map()
       let duplicates = 0
+      let skippedNoSupplier = 0
+      let skippedNoId = 0
       for (const r of rows) {
-        if (!r?.product_id || !String(r.product_id).trim()) continue
+        if (!r?.product_id || !String(r.product_id).trim()) { skippedNoId++; continue }
         let supplier_id = r.supplier_id && /^[a-f0-9-]{36}$/.test(r.supplier_id) ? r.supplier_id : null
+        if (!supplier_id && r.supplier_code) {
+          const key = String(r.supplier_code).trim().toLowerCase()
+          supplier_id = supplierByCode.get(key) || null
+        }
         if (!supplier_id && r.supplier_name) {
           const key = String(r.supplier_name).trim().toLowerCase()
           supplier_id = supplierByName.get(key) || null
         }
+        if (!supplier_id) { skippedNoSupplier++; continue }
         const row = {
           product_id:  String(r.product_id).trim(),
           description: r.description ? String(r.description).trim() : null,
@@ -337,7 +350,7 @@ export async function onRequest(context) {
         byId.set(row.product_id, row)
       }
       const clean = Array.from(byId.values())
-      if (!clean.length) return err('No valid rows after cleaning', 400)
+      if (!clean.length) return err(`No rows matched an active supplier. (received=${rows.length}, no_supplier_match=${skippedNoSupplier}, no_product_id=${skippedNoId})`, 400)
 
       // Server-side chunking — keeps each PostgREST round-trip small enough
       // that even an enormous file doesn't blow past the Workers payload or
@@ -363,7 +376,15 @@ export async function onRequest(context) {
         const w = await res.json()
         written += Array.isArray(w) ? w.length : 0
       }
-      return json({ ok: true, written, duplicates_collapsed: duplicates, received: rows.length, synced_at: now })
+      return json({
+        ok: true,
+        written,
+        duplicates_collapsed: duplicates,
+        received:             rows.length,
+        skipped_no_supplier:  skippedNoSupplier,
+        skipped_no_id:        skippedNoId,
+        synced_at:            now
+      })
     }
 
     // Single login flow — username + PIN. The legacy /stores/verify-pin

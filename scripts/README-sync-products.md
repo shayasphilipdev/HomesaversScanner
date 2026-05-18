@@ -46,11 +46,26 @@ Then in the Cloudflare Pages dashboard:
 
 ## 3. Prepare the Excel file
 
-- Required column: `product_id` (or any of `id`, `barcode`, `sku`, `code`)
-- Optional: `description` (`name`, `product`), `uom` (`unit`), `category`,
-  `supplier_name` (`supplier`, `vendor`)
-- Sheet 1 is read by default — pass `-Sheet "MySheetName"` to the script
-  to read a different one.
+The script only reads these columns and ignores everything else in the
+workbook (so a 100k-row × 80-column master is trimmed to 6 columns × the
+relevant rows before anything leaves the machine):
+
+| Field | Accepted column names in the workbook |
+|---|---|
+| `product_id` *(required)* | `product_id`, `id`, `barcode`, `sku`, `code`, `item_code`, `item_id` |
+| `description` | `description`, `name`, `product`, `product_name`, `item_description`, `item_name` |
+| `uom` | `uom`, `unit`, `unit_of_measure`, `measure` |
+| `category` | `category`, `cat`, `department` |
+| `supplier_code` | `supplier_code`, `suppliercode`, `vendor_code`, `supplier_id_code` |
+| `supplier_name` | `supplier_name`, `supplier`, `vendor` |
+
+**Row filter**: a product is uploaded only if its `supplier_code` (or
+fallback `supplier_name`) matches an **active** row in the `suppliers`
+table. Everything else is silently dropped. This is what trims 100k rows
+down to the few thousand the stores actually scan.
+
+Sheet 1 is read by default — pass `-Sheet "MySheetName"` to read a
+different one.
 
 ## 4. Test the parse without uploading
 
@@ -74,16 +89,22 @@ Once happy with the dry run, run without `-DryRun`:
 powershell -ExecutionPolicy Bypass -File C:\Scraping\homesavers-scanner\scripts\sync-products.ps1
 ```
 
-The script POSTs the whole array in one request; the Cloudflare Function
-chunks it server-side into 500-row batches before hitting Supabase. Check
-the response:
+The script splits the payload into 2,000-row chunks and POSTs them
+sequentially. The Cloudflare Function then sub-chunks each one into
+500-row PostgREST batches before hitting Supabase. You'll see one log
+line per chunk and a totals line at the end:
 
 ```
-[INFO] Response: written=4225 duplicates=0 received=4231
+[INFO] Chunk 1/12: written=2000 dup=0 skipped_no_supplier=300
+[INFO] Chunk 2/12: written=2000 dup=0 skipped_no_supplier=274
+...
+[INFO] Totals: written=22875 duplicates=0 received=24000 skipped_no_supplier=1125 skipped_no_id=0 chunks_failed=0
 ```
 
-`received - written - duplicates` should be 0; any difference is rows
-the backend rejected (e.g., missing `product_id`).
+`skipped_no_supplier` is rows whose `supplier_code` didn't match any
+active supplier — that's the row-filter doing its job. If
+`chunks_failed > 0`, the run exits non-zero so Task Scheduler shows it
+as a failure.
 
 ## 6. Schedule it daily at 06:00 Ireland time
 
