@@ -119,19 +119,41 @@ try {
     "supplier_name" = @("supplier_name","supplier","vendor")
   }
 
+  # Build the field -> source-column map ONCE up front by scanning the first
+  # row's headers. Then in the per-row loop we just do a single hashtable
+  # lookup per field instead of an O(columns * aliases) PSObject scan.
+  # For a 97k-row x 80-col workbook this is the difference between minutes
+  # and seconds.
+  $headerNames = @($excelRows[0].PSObject.Properties.Name)
+  $headerByLower = @{}
+  foreach ($h in $headerNames) { $headerByLower[$h.Trim().ToLower()] = $h }
+
+  $fieldToSource = @{}
+  foreach ($field in $aliases.Keys) {
+    foreach ($alias in $aliases[$field]) {
+      $src = $headerByLower[$alias.ToLower()]
+      if ($src) { $fieldToSource[$field] = $src; break }
+    }
+  }
+  $missing = @($aliases.Keys | Where-Object { -not $fieldToSource.ContainsKey($_) })
+  if ($missing.Count -gt 0) { Write-Log "Headers not found for fields: $($missing -join ', '). Other fields mapped: $((($fieldToSource.GetEnumerator() | ForEach-Object { "$($_.Key)<-$($_.Value)" }) -join ', '))" "WARN" }
+  else                      { Write-Log "Header map: $((($fieldToSource.GetEnumerator() | ForEach-Object { "$($_.Key)<-$($_.Value)" }) -join ', '))" }
+
+  if (-not $fieldToSource.ContainsKey("product_id")) {
+    throw "Workbook has no column matching any product_id alias ($($aliases['product_id'] -join ', ')). Found columns: $($headerNames -join ', ')"
+  }
+
   $payload = New-Object System.Collections.Generic.List[hashtable]
   $skippedNoId       = 0
   $skippedNoSupplier = 0
 
   foreach ($r in $excelRows) {
     $row = @{}
-    foreach ($field in $aliases.Keys) {
-      foreach ($alias in $aliases[$field]) {
-        $val = $r.PSObject.Properties | Where-Object { $_.Name.Trim().ToLower() -eq $alias.ToLower() } | Select-Object -First 1
-        if ($val -and $null -ne $val.Value -and "$($val.Value)".Trim() -ne "") {
-          $row[$field] = "$($val.Value)".Trim()
-          break
-        }
+    foreach ($field in $fieldToSource.Keys) {
+      $v = $r.($fieldToSource[$field])
+      if ($null -ne $v) {
+        $s = "$v".Trim()
+        if ($s -ne "") { $row[$field] = $s }
       }
     }
     if (-not $row.ContainsKey("product_id")) { $skippedNoId++; continue }
