@@ -26,6 +26,7 @@ export default function TaskBForm({ onSaved, storeId }) {
   const [savingStep, setSavingStep]   = useState('')
   const [error, setError]             = useState('')
   const [lookupLoading, setLookupLoading] = useState(false)
+  const [lookupInfo, setLookupInfo] = useState(null)
 
   const triggerLookup = async (code) => {
     if (!code || code.length < 4) return
@@ -33,7 +34,16 @@ export default function TaskBForm({ onSaved, storeId }) {
     try {
       const p = await lookupProduct(code)
       if (p) {
-        setForm(f => ({ ...f, description: p.description || f.description, uom: p.uom || f.uom }))
+        setForm(f => ({
+          ...f,
+          description:        p.description || f.description,
+          uom:                p.uom || f.uom,
+          supplier_id:        p.supplier_id || f.supplier_id,
+          supplier_name_text: p.supplier_id ? '' : f.supplier_name_text
+        }))
+        setLookupInfo(p)
+      } else {
+        setLookupInfo(null)
       }
     } catch {} finally { setLookupLoading(false) }
   }
@@ -115,6 +125,16 @@ export default function TaskBForm({ onSaved, storeId }) {
               lookupLoading={lookupLoading}
               readerId="reader-b"
             />
+
+            {lookupInfo && (
+              <div className="form-group full" style={{ marginTop: -6 }}>
+                <span className="note" style={{ fontSize: 12.5 }}>
+                  {lookupInfo.description && <>Product: <strong>{lookupInfo.description}</strong></>}
+                  {lookupInfo.description && lookupInfo.supplier_name && ' · '}
+                  {lookupInfo.supplier_name && <>Supplier: <strong>{lookupInfo.supplier_name}</strong></>}
+                </span>
+              </div>
+            )}
 
             <div className="form-group">
               <label>UOM (optional)</label>

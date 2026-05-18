@@ -1,14 +1,18 @@
-﻿import { useState } from 'react'
+import { useState } from 'react'
 import { createTaskRecord, lookupProduct } from '../../lib/api.js'
 import { useStore } from '../../App.jsx'
 import ScannerInput from './ScannerInput.jsx'
+import SupplierPicker from './SupplierPicker.jsx'
 
 // Tasks D (Wrong Description) and I (Miscellaneous Tasks) share an identical
-// field set: product_code, product_name_label, product_barcode, notes.
+// field set: product_code, product_name_label, product_barcode, supplier, notes.
 //
 // The task_type prop decides which header is shown and which code lands in
 // the DB. Behaviour is otherwise identical.
-const EMPTY = { product_code: '', product_name_label: '', product_barcode: '', notes: '' }
+const EMPTY = {
+  product_code: '', product_name_label: '', product_barcode: '',
+  supplier_id: '', supplier_name_text: '', notes: ''
+}
 
 const HEADERS = {
   D: 'D — Wrong Description',
@@ -26,17 +30,22 @@ export default function TaskDIForm({ taskType, onSaved, storeId }) {
   const [saving, setSaving] = useState(false)
   const [error, setError]   = useState('')
   const [lookupLoading, setLookupLoading] = useState(false)
+  const [lookupInfo, setLookupInfo] = useState(null)
 
-  // Auto-fill product_name_label from master data on product_code confirm —
-  // gives the user a starting point they can correct.
   const triggerLookup = async (code) => {
-    if (!code || code.length < 4) return
+    if (!code || code.length < 4) { setLookupInfo(null); return }
     setLookupLoading(true)
     try {
       const p = await lookupProduct(code)
-      if (p?.description) {
-        setForm(f => f.product_name_label ? f : { ...f, product_name_label: p.description })
-      }
+      if (p) {
+        setForm(f => ({
+          ...f,
+          product_name_label: f.product_name_label || p.description || '',
+          supplier_id:        p.supplier_id || f.supplier_id,
+          supplier_name_text: p.supplier_id ? '' : f.supplier_name_text
+        }))
+        setLookupInfo(p)
+      } else { setLookupInfo(null) }
     } catch {} finally { setLookupLoading(false) }
   }
 
@@ -53,10 +62,12 @@ export default function TaskDIForm({ taskType, onSaved, storeId }) {
         product_code:       form.product_code.trim(),
         product_name_label: form.product_name_label.trim(),
         product_barcode:    form.product_barcode.trim() || null,
+        supplier_id:        form.supplier_id || null,
+        supplier_name_text: form.supplier_name_text.trim() || null,
         notes:              form.notes.trim() || null,
         status:             'pending'
       })
-      setForm(EMPTY)
+      setForm(EMPTY); setLookupInfo(null)
       onSaved?.({ queued: !!res?.queued })
     } catch (err) {
       setError(err.message)
@@ -90,6 +101,16 @@ export default function TaskDIForm({ taskType, onSaved, storeId }) {
               placeholder="Scan or type the printed barcode"
             />
 
+            {lookupInfo && (
+              <div className="form-group full" style={{ marginTop: -6 }}>
+                <span className="note" style={{ fontSize: 12.5 }}>
+                  {lookupInfo.description && <>Product: <strong>{lookupInfo.description}</strong></>}
+                  {lookupInfo.description && lookupInfo.supplier_name && ' · '}
+                  {lookupInfo.supplier_name && <>Supplier: <strong>{lookupInfo.supplier_name}</strong></>}
+                </span>
+              </div>
+            )}
+
             <div className="form-group full">
               <label>Product Name (as on the product) *</label>
               <input
@@ -98,6 +119,11 @@ export default function TaskDIForm({ taskType, onSaved, storeId }) {
                 placeholder="Exactly what is printed on the product"
               />
             </div>
+
+            <SupplierPicker
+              value={{ supplier_id: form.supplier_id, supplier_name_text: form.supplier_name_text }}
+              onChange={({ supplier_id, supplier_name_text }) => setForm(f => ({ ...f, supplier_id, supplier_name_text }))}
+            />
 
             <div className="form-group full">
               <label>Notes (optional)</label>
@@ -112,7 +138,7 @@ export default function TaskDIForm({ taskType, onSaved, storeId }) {
           {error && <div className="login-error mt-12">{error}</div>}
 
           <div className="flex-row mt-20" style={{ justifyContent: 'flex-end' }}>
-            <button type="button" className="btn btn-outline" onClick={() => { setForm(EMPTY); setError('') }}>
+            <button type="button" className="btn btn-outline" onClick={() => { setForm(EMPTY); setLookupInfo(null); setError('') }}>
               Clear
             </button>
             <button type="submit" className="btn btn-primary" disabled={saving}>

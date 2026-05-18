@@ -44,6 +44,7 @@ export default function TaskFForm({ onSaved, storeId }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [lookupLoading, setLookupLoading] = useState(false)
+  const [lookupInfo, setLookupInfo] = useState(null)
 
   useEffect(() => {
     getLookupOptions({ kind: 'drs_size', task_type: 'F' })
@@ -52,9 +53,19 @@ export default function TaskFForm({ onSaved, storeId }) {
   }, [])
 
   const triggerLookup = async (code) => {
-    if (!code || code.length < 4) return
+    if (!code || code.length < 4) { setLookupInfo(null); return }
     setLookupLoading(true)
-    try { await lookupProduct(code) } catch {} finally { setLookupLoading(false) }
+    try {
+      const p = await lookupProduct(code)
+      if (p) {
+        setForm(f => ({
+          ...f,
+          supplier_id:        p.supplier_id || f.supplier_id,
+          supplier_name_text: p.supplier_id ? '' : f.supplier_name_text
+        }))
+        setLookupInfo(p)
+      } else { setLookupInfo(null) }
+    } catch {} finally { setLookupLoading(false) }
   }
 
   const handleSubmit = async (e) => {
@@ -115,6 +126,16 @@ export default function TaskFForm({ onSaved, storeId }) {
               readerId="reader-f"
               placeholder="Scan or type the product ID"
             />
+
+            {lookupInfo && (
+              <div className="form-group full" style={{ marginTop: -6 }}>
+                <span className="note" style={{ fontSize: 12.5 }}>
+                  {lookupInfo.description && <>Product: <strong>{lookupInfo.description}</strong></>}
+                  {lookupInfo.description && lookupInfo.supplier_name && ' · '}
+                  {lookupInfo.supplier_name && <>Supplier: <strong>{lookupInfo.supplier_name}</strong></>}
+                </span>
+              </div>
+            )}
 
             <div className="form-group">
               <label>Size of the Product *</label>

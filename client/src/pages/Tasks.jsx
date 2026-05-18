@@ -6,6 +6,7 @@ import TaskTypePicker from '../components/TaskTypePicker.jsx'
 import TaskForm from '../components/TaskForm.jsx'
 import TaskRecordList from '../components/TaskRecordList.jsx'
 import CurrentStorePicker from '../components/CurrentStorePicker.jsx'
+import HoTasksHelp from '../components/HoTasksHelp.jsx'
 import { useToast } from '../components/Toast.jsx'
 
 export default function Tasks() {
@@ -68,6 +69,8 @@ export default function Tasks() {
           </div>
         </div>
       </div>
+
+      <HoTasksHelp />
 
       <CurrentStorePicker subject="task" />
 

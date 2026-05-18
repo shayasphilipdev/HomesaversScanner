@@ -26,7 +26,13 @@ export default function TaskAForm({ onSaved, storeId }) {
     try {
       const p = await lookupProduct(code)
       if (p) {
-        setForm(f => ({ ...f, description: p.description || f.description, uom: p.uom || f.uom }))
+        setForm(f => ({
+          ...f,
+          description:        p.description || f.description,
+          uom:                p.uom || f.uom,
+          supplier_id:        p.supplier_id || f.supplier_id,
+          supplier_name_text: p.supplier_id ? '' : f.supplier_name_text
+        }))
         setLookupInfo(p)
       } else {
         setLookupInfo(null)
