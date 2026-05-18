@@ -111,7 +111,9 @@ try {
   # Only these fields are sent -- every other column in the 80+ column
   # master is silently ignored so the network payload stays tiny.
   $aliases = @{
-    "product_id"    = @("product_id","id","barcode","sku","code","item_code","item_id","ean_barcode","ean")
+    # EAN is what staff actually scan in the stores, so prefer it over any
+    # internal SKU/Item_Id column. Aliases are tried left-to-right.
+    "product_id"    = @("ean_barcode","ean","barcode","product_id","sku","code","item_code","item_id","id")
     "description"   = @("description","name","product","product_name","item_description","item_name")
     "uom"           = @("uom","unit","unit_of_measure","measure","ud_uomtype","uomtype")
     "category"      = @("category","cat","department","itemgroup","item_group")
