@@ -8,7 +8,7 @@
 [CmdletBinding()]
 param(
   # Override the source folder / file. By default the script asks the app
-  # for the folder + glob (settings under Admin → Settings) and picks the
+  # for the folder + glob (settings under Admin -> Settings) and picks the
   # newest matching file. Pass -ExcelPath to force a specific file.
   [string]$ExcelPath,
   [string]$Folder,
@@ -44,7 +44,7 @@ function Write-Log {
     if ($dir -and -not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
     Add-Content -Path $LogPath -Value $line
   } catch {
-    # Logging is best-effort — never let a log write break the sync.
+    # Logging is best-effort -- never let a log write break the sync.
     Write-Host "WARN: could not write log: $($_.Exception.Message)"
   }
 }
@@ -58,7 +58,7 @@ try {
   if (-not $secret) { throw "Secret file is empty: $SecretFile" }
   $headers = @{ "X-Sync-Secret" = $secret; "Content-Type" = "application/json" }
 
-  # Pull folder / file pattern / sheet from Admin → Settings unless the user
+  # Pull folder / file pattern / sheet from Admin -> Settings unless the user
   # passed explicit overrides on the command line. This is what lets the
   # office change the folder via the UI without anyone editing this script.
   if (-not $ExcelPath -or -not $Sheet -or -not $Folder -or -not $FilePattern) {
@@ -75,7 +75,7 @@ try {
 
   # If no specific file was passed, find the newest match in the folder.
   if (-not $ExcelPath) {
-    if (-not $Folder)      { throw "No folder configured (set 'product_sync_folder' in Admin → Settings or pass -Folder)" }
+    if (-not $Folder)      { throw "No folder configured (set 'product_sync_folder' in Admin -> Settings or pass -Folder)" }
     if (-not $FilePattern) { $FilePattern = '*.xlsx' }
     if (-not (Test-Path $Folder)) { throw "Source folder not accessible: $Folder. Check the network share is mounted and the scheduled task account has read access." }
     $candidates = Get-ChildItem -Path $Folder -Filter $FilePattern -File -ErrorAction Stop | Sort-Object LastWriteTime -Descending
@@ -91,7 +91,7 @@ try {
 
   if (-not (Test-Path $ExcelPath)) { throw "Excel file not found: $ExcelPath" }
 
-  # ImportExcel is a pure-.NET module — no Microsoft Excel install required.
+  # ImportExcel is a pure-.NET module -- no Microsoft Excel install required.
   # First run only: Install-Module ImportExcel -Scope CurrentUser
   if (-not (Get-Module -ListAvailable -Name ImportExcel)) {
     throw "ImportExcel module not installed. Run once: Install-Module ImportExcel -Scope CurrentUser"
@@ -107,8 +107,8 @@ try {
 
   # Tolerate slightly different column names in the source workbook by
   # building a lookup from lower-cased headers to canonical fields. Only
-  # product_id is required — every other field is optional.
-  # Only these fields are sent — every other column in the 80+ column
+  # product_id is required -- every other field is optional.
+  # Only these fields are sent -- every other column in the 80+ column
   # master is silently ignored so the network payload stays tiny.
   $aliases = @{
     "product_id"    = @("product_id","id","barcode","sku","code","item_code","item_id")
@@ -151,8 +151,8 @@ try {
   Write-Log "Prepared $($payload.Count) row(s) for upload (out of $($excelRows.Count) read)"
 
   if ($DryRun) {
-    Write-Log "DryRun set — first row preview: $($payload[0] | ConvertTo-Json -Compress)"
-    Write-Log "=== Dry run complete — no HTTP POST sent ==="
+    Write-Log "DryRun set -- first row preview: $($payload[0] | ConvertTo-Json -Compress)"
+    Write-Log "=== Dry run complete -- no HTTP POST sent ==="
     exit 0
   }
 
@@ -187,7 +187,7 @@ try {
 
   Write-Log ("Totals: written={0} duplicates={1} received={2} skipped_no_supplier={3} skipped_no_id={4} chunks_failed={5}" -f `
     $totals.written, $totals.duplicates, $totals.received, $totals.skippedNoSupplier, $totals.skippedNoId, $totals.chunksFailed)
-  if ($totals.chunksFailed -gt 0) { throw "$($totals.chunksFailed) chunk(s) failed — see log above" }
+  if ($totals.chunksFailed -gt 0) { throw "$($totals.chunksFailed) chunk(s) failed -- see log above" }
   Write-Log "=== Product sync finished OK ==="
   exit 0
 }
