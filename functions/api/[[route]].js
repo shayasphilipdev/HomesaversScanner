@@ -297,6 +297,75 @@ export async function onRequest(context) {
       return json(rows)
     }
 
+    // Service-account bulk product sync — used by the scheduled
+    // PowerShell job to push the daily product master Excel.
+    // Auth: shared secret in the X-Sync-Secret header (set as a Cloudflare
+    // Pages env var named PRODUCT_SYNC_SECRET). No JWT needed.
+    if (path === '/products/sync' && method === 'POST') {
+      if (!env.PRODUCT_SYNC_SECRET) return err('PRODUCT_SYNC_SECRET not configured', 500)
+      const provided = request.headers.get('X-Sync-Secret') || ''
+      if (provided !== env.PRODUCT_SYNC_SECRET) return err('Forbidden', 403)
+      const rows = await request.json()
+      if (!Array.isArray(rows) || !rows.length) return err('Empty payload', 400)
+
+      const now = new Date().toISOString()
+      const allSuppliers = await db.select('suppliers', { select: 'id,supplier_name,is_active' })
+      const supplierByName = new Map(
+        allSuppliers.filter(s => s.is_active).map(s => [s.supplier_name.trim().toLowerCase(), s.id])
+      )
+
+      // Same dedup-by-id logic as the manual /admin/products/bulk endpoint.
+      const byId = new Map()
+      let duplicates = 0
+      for (const r of rows) {
+        if (!r?.product_id || !String(r.product_id).trim()) continue
+        let supplier_id = r.supplier_id && /^[a-f0-9-]{36}$/.test(r.supplier_id) ? r.supplier_id : null
+        if (!supplier_id && r.supplier_name) {
+          const key = String(r.supplier_name).trim().toLowerCase()
+          supplier_id = supplierByName.get(key) || null
+        }
+        const row = {
+          product_id:  String(r.product_id).trim(),
+          description: r.description ? String(r.description).trim() : null,
+          uom:         r.uom         ? String(r.uom).trim()         : null,
+          category:    r.category    ? String(r.category).trim()    : null,
+          supplier_id,
+          is_active:   true,
+          updated_at:  now
+        }
+        if (byId.has(row.product_id)) duplicates++
+        byId.set(row.product_id, row)
+      }
+      const clean = Array.from(byId.values())
+      if (!clean.length) return err('No valid rows after cleaning', 400)
+
+      // Server-side chunking — keeps each PostgREST round-trip small enough
+      // that even an enormous file doesn't blow past the Workers payload or
+      // CPU budget. 500 rows per chunk mirrors the manual UI's chunk size.
+      const CHUNK = 500
+      let written = 0
+      for (let i = 0; i < clean.length; i += CHUNK) {
+        const slice = clean.slice(i, i + CHUNK)
+        const res = await fetch(`${env.SUPABASE_URL}/rest/v1/products?on_conflict=product_id`, {
+          method: 'POST',
+          headers: {
+            'apikey':        env.SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`,
+            'Content-Type':  'application/json',
+            'Prefer':        'return=representation,resolution=merge-duplicates'
+          },
+          body: JSON.stringify(slice)
+        })
+        if (!res.ok) {
+          const txt = await res.text()
+          return err(`Chunk ${i / CHUNK + 1} failed at row ${i + 1}: ${txt.slice(0, 400)} (so far written: ${written})`, 502)
+        }
+        const w = await res.json()
+        written += Array.isArray(w) ? w.length : 0
+      }
+      return json({ ok: true, written, duplicates_collapsed: duplicates, received: rows.length, synced_at: now })
+    }
+
     // Single login flow — username + PIN. The legacy /stores/verify-pin
     // and /backoffice/verify-pin endpoints were removed in Phase 9J.
     if (path === '/users/verify-pin' && method === 'POST') {
