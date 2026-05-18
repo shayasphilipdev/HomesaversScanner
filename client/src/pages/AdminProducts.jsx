@@ -115,10 +115,17 @@ export default function AdminProducts() {
   )
 }
 
+// Tuneables for the chunked upsert. 500 rows per request keeps each Worker
+// invocation well under its CPU/time budget, and 4 parallel uploads hides
+// most of the Supabase round-trip latency without overwhelming it.
+const BULK_CHUNK_SIZE       = 500
+const BULK_PARALLEL_UPLOADS = 4
+
 function BulkUpload({ onDone }) {
   const toast = useToast()
   const [preview, setPreview] = useState(null)
   const [saving, setSaving]   = useState(false)
+  const [progress, setProgress] = useState({ done: 0, total: 0 })
   const [err, setErr]         = useState('')
 
   const handleFile = async (e) => {
@@ -161,13 +168,53 @@ function BulkUpload({ onDone }) {
   const confirm = async () => {
     if (!preview?.rows?.length) return
     setSaving(true); setErr('')
+    const rows = preview.rows
+
+    // Split the CSV into fixed-size chunks and run BULK_PARALLEL_UPLOADS
+    // chunks at a time. This both stays under the Worker timeout for any
+    // single request and overlaps network latency across uploads.
+    const chunks = []
+    for (let i = 0; i < rows.length; i += BULK_CHUNK_SIZE) {
+      chunks.push(rows.slice(i, i + BULK_CHUNK_SIZE))
+    }
+    setProgress({ done: 0, total: rows.length })
+
+    let written = 0
+    let duplicates = 0
+    let failed = 0
+    let firstError = null
+
+    let next = 0
+    const worker = async () => {
+      while (next < chunks.length) {
+        const idx = next++
+        const chunk = chunks[idx]
+        try {
+          const res = await adminBulkProducts(chunk)
+          written    += res?.written || 0
+          duplicates += res?.duplicates_collapsed || 0
+        } catch (e) {
+          failed += chunk.length
+          if (!firstError) firstError = e.message || 'Import failed'
+        }
+        setProgress(p => ({ done: Math.min(p.total, p.done + chunk.length), total: p.total }))
+      }
+    }
     try {
-      const res = await adminBulkProducts(preview.rows)
-      setPreview(null)
-      const dupNote = res.duplicates_collapsed ? ` (${res.duplicates_collapsed} duplicate id${res.duplicates_collapsed === 1 ? '' : 's'} merged)` : ''
-      toast.success(`Upserted ${res.written} product${res.written === 1 ? '' : 's'}${dupNote}.`)
-      onDone()
-    } catch (e) { setErr(e.message); toast.error(e.message) } finally { setSaving(false) }
+      await Promise.all(Array.from({ length: Math.min(BULK_PARALLEL_UPLOADS, chunks.length) }, worker))
+      if (failed) {
+        toast.error(`${failed} row(s) failed — ${firstError}`)
+        setErr(`${failed} row(s) failed. First error: ${firstError}. ${written} row(s) were saved.`)
+      } else {
+        const dupNote = duplicates ? ` (${duplicates} duplicate id${duplicates === 1 ? '' : 's'} merged)` : ''
+        toast.success(`Upserted ${written} product${written === 1 ? '' : 's'}${dupNote}.`)
+        setPreview(null)
+        onDone()
+      }
+    } finally {
+      setSaving(false)
+      setProgress({ done: 0, total: 0 })
+    }
   }
 
   return (
@@ -175,7 +222,9 @@ function BulkUpload({ onDone }) {
       <div className="card-header">Bulk CSV upload (upsert by product_id)</div>
       <div className="card-body">
         <p className="note" style={{ marginTop: 0 }}>
-          Required: <code>product_id</code>. Optional: <code>description</code>, <code>uom</code>, <code>category</code>, <code>supplier_name</code> (matched against active suppliers; unknown names are ignored). Existing rows are updated by <code>product_id</code>.
+          Required: <code>product_id</code>. Optional: <code>description</code>, <code>uom</code>, <code>category</code>, <code>supplier_name</code> (matched against active suppliers; unknown names are ignored).
+          Matched by <code>product_id</code> — existing rows are <strong>updated</strong>, new rows are <strong>inserted</strong>. To change a product's description, just re-upload with the new value.
+          Large files are split into chunks of {BULK_CHUNK_SIZE.toLocaleString('en-IE')} rows uploaded {BULK_PARALLEL_UPLOADS} at a time.
         </p>
         {!preview && <input type="file" accept=".csv,text/csv" onChange={handleFile} />}
         {preview && (
@@ -210,10 +259,20 @@ function BulkUpload({ onDone }) {
               </table>
               {preview.rows.length > 100 && <div className="note" style={{ padding: 6 }}>Showing first 100 of {preview.rows.length}.</div>}
             </div>
+            {saving && progress.total > 0 && (
+              <div style={{ marginBottom: 12 }}>
+                <div className="note" style={{ fontSize: 12, marginBottom: 4 }}>
+                  Uploading {progress.done.toLocaleString('en-IE')} of {progress.total.toLocaleString('en-IE')} ({Math.round((progress.done / progress.total) * 100)}%)
+                </div>
+                <div style={{ height: 8, borderRadius: 4, background: 'var(--bg-soft)', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${(progress.done / progress.total) * 100}%`, background: 'var(--primary)', transition: 'width 200ms ease' }} />
+                </div>
+              </div>
+            )}
             <div className="flex-row" style={{ gap: 8, justifyContent: 'flex-end' }}>
               <button className="btn btn-outline btn-sm" onClick={() => setPreview(null)} disabled={saving}>Discard</button>
               <button className="btn btn-primary btn-sm" onClick={confirm} disabled={saving}>
-                {saving ? <><span className="spinner" /> Importing…</> : `Upsert ${preview.rows.length} product(s)`}
+                {saving ? <><span className="spinner" /> Importing…</> : `Upsert ${preview.rows.length.toLocaleString('en-IE')} product(s)`}
               </button>
             </div>
           </>
