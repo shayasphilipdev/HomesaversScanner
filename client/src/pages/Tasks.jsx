@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useStore } from '../App.jsx'
 import { getTaskRecords, getTaskTypes } from '../lib/api.js'
-import { useCurrentStore } from '../lib/currentStore.js'
+import { useCurrentStore } from '../lib/currentStore.jsx'
 import TaskTypePicker from '../components/TaskTypePicker.jsx'
 import TaskForm from '../components/TaskForm.jsx'
 import TaskRecordList from '../components/TaskRecordList.jsx'

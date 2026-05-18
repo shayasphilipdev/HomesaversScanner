@@ -1,4 +1,4 @@
-import { useCurrentStore } from '../lib/currentStore.js'
+import { useCurrentStore } from '../lib/currentStore.jsx'
 
 // Mandatory store picker that sits at the top of HO Tasks / Store Tasks.
 // If the user has only one store, it locks to that store and shows a

@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { useStore } from '../App.jsx'
 import { resolvedTheme, setTheme } from '../lib/theme.js'
 import { canSeeAnyAdminLink, canAccessAdmin, canDoHQTasks, canDoStoreTasks, STORE_ROLE_KEYS, roleLabel } from '../lib/roles.js'
-import { useCurrentStore } from '../lib/currentStore.js'
+import { useCurrentStore } from '../lib/currentStore.jsx'
 import OfflineIndicator from './OfflineIndicator.jsx'
 
 export default function Nav() {
