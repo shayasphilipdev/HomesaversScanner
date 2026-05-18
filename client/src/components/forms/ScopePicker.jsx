@@ -17,7 +17,7 @@ export default function ScopePicker({ value, onChange, stores = [], areas = [] }
     <div>
       <label className="flex-row" style={{ gap: 8, marginBottom: 12 }}>
         <input type="checkbox" checked={!!v.all_stores} onChange={e => setAll(e.target.checked)} />
-        <span><strong>Access to all stores</strong> (Admin / HQ-style scope)</span>
+        <span><strong>Access to all stores</strong> (Admin / Head Office scope)</span>
       </label>
 
       {!v.all_stores && (

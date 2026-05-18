@@ -6,6 +6,7 @@ import Sidebar from './components/Sidebar.jsx'
 import BottomNav from './components/BottomNav.jsx'
 import AdminGuard from './components/AdminGuard.jsx'
 import { ToastProvider } from './components/Toast.jsx'
+import { CurrentStoreProvider } from './lib/currentStore.js'
 import Dashboard from './pages/Dashboard.jsx'
 import Tasks from './pages/Tasks.jsx'
 import Reports from './pages/Reports.jsx'
@@ -73,7 +74,9 @@ export default function App() {
   return (
     <StoreContext.Provider value={{ session, logout }}>
       <ToastProvider>
-        <Shell />
+        <CurrentStoreProvider>
+          <Shell />
+        </CurrentStoreProvider>
       </ToastProvider>
     </StoreContext.Provider>
   )

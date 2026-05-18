@@ -48,7 +48,7 @@ export default function AdminEmployees() {
       <div className="page-header">
         <div>
           <div className="page-title">Employees</div>
-          <div className="page-subtitle">{employees.length} employee{employees.length === 1 ? '' : 's'} · one place for store + HQ accounts</div>
+          <div className="page-subtitle">{employees.length} employee{employees.length === 1 ? '' : 's'} · one place for store + Head Office accounts</div>
         </div>
       </div>
 
@@ -80,7 +80,7 @@ export default function AdminEmployees() {
         <div className="card"><div className="card-body" style={{ textAlign: 'center', padding: 40 }}><span className="spinner spinner-dark" /></div></div>
       ) : !employees.length ? (
         <div className="card"><div className="empty-state">
-          <p>No HQ employees yet.</p>
+          <p>No employees yet.</p>
           <p className="note" style={{ marginTop: 6 }}>Add your first one above — they’ll be able to sign in at the login screen with their username and PIN.</p>
         </div></div>
       ) : (
@@ -93,7 +93,7 @@ export default function AdminEmployees() {
                   <th>Username</th>
                   <th>Role</th>
                   <th>Scope</th>
-                  <th>HQ / Store</th>
+                  <th>HO / Store</th>
                   <th>Status</th>
                   <th></th>
                 </tr>
@@ -110,7 +110,7 @@ export default function AdminEmployees() {
                     <td><span className="chip">{roleLabel(e.role)}</span></td>
                     <td>{describeScope(e, stores, areas)}</td>
                     <td>
-                      {e.can_access_hq_tasks    !== false && <span className="chip" style={{ marginRight: 4 }}>HQ</span>}
+                      {e.can_access_hq_tasks    !== false && <span className="chip" style={{ marginRight: 4 }}>HO</span>}
                       {e.can_access_store_tasks !== false && <span className="chip">Store</span>}
                       {e.can_access_hq_tasks === false && e.can_access_store_tasks === false && <span className="td-muted">—</span>}
                     </td>
@@ -306,7 +306,7 @@ function EmployeeForm({ employee, areas, stores, toast, onClose, onSaved }) {
                     checked={form.can_access_hq_tasks}
                     onChange={e => setForm(f => ({ ...f, can_access_hq_tasks: e.target.checked }))}
                   />
-                  <span><strong>HQ Tasks</strong> — error reports A–I (UOM, prices, non-scans…)</span>
+                  <span><strong>HO Tasks</strong> — error reports A–I (UOM, prices, non-scans…)</span>
                 </label>
                 <label className="flex-row" style={{ gap: 8 }}>
                   <input

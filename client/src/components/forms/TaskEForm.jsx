@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import { createTaskRecord, lookupProduct } from '../../lib/api.js'
 import { useStore } from '../../App.jsx'
 import ScannerInput from './ScannerInput.jsx'
@@ -11,7 +11,7 @@ const EMPTY = {
   supplier_id: '', supplier_name_text: '', notes: ''
 }
 
-export default function TaskEForm({ onSaved }) {
+export default function TaskEForm({ onSaved, storeId }) {
   const { session } = useStore()
   const [form, setForm]   = useState(EMPTY)
   const [saving, setSaving] = useState(false)
@@ -34,7 +34,7 @@ export default function TaskEForm({ onSaved }) {
     try {
       const res = await createTaskRecord({
         task_type:          'E',
-        store_id:           session.storeId || null,
+        store_id:           storeId || session.storeId || null,
         product_code:       form.product_code.trim(),
         supplier_id:        form.supplier_id || null,
         supplier_name_text: form.supplier_name_text.trim() || null,

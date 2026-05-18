@@ -1,0 +1,80 @@
+// Phase 9K — Current-store context.
+//
+// Tasks (HO + Store) are single-store actions: the user picks ONE store
+// to act on. This context shares that selection across the page and its
+// child forms. Persists in sessionStorage so it survives navigation.
+//
+// Resolves to:
+//   { currentStoreId, setCurrentStoreId, scopedStores, ready }
+// scopedStores  = the active stores the current employee can work in
+// currentStoreId = the one currently selected (auto-picked when only one)
+// ready         = true once we've loaded the scoped store list
+
+import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { getStores } from './api.js'
+import { useStore } from '../App.jsx'
+
+const KEY = 'hs_current_store'
+
+const Ctx = createContext({
+  currentStoreId: null,
+  setCurrentStoreId: () => {},
+  scopedStores: [],
+  ready: false
+})
+
+export const useCurrentStore = () => useContext(Ctx)
+
+export function CurrentStoreProvider({ children }) {
+  const { session } = useStore()
+  const [stores, setStores] = useState([])
+  const [ready, setReady] = useState(false)
+  const [currentStoreId, _setCurrentStoreId] = useState(() => sessionStorage.getItem(KEY) || null)
+
+  const setCurrentStoreId = (id) => {
+    _setCurrentStoreId(id || null)
+    if (id) sessionStorage.setItem(KEY, id)
+    else    sessionStorage.removeItem(KEY)
+  }
+
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      try {
+        const all = await getStores()
+        if (!alive) return
+        const active = all.filter(s => s.is_active)
+        // Restrict to the employee's scope.
+        let scoped = active
+        if (!session.all_stores) {
+          const set = new Set(session.store_ids || [])
+          if (Array.isArray(session.area_ids) && session.area_ids.length) {
+            for (const s of active) if (session.area_ids.includes(s.area_id)) set.add(s.id)
+          }
+          scoped = active.filter(s => set.has(s.id))
+        }
+        setStores(scoped)
+        // Auto-pick when only one store, or when previously-selected is out of scope.
+        if (scoped.length === 1) {
+          setCurrentStoreId(scoped[0].id)
+        } else if (currentStoreId && !scoped.some(s => s.id === currentStoreId)) {
+          setCurrentStoreId(null)
+        }
+        setReady(true)
+      } catch {
+        setReady(true)
+      }
+    })()
+    return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.all_stores, JSON.stringify(session.store_ids), JSON.stringify(session.area_ids)])
+
+  const value = useMemo(() => ({
+    currentStoreId,
+    setCurrentStoreId,
+    scopedStores: stores,
+    ready
+  }), [currentStoreId, stores, ready])
+
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>
+}

@@ -20,7 +20,7 @@ export const ROLES = {
   sales_assistant: {
     key: 'sales_assistant', label: 'Sales Assistant', scope: 'store',
     summary: 'Front-line store staff.',
-    can: ['Log HQ task records', 'Complete store tasks']
+    can: ['Log HO task records', 'Complete store tasks']
   },
   supervisor: {
     key: 'supervisor', label: 'Supervisor', scope: 'store',
@@ -44,18 +44,18 @@ export const ROLES = {
   },
   support_admin: {
     key: 'support_admin', label: 'Store Support Administrator', scope: 'hq',
-    summary: 'Back-office HQ reviewer.',
-    can: ['Review and resolve HQ task records', 'Run reports across all stores']
+    summary: 'Back-office HO reviewer.',
+    can: ['Review and resolve HO task records', 'Run reports across all stores']
   },
   buying_manager: {
     key: 'buying_manager', label: 'Buying Manager', scope: 'hq',
     summary: 'Full back-office access.',
-    can: ['Full admin', 'Create store task templates', 'Review HQ records']
+    can: ['Full admin', 'Create store task templates', 'Review HO records']
   },
   buying_head: {
     key: 'buying_head', label: 'Buying Head', scope: 'hq',
     summary: 'Buying leadership.',
-    can: ['All-store reports + dashboard', 'Create store task templates', 'Review HQ records']
+    can: ['All-store reports + dashboard', 'Create store task templates', 'Review HO records']
   },
   admin: {
     key: 'admin', label: 'Admin', scope: 'hq',

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import { UOM_OPTIONS, PACK_WARNING_TRIGGER, EACHS_WARNING } from '../../lib/uom.js'
 import { createTaskRecord, lookupProduct } from '../../lib/api.js'
 import { useStore } from '../../App.jsx'
@@ -12,7 +12,7 @@ const EMPTY = {
 
 // Task A — UOM Errors
 // Fields: product_code, description (optional), uom, quantity, supplier, notes
-export default function TaskAForm({ onSaved }) {
+export default function TaskAForm({ onSaved, storeId }) {
   const { session } = useStore()
   const [form, setForm]                   = useState(EMPTY)
   const [saving, setSaving]               = useState(false)
@@ -45,7 +45,7 @@ export default function TaskAForm({ onSaved }) {
     try {
       const res = await createTaskRecord({
         task_type:          'A',
-        store_id:           session.storeId || null,
+        store_id:           storeId || session.storeId || null,
         product_code:       form.product_code.trim(),
         description:        form.description.trim() || null,
         uom:                form.uom,

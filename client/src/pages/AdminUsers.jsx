@@ -164,7 +164,7 @@ function AddUser({ onCreated, stores, areas, toast }) {
                 <optgroup label="Store">
                   {STORE_ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
                 </optgroup>
-                <optgroup label="HQ / Area">
+                <optgroup label="Head Office / Area">
                   {HQ_ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
                 </optgroup>
               </select>

@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react'
 import { useStore } from '../App.jsx'
 import { getStoreTasksToday, completeStoreTask, getStoreTaskStats, uploadPhoto } from '../lib/api.js'
 import { compressImage, newPhotoNamespace } from '../lib/photos.js'
+import { useCurrentStore } from '../lib/currentStore.js'
 import { useToast } from '../components/Toast.jsx'
 import BlockRenderer from '../components/forms/BlockRenderer.jsx'
+import CurrentStorePicker from '../components/CurrentStorePicker.jsx'
 
 // Store tasks (Phase 9E). Two views by role:
 // - Sales Assistant / Store Manager : today's checklist for their store.
@@ -20,17 +22,19 @@ export default function StoreTasks() {
 // ── Store view ───────────────────────────────────────────────────────────
 function StoreTodayView() {
   const { session } = useStore()
+  const { currentStoreId } = useCurrentStore()
   const toast = useToast()
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   const load = async () => {
+    if (!currentStoreId) { setItems([]); setLoading(false); return }
     setLoading(true); setError('')
-    try { setItems(await getStoreTasksToday()) }
+    try { setItems(await getStoreTasksToday({ storeId: currentStoreId })) }
     catch (e) { setError(e.message) } finally { setLoading(false) }
   }
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() /* eslint-disable-next-line */ }, [currentStoreId])
 
   const onCompleted = (id, patch) => setItems(its => its.map(i => i.id === id ? { ...i, ...patch } : i))
 
@@ -43,10 +47,12 @@ function StoreTodayView() {
         <div>
           <div className="page-title">Today's tasks</div>
           <div className="page-subtitle">
-            {session.storeName} · {done.length} of {items.length} complete
+            {done.length} of {items.length} complete
           </div>
         </div>
       </div>
+
+      <CurrentStorePicker subject="store task" />
 
       {error && <div className="login-error">{error}</div>}
 
@@ -56,7 +62,7 @@ function StoreTodayView() {
         <div className="card"><div className="empty-state">
           <div className="empty-state-icon">📋</div>
           <p>Nothing assigned today.</p>
-          <p className="note" style={{ marginTop: 6 }}>HQ creates tasks centrally — when one is due here, it'll appear in this list.</p>
+          <p className="note" style={{ marginTop: 6 }}>Head Office creates tasks centrally — when one is due here, it'll appear in this list.</p>
         </div></div>
       ) : (
         <>

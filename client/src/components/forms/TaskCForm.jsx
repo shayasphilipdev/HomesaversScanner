@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import { createTaskRecord, lookupProduct, getLookupOptions } from '../../lib/api.js'
 import { useStore } from '../../App.jsx'
 import ScannerInput from './ScannerInput.jsx'
@@ -7,7 +7,7 @@ import ScannerInput from './ScannerInput.jsx'
 // product_code, reason_code (from lookup_options master), current_price (optional), notes
 const EMPTY = { product_code: '', reason_code: '', current_price: '', notes: '' }
 
-export default function TaskCForm({ onSaved }) {
+export default function TaskCForm({ onSaved, storeId }) {
   const { session } = useStore()
   const [form, setForm]         = useState(EMPTY)
   const [reasons, setReasons]   = useState([])
@@ -38,7 +38,7 @@ export default function TaskCForm({ onSaved }) {
     try {
       const res = await createTaskRecord({
         task_type:    'C',
-        store_id:     session.storeId || null,
+        store_id:           storeId || session.storeId || null,
         product_code: form.product_code.trim(),
         notes:        form.notes.trim() || null,
         details: {

@@ -293,7 +293,7 @@ export async function onRequest(context) {
 
     // ── Public ────────────────────────────────────────────────────────────
     if (path === '/stores' && method === 'GET') {
-      const rows = await db.select('stores', { select: 'id,store_code,store_name,region,is_active', order: 'store_name.asc' })
+      const rows = await db.select('stores', { select: 'id,store_code,store_name,region,area_id,is_active', order: 'store_name.asc' })
       return json(rows)
     }
 
@@ -1169,13 +1169,15 @@ export async function onRequest(context) {
       return json({ per_store, overall: { total, completed, pending, missed, completion_pct: total ? Math.round((completed * 100) / total) : 0 } })
     }
 
-    // GET /dashboard/stats?from=&to=&storeId=
+    // GET /dashboard/stats?from=&to=&storeId=&storeIds=a,b,c
     if (path === '/dashboard/stats' && method === 'GET') {
       const p = url.searchParams
       const from = p.get('from')
       const to   = p.get('to')
       const explicit = p.get('storeId')
+      const multi    = (p.get('storeIds') || '').split(',').map(s => s.trim()).filter(Boolean)
       const scope = await scopedStoreIds(db, session)
+      const empty = () => json({ totals: { all: 0, pending: 0, completed: 0, no_change_needed: 0, store_completed: 0 }, by_task_type: [], by_store: [], by_day: [], recent: [] })
 
       const params = {
         select: 'id,task_type,store_id,product_code,product_barcode,status,created_at',
@@ -1186,11 +1188,15 @@ export async function onRequest(context) {
       if (from) range.push(`gte.${new Date(from).toISOString()}`)
       if (to)   range.push(`lte.${new Date(to).toISOString()}`)
       if (range.length) params['created_at'] = range
-      if (explicit && explicit !== 'all') {
-        if (scope !== null && !scope.includes(explicit)) return json({ totals: { all: 0, pending: 0, completed: 0, no_change_needed: 0, store_completed: 0 }, by_task_type: [], by_store: [], by_day: [], recent: [] })
+      if (multi.length) {
+        const filtered = scope === null ? multi : multi.filter(id => scope.includes(id))
+        if (!filtered.length) return empty()
+        params['store_id'] = `in.(${filtered.join(',')})`
+      } else if (explicit && explicit !== 'all') {
+        if (scope !== null && !scope.includes(explicit)) return empty()
         params['store_id'] = `eq.${explicit}`
       } else if (scope !== null) {
-        if (!scope.length) return json({ totals: { all: 0, pending: 0, completed: 0, no_change_needed: 0, store_completed: 0 }, by_task_type: [], by_store: [], by_day: [], recent: [] })
+        if (!scope.length) return empty()
         params['store_id'] = `in.(${scope.join(',')})`
       }
 

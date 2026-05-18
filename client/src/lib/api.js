@@ -69,11 +69,12 @@ export const getLookupOptions  = ({ kind, task_type } = {}) => {
 export const getSuppliers      = () => request('/suppliers')
 export const getAreas          = () => request('/areas')
 
-export const getDashboardStats = ({ from, to, storeId } = {}) => {
+export const getDashboardStats = ({ from, to, storeId, storeIds } = {}) => {
   const q = new URLSearchParams()
   if (from)    q.set('from', from)
   if (to)      q.set('to', to)
-  if (storeId) q.set('storeId', storeId)
+  if (Array.isArray(storeIds) && storeIds.length) q.set('storeIds', storeIds.join(','))
+  else if (storeId) q.set('storeId', storeId)
   return request('/dashboard/stats' + (q.toString() ? `?${q}` : ''))
 }
 

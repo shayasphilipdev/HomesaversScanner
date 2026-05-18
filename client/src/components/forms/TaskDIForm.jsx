@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import { createTaskRecord, lookupProduct } from '../../lib/api.js'
 import { useStore } from '../../App.jsx'
 import ScannerInput from './ScannerInput.jsx'
@@ -20,7 +20,7 @@ const HINTS = {
   I: 'For anything that does not fit the other task types.'
 }
 
-export default function TaskDIForm({ taskType, onSaved }) {
+export default function TaskDIForm({ taskType, onSaved, storeId }) {
   const { session } = useStore()
   const [form, setForm]     = useState(EMPTY)
   const [saving, setSaving] = useState(false)
@@ -49,7 +49,7 @@ export default function TaskDIForm({ taskType, onSaved }) {
     try {
       const res = await createTaskRecord({
         task_type:          taskType,
-        store_id:           session.storeId || null,
+        store_id:           storeId || session.storeId || null,
         product_code:       form.product_code.trim(),
         product_name_label: form.product_name_label.trim(),
         product_barcode:    form.product_barcode.trim() || null,

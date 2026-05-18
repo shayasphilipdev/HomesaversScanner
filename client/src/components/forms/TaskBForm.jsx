@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import { UOM_OPTIONS, PACK_WARNING_TRIGGER, EACHS_WARNING } from '../../lib/uom.js'
 import { createTaskRecord, uploadPhoto, deletePhoto, lookupProduct } from '../../lib/api.js'
 import { newPhotoNamespace } from '../../lib/photos.js'
@@ -17,7 +17,7 @@ const EMPTY = {
 // Fields: product_barcode, description, uom, quantity,
 //         photo of product (mandatory), photo of barcode (mandatory),
 //         supplier, notes
-export default function TaskBForm({ onSaved }) {
+export default function TaskBForm({ onSaved, storeId }) {
   const { session } = useStore()
   const [form, setForm]               = useState(EMPTY)
   const [productPhoto, setProductPhoto] = useState(null)  // Blob
@@ -54,7 +54,7 @@ export default function TaskBForm({ onSaved }) {
 
     const body = {
       task_type:          'B',
-      store_id:           session.storeId || null,
+      store_id:           storeId || session.storeId || null,
       product_barcode:    form.product_barcode.trim(),
       description:        form.description.trim(),
       uom:                form.uom,

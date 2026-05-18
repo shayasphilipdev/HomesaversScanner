@@ -9,8 +9,9 @@ import TaskGForm  from './forms/TaskGForm.jsx'
 import TaskHForm  from './forms/TaskHForm.jsx'
 
 // Top-level dispatcher: picks the right form component for the chosen task type.
-// Task types not yet implemented render a "coming soon" placeholder.
-export default function TaskForm({ taskType, onSaved }) {
+// `storeId` is the current store from the CurrentStorePicker — required for
+// every record post (server rejects multi-store users that don't specify one).
+export default function TaskForm({ taskType, storeId, onSaved }) {
   const meta = TASK_FORMS[taskType]
 
   if (!meta) {
@@ -39,15 +40,15 @@ export default function TaskForm({ taskType, onSaved }) {
   }
 
   switch (taskType) {
-    case 'A': return <TaskAForm onSaved={onSaved} />
-    case 'B': return <TaskBForm onSaved={onSaved} />
-    case 'C': return <TaskCForm onSaved={onSaved} />
+    case 'A': return <TaskAForm storeId={storeId} onSaved={onSaved} />
+    case 'B': return <TaskBForm storeId={storeId} onSaved={onSaved} />
+    case 'C': return <TaskCForm storeId={storeId} onSaved={onSaved} />
     case 'D':
-    case 'I': return <TaskDIForm taskType={taskType} onSaved={onSaved} />
-    case 'E': return <TaskEForm onSaved={onSaved} />
-    case 'F': return <TaskFForm onSaved={onSaved} />
-    case 'G': return <TaskGForm onSaved={onSaved} />
-    case 'H': return <TaskHForm onSaved={onSaved} />
+    case 'I': return <TaskDIForm taskType={taskType} storeId={storeId} onSaved={onSaved} />
+    case 'E': return <TaskEForm storeId={storeId} onSaved={onSaved} />
+    case 'F': return <TaskFForm storeId={storeId} onSaved={onSaved} />
+    case 'G': return <TaskGForm storeId={storeId} onSaved={onSaved} />
+    case 'H': return <TaskHForm storeId={storeId} onSaved={onSaved} />
     default:  return <div className="card"><div className="card-body">No form registered for {taskType}.</div></div>
   }
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import { createTaskRecord, lookupProduct } from '../../lib/api.js'
 import { useStore } from '../../App.jsx'
 import ScannerInput from './ScannerInput.jsx'
@@ -7,7 +7,7 @@ import ScannerInput from './ScannerInput.jsx'
 // product_code, promotion_description, promotion_price, notes
 const EMPTY = { product_code: '', promotion_description: '', promotion_price: '', notes: '' }
 
-export default function TaskGForm({ onSaved }) {
+export default function TaskGForm({ onSaved, storeId }) {
   const { session } = useStore()
   const [form, setForm]     = useState(EMPTY)
   const [saving, setSaving] = useState(false)
@@ -31,7 +31,7 @@ export default function TaskGForm({ onSaved }) {
     try {
       const res = await createTaskRecord({
         task_type:    'G',
-        store_id:     session.storeId || null,
+        store_id:           storeId || session.storeId || null,
         product_code: form.product_code.trim(),
         notes:        form.notes.trim() || null,
         details: {

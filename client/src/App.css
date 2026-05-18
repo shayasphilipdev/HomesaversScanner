@@ -132,12 +132,16 @@ body {
   flex: 1;
   width: 100%;
   margin: 0 auto;
-  padding: 28px 22px 80px;
-  max-width: 1180px;
+  padding: 28px 28px 80px;
+  max-width: 1480px;
   min-width: 0; /* prevents the wide table from blowing out the flex layout */
 }
 
-.main-content--wide { max-width: 1600px; }
+.main-content--wide { max-width: 1760px; }
+
+@media (max-width: 600px) {
+  .main-content { padding-left: 14px; padding-right: 14px; }
+}
 
 /* ── Nav — sticky glass header (light) / solid bar (dark) ──────────── */
 .nav {
@@ -183,6 +187,30 @@ body {
   color: var(--primary);
 }
 [data-theme="dark"] .nav-link.active { color: var(--primary); background: var(--primary-soft); }
+
+.nav-context-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  background: var(--primary-tint);
+  color: var(--primary-dark);
+  border: 1px solid var(--primary-soft);
+  padding: 5px 12px;
+  border-radius: 99px;
+  margin-left: auto;
+  font-weight: 600;
+  white-space: nowrap;
+}
+[data-theme="dark"] .nav-context-chip { color: var(--primary); background: var(--primary-soft); }
+.nav-context-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--primary);
+}
+.nav-context-dot.is-ho    { background: var(--primary); }
+.nav-context-dot.is-store { background: var(--green); }
+.nav-context-store { font-weight: 500; opacity: .9; }
+@media (max-width: 720px) { .nav-context-chip { display: none; } }
 
 .nav-store-badge {
   font-size: 12px;
@@ -308,6 +336,26 @@ body {
 
 .form-group { display: flex; flex-direction: column; gap: 6px; }
 .form-group.full { grid-column: 1 / -1; }
+
+/* Compact horizontal filter row — Reports filters, etc. */
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  align-items: flex-end;
+  margin-bottom: 12px;
+}
+.filter-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 0 1 auto; }
+.filter-field label {
+  font-size: 11.5px; font-weight: 500; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: .2px;
+}
+.filter-field input, .filter-field select {
+  min-height: 38px; font-size: 13.5px; padding: 8px 12px;
+  width: auto; max-width: 220px;
+}
+.filter-field--wide select, .filter-field--wide input { max-width: 320px; }
+.filter-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
 
 label {
   font-size: 12.5px;
@@ -734,6 +782,26 @@ tbody tr:hover { background: var(--bg-soft); }
   .sidebar { display: flex; }
   .nav > .nav-link { display: none; }
 }
+
+/* ── Mandatory current-store picker ──────────────────────────────────── */
+.store-pick-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  background: var(--primary-tint);
+  border: 1px solid var(--primary-soft);
+  border-radius: 10px;
+}
+.store-pick-bar[data-locked] { background: var(--surface-warm); border-color: var(--border); }
+.store-pick-label {
+  font-size: 12px; font-weight: 600; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: .3px;
+}
+.store-pick-name { font-size: 15px; }
+.store-pick-bar select { max-width: 320px; min-height: 38px; }
 
 /* ── Toast notifications (stack, bottom-right desktop / bottom-center phone) ── */
 .toast-stack {

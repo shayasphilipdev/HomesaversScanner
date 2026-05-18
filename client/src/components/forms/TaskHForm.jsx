@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import { createTaskRecord, lookupProduct } from '../../lib/api.js'
 import { useStore } from '../../App.jsx'
 import ScannerInput from './ScannerInput.jsx'
@@ -7,7 +7,7 @@ import ScannerInput from './ScannerInput.jsx'
 // product_code, shop_floor_count, notes
 const EMPTY = { product_code: '', shop_floor_count: '', notes: '' }
 
-export default function TaskHForm({ onSaved }) {
+export default function TaskHForm({ onSaved, storeId }) {
   const { session } = useStore()
   const [form, setForm]     = useState(EMPTY)
   const [saving, setSaving] = useState(false)
@@ -32,7 +32,7 @@ export default function TaskHForm({ onSaved }) {
     try {
       const res = await createTaskRecord({
         task_type:    'H',
-        store_id:     session.storeId || null,
+        store_id:           storeId || session.storeId || null,
         product_code: form.product_code.trim(),
         notes:        form.notes.trim() || null,
         details: { shop_floor_count: Number(form.shop_floor_count) },

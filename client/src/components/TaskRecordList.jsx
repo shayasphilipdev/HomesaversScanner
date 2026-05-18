@@ -4,7 +4,7 @@ import { useStore } from '../App.jsx'
 
 const STATUS_LABEL = {
   pending:          { label: 'Pending',          cls: 'badge-pending' },
-  completed:        { label: 'Completed by HQ',  cls: 'badge-completed' },
+  completed:        { label: 'Completed by HO',  cls: 'badge-completed' },
   no_change_needed: { label: 'No change needed', cls: 'badge-pending' },
   store_completed:  { label: 'Store confirmed',  cls: 'badge-store-done' },
 }
@@ -123,7 +123,7 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
                   {r.review_notes && (
                     <tr>
                       <td colSpan={9} style={{ background: 'var(--surface-warm)', fontStyle: 'italic', fontSize: 13, color: 'var(--text-muted)', borderTop: 'none' }}>
-                        💬 HQ note: {r.review_notes}
+                        💬 HO note: {r.review_notes}
                       </td>
                     </tr>
                   )}

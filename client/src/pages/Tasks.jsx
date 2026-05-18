@@ -1,14 +1,17 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useStore } from '../App.jsx'
 import { getTaskRecords, getTaskTypes } from '../lib/api.js'
+import { useCurrentStore } from '../lib/currentStore.js'
 import TaskTypePicker from '../components/TaskTypePicker.jsx'
 import TaskForm from '../components/TaskForm.jsx'
 import TaskRecordList from '../components/TaskRecordList.jsx'
+import CurrentStorePicker from '../components/CurrentStorePicker.jsx'
 import { useToast } from '../components/Toast.jsx'
 
 export default function Tasks() {
   const { session } = useStore()
   const toast = useToast()
+  const { currentStoreId } = useCurrentStore()
   const isBO = session.mode === 'backoffice'
 
   const [taskTypes, setTaskTypes] = useState([])
@@ -33,7 +36,7 @@ export default function Tasks() {
     setLoading(true)
     try {
       const data = await getTaskRecords({
-        storeId:  session.storeId,
+        storeId:  currentStoreId,
         taskType: selectedType,
         status:   filter !== 'all' ? filter : undefined
       })
@@ -43,9 +46,9 @@ export default function Tasks() {
     } finally {
       setLoading(false)
     }
-  }, [session, selectedType, filter])
+  }, [currentStoreId, selectedType, filter])
 
-  useEffect(() => { if (selectedType) load() }, [load, selectedType])
+  useEffect(() => { if (selectedType && currentStoreId) load() }, [load, selectedType, currentStoreId])
 
   const filterCounts = {
     all:              records.length,
@@ -59,18 +62,21 @@ export default function Tasks() {
     <div>
       <div className="page-header">
         <div>
-          <div className="page-title">Tasks</div>
+          <div className="page-title">HO Tasks</div>
           <div className="page-subtitle">
-            {isBO ? 'All stores' : session.storeName} · {records.length} record{records.length !== 1 ? 's' : ''} shown
+            {records.length} record{records.length !== 1 ? 's' : ''} shown
           </div>
         </div>
       </div>
 
+      <CurrentStorePicker subject="task" />
+
       <TaskTypePicker taskTypes={taskTypes} selected={selectedType} onSelect={setSelectedType} />
 
-      {selectedType && !isBO && (
+      {selectedType && !isBO && currentStoreId && (
         <TaskForm
           taskType={selectedType}
+          storeId={currentStoreId}
           onSaved={(info) => {
             if (info?.queued) toast.info('Saved offline — will sync when you’re back online.')
             else              toast.success('Record saved.')
@@ -79,11 +85,17 @@ export default function Tasks() {
         />
       )}
 
+      {selectedType && !isBO && !currentStoreId && (
+        <div className="card mb-12"><div className="card-body" style={{ padding: 14 }}>
+          <span className="note">Pick a store at the top of the page before recording.</span>
+        </div></div>
+      )}
+
       <div className="flex-row" style={{ marginBottom: 16, flexWrap: 'wrap', gap: 6 }}>
         {[
           { key: 'all',              label: 'All' },
           { key: 'pending',          label: 'Pending' },
-          { key: 'completed',        label: 'HQ completed' },
+          { key: 'completed',        label: 'HO completed' },
           { key: 'no_change_needed', label: 'No change needed' },
           { key: 'store_completed',  label: 'Store confirmed' },
         ].map(tab => (

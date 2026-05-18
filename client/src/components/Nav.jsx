@@ -2,11 +2,13 @@ import { NavLink } from 'react-router-dom'
 import { useState } from 'react'
 import { useStore } from '../App.jsx'
 import { resolvedTheme, setTheme } from '../lib/theme.js'
-import { canSeeAnyAdminLink, canAccessAdmin, canDoHQTasks, canDoStoreTasks } from '../lib/roles.js'
+import { canSeeAnyAdminLink, canAccessAdmin, canDoHQTasks, canDoStoreTasks, STORE_ROLE_KEYS, roleLabel } from '../lib/roles.js'
+import { useCurrentStore } from '../lib/currentStore.js'
 import OfflineIndicator from './OfflineIndicator.jsx'
 
 export default function Nav() {
   const { session, logout } = useStore()
+  const { currentStoreId, scopedStores } = useCurrentStore()
   const [theme, setLocalTheme] = useState(resolvedTheme())
 
   const toggleTheme = () => {
@@ -15,12 +17,15 @@ export default function Nav() {
     setLocalTheme(next)
   }
 
+  const isStoreRole = STORE_ROLE_KEYS.includes(session.role)
+  const contextLabel = isStoreRole ? 'Store Login' : 'Head Office Login'
+  const currentStore = scopedStores.find(s => s.id === currentStoreId)
+
   return (
     <nav className="nav">
       <span className="nav-brand">Homesavers</span>
 
-      <NavLink to="/dashboard" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Dashboard</NavLink>
-      {canDoHQTasks(session)    && <NavLink to="/tasks"       className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>HQ Tasks</NavLink>}
+      {canDoHQTasks(session)    && <NavLink to="/tasks"       className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>HO Tasks</NavLink>}
       {canDoStoreTasks(session) && <NavLink to="/store-tasks" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Store Tasks</NavLink>}
       <NavLink to="/reports"    className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Reports</NavLink>
 
@@ -33,8 +38,14 @@ export default function Nav() {
 
       <OfflineIndicator />
 
-      <span className="nav-store-badge" title={session.role ? `Role: ${session.role}` : ''}>
-        {session.displayName || (session.mode === 'backoffice' ? '⚙ Back Office' : session.storeName)}
+      <span className="nav-context-chip" title={`Signed in as ${roleLabel(session.role)}`}>
+        <span className={`nav-context-dot ${isStoreRole ? 'is-store' : 'is-ho'}`} />
+        {contextLabel}
+        {currentStore && <span className="nav-context-store"> · {currentStore.store_name}</span>}
+      </span>
+
+      <span className="nav-store-badge" title={`Role: ${roleLabel(session.role)}`}>
+        {session.displayName || session.storeName}
       </span>
 
       <button

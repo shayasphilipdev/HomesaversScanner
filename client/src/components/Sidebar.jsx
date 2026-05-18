@@ -12,7 +12,7 @@ export default function Sidebar() {
   const items = [
     { to: '/dashboard',    icon: '◧', label: 'Dashboard' }
   ]
-  if (canDoHQTasks(session))    items.push({ to: '/tasks',       icon: '✚', label: 'HQ Tasks' })
+  if (canDoHQTasks(session))    items.push({ to: '/tasks',       icon: '✚', label: 'HO Tasks' })
   if (canDoStoreTasks(session)) items.push({ to: '/store-tasks', icon: '☑', label: 'Store Tasks' })
   items.push({ to: '/reports', icon: '▤', label: 'Reports' })
   if (canSeeAnyAdminLink(session)) {

@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../App.jsx'
-import { getDashboardStats, getStores } from '../lib/api.js'
+import { getDashboardStats, getStores, getAreas } from '../lib/api.js'
 import Skeleton from '../components/Skeleton.jsx'
 
 const STATUS_LABEL = {
   pending:          'Pending',
-  completed:        'HQ completed',
+  completed:        'HO completed',
   no_change_needed: 'No change',
   store_completed:  'Store confirmed'
 }
@@ -36,34 +36,72 @@ export default function Dashboard() {
   const isBO = session.mode === 'backoffice'
 
   const [rangeKey, setRangeKey]     = useState('month')
-  const [storeFilter, setStoreFilter] = useState('all')
+  // scope is encoded as a single string:
+  //   'all'              → all stores in user scope
+  //   'area:<area_id>'   → all stores in that area (intersected with user scope)
+  //   'store:<store_id>' → that single store
+  const [scope, setScope]           = useState('all')
   const [stores, setStores]         = useState([])
+  const [areas, setAreas]           = useState([])
   const [stats, setStats]           = useState(null)
   const [loading, setLoading]       = useState(true)
   const [error, setError]           = useState('')
 
   useEffect(() => {
-    if (isBO) getStores().then(setStores).catch(() => setStores([]))
+    if (isBO) {
+      getStores().then(setStores).catch(() => setStores([]))
+      getAreas().then(setAreas).catch(() => setAreas([]))
+    }
   }, [isBO])
+
+  // Build the storeIds list to send to the backend based on the current scope.
+  const scopedStoreIds = useMemo(() => {
+    if (!isBO) return null
+    if (scope === 'all') return null
+    if (scope.startsWith('area:')) {
+      const aid = scope.slice(5)
+      return stores.filter(s => s.is_active && s.area_id === aid).map(s => s.id)
+    }
+    if (scope.startsWith('store:')) return [scope.slice(6)]
+    return null
+  }, [scope, stores, isBO])
 
   useEffect(() => {
     const { from, to } = relativeRange(rangeKey)
     setLoading(true); setError('')
-    getDashboardStats({ from, to, storeId: isBO ? storeFilter : undefined })
+    const args = { from, to }
+    if (isBO) {
+      if (Array.isArray(scopedStoreIds) && scopedStoreIds.length) args.storeIds = scopedStoreIds
+      // null = all stores in user scope (no filter)
+    }
+    getDashboardStats(args)
       .then(setStats)
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
-  }, [rangeKey, storeFilter, isBO])
+  }, [rangeKey, scope, scopedStoreIds, isBO])
 
   const totals = stats?.totals || { all: 0, pending: 0, completed: 0, no_change_needed: 0, store_completed: 0 }
   const reviewed = totals.completed + totals.no_change_needed
+
+  const scopeLabel = (() => {
+    if (scope === 'all') return 'All stores'
+    if (scope.startsWith('area:')) {
+      const a = areas.find(x => x.id === scope.slice(5))
+      return a ? `Area · ${a.area_name}` : 'Area'
+    }
+    if (scope.startsWith('store:')) {
+      const s = stores.find(x => x.id === scope.slice(6))
+      return s ? s.store_name : 'Store'
+    }
+    return ''
+  })()
 
   return (
     <div>
       <div className="page-header">
         <div>
           <div className="page-title">Welcome back{isBO ? '' : `, ${session.storeName}`}</div>
-          <div className="page-subtitle">Here’s how your scanner activity is looking</div>
+          <div className="page-subtitle">{isBO ? `Showing: ${scopeLabel}` : 'Here’s how your scanner activity is looking'}</div>
         </div>
         <div className="flex-row" style={{ gap: 6, flexWrap: 'wrap' }}>
           {RANGES.map(r => (
@@ -72,11 +110,18 @@ export default function Dashboard() {
             </button>
           ))}
           {isBO && (
-            <select value={storeFilter} onChange={e => setStoreFilter(e.target.value)} style={{ width: 'auto' }}>
-              <option value="all">All stores</option>
-              {stores.filter(s => s.is_active).map(s => (
-                <option key={s.id} value={s.id}>{s.store_name}</option>
-              ))}
+            <select value={scope} onChange={e => setScope(e.target.value)} style={{ width: 'auto', minWidth: 200, maxWidth: 260 }}>
+              <option value="all">All stores in scope</option>
+              {areas.length > 0 && (
+                <optgroup label="By area">
+                  {areas.map(a => <option key={a.id} value={`area:${a.id}`}>Area · {a.area_name}</option>)}
+                </optgroup>
+              )}
+              <optgroup label="By store">
+                {stores.filter(s => s.is_active).map(s => (
+                  <option key={s.id} value={`store:${s.id}`}>{s.store_name}</option>
+                ))}
+              </optgroup>
             </select>
           )}
         </div>
@@ -85,9 +130,9 @@ export default function Dashboard() {
       {error && <div className="login-error">{error}</div>}
 
       <div className="kpi-grid">
-        <KpiCard loading={loading} label="Total records"    value={totals.all}             feature sub={isBO ? 'All stores' : session.storeName} />
-        <KpiCard loading={loading} label="Pending review"   value={totals.pending}         sub="Awaiting HQ action" />
-        <KpiCard loading={loading} label="HQ reviewed"      value={reviewed}               sub={`${totals.completed} complete · ${totals.no_change_needed} no change`} />
+        <KpiCard loading={loading} label="Total records"    value={totals.all}             feature sub={isBO ? scopeLabel : session.storeName} />
+        <KpiCard loading={loading} label="Pending review"   value={totals.pending}         sub="Awaiting HO action" />
+        <KpiCard loading={loading} label="HO reviewed"      value={reviewed}               sub={`${totals.completed} complete · ${totals.no_change_needed} no change`} />
         <KpiCard loading={loading} label="Store confirmed"  value={totals.store_completed} sub="Loop closed" />
       </div>
 

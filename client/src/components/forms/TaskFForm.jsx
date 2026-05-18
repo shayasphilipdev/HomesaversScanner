@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import { createTaskRecord, lookupProduct, getLookupOptions } from '../../lib/api.js'
 import { useStore } from '../../App.jsx'
 import ScannerInput from './ScannerInput.jsx'
@@ -15,7 +15,7 @@ const EMPTY = {
   supplier_id: '', supplier_name_text: '', notes: ''
 }
 
-export default function TaskFForm({ onSaved }) {
+export default function TaskFForm({ onSaved, storeId }) {
   const { session } = useStore()
   const [form, setForm]   = useState(EMPTY)
   const [sizes, setSizes] = useState([])
@@ -48,7 +48,7 @@ export default function TaskFForm({ onSaved }) {
     try {
       const res = await createTaskRecord({
         task_type:          'F',
-        store_id:           session.storeId || null,
+        store_id:           storeId || session.storeId || null,
         product_code:       form.product_code.trim(),
         supplier_id:        form.supplier_id || null,
         supplier_name_text: form.supplier_name_text.trim() || null,

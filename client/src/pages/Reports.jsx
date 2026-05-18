@@ -21,7 +21,7 @@ function formatDT(iso) {
 
 const STATUS_LABEL = {
   pending:          { label: 'Pending',          cls: 'badge-pending' },
-  completed:        { label: 'Completed by HQ',  cls: 'badge-completed' },
+  completed:        { label: 'Completed by HO',  cls: 'badge-completed' },
   no_change_needed: { label: 'No change needed', cls: 'badge-pending' },
   store_completed:  { label: 'Store confirmed',  cls: 'badge-store-done' }
 }
@@ -33,10 +33,10 @@ export default function Reports() {
       <div className="page-header">
         <div>
           <div className="page-title">Reports</div>
-          <div className="page-subtitle">{tab === 'hq' ? 'HQ task records — error reports from stores' : 'Store tasks — operational checklist completions'}</div>
+          <div className="page-subtitle">{tab === 'hq' ? 'HO task records — error reports from stores' : 'Store tasks — operational checklist completions'}</div>
         </div>
         <div className="flex-row" style={{ gap: 6 }}>
-          <button className={`btn btn-sm ${tab === 'hq' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('hq')}>HQ records</button>
+          <button className={`btn btn-sm ${tab === 'hq' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('hq')}>HO records</button>
           <button className={`btn btn-sm ${tab === 'store' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('store')}>Store tasks</button>
         </div>
       </div>
@@ -208,16 +208,15 @@ function HQReports() {
   return (
     <div>
       <div className="card">
-        <div className="card-header">Filters</div>
         <div className="card-body">
-          <div className="form-grid">
-            <div className="form-group"><label>From (date &amp; time)</label>
+          <div className="filter-row">
+            <div className="filter-field"><label>From</label>
               <input type="datetime-local" value={from} onChange={e => setFrom(e.target.value)} /></div>
-            <div className="form-group"><label>To (date &amp; time)</label>
+            <div className="filter-field"><label>To</label>
               <input type="datetime-local" value={to} onChange={e => setTo(e.target.value)} /></div>
 
             {isBO && (
-              <div className="form-group"><label>Store</label>
+              <div className="filter-field"><label>Store</label>
                 <select value={storeFilter} onChange={e => setStoreFilter(e.target.value)}>
                   <option value="all">All stores</option>
                   {stores.filter(s => s.is_active).map(s => (
@@ -226,29 +225,29 @@ function HQReports() {
                 </select></div>
             )}
 
-            <div className="form-group"><label>Task Type</label>
+            <div className="filter-field filter-field--wide"><label>Task Type</label>
               <select value={taskFilter} onChange={e => setTaskFilter(e.target.value)}>
                 <option value="all">All task types</option>
                 {taskTypes.map(t => <option key={t.code} value={t.code}>{t.code} — {t.name}</option>)}
               </select></div>
 
-            <div className="form-group"><label>Status</label>
+            <div className="filter-field"><label>Status</label>
               <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
                 <option value="all">Any status</option>
                 <option value="pending">Pending</option>
-                <option value="completed">Completed by HQ</option>
+                <option value="completed">Completed by HO</option>
                 <option value="no_change_needed">No change needed</option>
                 <option value="store_completed">Store confirmed</option>
               </select></div>
-          </div>
 
-          <div className="flex-row mt-20" style={{ gap: 8, flexWrap: 'wrap' }}>
-            <button className="btn btn-primary" onClick={runReport} disabled={loading}>
-              {loading ? <><span className="spinner" /> Loading…</> : 'Run report'}
-            </button>
-            <button className="btn btn-outline" onClick={downloadCSV} disabled={downloading}>
-              {downloading ? <><span className="spinner spinner-dark" /> Preparing…</> : '↓ Download Excel (CSV)'}
-            </button>
+            <div className="filter-actions">
+              <button className="btn btn-sm btn-primary" onClick={runReport} disabled={loading}>
+                {loading ? <><span className="spinner" /> Loading…</> : 'Run report'}
+              </button>
+              <button className="btn btn-sm btn-outline" onClick={downloadCSV} disabled={downloading}>
+                {downloading ? <><span className="spinner spinner-dark" /> Preparing…</> : '↓ CSV'}
+              </button>
+            </div>
           </div>
 
           {error && <div className="login-error mt-12">{error}</div>}
@@ -368,7 +367,7 @@ function HQReports() {
                       {r.review_notes && !(isBO && reviewRowId === r.id) && (
                         <tr>
                           <td colSpan={isBO ? 8 : 7} style={{ background: 'var(--surface-warm)', fontStyle: 'italic', fontSize: 13, color: 'var(--text-muted)' }}>
-                            HQ note: {r.review_notes}
+                            HO note: {r.review_notes}
                           </td>
                         </tr>
                       )}
@@ -445,33 +444,32 @@ function StoreTaskReports() {
   return (
     <div>
       <div className="card">
-        <div className="card-header">Filters</div>
         <div className="card-body">
-          <div className="form-grid">
-            <div className="form-group"><label>From</label>
+          <div className="filter-row">
+            <div className="filter-field"><label>From</label>
               <input type="date" value={from} onChange={e => setFrom(e.target.value)} /></div>
-            <div className="form-group"><label>To</label>
+            <div className="filter-field"><label>To</label>
               <input type="date" value={to}   onChange={e => setTo(e.target.value)} /></div>
             {isBO && (
-              <div className="form-group"><label>Store</label>
+              <div className="filter-field"><label>Store</label>
                 <select value={storeFilter} onChange={e => setStoreFilter(e.target.value)}>
                   <option value="all">All stores</option>
                   {stores.filter(s => s.is_active).map(s => <option key={s.id} value={s.id}>{s.store_name}</option>)}
                 </select></div>
             )}
-            <div className="form-group"><label>Template</label>
+            <div className="filter-field filter-field--wide"><label>Template</label>
               <select value={tplFilter} onChange={e => setTplFilter(e.target.value)}>
                 <option value="all">All templates</option>
                 {templates.filter(t => t.is_active).map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
               </select></div>
-          </div>
-          <div className="flex-row mt-20" style={{ gap: 8, flexWrap: 'wrap' }}>
-            <button className="btn btn-primary" onClick={run} disabled={loading}>
-              {loading ? (<><span className="spinner" /> Loading…</>) : 'Run report'}
-            </button>
-            <button className="btn btn-outline" onClick={downloadCSV} disabled={downloading}>
-              {downloading ? (<><span className="spinner spinner-dark" /> Preparing…</>) : '↓ Download Excel (CSV)'}
-            </button>
+            <div className="filter-actions">
+              <button className="btn btn-sm btn-primary" onClick={run} disabled={loading}>
+                {loading ? (<><span className="spinner" /> Loading…</>) : 'Run report'}
+              </button>
+              <button className="btn btn-sm btn-outline" onClick={downloadCSV} disabled={downloading}>
+                {downloading ? (<><span className="spinner spinner-dark" /> Preparing…</>) : '↓ CSV'}
+              </button>
+            </div>
           </div>
           {error && <div className="login-error mt-12">{error}</div>}
         </div>
