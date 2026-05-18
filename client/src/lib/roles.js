@@ -101,3 +101,9 @@ export const TASK_REVIEWER_ROLES  = ['admin', 'buying_manager', 'buying_head', '
 
 export const roleLabel = (key) => ROLES[key]?.label || key
 export const roleScope = (key) => ROLES[key]?.scope || 'unknown'
+
+// Convenience predicates — mirror the server-side guards.
+export const canAccessAdmin       = (session) => !!session && ADMIN_ROLES.includes(session.role)
+export const canAccessTemplates   = (session) => !!session && TASK_CREATOR_ROLES.includes(session.role)
+export const canReviewHQRecords   = (session) => !!session && TASK_REVIEWER_ROLES.includes(session.role)
+export const canSeeAnyAdminLink   = (session) => canAccessAdmin(session) || canAccessTemplates(session)

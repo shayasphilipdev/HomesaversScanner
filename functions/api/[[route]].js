@@ -131,14 +131,9 @@ function hasRole(s, allowed) {
   return !!s && !!s.role && allowed.includes(s.role)
 }
 
-function isBackOffice(s) {
-  if (!s) return false
-  if (hasRole(s, BO_ROLES)) return true
-  // Backward-compat: pre-9B tokens only had `mode`.
-  return s.mode === 'backoffice'
-}
-function isAdminRole(s)    { return !!s && (hasRole(s, ADMIN_ROLES)   || s.mode === 'backoffice') }
-function canCreateTasks(s) { return !!s && hasRole(s, TASK_CREATORS) }
+function isBackOffice(s)   { return hasRole(s, BO_ROLES) }
+function isAdminRole(s)    { return hasRole(s, ADMIN_ROLES) }
+function canCreateTasks(s) { return hasRole(s, TASK_CREATORS) }
 
 async function buildSessionForUser(db, user) {
   // Area managers need their area list available for scoped views.
@@ -370,7 +365,7 @@ export async function onRequest(context) {
     // All /admin/* endpoints require back-office mode.
 
     if (path === '/admin/stores' && method === 'GET') {
-      if (!isBO) return err('Forbidden', 403)
+      if (!isAdminRole(session)) return err('Forbidden', 403)
       const rows = await db.select('stores', {
         select: 'id,store_code,store_name,region,area_id,is_active,created_at',
         order:  'store_code.asc'
@@ -379,7 +374,7 @@ export async function onRequest(context) {
     }
 
     if (path === '/admin/stores' && method === 'POST') {
-      if (!isBO) return err('Forbidden', 403)
+      if (!isAdminRole(session)) return err('Forbidden', 403)
       const { store_code, store_name, region, area_id, pin, is_active } = await request.json()
       if (!store_code || !store_name) return err('store_code and store_name are required', 400)
       if (!pin || String(pin).length < 4) return err('PIN must be at least 4 characters', 400)
@@ -401,7 +396,7 @@ export async function onRequest(context) {
 
     const adminStoreMatch = path.match(/^\/admin\/stores\/([a-f0-9-]+)$/)
     if (adminStoreMatch && method === 'PATCH') {
-      if (!isBO) return err('Forbidden', 403)
+      if (!isAdminRole(session)) return err('Forbidden', 403)
       const id = adminStoreMatch[1]
       const body = await request.json()
       // Whitelist editable fields (never let the client overwrite pin_hash directly here).
@@ -421,7 +416,7 @@ export async function onRequest(context) {
     // ── Back-office admin: suppliers ─────────────────────────────────────
 
     if (path === '/admin/suppliers' && method === 'GET') {
-      if (!isBO) return err('Forbidden', 403)
+      if (!isAdminRole(session)) return err('Forbidden', 403)
       const rows = await db.select('suppliers', {
         select: 'id,supplier_code,supplier_name,is_active,created_at,updated_at',
         order:  'supplier_name.asc'
@@ -430,7 +425,7 @@ export async function onRequest(context) {
     }
 
     if (path === '/admin/suppliers' && method === 'POST') {
-      if (!isBO) return err('Forbidden', 403)
+      if (!isAdminRole(session)) return err('Forbidden', 403)
       const { supplier_code, supplier_name, is_active } = await request.json()
       if (!supplier_name) return err('supplier_name required', 400)
       const inserted = await db.insert('suppliers', {
@@ -446,7 +441,7 @@ export async function onRequest(context) {
     // Duplicates by supplier_code are upserted; supplier_name-only rows are
     // inserted as new (no dedupe — that's the admin's job for now).
     if (path === '/admin/suppliers/bulk' && method === 'POST') {
-      if (!isBO) return err('Forbidden', 403)
+      if (!isAdminRole(session)) return err('Forbidden', 403)
       const rows = await request.json()
       if (!Array.isArray(rows) || !rows.length) return err('Empty payload', 400)
       const clean = rows
@@ -463,7 +458,7 @@ export async function onRequest(context) {
 
     const adminSupplierMatch = path.match(/^\/admin\/suppliers\/([a-f0-9-]+)$/)
     if (adminSupplierMatch && method === 'PATCH') {
-      if (!isBO) return err('Forbidden', 403)
+      if (!isAdminRole(session)) return err('Forbidden', 403)
       const id = adminSupplierMatch[1]
       const body = await request.json()
       const updates = {}
@@ -605,7 +600,7 @@ export async function onRequest(context) {
     // ── Back-office admin: areas ─────────────────────────────────────────
 
     if (path === '/admin/areas' && method === 'GET') {
-      if (!isBO) return err('Forbidden', 403)
+      if (!isAdminRole(session)) return err('Forbidden', 403)
       const rows = await db.select('areas', {
         select: 'id,area_code,area_name,is_active,created_at,updated_at',
         order:  'area_name.asc'
@@ -614,7 +609,7 @@ export async function onRequest(context) {
     }
 
     if (path === '/admin/areas' && method === 'POST') {
-      if (!isBO) return err('Forbidden', 403)
+      if (!isAdminRole(session)) return err('Forbidden', 403)
       const { area_code, area_name, is_active } = await request.json()
       if (!area_name) return err('area_name is required', 400)
       const inserted = await db.insert('areas', {
@@ -627,7 +622,7 @@ export async function onRequest(context) {
 
     const adminAreaMatch = path.match(/^\/admin\/areas\/([a-f0-9-]+)$/)
     if (adminAreaMatch && method === 'PATCH') {
-      if (!isBO) return err('Forbidden', 403)
+      if (!isAdminRole(session)) return err('Forbidden', 403)
       const id = adminAreaMatch[1]
       const body = await request.json()
       const updates = {}
@@ -644,7 +639,7 @@ export async function onRequest(context) {
     // ── Back-office admin: lookup_options (reason codes, DRS sizes) ──────
 
     if (path === '/admin/lookup-options' && method === 'GET') {
-      if (!isBO) return err('Forbidden', 403)
+      if (!isAdminRole(session)) return err('Forbidden', 403)
       const kind = url.searchParams.get('kind')
       const params = {
         select: 'id,kind,label,task_types,sort_order,is_active,created_at',
@@ -655,7 +650,7 @@ export async function onRequest(context) {
     }
 
     if (path === '/admin/lookup-options' && method === 'POST') {
-      if (!isBO) return err('Forbidden', 403)
+      if (!isAdminRole(session)) return err('Forbidden', 403)
       const { kind, label, task_types = [], sort_order = 0 } = await request.json()
       if (!kind || !label) return err('kind and label required', 400)
       const inserted = await db.insert('lookup_options', {
@@ -666,7 +661,7 @@ export async function onRequest(context) {
 
     const adminLookupMatch = path.match(/^\/admin\/lookup-options\/([a-f0-9-]+)$/)
     if (adminLookupMatch && method === 'PATCH') {
-      if (!isBO) return err('Forbidden', 403)
+      if (!isAdminRole(session)) return err('Forbidden', 403)
       const id   = adminLookupMatch[1]
       const body = await request.json()
       const updates = {}
@@ -681,7 +676,7 @@ export async function onRequest(context) {
     }
 
     if (adminLookupMatch && method === 'DELETE') {
-      if (!isBO) return err('Forbidden', 403)
+      if (!isAdminRole(session)) return err('Forbidden', 403)
       await db.remove('lookup_options', { id: `eq.${adminLookupMatch[1]}` })
       return json({ ok: true })
     }
@@ -689,7 +684,7 @@ export async function onRequest(context) {
     // ── Back-office admin: products master ───────────────────────────────
 
     if (path === '/admin/products' && method === 'GET') {
-      if (!isBO) return err('Forbidden', 403)
+      if (!isAdminRole(session)) return err('Forbidden', 403)
       const limit = url.searchParams.get('limit') || '100'
       const q     = url.searchParams.get('q')
       const params = {
@@ -706,7 +701,7 @@ export async function onRequest(context) {
     // products admin page.
     const adminProductMatch = path.match(/^\/admin\/products\/([a-f0-9-]+)$/)
     if (adminProductMatch && method === 'PATCH') {
-      if (!isBO) return err('Forbidden', 403)
+      if (!isAdminRole(session)) return err('Forbidden', 403)
       const id   = adminProductMatch[1]
       const body = await request.json()
       const updates = {}
@@ -723,7 +718,7 @@ export async function onRequest(context) {
     }
 
     if (path === '/admin/products/count' && method === 'GET') {
-      if (!isBO) return err('Forbidden', 403)
+      if (!isAdminRole(session)) return err('Forbidden', 403)
       // Use a HEAD request with count=exact to get just the total
       const headRes = await fetch(`${env.SUPABASE_URL}/rest/v1/products?select=id`, {
         method: 'HEAD',
@@ -744,7 +739,7 @@ export async function onRequest(context) {
     // Optional supplier_name column is resolved to supplier_id by name match
     // (case-insensitive) against active suppliers; unknown names are ignored.
     if (path === '/admin/products/bulk' && method === 'POST') {
-      if (!isBO) return err('Forbidden', 403)
+      if (!isAdminRole(session)) return err('Forbidden', 403)
       const rows = await request.json()
       if (!Array.isArray(rows) || !rows.length) return err('Empty payload', 400)
       const now = new Date().toISOString()
@@ -795,14 +790,14 @@ export async function onRequest(context) {
     // ── Back-office admin: settings ──────────────────────────────────────
 
     if (path === '/admin/settings' && method === 'GET') {
-      if (!isBO) return err('Forbidden', 403)
+      if (!isAdminRole(session)) return err('Forbidden', 403)
       const rows = await db.select('app_settings', { select: 'key,value,updated_at', order: 'key.asc' })
       // Hide the back-office PIN hash — it's a secret.
       return json(rows.filter(r => r.key !== 'backoffice_pin_hash'))
     }
 
     if (path === '/admin/settings' && method === 'PATCH') {
-      if (!isBO) return err('Forbidden', 403)
+      if (!isAdminRole(session)) return err('Forbidden', 403)
       const updates = await request.json()  // { key: value, ... }
       const now = new Date().toISOString()
       const rows = Object.entries(updates)
@@ -825,7 +820,7 @@ export async function onRequest(context) {
 
     // POST /admin/cleanup/photos — delete photos older than photo_retention_days.
     if (path === '/admin/cleanup/photos' && method === 'POST') {
-      if (!isBO) return err('Forbidden', 403)
+      if (!isAdminRole(session)) return err('Forbidden', 403)
       const [setting] = await db.select('app_settings', { select: 'value', key: 'eq.photo_retention_days' })
       const days = Math.max(1, Number(setting?.value || 7))
 
@@ -844,7 +839,7 @@ export async function onRequest(context) {
 
     const adminPinMatch = path.match(/^\/admin\/stores\/([a-f0-9-]+)\/reset-pin$/)
     if (adminPinMatch && method === 'POST') {
-      if (!isBO) return err('Forbidden', 403)
+      if (!isAdminRole(session)) return err('Forbidden', 403)
       const id  = adminPinMatch[1]
       const { pin } = await request.json()
       if (!pin || String(pin).length < 4) return err('PIN must be at least 4 characters', 400)
@@ -1418,7 +1413,7 @@ export async function onRequest(context) {
     // Bulk review (back office) — mark many records as completed or
     // no_change_needed, with an optional shared review note.
     if (path === '/task-records/bulk-review' && method === 'POST') {
-      if (!isBO) return err('Forbidden', 403)
+      if (!isBackOffice(session)) return err('Forbidden', 403)
       const { ids, status, review_notes } = await request.json()
       if (!Array.isArray(ids) || !ids.length)        return err('ids required', 400)
       if (!['completed', 'no_change_needed'].includes(status))

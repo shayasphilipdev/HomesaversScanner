@@ -4,6 +4,7 @@ import StoreSelector from './components/StoreSelector.jsx'
 import Nav from './components/Nav.jsx'
 import Sidebar from './components/Sidebar.jsx'
 import BottomNav from './components/BottomNav.jsx'
+import AdminGuard from './components/AdminGuard.jsx'
 import { ToastProvider } from './components/Toast.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import Tasks from './pages/Tasks.jsx'
@@ -97,16 +98,16 @@ function Shell() {
             <Route path="/reports"       element={<Reports />} />
             <Route path="/sync"          element={<Sync />} />
             <Route path="/store-tasks"   element={<StoreTasks />} />
-            <Route path="/admin/task-templates" element={<AdminTaskTemplates />} />
+            <Route path="/admin/task-templates" element={<AdminGuard mode="templates"><AdminTaskTemplates /></AdminGuard>} />
             <Route path="/admin"            element={<Navigate to="/admin/stores" replace />} />
-            <Route path="/admin/stores"     element={<AdminStores />} />
-            <Route path="/admin/areas"      element={<AdminAreas />} />
-            <Route path="/admin/users"      element={<AdminUsers />} />
-            <Route path="/admin/employees"  element={<AdminEmployees />} />
-            <Route path="/admin/suppliers"  element={<AdminSuppliers />} />
-            <Route path="/admin/lookups"    element={<AdminLookups />} />
-            <Route path="/admin/products"   element={<AdminProducts />} />
-            <Route path="/admin/settings"   element={<AdminSettings />} />
+            <Route path="/admin/stores"     element={<AdminGuard><AdminStores /></AdminGuard>} />
+            <Route path="/admin/areas"      element={<AdminGuard><AdminAreas /></AdminGuard>} />
+            <Route path="/admin/users"      element={<AdminGuard><AdminUsers /></AdminGuard>} />
+            <Route path="/admin/employees"  element={<AdminGuard><AdminEmployees /></AdminGuard>} />
+            <Route path="/admin/suppliers"  element={<AdminGuard><AdminSuppliers /></AdminGuard>} />
+            <Route path="/admin/lookups"    element={<AdminGuard><AdminLookups /></AdminGuard>} />
+            <Route path="/admin/products"   element={<AdminGuard><AdminProducts /></AdminGuard>} />
+            <Route path="/admin/settings"   element={<AdminGuard><AdminSettings /></AdminGuard>} />
           <Route path="*"                 element={<Navigate to="/dashboard" replace />} />
         </Routes>
         </main>

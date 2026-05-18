@@ -3,7 +3,13 @@
 A full snapshot of the app as it stands today. Intended as a self-contained
 orientation doc for any Claude session that opens this repo cold.
 
-> **What changed in Phase 9F** (latest, live — Store Tasks only):
+> **What changed in Phase 9G–9H** (latest, live):
+> - **9G — Store-task reports**: Reports page now has "HQ records" + "Store tasks" tabs. New `/api/reports/store-tasks` (CSV with answers flattened per block label) and `/api/reports/store-tasks/json` (on-screen table).
+> - **9H — Permission tightening**: admin pages (`/admin/stores · areas · users · employees · suppliers · lookups · products · settings`) now require role `admin` or `buying_manager`. Task templates remain open to all task creators. `mode==='backoffice'` fallback removed from `isAdminRole` / `isBackOffice`. New `AdminGuard` wraps the routes; nav links auto-hide for unprivileged roles.
+> - **9H — Cleanup**: dropped the unused `users.roles text[]` column from the abandoned multi-role experiment.
+> - **9H — Task categories**: now backed by `lookup_options` with `kind='task_category'`. Seeded six defaults (Compliance, Cleanliness, Stock, Customer Service, Safety, Other). Template form's "Category" is a dropdown; admins manage the list under Admin → Reason / Size lookups.
+>
+> **Phase 9F**:
 > - **Form-builder** for Store Task templates. New `store_task_templates.blocks` (jsonb) holds an ordered list of input blocks: text · long text · number · amount (€) · date · time · yes/no · single choice · multi choice · photo. Each block can be marked required and the server enforces it on completion.
 > - **Advanced targeting**: `assigned_to_roles[]` (multi-role) and `assigned_to_user_ids[]` (specific employees) added alongside the existing `assigned_to_role`. New `start_at` / `end_at` window for when the template is active.
 > - **Completion**: `store_task_instances.answers` (jsonb) keyed by block id. Legacy `requires_photo` / `requires_notes` still work when a template has no blocks (backward compat).

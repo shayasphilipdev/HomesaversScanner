@@ -6,8 +6,9 @@ import {
 import AdminNav from '../components/AdminNav.jsx'
 
 const KINDS = [
-  { kind: 'reason_code', label: 'Reason Codes',  hint: 'Used by Task C (Wrong Prices) and any other task type you tick.' },
-  { kind: 'drs_size',    label: 'DRS Sizes',     hint: 'Used by Task F (DRS Errors). Update when Ireland’s DRS thresholds change.' }
+  { kind: 'reason_code',   label: 'Reason Codes',    hint: 'Used by Task C (Wrong Prices) and any other task type you tick.' },
+  { kind: 'drs_size',      label: 'DRS Sizes',       hint: 'Used by Task F (DRS Errors). Update when Ireland’s DRS thresholds change.' },
+  { kind: 'task_category', label: 'Task Categories', hint: 'Categorise Store Task templates — shows up as a chip on the template and a filter on reports.' }
 ]
 
 export default function AdminLookups() {

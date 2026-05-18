@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useStore } from '../App.jsx'
 import {
   adminListTemplates, adminCreateTemplate, adminUpdateTemplate, adminDeleteTemplate,
-  adminListAreas, adminListStores, adminListUsers
+  adminListAreas, adminListStores, adminListUsers, getLookupOptions
 } from '../lib/api.js'
 import { useToast } from '../components/Toast.jsx'
 import AdminNav from '../components/AdminNav.jsx'
@@ -49,6 +49,7 @@ export default function AdminTaskTemplates() {
   const [areas, setAreas]   = useState([])
   const [stores, setStores] = useState([])
   const [users, setUsers]   = useState([])
+  const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState('')
   const [editing, setEditing] = useState(null)   // template object or {} for new
@@ -56,11 +57,12 @@ export default function AdminTaskTemplates() {
   const load = async () => {
     setLoading(true); setError('')
     try {
-      const [t, a, s, u] = await Promise.all([
+      const [t, a, s, u, c] = await Promise.all([
         adminListTemplates(), adminListAreas(), adminListStores(),
-        adminListUsers().catch(() => [])
+        adminListUsers().catch(() => []),
+        getLookupOptions({ kind: 'task_category' }).catch(() => [])
       ])
-      setTemplates(t); setAreas(a); setStores(s); setUsers(u)
+      setTemplates(t); setAreas(a); setStores(s); setUsers(u); setCategories(c)
     } catch (e) { setError(e.message) } finally { setLoading(false) }
   }
 
@@ -91,7 +93,7 @@ export default function AdminTaskTemplates() {
       {editing && (
         <TemplateForm
           template={editing.id ? editing : null}
-          areas={areas} stores={stores} users={users}
+          areas={areas} stores={stores} users={users} categories={categories}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); load() }}
           toast={toast}
@@ -182,7 +184,7 @@ function describeScope(t, areas, stores) {
   return t.applies_to
 }
 
-function TemplateForm({ template, areas, stores, users, onClose, onSaved, toast }) {
+function TemplateForm({ template, areas, stores, users, categories = [], onClose, onSaved, toast }) {
   const [form, setForm] = useState(() => ({
     title:                template?.title || '',
     description:          template?.description || '',
@@ -270,7 +272,11 @@ function TemplateForm({ template, areas, stores, users, onClose, onSaved, toast 
             </div>
             <div className="form-group">
               <label>Category</label>
-              <input value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} placeholder="e.g. Compliance" />
+              <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>
+                <option value="">— None —</option>
+                {categories.map(c => <option key={c.id} value={c.label}>{c.label}</option>)}
+              </select>
+              <span className="note" style={{ fontSize: 12 }}>Manage the list under Admin → Reason / Size lookups (kind: task_category).</span>
             </div>
             <div className="form-group">
               <label>Priority</label>

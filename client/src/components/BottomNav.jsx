@@ -1,12 +1,12 @@
 import { NavLink } from 'react-router-dom'
 import { useStore } from '../App.jsx'
+import { canSeeAnyAdminLink, canAccessAdmin } from '../lib/roles.js'
 
 // Visible only on phones (CSS handles the breakpoint).
 // Thumb-reach navigation pinned to the bottom edge, with safe-area
 // inset support so it sits above the iOS home indicator.
 export default function BottomNav() {
   const { session } = useStore()
-  const isBO = session.mode === 'backoffice'
 
   const items = [
     { to: '/dashboard',     icon: '◧', label: 'Home' },
@@ -14,7 +14,9 @@ export default function BottomNav() {
     { to: '/tasks',         icon: '✚', label: 'HQ' },
     { to: '/reports',       icon: '▤', label: 'Reports' }
   ]
-  if (isBO) items.push({ to: '/admin/stores', icon: '⚙', label: 'Admin' })
+  if (canSeeAnyAdminLink(session)) {
+    items.push({ to: canAccessAdmin(session) ? '/admin/stores' : '/admin/task-templates', icon: '⚙', label: 'Admin' })
+  }
 
   return (
     <nav className="bottom-nav" aria-label="Primary">

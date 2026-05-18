@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom'
 import { useState } from 'react'
 import { useStore } from '../App.jsx'
 import { resolvedTheme, setTheme } from '../lib/theme.js'
+import { canSeeAnyAdminLink, canAccessAdmin, canAccessTemplates } from '../lib/roles.js'
 import OfflineIndicator from './OfflineIndicator.jsx'
 
 export default function Nav() {
@@ -23,8 +24,11 @@ export default function Nav() {
       <NavLink to="/store-tasks"  className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Store Tasks</NavLink>
       <NavLink to="/reports"      className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Reports</NavLink>
 
-      {session.mode === 'backoffice' && (
-        <NavLink to="/admin/stores" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Admin</NavLink>
+      {canSeeAnyAdminLink(session) && (
+        <NavLink
+          to={canAccessAdmin(session) ? '/admin/stores' : '/admin/task-templates'}
+          className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+        >Admin</NavLink>
       )}
 
       <OfflineIndicator />

@@ -1,12 +1,12 @@
 import { NavLink, useLocation } from 'react-router-dom'
 import { useStore } from '../App.jsx'
+import { canSeeAnyAdminLink, canAccessAdmin } from '../lib/roles.js'
 
 // Desktop sidebar (visible on screens ≥ 1024px). Replaces the top-bar
 // links at that width. Active state matches `/admin/*` for the Admin
 // link even though it links to /admin/stores specifically.
 export default function Sidebar() {
   const { session } = useStore()
-  const isBO = session.mode === 'backoffice'
   const { pathname } = useLocation()
 
   const items = [
@@ -15,7 +15,12 @@ export default function Sidebar() {
     { to: '/store-tasks',  icon: '☑', label: 'Store Tasks' },
     { to: '/reports',      icon: '▤', label: 'Reports' }
   ]
-  if (isBO) items.push({ to: '/admin/stores', icon: '⚙', label: 'Admin', match: '/admin' })
+  if (canSeeAnyAdminLink(session)) {
+    items.push({
+      to: canAccessAdmin(session) ? '/admin/stores' : '/admin/task-templates',
+      icon: '⚙', label: 'Admin', match: '/admin'
+    })
+  }
 
   return (
     <aside className="sidebar" aria-label="Primary">
