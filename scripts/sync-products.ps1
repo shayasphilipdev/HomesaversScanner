@@ -111,10 +111,10 @@ try {
   # Only these fields are sent -- every other column in the 80+ column
   # master is silently ignored so the network payload stays tiny.
   $aliases = @{
-    "product_id"    = @("product_id","id","barcode","sku","code","item_code","item_id")
+    "product_id"    = @("product_id","id","barcode","sku","code","item_code","item_id","ean_barcode","ean")
     "description"   = @("description","name","product","product_name","item_description","item_name")
-    "uom"           = @("uom","unit","unit_of_measure","measure")
-    "category"      = @("category","cat","department")
+    "uom"           = @("uom","unit","unit_of_measure","measure","ud_uomtype","uomtype")
+    "category"      = @("category","cat","department","itemgroup","item_group")
     "supplier_code" = @("supplier_code","suppliercode","vendor_code","supplier_id_code")
     "supplier_name" = @("supplier_name","supplier","vendor")
   }
