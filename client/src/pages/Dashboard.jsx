@@ -100,7 +100,7 @@ export default function Dashboard() {
     <div>
       <div className="page-header">
         <div>
-          <div className="page-title">Welcome back{isBO ? '' : `, ${session.storeName}`}</div>
+          <div className="page-title">Welcome back</div>
           <div className="page-subtitle">{isBO ? `Showing: ${scopeLabel}` : 'Here’s how your scanner activity is looking'}</div>
         </div>
         <div className="flex-row" style={{ gap: 6, flexWrap: 'wrap' }}>
@@ -130,7 +130,7 @@ export default function Dashboard() {
       {error && <div className="login-error">{error}</div>}
 
       <div className="kpi-grid">
-        <KpiCard loading={loading} label="Total records"    value={totals.all}             feature sub={isBO ? scopeLabel : session.storeName} />
+        <KpiCard loading={loading} label="Total records"    value={totals.all}             feature sub={isBO ? scopeLabel : 'Your stores'} />
         <KpiCard loading={loading} label="Pending review"   value={totals.pending}         sub="Awaiting HO action" />
         <KpiCard loading={loading} label="HO reviewed"      value={reviewed}               sub={`${totals.completed} complete · ${totals.no_change_needed} no change`} />
         <KpiCard loading={loading} label="Store confirmed"  value={totals.store_completed} sub="Loop closed" />

@@ -23,7 +23,8 @@ const STATUS_LABEL = {
   pending:          { label: 'Pending',          cls: 'badge-pending' },
   completed:        { label: 'Completed by HO',  cls: 'badge-completed' },
   no_change_needed: { label: 'No change needed', cls: 'badge-pending' },
-  store_completed:  { label: 'Store confirmed',  cls: 'badge-store-done' }
+  store_completed:  { label: 'Store confirmed',  cls: 'badge-store-done' },
+  cleared:          { label: 'Clear',            cls: 'badge-store-done' }
 }
 
 export default function Reports() {
@@ -103,6 +104,7 @@ function HQReports() {
     setDownloading(true); setError('')
     try {
       const params = new URLSearchParams({ from, to, storeId: storeFilter, task_type: taskFilter })
+      if (statusFilter === 'cleared') params.set('includeCleared', '1')
       const res = await fetch(`/api/reports/task-records?${params}`, {
         headers: { Authorization: `Bearer ${getToken()}` }
       })
@@ -233,11 +235,12 @@ function HQReports() {
 
             <div className="filter-field"><label>Status</label>
               <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-                <option value="all">Any status</option>
+                <option value="all">Any status (excl. cleared)</option>
                 <option value="pending">Pending</option>
                 <option value="completed">Completed by HO</option>
                 <option value="no_change_needed">No change needed</option>
                 <option value="store_completed">Store confirmed</option>
+                <option value="cleared">Clear (archived)</option>
               </select></div>
 
             <div className="filter-actions">
@@ -301,6 +304,7 @@ function HQReports() {
                   <th>Store</th>
                   <th>Product</th>
                   <th>Description</th>
+                  <th>Photos</th>
                   <th>Status</th>
                   <th>Date</th>
                   {isBO && <th></th>}
@@ -325,6 +329,13 @@ function HQReports() {
                         <td>{storesById[r.store_id]?.store_name || <span className="td-muted">—</span>}</td>
                         <td className="td-code">{r.product_code || r.product_barcode || ''}</td>
                         <td>{desc || <span className="td-muted">—</span>}</td>
+                        <td>
+                          <div className="flex-row" style={{ gap: 6 }}>
+                            {r.photo_product_url && <a href={r.photo_product_url} target="_blank" rel="noopener noreferrer">📷 product</a>}
+                            {r.photo_barcode_url && <a href={r.photo_barcode_url} target="_blank" rel="noopener noreferrer">📷 barcode</a>}
+                            {!r.photo_product_url && !r.photo_barcode_url && <span className="td-muted">—</span>}
+                          </div>
+                        </td>
                         <td><span className={`badge ${status.cls}`}>{status.label}</span></td>
                         <td className="td-muted">{formatDT(r.created_at)}</td>
                         {isBO && (
@@ -345,7 +356,7 @@ function HQReports() {
                       {/* Inline note input for per-row "No change needed" */}
                       {isBO && reviewRowId === r.id && (
                         <tr>
-                          <td colSpan={isBO ? 8 : 7} style={{ background: 'var(--surface-warm)' }}>
+                          <td colSpan={isBO ? 9 : 8} style={{ background: 'var(--surface-warm)' }}>
                             <div className="flex-row" style={{ gap: 6, padding: '6px 0' }}>
                               <input
                                 type="text"
@@ -366,7 +377,7 @@ function HQReports() {
                       {/* Review-notes echo for records that already have one */}
                       {r.review_notes && !(isBO && reviewRowId === r.id) && (
                         <tr>
-                          <td colSpan={isBO ? 8 : 7} style={{ background: 'var(--surface-warm)', fontStyle: 'italic', fontSize: 13, color: 'var(--text-muted)' }}>
+                          <td colSpan={isBO ? 9 : 8} style={{ background: 'var(--surface-warm)', fontStyle: 'italic', fontSize: 13, color: 'var(--text-muted)' }}>
                             HO note: {r.review_notes}
                           </td>
                         </tr>

@@ -7,6 +7,7 @@ const STATUS_LABEL = {
   completed:        { label: 'Completed by HO',  cls: 'badge-completed' },
   no_change_needed: { label: 'No change needed', cls: 'badge-pending' },
   store_completed:  { label: 'Store confirmed',  cls: 'badge-store-done' },
+  cleared:          { label: 'Clear',            cls: 'badge-store-done' },
 }
 
 function formatDT(iso) {
@@ -32,6 +33,14 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
       marked_for_deletion: true
     })
     onRefresh()
+  }
+
+  // Store closes the loop: once they've actioned the HO-completed record
+  // in the POs, they mark it 'Clear'. Cleared records stay in the database
+  // but disappear from forms and reports (cleared_at is stamped server-side).
+  const markCleared = async (id) => {
+    await updateTaskRecord(id, { status: 'cleared' })
+    onOptimisticRemove?.(id)
   }
 
   const handleDelete = async (id) => {
@@ -77,6 +86,7 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
               <th>UOM</th>
               <th className="td-right">Qty</th>
               <th>Supplier</th>
+              <th>Photos</th>
               <th>Status</th>
               <th>Date / Time</th>
               <th></th>
@@ -85,7 +95,10 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
           <tbody>
             {records.map(r => {
               const status   = STATUS_LABEL[r.status] || STATUS_LABEL.pending
-              const supplier = r.supplier_name_text || r.supplier_id || ''
+              // Prefer the resolved supplier_name from the backend (joined
+              // suppliers row), falling back to the free-text supplier the
+              // staff member typed when the picker came up dry.
+              const supplier = r.supplier_name || r.supplier_name_text || ''
               const description = r.description || r.product_name_label || ''
               // Store needs to acknowledge both `completed` and
               // `no_change_needed` — both are HQ-reviewed states.
@@ -104,6 +117,13 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
                     </td>
                     <td className="td-right">{r.quantity ?? <span className="td-muted">—</span>}</td>
                     <td>{supplier || <span className="td-muted">—</span>}</td>
+                    <td>
+                      <div className="flex-row" style={{ gap: 6 }}>
+                        {r.photo_product_url && <a href={r.photo_product_url} target="_blank" rel="noopener noreferrer" title="Product photo">📷 product</a>}
+                        {r.photo_barcode_url && <a href={r.photo_barcode_url} target="_blank" rel="noopener noreferrer" title="Barcode photo">📷 barcode</a>}
+                        {!r.photo_product_url && !r.photo_barcode_url && <span className="td-muted">—</span>}
+                      </div>
+                    </td>
                     <td><span className={`badge ${status.cls}`}>{status.label}</span></td>
                     <td className="td-muted">{formatDT(r.created_at)}</td>
                     <td>
@@ -112,7 +132,9 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
                           <button className="btn btn-sm btn-primary" onClick={() => markCompleted(r.id)}>Mark complete</button>
                         )}
                         {!isBO && reviewed && (
-                          <button className="btn btn-sm btn-outline" onClick={() => markStoreCompleted(r.id)}>Confirm ✓</button>
+                          <button className="btn btn-sm btn-primary" onClick={() => markCleared(r.id)} title="PO actioned — clear from list">
+                            ✓ Clear
+                          </button>
                         )}
                         {(isBO || r.status === 'store_completed') && (
                           <button className="btn btn-sm btn-icon btn-outline" title="Delete" onClick={() => handleDelete(r.id)}>🗑</button>
@@ -122,7 +144,7 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
                   </tr>
                   {r.review_notes && (
                     <tr>
-                      <td colSpan={9} style={{ background: 'var(--surface-warm)', fontStyle: 'italic', fontSize: 13, color: 'var(--text-muted)', borderTop: 'none' }}>
+                      <td colSpan={10} style={{ background: 'var(--surface-warm)', fontStyle: 'italic', fontSize: 13, color: 'var(--text-muted)', borderTop: 'none' }}>
                         💬 HO note: {r.review_notes}
                       </td>
                     </tr>

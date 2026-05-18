@@ -44,7 +44,7 @@ export default function Sidebar() {
 
       <div className="sidebar-footer">
         <span className="note" style={{ fontSize: 11.5 }}>
-          {session.mode === 'backoffice' ? 'Back Office' : session.storeName}
+          {session.mode === 'backoffice' ? 'Back Office' : 'Store'}
         </span>
       </div>
     </aside>

@@ -15,6 +15,28 @@ const EMPTY = {
   supplier_id: '', supplier_name_text: '', notes: ''
 }
 
+// Parse a size label like "500ml", "330 ml", "1L", "1.5 l", "33cl" → millilitres.
+// Returns null when the label can't be interpreted as a volume.
+function sizeLabelToMl(label) {
+  if (!label) return null
+  const m = String(label).trim().toLowerCase().match(/([\d.]+)\s*(ml|cl|l|litre|liter)\b/)
+  if (!m) return null
+  const n = parseFloat(m[1])
+  if (!isFinite(n)) return null
+  switch (m[2]) {
+    case 'ml':                                return n
+    case 'cl':                                return n * 10
+    case 'l': case 'litre': case 'liter':     return n * 1000
+    default:                                  return null
+  }
+}
+
+// DRS deposit per single container: 15 cents under 500 ml, 25 cents at 500 ml+.
+function depositPerUnitCents(ml) {
+  if (ml == null) return null
+  return ml >= 500 ? 25 : 15
+}
+
 export default function TaskFForm({ onSaved, storeId }) {
   const { session } = useStore()
   const [form, setForm]   = useState(EMPTY)
@@ -110,6 +132,28 @@ export default function TaskFForm({ onSaved, storeId }) {
                 placeholder="e.g. 6, 12, 24" min="1" step="1"
               />
             </div>
+
+            {(() => {
+              const ml      = sizeLabelToMl(form.drs_size)
+              const perUnit = depositPerUnitCents(ml)
+              const units   = Number(form.units_per_package)
+              if (perUnit == null || !units || isNaN(units)) return null
+              const totalCents = perUnit * units
+              const totalEur   = (totalCents / 100).toFixed(2)
+              return (
+                <div className="form-group full">
+                  <div className="warning-box" style={{ background: 'var(--surface-warm)', borderColor: 'var(--border-soft)' }}>
+                    <span className="warning-icon" aria-hidden>💰</span>
+                    <div>
+                      <strong>DRS deposit:</strong> {units} × {perUnit}c = <strong>€{totalEur}</strong>
+                      <div className="note" style={{ fontSize: 12, marginTop: 2 }}>
+                        ({ml} ml per container — {ml >= 500 ? '500 ml or above → 25c each' : 'below 500 ml → 15c each'})
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
 
             <SupplierPicker
               value={{ supplier_id: form.supplier_id, supplier_name_text: form.supplier_name_text }}

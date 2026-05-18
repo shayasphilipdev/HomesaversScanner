@@ -711,7 +711,7 @@ export async function onRequest(context) {
           .map(s => [s.supplier_name.trim().toLowerCase(), s.id])
       )
 
-      const clean = rows
+      const mapped = rows
         .filter(r => r?.product_id && String(r.product_id).trim())
         .map(r => {
           // Either explicit supplier_id, or look up by supplier_name.
@@ -730,6 +730,17 @@ export async function onRequest(context) {
             updated_at:  now
           }
         })
+      // Deduplicate by product_id within this payload — Postgres rejects
+      // ON CONFLICT updates that touch the same row twice in one statement.
+      // Last occurrence wins so a CSV can list a corrected row after an
+      // earlier mistake without crashing the import.
+      const byId  = new Map()
+      let duplicates = 0
+      for (const row of mapped) {
+        if (byId.has(row.product_id)) duplicates++
+        byId.set(row.product_id, row)
+      }
+      const clean = Array.from(byId.values())
       if (!clean.length) return err('No valid rows', 400)
       const upsertRes = await fetch(`${env.SUPABASE_URL}/rest/v1/products?on_conflict=product_id`, {
         method: 'POST',
@@ -741,9 +752,12 @@ export async function onRequest(context) {
         },
         body: JSON.stringify(clean)
       })
-      if (!upsertRes.ok) throw new Error(await upsertRes.text())
+      if (!upsertRes.ok) {
+        const txt = await upsertRes.text()
+        return err(`Import failed: ${txt.slice(0, 400)}`, 400)
+      }
       const written = await upsertRes.json()
-      return json({ written: written.length })
+      return json({ written: written.length, duplicates_collapsed: duplicates })
     }
 
     // ── Back-office admin: settings ──────────────────────────────────────
@@ -1368,10 +1382,11 @@ export async function onRequest(context) {
       const to        = p.get('to')
       const explicit  = p.get('storeId')
 
+      const includeCleared = p.get('includeCleared') === '1'
       const scope = await scopedStoreIds(db, session)
       // null = unrestricted; otherwise filter to the scope's stores.
       const params = {
-        select: 'id,task_type,store_id,supplier_id,supplier_name_text,product_code,product_barcode,product_name_label,description,uom,quantity,notes,photo_product_url,photo_barcode_url,details,status,review_notes,reviewed_at,marked_for_deletion,completed_at,store_completed_at,created_at,updated_at',
+        select: 'id,task_type,store_id,supplier_id,supplier_name_text,suppliers(supplier_name),product_code,product_barcode,product_name_label,description,uom,quantity,notes,photo_product_url,photo_barcode_url,details,status,review_notes,reviewed_at,marked_for_deletion,completed_at,store_completed_at,cleared_at,created_at,updated_at',
         order: 'created_at.desc'
       }
       if (explicit && explicit !== 'all') {
@@ -1383,6 +1398,9 @@ export async function onRequest(context) {
       }
       if (taskType && taskType !== 'all') params['task_type'] = `eq.${taskType}`
       if (status)                          params['status']    = `eq.${status}`
+      // By default hide 'cleared' records — they stay in the database but
+      // disappear from active forms and reports. Pass includeCleared=1 to see them.
+      else if (!includeCleared)            params['status']    = `neq.cleared`
 
       const range = []
       if (from) range.push(`gte.${new Date(from).toISOString()}`)
@@ -1390,7 +1408,13 @@ export async function onRequest(context) {
       if (range.length) params['created_at'] = range
 
       const rows = await db.select('task_records', params)
-      return json(rows)
+      // Flatten the embedded suppliers join so the client gets a flat supplier_name.
+      const flat = rows.map(r => ({
+        ...r,
+        supplier_name: r.suppliers?.supplier_name || r.supplier_name_text || null,
+        suppliers:     undefined
+      }))
+      return json(flat)
     }
 
     // Bulk review (back office) — mark many records as completed or
@@ -1478,6 +1502,12 @@ export async function onRequest(context) {
       if (isBO && (updates.status === 'completed' || updates.status === 'no_change_needed') && !updates.reviewed_at) {
         updates.reviewed_at = new Date().toISOString()
       }
+      // Store action: marking a HO-completed record as 'cleared' once it's been
+      // processed in the POs. Stamp cleared_at server-side; the record stays in
+      // the database but is hidden from the default form/report views.
+      if (updates.status === 'cleared' && !updates.cleared_at) {
+        updates.cleared_at = new Date().toISOString()
+      }
       const updated = await db.update('task_records', filter, { ...updates, updated_at: new Date().toISOString() })
       if (!updated.length) return err('Record not found or not allowed', 404)
       return json(updated[0])
@@ -1512,11 +1542,13 @@ export async function onRequest(context) {
       if (from) range.push(`gte.${new Date(from).toISOString()}`)
       if (to)   range.push(`lte.${new Date(to).toISOString()}`)
 
+      const includeCleared = p.get('includeCleared') === '1'
       const params = {
-        select: 'id,task_type,store_id,supplier_id,supplier_name_text,product_code,product_barcode,product_name_label,description,uom,quantity,notes,details,status,review_notes,created_at',
+        select: 'id,task_type,store_id,supplier_id,supplier_name_text,product_code,product_barcode,product_name_label,description,uom,quantity,notes,photo_product_url,photo_barcode_url,details,status,review_notes,created_at',
         order:  'created_at.asc'
       }
       if (range.length) params['created_at'] = range
+      if (!includeCleared) params['status'] = `neq.cleared`
       // Scope-aware store filter
       if (explicit && explicit !== 'all') {
         if (scope !== null && !scope.includes(explicit)) {
@@ -1536,22 +1568,24 @@ export async function onRequest(context) {
       const supplierName = Object.fromEntries(suppliers.map(s => [s.id, s.supplier_name]))
 
       const flat = records.map(r => ({
-        task_type:       r.task_type,
-        store_name:      storeName[r.store_id] || '',
-        product_code:    r.product_code || '',
-        product_barcode: r.product_barcode || '',
-        description:     r.description || r.product_name_label || '',
-        uom:             r.uom || '',
-        quantity:        r.quantity ?? '',
-        supplier:        r.supplier_id ? (supplierName[r.supplier_id] || '') : (r.supplier_name_text || ''),
-        notes:           r.notes || '',
-        status:          r.status,
-        review_notes:    r.review_notes || '',
-        details:         JSON.stringify(r.details || {}),
-        created_at:      r.created_at
+        task_type:         r.task_type,
+        store_name:        storeName[r.store_id] || '',
+        product_code:      r.product_code || '',
+        product_barcode:   r.product_barcode || '',
+        description:       r.description || r.product_name_label || '',
+        uom:               r.uom || '',
+        quantity:          r.quantity ?? '',
+        supplier:          r.supplier_id ? (supplierName[r.supplier_id] || '') : (r.supplier_name_text || ''),
+        notes:             r.notes || '',
+        status:            r.status,
+        review_notes:      r.review_notes || '',
+        photo_product_url: r.photo_product_url || '',
+        photo_barcode_url: r.photo_barcode_url || '',
+        details:           JSON.stringify(r.details || {}),
+        created_at:        r.created_at
       }))
 
-      const cols = ['task_type','store_name','product_code','product_barcode','description','uom','quantity','supplier','notes','status','review_notes','details','created_at']
+      const cols = ['task_type','store_name','product_code','product_barcode','description','uom','quantity','supplier','notes','status','review_notes','photo_product_url','photo_barcode_url','details','created_at']
       const csv  = toCSV(flat, cols)
       const filename = `task-records-${(from || 'start').slice(0,10)}-to-${(to || 'now').slice(0,10)}.csv`
 

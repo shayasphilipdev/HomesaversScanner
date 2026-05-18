@@ -42,9 +42,8 @@ export default function TaskBForm({ onSaved, storeId }) {
     e.preventDefault()
     if (!form.product_barcode.trim())              return setError('Product barcode is required.')
     if (!form.description.trim())                   return setError('Description is required.')
-    if (!form.uom)                                  return setError('UOM is required.')
-    if (form.quantity === '' || isNaN(Number(form.quantity)))
-                                                    return setError('Quantity must be a number.')
+    if (form.quantity !== '' && isNaN(Number(form.quantity)))
+                                                    return setError('Quantity must be a number if you enter one.')
     if (!productPhoto)                              return setError('Product photo is required.')
     if (!barcodePhoto)                              return setError('Barcode photo is required.')
 
@@ -57,8 +56,8 @@ export default function TaskBForm({ onSaved, storeId }) {
       store_id:           storeId || session.storeId || null,
       product_barcode:    form.product_barcode.trim(),
       description:        form.description.trim(),
-      uom:                form.uom,
-      quantity:           Number(form.quantity),
+      uom:                form.uom || null,
+      quantity:           form.quantity === '' ? null : Number(form.quantity),
       supplier_id:        form.supplier_id || null,
       supplier_name_text: form.supplier_name_text.trim() || null,
       notes:              form.notes.trim() || null,
@@ -118,9 +117,9 @@ export default function TaskBForm({ onSaved, storeId }) {
             />
 
             <div className="form-group">
-              <label>UOM *</label>
-              <select value={form.uom} onChange={e => setForm(f => ({ ...f, uom: e.target.value }))} required>
-                <option value="">Select UOM…</option>
+              <label>UOM (optional)</label>
+              <select value={form.uom} onChange={e => setForm(f => ({ ...f, uom: e.target.value }))}>
+                <option value="">— Not specified —</option>
                 {UOM_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
@@ -135,11 +134,11 @@ export default function TaskBForm({ onSaved, storeId }) {
             </div>
 
             <div className="form-group">
-              <label>Quantity *</label>
+              <label>Quantity (optional)</label>
               <input
                 type="number" value={form.quantity}
                 onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))}
-                placeholder="0" min="0" step="any"
+                placeholder="—" min="0" step="any"
               />
             </div>
 

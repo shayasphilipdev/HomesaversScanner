@@ -164,7 +164,8 @@ function BulkUpload({ onDone }) {
     try {
       const res = await adminBulkProducts(preview.rows)
       setPreview(null)
-      toast.success(`Upserted ${res.written} product${res.written === 1 ? '' : 's'}.`)
+      const dupNote = res.duplicates_collapsed ? ` (${res.duplicates_collapsed} duplicate id${res.duplicates_collapsed === 1 ? '' : 's'} merged)` : ''
+      toast.success(`Upserted ${res.written} product${res.written === 1 ? '' : 's'}${dupNote}.`)
       onDone()
     } catch (e) { setErr(e.message); toast.error(e.message) } finally { setSaving(false) }
   }
