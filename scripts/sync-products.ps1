@@ -7,15 +7,19 @@
 
 [CmdletBinding()]
 param(
-  # Path to the Excel file to import. Use a fixed name so the scheduler can
-  # find it every day without you having to rename the file.
-  [string]$ExcelPath = "C:\Homesavers\products.xlsx",
+  # Override the source folder / file. By default the script asks the app
+  # for the folder + glob (settings under Admin → Settings) and picks the
+  # newest matching file. Pass -ExcelPath to force a specific file.
+  [string]$ExcelPath,
+  [string]$Folder,
+  [string]$FilePattern,
 
   # Which sheet to read. "1" = first sheet by index, or pass the sheet name.
-  [string]$Sheet = "1",
+  # Pulled from app settings by default; override with -Sheet.
+  [string]$Sheet,
 
-  # Endpoint to POST to. Override if you're running against a preview deploy.
-  [string]$Endpoint = "https://homesaversscanner.pages.dev/api/products/sync",
+  # App base URL. Both the config and sync endpoints live under it.
+  [string]$BaseUrl = "https://homesaversscanner.pages.dev",
 
   # Path to a plain text file holding the shared secret on one line.
   # Keep it outside of OneDrive / source control. The Cloudflare Pages env
@@ -47,7 +51,42 @@ function Write-Log {
 
 try {
   Write-Log "=== Product sync starting ==="
+  Write-Log "Base URL: $BaseUrl"
+
+  if (-not (Test-Path $SecretFile)) { throw "Secret file not found: $SecretFile" }
+  $secret = (Get-Content -Path $SecretFile -Raw).Trim()
+  if (-not $secret) { throw "Secret file is empty: $SecretFile" }
+  $headers = @{ "X-Sync-Secret" = $secret; "Content-Type" = "application/json" }
+
+  # Pull folder / file pattern / sheet from Admin → Settings unless the user
+  # passed explicit overrides on the command line. This is what lets the
+  # office change the folder via the UI without anyone editing this script.
+  if (-not $ExcelPath -or -not $Sheet -or -not $Folder -or -not $FilePattern) {
+    try {
+      $cfg = Invoke-RestMethod -Method Get -Uri "$BaseUrl/api/products/sync-config" -Headers $headers -TimeoutSec 30
+      if (-not $Folder)      { $Folder      = $cfg.folder }
+      if (-not $FilePattern) { $FilePattern = $cfg.file_pattern }
+      if (-not $Sheet)       { $Sheet       = $cfg.sheet }
+      Write-Log "Fetched sync config: folder='$Folder' pattern='$FilePattern' sheet='$Sheet'"
+    } catch {
+      Write-Log "Could not fetch sync config from app: $($_.Exception.Message). Falling back to script defaults." "WARN"
+    }
+  }
+
+  # If no specific file was passed, find the newest match in the folder.
+  if (-not $ExcelPath) {
+    if (-not $Folder)      { throw "No folder configured (set 'product_sync_folder' in Admin → Settings or pass -Folder)" }
+    if (-not $FilePattern) { $FilePattern = '*.xlsx' }
+    if (-not (Test-Path $Folder)) { throw "Source folder not accessible: $Folder. Check the network share is mounted and the scheduled task account has read access." }
+    $candidates = Get-ChildItem -Path $Folder -Filter $FilePattern -File -ErrorAction Stop | Sort-Object LastWriteTime -Descending
+    if (-not $candidates -or $candidates.Count -eq 0) { throw "No files matching '$FilePattern' found in $Folder" }
+    $ExcelPath = $candidates[0].FullName
+    Write-Log "Picked newest file: $ExcelPath  (modified $($candidates[0].LastWriteTime), $([Math]::Round($candidates[0].Length / 1MB, 1)) MB, $($candidates.Count) candidate(s))"
+  }
+  if (-not $Sheet) { $Sheet = "1" }
+
   Write-Log "Excel: $ExcelPath"
+  $Endpoint = "$BaseUrl/api/products/sync"
   Write-Log "Endpoint: $Endpoint"
 
   if (-not (Test-Path $ExcelPath)) { throw "Excel file not found: $ExcelPath" }
@@ -117,16 +156,11 @@ try {
     exit 0
   }
 
-  if (-not (Test-Path $SecretFile)) { throw "Secret file not found: $SecretFile" }
-  $secret = (Get-Content -Path $SecretFile -Raw).Trim()
-  if (-not $secret) { throw "Secret file is empty: $SecretFile" }
-
   # Client-side chunking: each POST carries at most $ChunkSize rows so that
   # even an unfiltered 100k-row workbook never exceeds the Cloudflare Worker
   # CPU/time budget for a single request. We send chunks sequentially since
   # the script runs unattended at 06:00.
   $ChunkSize = 2000
-  $headers   = @{ "X-Sync-Secret" = $secret; "Content-Type" = "application/json" }
   $totals    = @{ written = 0; duplicates = 0; received = 0; skippedNoSupplier = 0; skippedNoId = 0; chunksFailed = 0 }
 
   for ($offset = 0; $offset -lt $payload.Count; $offset += $ChunkSize) {

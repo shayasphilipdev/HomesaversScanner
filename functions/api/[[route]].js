@@ -297,6 +297,25 @@ export async function onRequest(context) {
       return json(rows)
     }
 
+    // Service-account read of the sync settings — lets the PowerShell job
+    // pick up folder / file pattern / sheet edits made in Admin → Settings
+    // without redeploying or editing the script.
+    if (path === '/products/sync-config' && method === 'GET') {
+      if (!env.PRODUCT_SYNC_SECRET) return err('PRODUCT_SYNC_SECRET not configured', 500)
+      if ((request.headers.get('X-Sync-Secret') || '') !== env.PRODUCT_SYNC_SECRET) return err('Forbidden', 403)
+      const wanted = ['product_sync_folder', 'product_sync_file_pattern', 'product_sync_sheet']
+      const rows = await db.select('app_settings', {
+        select: 'key,value',
+        key:    `in.(${wanted.join(',')})`
+      })
+      const cfg = Object.fromEntries(rows.map(r => [r.key, r.value]))
+      return json({
+        folder:       cfg.product_sync_folder       || '',
+        file_pattern: cfg.product_sync_file_pattern || '*.xlsx',
+        sheet:        cfg.product_sync_sheet        || '1'
+      })
+    }
+
     // Service-account bulk product sync — used by the scheduled
     // PowerShell job to push the daily product master Excel.
     // Auth: shared secret in the X-Sync-Secret header (set as a Cloudflare

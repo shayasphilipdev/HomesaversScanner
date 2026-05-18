@@ -7,7 +7,10 @@ chunking and dedup, so you don't need to do anything special for big files.
 
 Files involved:
 - `sync-products.ps1` — the worker script
-- `C:\Homesavers\products.xlsx` — the source file (you replace this daily)
+- Source `.xlsx` — the script pulls the folder + glob from **Admin → Settings**
+  (keys `product_sync_folder`, `product_sync_file_pattern`, `product_sync_sheet`)
+  and picks the **newest matching file by modified date** each morning.
+  Default folder: `Y:\Supply Chain & Buying - Shared\Data\VRSDAILYDATADUMP\ProductMaster\2026`.
 - `C:\Homesavers\.sync-secret` — one-line text file holding the shared secret
 - `C:\Homesavers\logs\sync-products.log` — append-only log
 
@@ -43,6 +46,22 @@ Then in the Cloudflare Pages dashboard:
 - Add `PRODUCT_SYNC_SECRET` = the same string
 - Redeploy (Settings → Builds & deployments → Retry deployment) so the new
   env var is picked up by the Function.
+
+## 2b. Set the folder in Admin → Settings
+
+Sign in to the app as an Admin → **Admin → Settings**:
+
+- **Product sync folder** — the network path the Windows machine can see.
+  Default: `Y:\Supply Chain & Buying - Shared\Data\VRSDAILYDATADUMP\ProductMaster\2026`
+- **Product sync file pattern** — glob to match. Default `*.xlsx`. The
+  newest matching file by modified date is what gets imported.
+- **Product sync Excel sheet** — sheet inside the workbook (`1` = first
+  sheet by index, or enter a sheet name).
+
+These can be changed at any time without redeploying or touching the
+PowerShell script — the next 06:00 run picks them up. Make sure the
+account the scheduled task runs as has the network drive mapped to the
+same letter and can read it.
 
 ## 3. Prepare the Excel file
 

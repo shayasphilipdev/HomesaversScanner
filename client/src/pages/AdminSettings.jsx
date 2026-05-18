@@ -18,6 +18,18 @@ const KEY_META = {
   photo_retention_days: {
     label: 'Photo retention (days)',
     hint:  'Photos older than this can be removed via the cleanup button below.'
+  },
+  product_sync_folder: {
+    label: 'Product sync folder',
+    hint:  'UNC or local path the daily 06:00 PowerShell job reads. Use the same path the Windows machine can see — e.g. Y:\\Supply Chain & Buying - Shared\\Data\\VRSDAILYDATADUMP\\ProductMaster\\2026'
+  },
+  product_sync_file_pattern: {
+    label: 'Product sync file pattern',
+    hint:  'Glob to match within the folder — e.g. *.xlsx. The newest matching file by modified date is used each day.'
+  },
+  product_sync_sheet: {
+    label: 'Product sync Excel sheet',
+    hint:  'Sheet to read inside the workbook. "1" = first sheet by index, or enter a sheet name.'
   }
 }
 
