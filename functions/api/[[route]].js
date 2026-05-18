@@ -115,11 +115,11 @@ async function authenticate(request, env) {
   return verifyTokenSig(token, env.SESSION_SECRET)
 }
 
-// ── Role helpers (Phase 9B) ────────────────────────────────────────────────
-// Role keys: sales_assistant · store_manager · area_manager ·
-// support_admin · buying_manager · buying_head · admin.
-// (Director→admin and Commercial Manager→buying_head as of Phase 9B3.)
-const STORE_ROLES    = ['sales_assistant', 'store_manager']
+// ── Role helpers ───────────────────────────────────────────────────────────
+// Role keys: sales_assistant · supervisor · assistant_store_manager ·
+// store_manager · area_manager · support_admin · buying_manager ·
+// buying_head · admin.
+const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
 const ADMIN_ROLES    = ['admin', 'buying_manager']
 const TASK_CREATORS  = ['buying_manager', 'area_manager', 'buying_head', 'admin']
@@ -135,24 +135,41 @@ function isBackOffice(s)   { return hasRole(s, BO_ROLES) }
 function isAdminRole(s)    { return hasRole(s, ADMIN_ROLES) }
 function canCreateTasks(s) { return hasRole(s, TASK_CREATORS) }
 
-async function buildSessionForUser(db, user) {
-  // Area managers need their area list available for scoped views.
-  let area_ids = []
-  if (user.role === 'area_manager') {
-    const rows = await db.select('user_areas', { select: 'area_id', user_id: `eq.${user.id}` })
-    area_ids = rows.map(r => r.area_id)
-  }
+function buildSessionForUser(_db, user) {
   return {
-    user_id:      user.id,
-    username:     user.username,
-    display_name: user.display_name,
-    role:         user.role,
-    storeId:      user.store_id || null,
-    area_ids,
-    // legacy `mode` for any code still checking it
-    mode:         STORE_ROLES.includes(user.role) ? 'store' : 'backoffice'
+    user_id:                user.id,
+    username:               user.username,
+    display_name:           user.display_name,
+    role:                   user.role,
+    all_stores:             !!user.all_stores,
+    store_ids:              Array.isArray(user.store_ids) ? user.store_ids : [],
+    area_ids:               Array.isArray(user.area_ids)  ? user.area_ids  : [],
+    can_access_hq_tasks:    user.can_access_hq_tasks    !== false,
+    can_access_store_tasks: user.can_access_store_tasks !== false,
+    // Legacy fields kept so any code still reading them keeps working.
+    storeId: Array.isArray(user.store_ids) && user.store_ids.length === 1 ? user.store_ids[0] : null,
+    mode:    STORE_ROLES.includes(user.role) ? 'store' : 'backoffice'
   }
 }
+
+// Resolve the session's store scope to a concrete set of store IDs.
+// Returns null = no filter (admin / all_stores user).
+// Returns [] = no stores at all (user shouldn't see anything).
+async function scopedStoreIds(db, session) {
+  if (!session) return []
+  if (session.all_stores) return null
+  const set = new Set(Array.isArray(session.store_ids) ? session.store_ids : [])
+  if (Array.isArray(session.area_ids) && session.area_ids.length) {
+    const stores = await db.select('stores', {
+      select: 'id', area_id: `in.(${session.area_ids.join(',')})`, is_active: 'eq.true'
+    })
+    for (const s of stores) set.add(s.id)
+  }
+  return [...set]
+}
+
+function userCanAccessHQTasks(s)    { return !!s && s.can_access_hq_tasks    !== false }
+function userCanAccessStoreTasks(s) { return !!s && s.can_access_store_tasks !== false }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -280,79 +297,31 @@ export async function onRequest(context) {
       return json(rows)
     }
 
-    // Store login: pick a store + PIN. Resolves to that store's default
-    // user (the seeded sales_assistant). Same UX as before; backed by the
-    // users table since Phase 9B.
-    if (path === '/stores/verify-pin' && method === 'POST') {
-      const { storeId, pin } = await request.json()
-      if (!storeId || !pin) return err('storeId and pin required', 400)
-      const [store] = await db.select('stores', { select: 'id,store_code,store_name,region,area_id', id: `eq.${storeId}` })
-      if (!store) return err('Store not found', 404)
-
-      // Find the default user for this store (sales_assistant, active).
-      // If multiple users exist for the store we still pick sales_assistant —
-      // managers will log in via the new Staff tab with their own username.
-      const users = await db.select('users', {
-        select: 'id,username,display_name,role,store_id,pin_hash,is_active',
-        store_id: `eq.${storeId}`,
-        is_active: 'eq.true',
-        order: 'role.asc'
-      })
-      // Try sales_assistant first, then any other store-attached active user.
-      const user = users.find(u => u.role === 'sales_assistant') || users[0]
-      if (!user) return err('No active user for this store', 404)
-      if (!await verifyPin(db, user.pin_hash, String(pin))) return err('Incorrect PIN', 401)
-
-      const session = await buildSessionForUser(db, user)
-      const token = await signToken(
-        { ...session, exp: Date.now() + STORE_TOKEN_HOURS * 3600_000 },
-        env.SESSION_SECRET
-      )
-      return json({
-        ok: true, token,
-        store: { id: store.id, store_code: store.store_code, store_name: store.store_name, region: store.region, area_id: store.area_id },
-        user:  { id: user.id, display_name: user.display_name, role: user.role }
-      })
-    }
-
-    // Legacy back-office PIN flow (preserved for backward compat with any
-    // bookmarked clients). Resolves to the seeded admin user
-    // (username='director' kept as the login handle for continuity).
-    if (path === '/backoffice/verify-pin' && method === 'POST') {
-      const { pin } = await request.json()
-      if (!pin) return err('pin required', 400)
-      const [user] = await db.select('users', {
-        select: 'id,username,display_name,role,store_id,pin_hash,is_active',
-        username: 'eq.director', is_active: 'eq.true'
-      })
-      if (!user) return err('Back office user not configured', 500)
-      if (!await verifyPin(db, user.pin_hash, String(pin))) return err('Incorrect PIN', 401)
-      const session = await buildSessionForUser(db, user)
-      const token = await signToken(
-        { ...session, exp: Date.now() + BACKOFFICE_TOKEN_HOURS * 3600_000 },
-        env.SESSION_SECRET
-      )
-      return json({ ok: true, token, user: { id: user.id, display_name: user.display_name, role: user.role } })
-    }
-
-    // New: staff login (username + PIN). Used by every non-store role and
-    // by any extra named user attached to a store.
+    // Single login flow — username + PIN. The legacy /stores/verify-pin
+    // and /backoffice/verify-pin endpoints were removed in Phase 9J.
     if (path === '/users/verify-pin' && method === 'POST') {
       const { username, pin } = await request.json()
       if (!username || !pin) return err('username and pin required', 400)
       const [user] = await db.select('users', {
-        select: 'id,username,display_name,role,store_id,pin_hash,is_active',
+        select: 'id,username,display_name,role,store_id,store_ids,area_ids,all_stores,can_access_hq_tasks,can_access_store_tasks,pin_hash,is_active',
         username: `eq.${String(username).trim()}`,
         is_active: 'eq.true'
       })
       if (!user) return err('Unknown user', 401)
       if (!await verifyPin(db, user.pin_hash, String(pin))) return err('Incorrect PIN', 401)
-      const session = await buildSessionForUser(db, user)
+      const session = buildSessionForUser(db, user)
       const hours = STORE_ROLES.includes(user.role) ? STORE_TOKEN_HOURS : BACKOFFICE_TOKEN_HOURS
       const token = await signToken({ ...session, exp: Date.now() + hours * 3600_000 }, env.SESSION_SECRET)
       return json({
         ok: true, token,
-        user: { id: user.id, display_name: user.display_name, role: user.role, store_id: user.store_id }
+        user: {
+          id: user.id, display_name: user.display_name, role: user.role,
+          all_stores: !!user.all_stores,
+          store_ids: user.store_ids || [],
+          area_ids: user.area_ids || [],
+          can_access_hq_tasks: user.can_access_hq_tasks !== false,
+          can_access_store_tasks: user.can_access_store_tasks !== false
+        }
       })
     }
 
@@ -375,20 +344,14 @@ export async function onRequest(context) {
 
     if (path === '/admin/stores' && method === 'POST') {
       if (!isAdminRole(session)) return err('Forbidden', 403)
-      const { store_code, store_name, region, area_id, pin, is_active } = await request.json()
+      const { store_code, store_name, region, area_id, is_active } = await request.json()
       if (!store_code || !store_name) return err('store_code and store_name are required', 400)
-      if (!pin || String(pin).length < 4) return err('PIN must be at least 4 characters', 400)
-
-      // Hash the PIN via the existing bcrypt extension.
-      const [hashRow] = await db.rpc('hash_pin', { pin: String(pin) })
-      if (!hashRow?.hash) return err('Could not hash PIN', 500)
 
       const inserted = await db.insert('stores', {
         store_code, store_name,
         region:    region || null,
         area_id:   area_id || null,
-        is_active: is_active !== false,
-        pin_hash:  hashRow.hash
+        is_active: is_active !== false
       })
       const s = inserted[0] ?? inserted
       return json({ id: s.id, store_code: s.store_code, store_name: s.store_name, region: s.region, area_id: s.area_id, is_active: s.is_active, created_at: s.created_at }, 201)
@@ -485,31 +448,23 @@ export async function onRequest(context) {
 
     // ── Back-office admin: users ─────────────────────────────────────────
 
-    const USER_LIST_SELECT = 'id,username,display_name,role,store_id,email,phone,department,employee_code,start_date,notes,is_active,created_at,updated_at'
+    const USER_LIST_SELECT = 'id,username,display_name,role,store_id,store_ids,area_ids,all_stores,can_access_hq_tasks,can_access_store_tasks,email,phone,department,employee_code,start_date,notes,is_active,created_at,updated_at'
 
     if (path === '/admin/users' && method === 'GET') {
       if (!isAdminRole(session)) return err('Forbidden', 403)
       const rows = await db.select('users', { select: USER_LIST_SELECT, order: 'role.asc,username.asc' })
-      const links = await db.select('user_areas', { select: 'user_id,area_id' })
-      const byUser = {}
-      for (const l of links) (byUser[l.user_id] ||= []).push(l.area_id)
-      return json(rows.map(r => ({ ...r, area_ids: byUser[r.id] || [] })))
+      return json(rows)
     }
 
-    // Employees view — same data as /admin/users but filtered to HQ /
-    // back-office staff (not the per-store sales_assistants).
+    // Employees view — all real people. Used to be HQ-only; in Phase 9J
+    // every employee is managed in one place.
     if (path === '/admin/employees' && method === 'GET') {
       if (!isAdminRole(session)) return err('Forbidden', 403)
       const rows = await db.select('users', {
         select: USER_LIST_SELECT,
-        // PostgREST: role=in.(a,b,c)
-        role: `in.(${BO_ROLES.join(',')})`,
         order: 'display_name.asc'
       })
-      const links = await db.select('user_areas', { select: 'user_id,area_id' })
-      const byUser = {}
-      for (const l of links) (byUser[l.user_id] ||= []).push(l.area_id)
-      return json(rows.map(r => ({ ...r, area_ids: byUser[r.id] || [] })))
+      return json(rows)
     }
 
     if (path === '/admin/users' && method === 'POST') {
@@ -522,29 +477,30 @@ export async function onRequest(context) {
       const [hashRow] = await db.rpc('hash_pin', { pin: String(b.pin) })
       if (!hashRow?.hash) return err('Could not hash PIN', 500)
 
-      const inserted = await db.insert('users', {
-        username:      String(b.username).trim(),
-        display_name:  String(b.display_name).trim(),
-        role:          b.role,
-        store_id:      b.store_id || null,
-        email:         b.email || null,
-        phone:         b.phone || null,
-        department:    b.department || null,
-        employee_code: b.employee_code || null,
-        start_date:    b.start_date || null,
-        notes:         b.notes || null,
-        pin_hash:      hashRow.hash,
-        is_active:     b.is_active !== false
-      })
-      const u = inserted[0] ?? inserted
+      const safeStoreIds = Array.isArray(b.store_ids) ? b.store_ids.filter(x => /^[a-f0-9-]{36}$/.test(x)) : []
+      const safeAreaIds  = Array.isArray(b.area_ids)  ? b.area_ids.filter(x  => /^[a-f0-9-]{36}$/.test(x))  : []
 
-      // area_ids only meaningful when role === 'area_manager'.
-      if (u.role === 'area_manager' && Array.isArray(b.area_ids) && b.area_ids.length) {
-        await db.insert('user_areas', b.area_ids
-          .filter(a => /^[a-f0-9-]{36}$/.test(a))
-          .map(area_id => ({ user_id: u.id, area_id })))
-      }
-      return json(u, 201)
+      const inserted = await db.insert('users', {
+        username:               String(b.username).trim(),
+        display_name:           String(b.display_name).trim(),
+        role:                   b.role,
+        // legacy store_id kept synced for backward compat (1st of store_ids)
+        store_id:               safeStoreIds[0] || null,
+        store_ids:              safeStoreIds,
+        area_ids:               safeAreaIds,
+        all_stores:             !!b.all_stores,
+        can_access_hq_tasks:    b.can_access_hq_tasks    !== false,
+        can_access_store_tasks: b.can_access_store_tasks !== false,
+        email:                  b.email || null,
+        phone:                  b.phone || null,
+        department:             b.department || null,
+        employee_code:          b.employee_code || null,
+        start_date:             b.start_date || null,
+        notes:                  b.notes || null,
+        pin_hash:               hashRow.hash,
+        is_active:              b.is_active !== false
+      })
+      return json(inserted[0] ?? inserted, 201)
     }
 
     const adminUserMatch = path.match(/^\/admin\/users\/([a-f0-9-]+)$/)
@@ -560,7 +516,6 @@ export async function onRequest(context) {
         if (![...STORE_ROLES, ...BO_ROLES].includes(b.role)) return err('Unknown role', 400)
         updates.role = b.role
       }
-      if (b.store_id      !== undefined) updates.store_id      = b.store_id || null
       if (b.email         !== undefined) updates.email         = b.email || null
       if (b.phone         !== undefined) updates.phone         = b.phone || null
       if (b.department    !== undefined) updates.department    = b.department || null
@@ -568,19 +523,23 @@ export async function onRequest(context) {
       if (b.start_date    !== undefined) updates.start_date    = b.start_date || null
       if (b.notes         !== undefined) updates.notes         = b.notes || null
       if (b.is_active     !== undefined) updates.is_active     = !!b.is_active
+      if (b.all_stores             !== undefined) updates.all_stores             = !!b.all_stores
+      if (b.can_access_hq_tasks    !== undefined) updates.can_access_hq_tasks    = !!b.can_access_hq_tasks
+      if (b.can_access_store_tasks !== undefined) updates.can_access_store_tasks = !!b.can_access_store_tasks
+      if (Array.isArray(b.store_ids)) {
+        const safe = b.store_ids.filter(x => /^[a-f0-9-]{36}$/.test(x))
+        updates.store_ids = safe
+        // Keep legacy store_id in sync with the first one (or NULL).
+        updates.store_id  = safe[0] || null
+      }
+      if (Array.isArray(b.area_ids)) {
+        updates.area_ids = b.area_ids.filter(x => /^[a-f0-9-]{36}$/.test(x))
+      }
 
       if (Object.keys(updates).length) {
         updates.updated_at = new Date().toISOString()
         const updated = await db.update('users', { id: `eq.${id}` }, updates)
         if (!updated.length) return err('User not found', 404)
-      }
-      // Replace area assignments if explicitly supplied.
-      if (Array.isArray(b.area_ids)) {
-        await db.remove('user_areas', { user_id: `eq.${id}` })
-        const safe = b.area_ids.filter(a => /^[a-f0-9-]{36}$/.test(a))
-        if (safe.length) {
-          await db.insert('user_areas', safe.map(area_id => ({ user_id: id, area_id })))
-        }
       }
       return json({ ok: true })
     }
@@ -837,18 +796,8 @@ export async function onRequest(context) {
       return json({ deleted, failed, days, scanned: old.length })
     }
 
-    const adminPinMatch = path.match(/^\/admin\/stores\/([a-f0-9-]+)\/reset-pin$/)
-    if (adminPinMatch && method === 'POST') {
-      if (!isAdminRole(session)) return err('Forbidden', 403)
-      const id  = adminPinMatch[1]
-      const { pin } = await request.json()
-      if (!pin || String(pin).length < 4) return err('PIN must be at least 4 characters', 400)
-      const [hashRow] = await db.rpc('hash_pin', { pin: String(pin) })
-      if (!hashRow?.hash) return err('Could not hash PIN', 500)
-      const updated = await db.update('stores', { id: `eq.${id}` }, { pin_hash: hashRow.hash })
-      if (!updated.length) return err('Store not found', 404)
-      return json({ ok: true })
-    }
+    // /admin/stores/:id/reset-pin removed in Phase 9J — stores no longer
+    // have their own PIN. Manage employee PINs under /admin/employees.
 
     // ── Store task templates (Phase 9D) ──────────────────────────────────
 
@@ -940,39 +889,37 @@ export async function onRequest(context) {
     }
 
     if (path === '/store-tasks/today' && method === 'GET') {
-      // Sales assistants / store managers see their own store. BO sees an
-      // optional storeId. Area managers default to all stores in their area.
-      const storeId = isBO ? url.searchParams.get('storeId') : session.storeId
-      const today   = new Date()
+      if (!userCanAccessStoreTasks(session)) return err('Store tasks disabled for this account', 403)
+      const today    = new Date()
       const todayIso = today.toISOString().slice(0, 10)
+      const explicit = url.searchParams.get('storeId')
 
       const SELECT = 'id,template_id,store_id,period_key,due_date,status,completed_at,photo_url,notes,answers,' +
         'store_task_templates(title,description,instructions,category,frequency,due_window,requires_photo,requires_notes,assigned_to_role,assigned_to_roles,assigned_to_user_ids,blocks,priority)'
 
-      if (!storeId || storeId === 'all') {
-        // Aggregate view — for managers/HQ scanning everything.
-        const params = { select: SELECT, due_date: `eq.${todayIso}`, order: 'created_at.asc', limit: '500' }
-        if (session.role === 'area_manager' && session.area_ids?.length) {
-          const stores = await db.select('stores', { select: 'id', area_id: `in.(${session.area_ids.join(',')})` })
-          const ids = stores.map(s => s.id)
-          if (!ids.length) return json([])
-          params['store_id'] = `in.(${ids.join(',')})`
-        }
-        const rows = await db.select('store_task_instances', params)
-        return json(rows)
+      const scope = await scopedStoreIds(db, session)
+      // Single-store path: generate today's instances lazily.
+      if (explicit && explicit !== 'all') {
+        if (scope !== null && !scope.includes(explicit)) return json([])
+        await ensureInstancesExist(db, env, explicit, today)
+        const rows = await db.select('store_task_instances', {
+          select: SELECT,
+          store_id: `eq.${explicit}`,
+          due_date: `eq.${todayIso}`,
+          order: 'created_at.asc'
+        })
+        const visible = rows.filter(r => templateTargetsUser(r.store_task_templates || {}, session))
+        return json(visible)
       }
 
-      // Single-store path — ensure instances exist, then return only
-      // those that target THIS logged-in user.
-      await ensureInstancesExist(db, env, storeId, today)
-      const rows = await db.select('store_task_instances', {
-        select: SELECT,
-        store_id: `eq.${storeId}`,
-        due_date: `eq.${todayIso}`,
-        order: 'created_at.asc'
-      })
-      const visible = rows.filter(r => templateTargetsUser(r.store_task_templates || {}, session))
-      return json(visible)
+      // Multi-store (aggregate) view.
+      const params = { select: SELECT, due_date: `eq.${todayIso}`, order: 'created_at.asc', limit: '500' }
+      if (scope !== null) {
+        if (!scope.length) return json([])
+        params['store_id'] = `in.(${scope.join(',')})`
+      }
+      const rows = await db.select('store_task_instances', params)
+      return json(rows)
     }
 
     // POST /store-tasks/generate — manual trigger (BO / task creators).
@@ -1001,13 +948,15 @@ export async function onRequest(context) {
       const id   = instCompleteMatch[1]
       const body = await request.json().catch(() => ({}))
 
+      if (!userCanAccessStoreTasks(session)) return err('Store tasks disabled for this account', 403)
       const [inst] = await db.select('store_task_instances', {
         select: 'id,store_id,template_id,status,store_task_templates(requires_photo,requires_notes,blocks)',
         id: `eq.${id}`,
         limit: '1'
       })
       if (!inst) return err('Instance not found', 404)
-      if (!isBO && inst.store_id !== session.storeId) return err('Forbidden', 403)
+      const scope = await scopedStoreIds(db, session)
+      if (scope !== null && !scope.includes(inst.store_id)) return err('Forbidden', 403)
 
       const t      = inst.store_task_templates || {}
       const blocks = Array.isArray(t.blocks) ? t.blocks : []
@@ -1045,11 +994,13 @@ export async function onRequest(context) {
     // CSV of completed/pending store task instances with answers flattened
     // (one column per defined block, plus the raw JSON for safety).
     if (path === '/reports/store-tasks' && method === 'GET') {
+      if (!userCanAccessStoreTasks(session)) return err('Store tasks disabled for this account', 403)
       const p          = url.searchParams
       const from       = p.get('from')
       const to         = p.get('to')
-      const storeId    = isBO ? p.get('storeId') : session.storeId
+      const explicit   = p.get('storeId')
       const templateId = p.get('template_id')
+      const scope      = await scopedStoreIds(db, session)
 
       const range = []
       if (from) range.push(`gte.${new Date(from).toISOString().slice(0,10)}`)
@@ -1061,17 +1012,21 @@ export async function onRequest(context) {
         limit:  '5000'
       }
       if (range.length) params['due_date'] = range
-      if (storeId && storeId !== 'all') params['store_id']    = `eq.${storeId}`
-      if (templateId)                   params['template_id'] = `eq.${templateId}`
-      if (session.role === 'area_manager' && session.area_ids?.length && (!storeId || storeId === 'all')) {
-        const stores = await db.select('stores', { select: 'id', area_id: `in.(${session.area_ids.join(',')})` })
-        const ids = stores.map(s => s.id)
-        if (!ids.length) {
+      if (templateId)   params['template_id'] = `eq.${templateId}`
+      if (explicit && explicit !== 'all') {
+        if (scope !== null && !scope.includes(explicit)) {
           return new Response('template,store_name,due_date,status,completed_at\n', {
             headers: { 'Content-Type': 'text/csv;charset=utf-8', 'Content-Disposition': 'attachment; filename="store-tasks-empty.csv"' }
           })
         }
-        params['store_id'] = `in.(${ids.join(',')})`
+        params['store_id'] = `eq.${explicit}`
+      } else if (scope !== null) {
+        if (!scope.length) {
+          return new Response('template,store_name,due_date,status,completed_at\n', {
+            headers: { 'Content-Type': 'text/csv;charset=utf-8', 'Content-Disposition': 'attachment; filename="store-tasks-empty.csv"' }
+          })
+        }
+        params['store_id'] = `in.(${scope.join(',')})`
       }
 
       const [rows, stores, users] = await Promise.all([
@@ -1136,11 +1091,13 @@ export async function onRequest(context) {
     // GET /reports/store-tasks/json?from=&to=&storeId=&template_id=
     // Same filter shape, returns JSON for on-screen rendering.
     if (path === '/reports/store-tasks/json' && method === 'GET') {
+      if (!userCanAccessStoreTasks(session)) return err('Store tasks disabled for this account', 403)
       const p          = url.searchParams
       const from       = p.get('from')
       const to         = p.get('to')
-      const storeId    = isBO ? p.get('storeId') : session.storeId
+      const explicit   = p.get('storeId')
       const templateId = p.get('template_id')
+      const scope      = await scopedStoreIds(db, session)
 
       const range = []
       if (from) range.push(`gte.${new Date(from).toISOString().slice(0,10)}`)
@@ -1152,13 +1109,13 @@ export async function onRequest(context) {
         limit:  '500'
       }
       if (range.length) params['due_date'] = range
-      if (storeId && storeId !== 'all') params['store_id']    = `eq.${storeId}`
-      if (templateId)                   params['template_id'] = `eq.${templateId}`
-      if (session.role === 'area_manager' && session.area_ids?.length && (!storeId || storeId === 'all')) {
-        const stores = await db.select('stores', { select: 'id', area_id: `in.(${session.area_ids.join(',')})` })
-        const ids = stores.map(s => s.id)
-        if (!ids.length) return json([])
-        params['store_id'] = `in.(${ids.join(',')})`
+      if (templateId)   params['template_id'] = `eq.${templateId}`
+      if (explicit && explicit !== 'all') {
+        if (scope !== null && !scope.includes(explicit)) return json([])
+        params['store_id'] = `eq.${explicit}`
+      } else if (scope !== null) {
+        if (!scope.length) return json([])
+        params['store_id'] = `in.(${scope.join(',')})`
       }
       const rows = await db.select('store_task_instances', params)
       return json(rows)
@@ -1166,22 +1123,26 @@ export async function onRequest(context) {
 
     // GET /store-tasks/stats?storeId=&from=&to=
     if (path === '/store-tasks/stats' && method === 'GET') {
+      if (!userCanAccessStoreTasks(session)) return err('Store tasks disabled for this account', 403)
       const p = url.searchParams
       const from = p.get('from') || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)
       const to   = p.get('to')   || new Date().toISOString().slice(0, 10)
-      const storeId = isBO ? p.get('storeId') : session.storeId
+      const explicit = p.get('storeId')
+      const scope = await scopedStoreIds(db, session)
 
       const params = {
         select: 'store_id,status',
         and: `(due_date.gte.${from},due_date.lte.${to})`,
         limit: '5000'
       }
-      if (storeId && storeId !== 'all') params['store_id'] = `eq.${storeId}`
-      if (!storeId && session.role === 'area_manager' && session.area_ids?.length) {
-        const stores = await db.select('stores', { select: 'id', area_id: `in.(${session.area_ids.join(',')})` })
-        const ids = stores.map(s => s.id)
-        if (ids.length) params['store_id'] = `in.(${ids.join(',')})`
-        else return json({ per_store: [], overall: { total: 0, completed: 0, pending: 0, missed: 0 } })
+      if (explicit && explicit !== 'all') {
+        if (scope !== null && !scope.includes(explicit)) {
+          return json({ per_store: [], overall: { total: 0, completed: 0, pending: 0, missed: 0, completion_pct: 0 } })
+        }
+        params['store_id'] = `eq.${explicit}`
+      } else if (scope !== null) {
+        if (!scope.length) return json({ per_store: [], overall: { total: 0, completed: 0, pending: 0, missed: 0, completion_pct: 0 } })
+        params['store_id'] = `in.(${scope.join(',')})`
       }
 
       const rows = await db.select('store_task_instances', params)
@@ -1213,7 +1174,8 @@ export async function onRequest(context) {
       const p = url.searchParams
       const from = p.get('from')
       const to   = p.get('to')
-      const queryStoreId = isBO ? p.get('storeId') : session.storeId
+      const explicit = p.get('storeId')
+      const scope = await scopedStoreIds(db, session)
 
       const params = {
         select: 'id,task_type,store_id,product_code,product_barcode,status,created_at',
@@ -1223,8 +1185,14 @@ export async function onRequest(context) {
       const range = []
       if (from) range.push(`gte.${new Date(from).toISOString()}`)
       if (to)   range.push(`lte.${new Date(to).toISOString()}`)
-      if (range.length)                            params['created_at'] = range
-      if (queryStoreId && queryStoreId !== 'all') params['store_id']   = `eq.${queryStoreId}`
+      if (range.length) params['created_at'] = range
+      if (explicit && explicit !== 'all') {
+        if (scope !== null && !scope.includes(explicit)) return json({ totals: { all: 0, pending: 0, completed: 0, no_change_needed: 0, store_completed: 0 }, by_task_type: [], by_store: [], by_day: [], recent: [] })
+        params['store_id'] = `eq.${explicit}`
+      } else if (scope !== null) {
+        if (!scope.length) return json({ totals: { all: 0, pending: 0, completed: 0, no_change_needed: 0, store_completed: 0 }, by_task_type: [], by_store: [], by_day: [], recent: [] })
+        params['store_id'] = `in.(${scope.join(',')})`
+      }
 
       const records = await db.select('task_records', params)
 
@@ -1386,20 +1354,29 @@ export async function onRequest(context) {
     // ── Task records ──────────────────────────────────────────────────────
 
     if (path === '/task-records' && method === 'GET') {
+      if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled for this account', 403)
       const p = url.searchParams
-      const queryStoreId = isBO ? p.get('storeId') : session.storeId
-      const taskType     = p.get('task_type')
-      const status       = p.get('status')
-      const from         = p.get('from')
-      const to           = p.get('to')
+      const taskType  = p.get('task_type')
+      const status    = p.get('status')
+      const from      = p.get('from')
+      const to        = p.get('to')
+      const explicit  = p.get('storeId')
 
+      const scope = await scopedStoreIds(db, session)
+      // null = unrestricted; otherwise filter to the scope's stores.
       const params = {
         select: 'id,task_type,store_id,supplier_id,supplier_name_text,product_code,product_barcode,product_name_label,description,uom,quantity,notes,photo_product_url,photo_barcode_url,details,status,review_notes,reviewed_at,marked_for_deletion,completed_at,store_completed_at,created_at,updated_at',
         order: 'created_at.desc'
       }
-      if (queryStoreId && queryStoreId !== 'all') params['store_id']  = `eq.${queryStoreId}`
-      if (taskType && taskType !== 'all')          params['task_type'] = `eq.${taskType}`
-      if (status)                                  params['status']    = `eq.${status}`
+      if (explicit && explicit !== 'all') {
+        if (scope !== null && !scope.includes(explicit)) return json([])
+        params['store_id'] = `eq.${explicit}`
+      } else if (scope !== null) {
+        if (!scope.length) return json([])
+        params['store_id'] = `in.(${scope.join(',')})`
+      }
+      if (taskType && taskType !== 'all') params['task_type'] = `eq.${taskType}`
+      if (status)                          params['status']    = `eq.${status}`
 
       const range = []
       if (from) range.push(`gte.${new Date(from).toISOString()}`)
@@ -1432,11 +1409,29 @@ export async function onRequest(context) {
     }
 
     if (path === '/task-records' && method === 'POST') {
+      if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled for this account', 403)
       const body = await request.json()
       if (!body.task_type) return err('task_type required', 400)
 
       const now = new Date().toISOString()
-      const store_id = isBO ? (body.store_id || null) : session.storeId
+
+      // Determine which store this record belongs to.
+      // - Admin / all_stores users: take body.store_id verbatim (or null).
+      // - Single-store users: snap to their one store.
+      // - Multi-store users: body.store_id required, must be in scope.
+      const scope = await scopedStoreIds(db, session)
+      let store_id
+      if (scope === null) {
+        store_id = body.store_id || null
+      } else if (scope.length === 1) {
+        store_id = scope[0]
+      } else if (scope.length === 0) {
+        return err('No stores assigned to this account', 403)
+      } else {
+        if (!body.store_id) return err('store_id required — pick one of your stores', 400)
+        if (!scope.includes(body.store_id)) return err('store_id is not in your scope', 403)
+        store_id = body.store_id
+      }
 
       const inserted = await db.insert('task_records', {
         task_type:           body.task_type,
@@ -1463,10 +1458,15 @@ export async function onRequest(context) {
 
     const recMatch = path.match(/^\/task-records\/([a-f0-9-]+)$/)
     if (recMatch && method === 'PATCH') {
+      if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled for this account', 403)
       const id      = recMatch[1]
       const updates = await request.json()
       const filter  = { id: `eq.${id}` }
-      if (!isBO) filter['store_id'] = `eq.${session.storeId}`
+      const scope = await scopedStoreIds(db, session)
+      if (scope !== null) {
+        if (!scope.length) return err('Record not found or not allowed', 404)
+        filter['store_id'] = `in.(${scope.join(',')})`
+      }
       // If the back office is moving the record to a reviewed status,
       // stamp reviewed_at automatically so the UI doesn't have to.
       if (isBO && (updates.status === 'completed' || updates.status === 'no_change_needed') && !updates.reviewed_at) {
@@ -1478,11 +1478,14 @@ export async function onRequest(context) {
     }
 
     if (recMatch && method === 'DELETE') {
+      if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled for this account', 403)
       const id     = recMatch[1]
       const filter = { id: `eq.${id}` }
-      if (!isBO) {
-        filter['store_id'] = `eq.${session.storeId}`
-        filter['status']   = `eq.store_completed`
+      const scope = await scopedStoreIds(db, session)
+      if (scope !== null) {
+        if (!scope.length) return err('Record not found or not allowed', 404)
+        filter['store_id'] = `in.(${scope.join(',')})`
+        if (!isBO) filter['status'] = `eq.store_completed`
       }
       const removed = await db.remove('task_records', filter)
       if (!removed.length) return err('Record not found or not allowed', 404)
@@ -1491,11 +1494,13 @@ export async function onRequest(context) {
 
     // ── Reports ───────────────────────────────────────────────────────────
     if (path === '/reports/task-records' && method === 'GET') {
+      if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled for this account', 403)
       const p        = url.searchParams
       const from     = p.get('from')
       const to       = p.get('to')
-      const storeId  = isBO ? p.get('storeId') : session.storeId
+      const explicit = p.get('storeId')
       const taskType = p.get('task_type')
+      const scope    = await scopedStoreIds(db, session)
 
       const range = []
       if (from) range.push(`gte.${new Date(from).toISOString()}`)
@@ -1505,9 +1510,18 @@ export async function onRequest(context) {
         select: 'id,task_type,store_id,supplier_id,supplier_name_text,product_code,product_barcode,product_name_label,description,uom,quantity,notes,details,status,review_notes,created_at',
         order:  'created_at.asc'
       }
-      if (range.length)                            params['created_at'] = range
-      if (storeId && storeId !== 'all')            params['store_id']   = `eq.${storeId}`
-      if (taskType && taskType !== 'all')          params['task_type']  = `eq.${taskType}`
+      if (range.length) params['created_at'] = range
+      // Scope-aware store filter
+      if (explicit && explicit !== 'all') {
+        if (scope !== null && !scope.includes(explicit)) {
+          return new Response('', { headers: { 'Content-Type': 'text/csv;charset=utf-8' } })
+        }
+        params['store_id'] = `eq.${explicit}`
+      } else if (scope !== null) {
+        if (!scope.length) return new Response('', { headers: { 'Content-Type': 'text/csv;charset=utf-8' } })
+        params['store_id'] = `in.(${scope.join(',')})`
+      }
+      if (taskType && taskType !== 'all') params['task_type'] = `eq.${taskType}`
 
       const records   = await db.select('task_records', params)
       const stores    = await db.select('stores',    { select: 'id,store_name' })

@@ -2,50 +2,53 @@ import { useEffect, useState } from 'react'
 import { useStore } from '../App.jsx'
 import {
   adminListEmployees, adminCreateUser, adminUpdateUser, adminResetUserPin,
-  adminListAreas
+  adminListAreas, adminListStores
 } from '../lib/api.js'
-import { ROLES, HQ_ROLE_KEYS, roleLabel } from '../lib/roles.js'
+import { ROLES, ROLE_KEYS, roleLabel } from '../lib/roles.js'
 import { useToast } from '../components/Toast.jsx'
 import AdminNav from '../components/AdminNav.jsx'
+import ScopePicker from '../components/forms/ScopePicker.jsx'
 
-// Employees admin — HQ / Back-office staff. Single role per employee.
-// The role list and what each one can do live in lib/roles.js so the UI
-// and server stay in sync (manually — small list).
+// Phase 9J — Employees admin.
+// All real employees (front-line and HQ) live here. Each row has:
+//   - a single role (catalogue in lib/roles.js)
+//   - a scope (all stores, specific stores, by area)
+//   - per-employee toggles for HQ tasks and Store tasks
 export default function AdminEmployees() {
   const { session } = useStore()
   const toast = useToast()
-  const isBO = session.mode === 'backoffice'
 
   const [employees, setEmployees] = useState([])
   const [areas, setAreas]         = useState([])
+  const [stores, setStores]       = useState([])
   const [loading, setLoading]     = useState(true)
   const [error, setError]         = useState('')
-  const [editing, setEditing]     = useState(null)     // employee object or {} for new
+  const [editing, setEditing]     = useState(null)
   const [pinResetId, setPinResetId] = useState(null)
   const [showHelp, setShowHelp]   = useState(false)
 
   const load = async () => {
     setLoading(true); setError('')
     try {
-      const [e, a] = await Promise.all([adminListEmployees(), adminListAreas()])
-      setEmployees(e); setAreas(a)
+      const [e, a, s] = await Promise.all([
+        adminListEmployees().catch(() => []),
+        adminListAreas(),
+        adminListStores()
+      ])
+      // Show every employee here, store + HQ alike. Use a separate admin
+      // surface if you ever want to split.
+      setEmployees(e); setAreas(a); setStores(s)
     } catch (e) { setError(e.message) } finally { setLoading(false) }
   }
 
-  useEffect(() => { if (isBO) load() }, [isBO])
-
-  if (!isBO) {
-    return <div className="card"><div className="empty-state"><p>Admin pages are only available to back-office users.</p></div></div>
-  }
+  useEffect(() => { load() /* eslint-disable-next-line */ }, [])
 
   return (
     <div>
       <div className="page-header">
         <div>
           <div className="page-title">Employees</div>
-          <div className="page-subtitle">
-            {employees.length} Head Office staff · each employee has a single role
-          </div>
+          <div className="page-subtitle">{employees.length} employee{employees.length === 1 ? '' : 's'} · one place for store + HQ accounts</div>
         </div>
       </div>
 
@@ -64,7 +67,7 @@ export default function AdminEmployees() {
       {editing && (
         <EmployeeForm
           employee={editing.id ? editing : null}
-          areas={areas}
+          areas={areas} stores={stores}
           toast={toast}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); load() }}
@@ -77,8 +80,8 @@ export default function AdminEmployees() {
         <div className="card"><div className="card-body" style={{ textAlign: 'center', padding: 40 }}><span className="spinner spinner-dark" /></div></div>
       ) : !employees.length ? (
         <div className="card"><div className="empty-state">
-          <p>No back-office employees yet.</p>
-          <p className="note" style={{ marginTop: 6 }}>Add your first HQ staff member above. They'll be able to sign in via the Staff / HQ tab on the login screen.</p>
+          <p>No HQ employees yet.</p>
+          <p className="note" style={{ marginTop: 6 }}>Add your first one above — they’ll be able to sign in at the login screen with their username and PIN.</p>
         </div></div>
       ) : (
         <div className="card">
@@ -89,8 +92,8 @@ export default function AdminEmployees() {
                   <th>Name</th>
                   <th>Username</th>
                   <th>Role</th>
-                  <th>Department</th>
-                  <th>Contact</th>
+                  <th>Scope</th>
+                  <th>HQ / Store</th>
                   <th>Status</th>
                   <th></th>
                 </tr>
@@ -101,14 +104,15 @@ export default function AdminEmployees() {
                     <td>
                       <strong>{e.display_name}</strong>
                       {e.employee_code && <span className="td-muted" style={{ marginLeft: 6, fontSize: 12 }}>#{e.employee_code}</span>}
+                      {e.department && <div className="td-muted" style={{ fontSize: 12 }}>{e.department}</div>}
                     </td>
                     <td className="td-code">{e.username}</td>
                     <td><span className="chip">{roleLabel(e.role)}</span></td>
-                    <td>{e.department || <span className="td-muted">—</span>}</td>
+                    <td>{describeScope(e, stores, areas)}</td>
                     <td>
-                      {e.email && <div style={{ fontSize: 13 }}>{e.email}</div>}
-                      {e.phone && <div className="td-muted" style={{ fontSize: 12 }}>{e.phone}</div>}
-                      {!e.email && !e.phone && <span className="td-muted">—</span>}
+                      {e.can_access_hq_tasks    !== false && <span className="chip" style={{ marginRight: 4 }}>HQ</span>}
+                      {e.can_access_store_tasks !== false && <span className="chip">Store</span>}
+                      {e.can_access_hq_tasks === false && e.can_access_store_tasks === false && <span className="td-muted">—</span>}
                     </td>
                     <td>{e.is_active ? <span className="badge badge-completed">Active</span> : <span className="badge badge-pending">Inactive</span>}</td>
                     <td>
@@ -132,15 +136,28 @@ export default function AdminEmployees() {
   )
 }
 
-// Reference card — shows what each role gets, so creating an employee
-// becomes a real decision rather than a guess.
+function describeScope(e, stores, areas) {
+  if (e.all_stores) return <span>All stores</span>
+  const sn = (id) => stores.find(s => s.id === id)?.store_name
+  const an = (id) => areas.find(a => a.id === id)?.area_name
+  const parts = []
+  if (Array.isArray(e.area_ids) && e.area_ids.length) {
+    parts.push('Areas: ' + e.area_ids.map(an).filter(Boolean).join(', '))
+  }
+  if (Array.isArray(e.store_ids) && e.store_ids.length) {
+    parts.push('Stores: ' + e.store_ids.map(sn).filter(Boolean).join(', '))
+  }
+  if (!parts.length) return <span className="td-muted">No stores assigned</span>
+  return <span style={{ fontSize: 12.5 }}>{parts.join(' · ')}</span>
+}
+
 function RolesHelp() {
   return (
     <div className="card" style={{ marginBottom: 16 }}>
       <div className="card-header">Roles &amp; access</div>
       <div className="card-body">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
-          {HQ_ROLE_KEYS.map(k => {
+          {ROLE_KEYS.map(k => {
             const r = ROLES[k]
             return (
               <div key={k} style={{ border: '1px solid var(--border-soft)', borderRadius: 10, padding: 14, background: 'var(--surface-warm)' }}>
@@ -176,48 +193,58 @@ function PinResetInline({ id, onCancel, onDone, toast }) {
   )
 }
 
-function EmployeeForm({ employee, areas, toast, onClose, onSaved }) {
+function EmployeeForm({ employee, areas, stores, toast, onClose, onSaved }) {
   const isEdit = !!employee?.id
   const [form, setForm] = useState(() => ({
-    username:      employee?.username || '',
-    display_name:  employee?.display_name || '',
-    role:          employee?.role || 'support_admin',
-    email:         employee?.email || '',
-    phone:         employee?.phone || '',
-    department:    employee?.department || '',
-    employee_code: employee?.employee_code || '',
-    start_date:    employee?.start_date || '',
-    notes:         employee?.notes || '',
-    area_ids:      employee?.area_ids || [],
-    is_active:     employee?.is_active !== false,
-    pin:           ''
+    username:               employee?.username || '',
+    display_name:           employee?.display_name || '',
+    role:                   employee?.role || 'sales_assistant',
+    all_stores:             !!employee?.all_stores,
+    store_ids:              employee?.store_ids || [],
+    area_ids:               employee?.area_ids || [],
+    can_access_hq_tasks:    employee ? employee.can_access_hq_tasks    !== false : true,
+    can_access_store_tasks: employee ? employee.can_access_store_tasks !== false : true,
+    email:                  employee?.email || '',
+    phone:                  employee?.phone || '',
+    department:             employee?.department || '',
+    employee_code:          employee?.employee_code || '',
+    start_date:             employee?.start_date || '',
+    notes:                  employee?.notes || '',
+    is_active:              employee?.is_active !== false,
+    pin:                    ''
   }))
   const [saving, setSaving] = useState(false)
   const [err, setErr]       = useState('')
 
-  const showAreas = form.role === 'area_manager'
-  const roleMeta  = ROLES[form.role]
+  const roleMeta = ROLES[form.role]
 
   const submit = async (e) => {
     e.preventDefault()
     if (!form.username.trim())     return setErr('Username is required')
     if (!form.display_name.trim()) return setErr('Display name is required')
     if (!isEdit && form.pin.length < 4) return setErr('PIN must be at least 4 characters')
+    if (!form.all_stores && !form.store_ids.length && !form.area_ids.length) {
+      return setErr('Pick at least one store or area, or tick "Access to all stores".')
+    }
 
     setSaving(true); setErr('')
     try {
       const payload = {
-        username:      form.username.trim(),
-        display_name:  form.display_name.trim(),
-        role:          form.role,
-        email:         form.email.trim() || null,
-        phone:         form.phone.trim() || null,
-        department:    form.department.trim() || null,
-        employee_code: form.employee_code.trim() || null,
-        start_date:    form.start_date || null,
-        notes:         form.notes.trim() || null,
-        is_active:     form.is_active,
-        area_ids:      showAreas ? form.area_ids : []
+        username:               form.username.trim(),
+        display_name:           form.display_name.trim(),
+        role:                   form.role,
+        all_stores:             form.all_stores,
+        store_ids:              form.all_stores ? [] : form.store_ids,
+        area_ids:               form.all_stores ? [] : form.area_ids,
+        can_access_hq_tasks:    form.can_access_hq_tasks,
+        can_access_store_tasks: form.can_access_store_tasks,
+        email:                  form.email.trim() || null,
+        phone:                  form.phone.trim() || null,
+        department:             form.department.trim() || null,
+        employee_code:          form.employee_code.trim() || null,
+        start_date:             form.start_date || null,
+        notes:                  form.notes.trim() || null,
+        is_active:              form.is_active
       }
       if (isEdit) {
         await adminUpdateUser(employee.id, payload)
@@ -247,10 +274,8 @@ function EmployeeForm({ employee, areas, toast, onClose, onSaved }) {
 
             <div className="form-group full">
               <label>Role *</label>
-              <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value, area_ids: [] }))}>
-                {HQ_ROLE_KEYS.map(k => (
-                  <option key={k} value={k}>{ROLES[k].label}</option>
-                ))}
+              <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
+                {ROLE_KEYS.map(k => <option key={k} value={k}>{ROLES[k].label}</option>)}
               </select>
               {roleMeta && (
                 <div style={{ marginTop: 8, padding: 10, background: 'var(--surface-warm)', border: '1px solid var(--border-soft)', borderRadius: 8 }}>
@@ -262,24 +287,38 @@ function EmployeeForm({ employee, areas, toast, onClose, onSaved }) {
               )}
             </div>
 
-            {showAreas && (
-              <div className="form-group full">
-                <label>Areas covered *</label>
-                <div className="flex-row" style={{ flexWrap: 'wrap', gap: 6 }}>
-                  {areas.filter(a => a.is_active).map(a => {
-                    const on = form.area_ids.includes(a.id)
-                    return (
-                      <button type="button" key={a.id}
-                        className={`btn btn-sm ${on ? 'btn-primary' : 'btn-outline'}`}
-                        onClick={() => setForm(f => ({ ...f, area_ids: on ? f.area_ids.filter(x => x !== a.id) : [...f.area_ids, a.id] }))}>
-                        {a.area_name}
-                      </button>
-                    )
-                  })}
-                </div>
-                <span className="note" style={{ fontSize: 12 }}>This Area Manager will see stats for these areas.</span>
+            <div className="form-group full">
+              <label>Store / Area scope</label>
+              <ScopePicker
+                value={{ all_stores: form.all_stores, store_ids: form.store_ids, area_ids: form.area_ids }}
+                onChange={({ all_stores, store_ids, area_ids }) => setForm(f => ({ ...f, all_stores, store_ids, area_ids }))}
+                stores={stores}
+                areas={areas}
+              />
+            </div>
+
+            <div className="form-group full">
+              <label>Task access</label>
+              <div className="flex-row" style={{ gap: 18, flexWrap: 'wrap' }}>
+                <label className="flex-row" style={{ gap: 8 }}>
+                  <input
+                    type="checkbox"
+                    checked={form.can_access_hq_tasks}
+                    onChange={e => setForm(f => ({ ...f, can_access_hq_tasks: e.target.checked }))}
+                  />
+                  <span><strong>HQ Tasks</strong> — error reports A–I (UOM, prices, non-scans…)</span>
+                </label>
+                <label className="flex-row" style={{ gap: 8 }}>
+                  <input
+                    type="checkbox"
+                    checked={form.can_access_store_tasks}
+                    onChange={e => setForm(f => ({ ...f, can_access_store_tasks: e.target.checked }))}
+                  />
+                  <span><strong>Store Tasks</strong> — operational checklists</span>
+                </label>
               </div>
-            )}
+              <span className="note" style={{ fontSize: 12 }}>Untick to hide a system entirely from this employee.</span>
+            </div>
 
             <div className="form-group">
               <label>Email</label>

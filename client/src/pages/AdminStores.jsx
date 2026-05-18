@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useStore } from '../App.jsx'
 import {
-  adminListStores, adminCreateStore, adminUpdateStore, adminResetStorePin,
-  adminListAreas
+  adminListStores, adminCreateStore, adminUpdateStore, adminListAreas
 } from '../lib/api.js'
 import AdminNav from '../components/AdminNav.jsx'
 
@@ -20,7 +19,6 @@ export default function AdminStores() {
   const [loading, setLoading]   = useState(true)
   const [error, setError]       = useState('')
   const [editingId, setEditingId] = useState(null)
-  const [pinResetId, setPinResetId] = useState(null)
   const [showAdd, setShowAdd]   = useState(false)
 
   const load = async () => {
@@ -91,12 +89,9 @@ export default function AdminStores() {
                     store={s}
                     areas={areas}
                     editing={editingId === s.id}
-                    resettingPin={pinResetId === s.id}
-                    onEdit={() => { setEditingId(s.id); setPinResetId(null) }}
+                    onEdit={() => setEditingId(s.id)}
                     onCancelEdit={() => setEditingId(null)}
-                    onResetPin={() => { setPinResetId(s.id); setEditingId(null) }}
-                    onCancelResetPin={() => setPinResetId(null)}
-                    onSaved={() => { setEditingId(null); setPinResetId(null); load() }}
+                    onSaved={() => { setEditingId(null); load() }}
                   />
                 ))}
               </tbody>
@@ -109,7 +104,7 @@ export default function AdminStores() {
 }
 
 function AddStore({ onCreated, areas = [] }) {
-  const [form, setForm] = useState({ store_code: '', store_name: '', region: '', area_id: '', pin: '' })
+  const [form, setForm] = useState({ store_code: '', store_name: '', region: '', area_id: '' })
   const [saving, setSaving] = useState(false)
   const [err, setErr]       = useState('')
 
@@ -117,17 +112,15 @@ function AddStore({ onCreated, areas = [] }) {
     e.preventDefault()
     if (!form.store_code.trim()) return setErr('Store code is required')
     if (!form.store_name.trim()) return setErr('Store name is required')
-    if (form.pin.length < 4)     return setErr('PIN must be at least 4 characters')
     setSaving(true); setErr('')
     try {
       await adminCreateStore({
         store_code: form.store_code.trim(),
         store_name: form.store_name.trim(),
         region:     form.region.trim() || null,
-        area_id:    form.area_id || null,
-        pin:        form.pin
+        area_id:    form.area_id || null
       })
-      setForm({ store_code: '', store_name: '', region: '', area_id: '', pin: '' })
+      setForm({ store_code: '', store_name: '', region: '', area_id: '' })
       onCreated()
     } catch (e) {
       setErr(e.message)
@@ -160,8 +153,7 @@ function AddStore({ onCreated, areas = [] }) {
               </select>
             </div>
             <div className="form-group">
-              <label>Initial PIN *</label>
-              <input type="text" value={form.pin} onChange={e => setForm(f => ({ ...f, pin: e.target.value }))} placeholder="≥ 4 characters" />
+              <label className="note" style={{ fontSize: 12 }}>Employees sign in with their own username + PIN. Manage accounts in Admin → Employees.</label>
             </div>
           </div>
           {err && <div className="login-error mt-12">{err}</div>}
@@ -176,14 +168,13 @@ function AddStore({ onCreated, areas = [] }) {
   )
 }
 
-function StoreRow({ store, areas = [], editing, resettingPin, onEdit, onCancelEdit, onResetPin, onCancelResetPin, onSaved }) {
+function StoreRow({ store, areas = [], editing, onEdit, onCancelEdit, onSaved }) {
   const [form, setForm]   = useState({
     store_code: store.store_code,
     store_name: store.store_name,
     region:     store.region || '',
     area_id:    store.area_id || ''
   })
-  const [newPin, setNewPin] = useState('')
   const [saving, setSaving] = useState(false)
   const [err, setErr]       = useState('')
 
@@ -203,13 +194,6 @@ function StoreRow({ store, areas = [], editing, resettingPin, onEdit, onCancelEd
   const toggleActive = async () => {
     setSaving(true); setErr('')
     try { await adminUpdateStore(store.id, { is_active: !store.is_active }); onSaved() }
-    catch (e) { setErr(e.message) } finally { setSaving(false) }
-  }
-
-  const resetPin = async () => {
-    if (newPin.length < 4) return setErr('PIN must be at least 4 characters')
-    setSaving(true); setErr('')
-    try { await adminResetStorePin(store.id, newPin); setNewPin(''); onSaved() }
     catch (e) { setErr(e.message) } finally { setSaving(false) }
   }
 
@@ -242,27 +226,6 @@ function StoreRow({ store, areas = [], editing, resettingPin, onEdit, onCancelEd
     )
   }
 
-  if (resettingPin) {
-    return (
-      <tr>
-        <td className="td-code">{store.store_code}</td>
-        <td>{store.store_name}</td>
-        <td>{areaName(store.area_id) || store.region || <span className="td-muted">—</span>}</td>
-        <td>{store.is_active ? <span className="badge badge-completed">Active</span> : <span className="badge badge-pending">Inactive</span>}</td>
-        <td>
-          {err && <div className="login-error" style={{ marginBottom: 6, fontSize: 12 }}>{err}</div>}
-          <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>
-            <input type="text" value={newPin} onChange={e => setNewPin(e.target.value)} placeholder="New PIN" style={{ width: 120 }} />
-            <button className="btn btn-sm btn-outline" onClick={onCancelResetPin} disabled={saving}>Cancel</button>
-            <button className="btn btn-sm btn-primary" onClick={resetPin} disabled={saving}>
-              {saving ? <span className="spinner" /> : 'Set PIN'}
-            </button>
-          </div>
-        </td>
-      </tr>
-    )
-  }
-
   return (
     <tr>
       <td className="td-code">{store.store_code}</td>
@@ -272,7 +235,6 @@ function StoreRow({ store, areas = [], editing, resettingPin, onEdit, onCancelEd
       <td>
         <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>
           <button className="btn btn-sm btn-outline" onClick={onEdit}>Edit</button>
-          <button className="btn btn-sm btn-outline" onClick={onResetPin}>Reset PIN</button>
           <button className="btn btn-sm btn-outline" onClick={toggleActive}>
             {store.is_active ? 'Deactivate' : 'Activate'}
           </button>

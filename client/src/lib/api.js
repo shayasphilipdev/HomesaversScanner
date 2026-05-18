@@ -53,8 +53,8 @@ async function request(path, options = {}) {
 // ── Auth & stores ───────────────────────────────────────────────────────────
 
 export const getStores            = () => request('/stores')
-export const verifyStorePin       = (storeId, pin) => request('/stores/verify-pin', { method: 'POST', body: { storeId, pin } })
-export const verifyBackofficePin  = (pin) => request('/backoffice/verify-pin', { method: 'POST', body: { pin } })
+// Phase 9J: single login. Old /stores/verify-pin and /backoffice/verify-pin
+// were removed server-side.
 export const verifyUserPin        = (username, pin) => request('/users/verify-pin', { method: 'POST', body: { username, pin } })
 
 // ── Reference data ──────────────────────────────────────────────────────────
@@ -152,7 +152,7 @@ export const bulkReviewTaskRecords = ({ ids, status, review_notes }) =>
 export const adminListStores    = () => request('/admin/stores')
 export const adminCreateStore   = (store) => request('/admin/stores', { method: 'POST', body: store })
 export const adminUpdateStore   = (id, updates) => request(`/admin/stores/${id}`, { method: 'PATCH', body: updates })
-export const adminResetStorePin = (id, pin) => request(`/admin/stores/${id}/reset-pin`, { method: 'POST', body: { pin } })
+// adminResetStorePin removed in Phase 9J — stores no longer have a PIN.
 
 export const adminListSuppliers  = () => request('/admin/suppliers')
 export const adminCreateSupplier = (supplier) => request('/admin/suppliers', { method: 'POST', body: supplier })

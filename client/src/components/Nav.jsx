@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom'
 import { useState } from 'react'
 import { useStore } from '../App.jsx'
 import { resolvedTheme, setTheme } from '../lib/theme.js'
-import { canSeeAnyAdminLink, canAccessAdmin, canAccessTemplates } from '../lib/roles.js'
+import { canSeeAnyAdminLink, canAccessAdmin, canDoHQTasks, canDoStoreTasks } from '../lib/roles.js'
 import OfflineIndicator from './OfflineIndicator.jsx'
 
 export default function Nav() {
@@ -20,9 +20,9 @@ export default function Nav() {
       <span className="nav-brand">Homesavers</span>
 
       <NavLink to="/dashboard" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Dashboard</NavLink>
-      <NavLink to="/tasks"        className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>HQ Tasks</NavLink>
-      <NavLink to="/store-tasks"  className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Store Tasks</NavLink>
-      <NavLink to="/reports"      className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Reports</NavLink>
+      {canDoHQTasks(session)    && <NavLink to="/tasks"       className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>HQ Tasks</NavLink>}
+      {canDoStoreTasks(session) && <NavLink to="/store-tasks" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Store Tasks</NavLink>}
+      <NavLink to="/reports"    className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Reports</NavLink>
 
       {canSeeAnyAdminLink(session) && (
         <NavLink

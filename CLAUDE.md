@@ -152,6 +152,7 @@ Instance generation: lazy — `ensureInstancesExist(db, storeId, date)` called b
 | 9D | Task templates table + admin CRUD + create modal | ✅ done |
 | 9E | Store tasks page + completion + lazy generator + stats | ✅ done (no template seeds shipped) |
 | 9F | Store task form-builder + advanced targeting | ✅ done — `blocks` jsonb on templates; `answers` jsonb on instances. Block types: text · long text · number · amount · date · time · yes/no · single choice · multi choice · photo. Targeting: multi-role + specific employees + start/end window. **Only Store Tasks** (Phase 9D/9E system); HQ task records (Task Types A–I) untouched. |
+| 9J | Stores-as-master + single login + multi-store scope + task toggles | ✅ done — `stores.pin_hash` dropped. New roles `supervisor` + `assistant_store_manager`. Single `/users/verify-pin` login (no Store / Staff tabs). New `users.all_stores`, `users.store_ids[]`, `users.area_ids[]`, `users.can_access_hq_tasks`, `users.can_access_store_tasks`. `user_areas` join table dropped. Backend `scopedStoreIds()` drives every multi-store filter. AdminEmployees consolidates store + HQ accounts with `ScopePicker` + two task toggles. |
 
 ---
 

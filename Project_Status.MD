@@ -3,7 +3,19 @@
 A full snapshot of the app as it stands today. Intended as a self-contained
 orientation doc for any Claude session that opens this repo cold.
 
-> **What changed in Phase 9G–9H** (latest, live):
+> **What changed in Phase 9J** (latest, live):
+> - **Stores are now master records, no PINs.** `stores.pin_hash` dropped. Old `/stores/verify-pin` and `/backoffice/verify-pin` endpoints removed.
+> - **Single login form** — username + PIN for every employee. No more "Store" vs "Staff/HQ" tabs.
+> - **Two new roles**: `supervisor` and `assistant_store_manager`. Role catalogue in `client/src/lib/roles.js`.
+> - **Multi-store / multi-area scope per employee.** New columns on `users`: `all_stores`, `store_ids uuid[]`, `area_ids uuid[]`. The old single `store_id` is kept in sync with `store_ids[0]` for backward compat. The `user_areas` join table is gone (data merged into `users.area_ids`).
+> - **Per-employee task toggles**: `can_access_hq_tasks` and `can_access_store_tasks`. Hide either system entirely for a specific employee. Enforced both server-side (the API endpoints 403) and in the nav (links hidden).
+> - **Server scope helper** `scopedStoreIds(db, session)` drives every multi-store filter (task records, store tasks, reports, dashboard). Returns `null` for admin / all_stores (no filter), `[]` for no scope, or the concrete set of store IDs.
+> - **AdminStores**: PIN field gone; Reset PIN button gone. Stores are just master records.
+> - **AdminEmployees** is now the unified employee admin (store + HQ). Single-role dropdown · `ScopePicker` component for store/area scope · two task-access toggles. The old "All users" tab is removed.
+> - **Migration notes**: existing 8 sales_assistant accounts (one per store) keep working — they sign in with username = their store_code. Admin user's username is still `director` (only the role changed in earlier phases).
+> - **Known gap for v1**: multi-store users (>1 store) can't yet pick a "current store" in the Tasks UI — that picker is a follow-up. Single-store users and `all_stores=true` admins work fully.
+>
+> **Phase 9G–9H**:
 > - **9G — Store-task reports**: Reports page now has "HQ records" + "Store tasks" tabs. New `/api/reports/store-tasks` (CSV with answers flattened per block label) and `/api/reports/store-tasks/json` (on-screen table).
 > - **9H — Permission tightening**: admin pages (`/admin/stores · areas · users · employees · suppliers · lookups · products · settings`) now require role `admin` or `buying_manager`. Task templates remain open to all task creators. `mode==='backoffice'` fallback removed from `isAdminRole` / `isBackOffice`. New `AdminGuard` wraps the routes; nav links auto-hide for unprivileged roles.
 > - **9H — Cleanup**: dropped the unused `users.roles text[]` column from the abandoned multi-role experiment.
