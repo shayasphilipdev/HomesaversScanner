@@ -1046,6 +1046,129 @@ export async function onRequest(context) {
       return json(updated[0])
     }
 
+    // GET /reports/store-tasks?from=&to=&storeId=&template_id=
+    // CSV of completed/pending store task instances with answers flattened
+    // (one column per defined block, plus the raw JSON for safety).
+    if (path === '/reports/store-tasks' && method === 'GET') {
+      const p          = url.searchParams
+      const from       = p.get('from')
+      const to         = p.get('to')
+      const storeId    = isBO ? p.get('storeId') : session.storeId
+      const templateId = p.get('template_id')
+
+      const range = []
+      if (from) range.push(`gte.${new Date(from).toISOString().slice(0,10)}`)
+      if (to)   range.push(`lte.${new Date(to).toISOString().slice(0,10)}`)
+
+      const params = {
+        select: 'id,template_id,store_id,period_key,due_date,status,completed_at,answers,notes,photo_url,store_task_templates(title,category,blocks)',
+        order:  'due_date.asc,created_at.asc',
+        limit:  '5000'
+      }
+      if (range.length) params['due_date'] = range
+      if (storeId && storeId !== 'all') params['store_id']    = `eq.${storeId}`
+      if (templateId)                   params['template_id'] = `eq.${templateId}`
+      if (session.role === 'area_manager' && session.area_ids?.length && (!storeId || storeId === 'all')) {
+        const stores = await db.select('stores', { select: 'id', area_id: `in.(${session.area_ids.join(',')})` })
+        const ids = stores.map(s => s.id)
+        if (!ids.length) {
+          return new Response('template,store_name,due_date,status,completed_at\n', {
+            headers: { 'Content-Type': 'text/csv;charset=utf-8', 'Content-Disposition': 'attachment; filename="store-tasks-empty.csv"' }
+          })
+        }
+        params['store_id'] = `in.(${ids.join(',')})`
+      }
+
+      const [rows, stores, users] = await Promise.all([
+        db.select('store_task_instances', params),
+        db.select('stores', { select: 'id,store_name' }),
+        db.select('users', { select: 'id,display_name' })
+      ])
+      const storeName = Object.fromEntries(stores.map(s => [s.id, s.store_name]))
+      const userName  = Object.fromEntries(users.map(u => [u.id, u.display_name]))
+
+      // Build the union of all block labels across the matching templates
+      // so the CSV has stable columns.
+      const blockCols = new Set()
+      for (const r of rows) {
+        const blocks = r.store_task_templates?.blocks
+        if (!Array.isArray(blocks)) continue
+        for (const b of blocks) if (b?.label) blockCols.add(b.label)
+      }
+      const blockLabels = [...blockCols]
+
+      const baseCols = ['template','store_name','due_date','period_key','status','completed_at','completed_by','notes','photo_url']
+      const cols     = [...baseCols, ...blockLabels, 'answers_json']
+      const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`
+
+      const flat = rows.map(r => {
+        const t       = r.store_task_templates || {}
+        const blocks  = Array.isArray(t.blocks) ? t.blocks : []
+        const ans     = r.answers && typeof r.answers === 'object' ? r.answers : {}
+        const labelTo = {}
+        for (const b of blocks) {
+          if (!b?.label) continue
+          const v = ans[b.id]
+          labelTo[b.label] = Array.isArray(v) ? v.join('; ') : (v === null || v === undefined ? '' : String(v))
+        }
+        return {
+          template:     t.title || '',
+          store_name:   storeName[r.store_id] || '',
+          due_date:     r.due_date || '',
+          period_key:   r.period_key || '',
+          status:       r.status || '',
+          completed_at: r.completed_at || '',
+          completed_by: r.completed_by ? (userName[r.completed_by] || '') : '',
+          notes:        r.notes || '',
+          photo_url:    r.photo_url || '',
+          answers_json: JSON.stringify(ans),
+          ...labelTo
+        }
+      })
+
+      const header = cols.join(',')
+      const lines  = flat.map(r => cols.map(c => esc(r[c])).join(','))
+      const csv    = [header, ...lines].join('\n') + '\n'
+      const filename = `store-tasks-${(from || 'start').slice(0,10)}-to-${(to || 'now').slice(0,10)}.csv`
+      return new Response(csv, {
+        headers: {
+          'Content-Type':        'text/csv;charset=utf-8',
+          'Content-Disposition': `attachment; filename="${filename}"`
+        }
+      })
+    }
+
+    // GET /reports/store-tasks/json?from=&to=&storeId=&template_id=
+    // Same filter shape, returns JSON for on-screen rendering.
+    if (path === '/reports/store-tasks/json' && method === 'GET') {
+      const p          = url.searchParams
+      const from       = p.get('from')
+      const to         = p.get('to')
+      const storeId    = isBO ? p.get('storeId') : session.storeId
+      const templateId = p.get('template_id')
+
+      const range = []
+      if (from) range.push(`gte.${new Date(from).toISOString().slice(0,10)}`)
+      if (to)   range.push(`lte.${new Date(to).toISOString().slice(0,10)}`)
+
+      const params = {
+        select: 'id,template_id,store_id,period_key,due_date,status,completed_at,completed_by,answers,notes,photo_url,store_task_templates(title,category,blocks)',
+        order:  'due_date.desc',
+        limit:  '500'
+      }
+      if (range.length) params['due_date'] = range
+      if (storeId && storeId !== 'all') params['store_id']    = `eq.${storeId}`
+      if (templateId)                   params['template_id'] = `eq.${templateId}`
+      if (session.role === 'area_manager' && session.area_ids?.length && (!storeId || storeId === 'all')) {
+        const stores = await db.select('stores', { select: 'id', area_id: `in.(${session.area_ids.join(',')})` })
+        const ids = stores.map(s => s.id)
+        if (!ids.length) return json([])
+        params['store_id'] = `in.(${ids.join(',')})`
+      }
+      const rows = await db.select('store_task_instances', params)
+      return json(rows)
+    }
+
     // GET /store-tasks/stats?storeId=&from=&to=
     if (path === '/store-tasks/stats' && method === 'GET') {
       const p = url.searchParams

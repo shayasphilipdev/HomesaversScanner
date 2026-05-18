@@ -212,3 +212,12 @@ export const getStoreTaskStats  = ({ from, to, storeId } = {}) => {
 }
 export const generateStoreTasks = ({ date, storeId } = {}) =>
   request('/store-tasks/generate', { method: 'POST', body: { date, storeId } })
+
+export const getStoreTaskReportRows = ({ from, to, storeId, template_id } = {}) => {
+  const q = new URLSearchParams()
+  if (from)        q.set('from', from)
+  if (to)          q.set('to', to)
+  if (storeId)     q.set('storeId', storeId)
+  if (template_id) q.set('template_id', template_id)
+  return request('/reports/store-tasks/json' + (q.toString() ? `?${q}` : ''))
+}

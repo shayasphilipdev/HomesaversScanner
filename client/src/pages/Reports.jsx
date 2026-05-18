@@ -2,7 +2,8 @@ import { Fragment, useState, useEffect, useMemo } from 'react'
 import { useStore } from '../App.jsx'
 import {
   getStores, getTaskTypes, getToken, getTaskRecords,
-  updateTaskRecord, bulkReviewTaskRecords
+  updateTaskRecord, bulkReviewTaskRecords,
+  adminListTemplates, getStoreTaskReportRows
 } from '../lib/api.js'
 import { useToast } from '../components/Toast.jsx'
 
@@ -26,6 +27,25 @@ const STATUS_LABEL = {
 }
 
 export default function Reports() {
+  const [tab, setTab] = useState('hq')
+  return (
+    <div>
+      <div className="page-header">
+        <div>
+          <div className="page-title">Reports</div>
+          <div className="page-subtitle">{tab === 'hq' ? 'HQ task records — error reports from stores' : 'Store tasks — operational checklist completions'}</div>
+        </div>
+        <div className="flex-row" style={{ gap: 6 }}>
+          <button className={`btn btn-sm ${tab === 'hq' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('hq')}>HQ records</button>
+          <button className={`btn btn-sm ${tab === 'store' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('store')}>Store tasks</button>
+        </div>
+      </div>
+      {tab === 'hq' ? <HQReports /> : <StoreTaskReports />}
+    </div>
+  )
+}
+
+function HQReports() {
   const { session } = useStore()
   const toast = useToast()
   const isBO = session.mode === 'backoffice'
@@ -187,13 +207,6 @@ export default function Reports() {
 
   return (
     <div>
-      <div className="page-header">
-        <div>
-          <div className="page-title">Reports</div>
-          <div className="page-subtitle">View, review and export task records — refine the filters and hit Run report</div>
-        </div>
-      </div>
-
       <div className="card">
         <div className="card-header">Filters</div>
         <div className="card-body">
@@ -360,6 +373,139 @@ export default function Reports() {
                         </tr>
                       )}
                     </Fragment>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+
+// ── Store-task reports (Phase 9F) ───────────────────────────────────────
+function StoreTaskReports() {
+  const { session } = useStore()
+  const toast = useToast()
+  const isBO = session.mode === 'backoffice'
+
+  const now      = new Date()
+  const monthAgo = new Date(now.getTime() - 30 * 86400000)
+  const iso      = d => d.toISOString().slice(0, 10)
+
+  const [from, setFrom]           = useState(iso(monthAgo))
+  const [to, setTo]               = useState(iso(now))
+  const [storeFilter, setStoreFilter] = useState(isBO ? 'all' : session.storeId)
+  const [tplFilter, setTplFilter] = useState('all')
+  const [stores, setStores]       = useState([])
+  const [templates, setTemplates] = useState([])
+
+  const [rows, setRows]           = useState([])
+  const [loading, setLoading]     = useState(false)
+  const [downloading, setDownloading] = useState(false)
+  const [error, setError]         = useState('')
+
+  useEffect(() => {
+    if (isBO) getStores().then(setStores).catch(e => setError(e.message))
+    adminListTemplates().then(setTemplates).catch(() => setTemplates([]))
+  }, [isBO])
+
+  const run = async () => {
+    setLoading(true); setError('')
+    try {
+      const data = await getStoreTaskReportRows({
+        from, to,
+        storeId: storeFilter === 'all' ? undefined : storeFilter,
+        template_id: tplFilter === 'all' ? undefined : tplFilter
+      })
+      setRows(data)
+    } catch (e) { setError(e.message); toast.error(e.message) } finally { setLoading(false) }
+  }
+
+  const downloadCSV = async () => {
+    setDownloading(true); setError('')
+    try {
+      const params = new URLSearchParams({ from, to, storeId: storeFilter })
+      if (tplFilter && tplFilter !== 'all') params.set('template_id', tplFilter)
+      const res = await fetch('/api/reports/store-tasks?' + params, { headers: { Authorization: 'Bearer ' + getToken() } })
+      if (!res.ok) throw new Error('Server returned ' + res.status)
+      const blob = await res.blob()
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = 'store-tasks-' + from + '-to-' + to + '.csv'
+      document.body.appendChild(a); a.click(); a.remove()
+      URL.revokeObjectURL(a.href)
+    } catch (e) { setError(e.message); toast.error(e.message) } finally { setDownloading(false) }
+  }
+
+  const storeName = id => stores.find(s => s.id === id)?.store_name || ''
+
+  return (
+    <div>
+      <div className="card">
+        <div className="card-header">Filters</div>
+        <div className="card-body">
+          <div className="form-grid">
+            <div className="form-group"><label>From</label>
+              <input type="date" value={from} onChange={e => setFrom(e.target.value)} /></div>
+            <div className="form-group"><label>To</label>
+              <input type="date" value={to}   onChange={e => setTo(e.target.value)} /></div>
+            {isBO && (
+              <div className="form-group"><label>Store</label>
+                <select value={storeFilter} onChange={e => setStoreFilter(e.target.value)}>
+                  <option value="all">All stores</option>
+                  {stores.filter(s => s.is_active).map(s => <option key={s.id} value={s.id}>{s.store_name}</option>)}
+                </select></div>
+            )}
+            <div className="form-group"><label>Template</label>
+              <select value={tplFilter} onChange={e => setTplFilter(e.target.value)}>
+                <option value="all">All templates</option>
+                {templates.filter(t => t.is_active).map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
+              </select></div>
+          </div>
+          <div className="flex-row mt-20" style={{ gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn btn-primary" onClick={run} disabled={loading}>
+              {loading ? (<><span className="spinner" /> Loading…</>) : 'Run report'}
+            </button>
+            <button className="btn btn-outline" onClick={downloadCSV} disabled={downloading}>
+              {downloading ? (<><span className="spinner spinner-dark" /> Preparing…</>) : '↓ Download Excel (CSV)'}
+            </button>
+          </div>
+          {error && <div className="login-error mt-12">{error}</div>}
+        </div>
+      </div>
+
+      {rows.length > 0 && (
+        <div className="card mt-20">
+          <div className="card-header">{rows.length} result{rows.length === 1 ? '' : 's'}</div>
+          <div className="table-wrap">
+            <table>
+              <thead><tr>
+                <th>Template</th><th>Store</th><th>Due</th><th>Status</th>
+                <th>Completed at</th><th>Block answers</th>
+              </tr></thead>
+              <tbody>
+                {rows.map(r => {
+                  const t = r.store_task_templates || {}
+                  const blocks = Array.isArray(t.blocks) ? t.blocks : []
+                  const ans = r.answers && typeof r.answers === 'object' ? r.answers : {}
+                  const lines = blocks.map(b => {
+                    const v = ans[b.id]
+                    if (v === null || v === undefined || v === '' || (Array.isArray(v) && !v.length)) return null
+                    const display = Array.isArray(v) ? v.join(', ') : (typeof v === 'string' && v.startsWith('http') ? '[photo]' : String(v))
+                    return b.label + ': ' + display
+                  }).filter(Boolean)
+                  return (
+                    <tr key={r.id}>
+                      <td><strong>{t.title || '—'}</strong>{t.category && <span className="chip" style={{ marginLeft: 6 }}>{t.category}</span>}</td>
+                      <td>{storeName(r.store_id) || '—'}</td>
+                      <td>{r.due_date || '—'}</td>
+                      <td><span className={'badge ' + (r.status === 'completed' ? 'badge-completed' : r.status === 'missed' ? 'badge-deleted' : 'badge-pending')}>{r.status}</span></td>
+                      <td className="td-muted">{r.completed_at ? new Date(r.completed_at).toLocaleString('en-IE', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '—'}</td>
+                      <td>{lines.length ? lines.map((l, i) => <div key={i} style={{ fontSize: 13 }}>{l}</div>) : (r.notes ? <span className="note" style={{ fontSize: 12 }}>{r.notes}</span> : <span className="td-muted">—</span>)}</td>
+                    </tr>
                   )
                 })}
               </tbody>
