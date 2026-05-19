@@ -40,8 +40,12 @@ export default function MultiSelectDropdown({
   const toggle = (id) => {
     onChange(ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id])
   }
-  const selectAll = () => onChange(filtered.map(o => o.id))
-  const clearAll  = () => onChange([])
+  // When a search filter is active, "Select all" only picks the visible
+  // (filtered) rows -- the user should still be able to grab every option
+  // in one click. selectEvery clears the search effect.
+  const selectAll   = () => onChange(filtered.map(o => o.id))
+  const selectEvery = () => onChange(options.map(o => o.id))
+  const clearAll    = () => onChange([])
 
   const summary = ids.length === 0
     ? placeholder
@@ -87,8 +91,13 @@ export default function MultiSelectDropdown({
             background: 'var(--surface)'
           }}>
             <button type="button" className="btn btn-sm btn-outline" onClick={selectAll}>
-              ✓ Select all{q ? ` (${filtered.length})` : ''}
+              ✓ Select all{q ? ` (filtered, ${filtered.length})` : ''}
             </button>
+            {q && (
+              <button type="button" className="btn btn-sm btn-outline" onClick={selectEvery} title="Select every option, including those hidden by the search filter">
+                ✓ Select every ({options.length})
+              </button>
+            )}
             <button type="button" className="btn btn-sm btn-outline" onClick={clearAll}>
               ✕ Clear all
             </button>

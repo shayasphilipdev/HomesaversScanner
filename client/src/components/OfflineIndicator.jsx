@@ -30,7 +30,11 @@ export default function OfflineIndicator() {
       try {
         setQueued(await outboxCount())
         setFailed(await failedCount())
-      } catch {}
+      } catch (e) {
+        // Don't toast (this runs on every nav) -- but log it so we can
+        // diagnose a corrupted IndexedDB / quota-exceeded scenario.
+        console.warn('[outbox] count failed:', e?.message || e)
+      }
     }
 
     const sync = async () => {
@@ -38,7 +42,11 @@ export default function OfflineIndicator() {
       try {
         const res = await drain()
         if (res?.synced) toast.success(`Synced ${res.synced} queued record${res.synced === 1 ? '' : 's'}.`)
-      } catch {} finally {
+      } catch (e) {
+        // Sync failure should be visible -- the user has work that didn't
+        // upload. The pill itself will continue to show the queue size.
+        toast.error('Could not sync queued records: ' + (e?.message || 'unknown error'))
+      } finally {
         refresh()
       }
     }

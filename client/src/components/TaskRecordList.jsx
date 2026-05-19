@@ -112,7 +112,7 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
                     <td>
                       {r.uom || <span className="td-muted">—</span>}
                       {r.uom === 'Eachs' && (
-                        <span title="Single piece — check pack contents" style={{ marginLeft: 4 }}>⚠️</span>
+                        <span title="Single piece — check pack contents" role="img" aria-label="Pack-contents warning" style={{ marginLeft: 4 }}>⚠️</span>
                       )}
                     </td>
                     <td className="td-right">{r.quantity ?? <span className="td-muted">—</span>}</td>

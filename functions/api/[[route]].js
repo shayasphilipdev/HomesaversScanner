@@ -982,8 +982,11 @@ export async function onRequest(context) {
     if (path === '/admin/task-templates' && method === 'GET') {
       if (!canCreateTasks(session) && !isAdminRole(session)) return err('Forbidden', 403)
       const rows = await db.select('store_task_templates', {
-        select: '*',
-        order: 'sort_order.asc,title.asc'
+        // Explicit column list -- avoids shipping audit columns or future
+        // additions unintentionally, and lets PostgREST plan a narrower scan.
+        select: 'id,title,description,instructions,category,frequency,due_window,priority,requires_photo,requires_notes,applies_to,area_ids,store_ids,assigned_to_role,assigned_to_roles,assigned_to_user_ids,blocks,start_at,end_at,is_active,sort_order,created_at,updated_at',
+        order: 'sort_order.asc,title.asc',
+        limit: '1000'
       })
       return json(rows)
     }
@@ -1482,6 +1485,12 @@ export async function onRequest(context) {
       if (!file || !slot || !tempId) return err('file, slot, tempId required', 400)
       if (!['product', 'barcode', 'store_task'].includes(slot)) return err('Invalid slot', 400)
       if (!/^[a-zA-Z0-9-]{8,64}$/.test(tempId))   return err('Invalid tempId', 400)
+      // Hard cap so a giant phone-camera upload can't blow the Worker memory
+      // budget. 25 MB is comfortably above a 4K JPEG / a normal PDF receipt.
+      const MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+      if (file.size && file.size > MAX_UPLOAD_BYTES) {
+        return err(`File too large (${Math.round(file.size / 1024 / 1024)} MB) — max is ${MAX_UPLOAD_BYTES / 1024 / 1024} MB`, 413)
+      }
 
       // Derive an extension. Photos always end up as .jpg (client compresses
       // to JPEG before sending). For store_task uploads we keep whatever the

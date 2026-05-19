@@ -37,6 +37,12 @@ export function CurrentStoreProvider({ children }) {
     else    sessionStorage.removeItem(KEY)
   }
 
+  // Cheap stable cache keys for the two arrays so we don't serialize on
+  // every render. (.join is roughly an order of magnitude cheaper than
+  // JSON.stringify and produces a primitive React can compare with ===.)
+  const storeIdsKey = (session.store_ids || []).join(',')
+  const areaIdsKey  = (session.area_ids  || []).join(',')
+
   useEffect(() => {
     let alive = true
     ;(async () => {
@@ -61,13 +67,16 @@ export function CurrentStoreProvider({ children }) {
           setCurrentStoreId(null)
         }
         setReady(true)
-      } catch {
+      } catch (e) {
+        // Surface the failure in the console so an offline page-load is
+        // diagnosable rather than silently leaving the picker empty.
+        console.warn('[currentStore] could not load scoped stores:', e?.message || e)
         setReady(true)
       }
     })()
     return () => { alive = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session.all_stores, JSON.stringify(session.store_ids), JSON.stringify(session.area_ids)])
+  }, [session.all_stores, storeIdsKey, areaIdsKey])
 
   const value = useMemo(() => ({
     currentStoreId,

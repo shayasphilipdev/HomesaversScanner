@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { uploadPhoto } from '../../lib/api.js'
 import { compressImage, newPhotoNamespace } from '../../lib/photos.js'
 import { isDisplayBlock, computeCalc } from '../../lib/taskBlocks.js'
@@ -212,29 +212,34 @@ function BlockInput({ block, answers, value, onChange }) {
       return <UploadBlock value={value} onChange={onChange} accept="image/*" capture="environment" isImage />
     case 'file':
       return <UploadBlock value={value} onChange={onChange} accept={block.accept || '*/*'} />
-    case 'calc': {
-      const computed = computeCalc(block, answers)
-      const display  = computed === null || !Number.isFinite(computed)
-        ? '—'
-        : (Number.isInteger(computed) ? String(computed) : computed.toFixed(2))
-      // Auto-sync the computed value into answers so the saved record carries
-      // the final number (parent receives it via onChange).
-      if (computed !== null && computed !== value) {
-        // Defer so we don't update state during render.
-        queueMicrotask(() => onChange(computed))
-      }
-      return (
-        <div className="flex-row" style={{ gap: 8, alignItems: 'baseline' }}>
-          <strong style={{ fontSize: 18 }}>{display}</strong>
-          <span className="note" style={{ fontSize: 12 }}>
-            (auto-calculated · {block.operation || 'sum'} of {(block.source_block_ids || []).length} block(s))
-          </span>
-        </div>
-      )
-    }
+    case 'calc':
+      return <CalcBlock block={block} answers={answers} value={value} onChange={onChange} />
     default:
       return <div className="note">Unknown block type: {block.type}</div>
   }
+}
+
+// Auto-calculated block. Re-derives its value whenever any source answer
+// changes and writes it back through onChange via a real useEffect (no
+// queueMicrotask hack during render).
+function CalcBlock({ block, answers, value, onChange }) {
+  const computed = computeCalc(block, answers)
+  useEffect(() => {
+    if (computed !== null && computed !== value) onChange(computed)
+  }, [computed, value, onChange])
+
+  const display = computed === null || !Number.isFinite(computed)
+    ? '—'
+    : (Number.isInteger(computed) ? String(computed) : computed.toFixed(2))
+
+  return (
+    <div className="flex-row" style={{ gap: 8, alignItems: 'baseline' }}>
+      <strong style={{ fontSize: 18 }}>{display}</strong>
+      <span className="note" style={{ fontSize: 12 }}>
+        (auto-calculated · {block.operation || 'sum'} of {(block.source_block_ids || []).length} block(s))
+      </span>
+    </div>
+  )
 }
 
 // Shared uploader for photos and any-file blocks. Photos go through the
