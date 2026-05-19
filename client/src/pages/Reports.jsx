@@ -6,6 +6,7 @@ import {
   adminListTemplates, getStoreTaskReportRows
 } from '../lib/api.js'
 import { useToast } from '../components/Toast.jsx'
+import MultiSelectDropdown from '../components/forms/MultiSelectDropdown.jsx'
 
 function toLocalInput(d) {
   const pad = n => String(n).padStart(2, '0')
@@ -57,9 +58,10 @@ function HQReports() {
 
   const [from, setFrom]               = useState(toLocalInput(monthAgo))
   const [to, setTo]                   = useState(toLocalInput(now))
-  const [storeFilter, setStoreFilter] = useState(isBO ? 'all' : session.storeId)
-  const [taskFilter, setTaskFilter]   = useState('all')
-  const [statusFilter, setStatusFilter] = useState('all')
+  // All three filters are now arrays of selected ids. Empty array == "all".
+  const [storeIds, setStoreIds]       = useState(isBO ? [] : (session.storeId ? [session.storeId] : []))
+  const [taskTypeIds, setTaskTypeIds] = useState([])
+  const [statusIds, setStatusIds]     = useState([])
   const [stores, setStores]           = useState([])
   const [taskTypes, setTaskTypes]     = useState([])
 
@@ -87,9 +89,9 @@ function HQReports() {
     setLoading(true); setError(''); setSelected(new Set()); setReviewRowId(null)
     try {
       const data = await getTaskRecords({
-        storeId:  storeFilter === 'all' ? undefined : storeFilter,
-        taskType: taskFilter === 'all'  ? undefined : taskFilter,
-        status:   statusFilter === 'all' ? undefined : statusFilter,
+        storeId:  storeIds.length    ? storeIds.join(',')    : undefined,
+        taskType: taskTypeIds.length ? taskTypeIds.join(',') : undefined,
+        status:   statusIds.length   ? statusIds.join(',')   : undefined,
         filters:  { from, to }
       })
       setRecords(data)
@@ -103,8 +105,11 @@ function HQReports() {
   const downloadCSV = async () => {
     setDownloading(true); setError('')
     try {
-      const params = new URLSearchParams({ from, to, storeId: storeFilter, task_type: taskFilter })
-      if (statusFilter === 'cleared') params.set('includeCleared', '1')
+      const params = new URLSearchParams({ from, to })
+      if (storeIds.length)    params.set('storeId',    storeIds.join(','))
+      if (taskTypeIds.length) params.set('task_type',  taskTypeIds.join(','))
+      if (statusIds.length)   params.set('status',     statusIds.join(','))
+      if (statusIds.includes('cleared')) params.set('includeCleared', '1')
       const res = await fetch(`/api/reports/task-records?${params}`, {
         headers: { Authorization: `Bearer ${getToken()}` }
       })
@@ -112,7 +117,8 @@ function HQReports() {
       const blob = await res.blob()
       const a    = document.createElement('a')
       a.href     = URL.createObjectURL(blob)
-      a.download = `task-records-${taskFilter}-${from.slice(0,10)}-to-${to.slice(0,10)}.csv`
+      const stamp = `${from.slice(0,10)}-to-${to.slice(0,10)}`
+      a.download = `task-records-${stamp}.csv`
       document.body.appendChild(a); a.click(); a.remove()
       URL.revokeObjectURL(a.href)
     } catch (e) {
@@ -218,30 +224,39 @@ function HQReports() {
               <input type="datetime-local" value={to} onChange={e => setTo(e.target.value)} /></div>
 
             {isBO && (
-              <div className="filter-field"><label>Store</label>
-                <select value={storeFilter} onChange={e => setStoreFilter(e.target.value)}>
-                  <option value="all">All stores</option>
-                  {stores.filter(s => s.is_active).map(s => (
-                    <option key={s.id} value={s.id}>{s.store_name} ({s.store_code})</option>
-                  ))}
-                </select></div>
+              <div className="filter-field filter-field--wide"><label>Stores</label>
+                <MultiSelectDropdown
+                  value={storeIds}
+                  onChange={setStoreIds}
+                  options={stores.filter(s => s.is_active).map(s => ({ id: s.id, label: s.store_name, subLabel: s.store_code }))}
+                  placeholder="All stores"
+                />
+              </div>
             )}
 
-            <div className="filter-field filter-field--wide"><label>Task Type</label>
-              <select value={taskFilter} onChange={e => setTaskFilter(e.target.value)}>
-                <option value="all">All task types</option>
-                {taskTypes.map(t => <option key={t.code} value={t.code}>{t.code} — {t.name}</option>)}
-              </select></div>
+            <div className="filter-field filter-field--wide"><label>Task types</label>
+              <MultiSelectDropdown
+                value={taskTypeIds}
+                onChange={setTaskTypeIds}
+                options={taskTypes.map(t => ({ id: t.code, label: `${t.code} — ${t.name}` }))}
+                placeholder="All task types"
+              />
+            </div>
 
-            <div className="filter-field"><label>Status</label>
-              <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-                <option value="all">Any status (excl. cleared)</option>
-                <option value="pending">Pending</option>
-                <option value="completed">Completed by HO</option>
-                <option value="no_change_needed">No change needed</option>
-                <option value="store_completed">Store confirmed</option>
-                <option value="cleared">Clear (archived)</option>
-              </select></div>
+            <div className="filter-field filter-field--wide"><label>Status</label>
+              <MultiSelectDropdown
+                value={statusIds}
+                onChange={setStatusIds}
+                options={[
+                  { id: 'pending',          label: 'Pending' },
+                  { id: 'completed',        label: 'Completed by HO' },
+                  { id: 'no_change_needed', label: 'No change needed' },
+                  { id: 'store_completed',  label: 'Store confirmed' },
+                  { id: 'cleared',          label: 'Clear (archived)' }
+                ]}
+                placeholder="Any status (excl. cleared)"
+              />
+            </div>
 
             <div className="filter-actions">
               <button className="btn btn-sm btn-primary" onClick={runReport} disabled={loading}>
@@ -407,8 +422,8 @@ function StoreTaskReports() {
 
   const [from, setFrom]           = useState(iso(monthAgo))
   const [to, setTo]               = useState(iso(now))
-  const [storeFilter, setStoreFilter] = useState(isBO ? 'all' : session.storeId)
-  const [tplFilter, setTplFilter] = useState('all')
+  const [storeIds, setStoreIds]   = useState(isBO ? [] : (session.storeId ? [session.storeId] : []))
+  const [tplIds, setTplIds]       = useState([])
   const [stores, setStores]       = useState([])
   const [templates, setTemplates] = useState([])
 
@@ -428,8 +443,8 @@ function StoreTaskReports() {
     try {
       const data = await getStoreTaskReportRows({
         from, to,
-        storeId: storeFilter === 'all' ? undefined : storeFilter,
-        template_id: tplFilter === 'all' ? undefined : tplFilter
+        storeId:     storeIds.length ? storeIds.join(',') : undefined,
+        template_id: tplIds.length   ? tplIds.join(',')   : undefined
       })
       setRows(data); setSelected(new Set())
     } catch (e) { setError(e.message); toast.error(e.message) } finally { setLoading(false) }
@@ -446,8 +461,9 @@ function StoreTaskReports() {
   const downloadCSV = async () => {
     setDownloading(true); setError('')
     try {
-      const params = new URLSearchParams({ from, to, storeId: storeFilter })
-      if (tplFilter && tplFilter !== 'all') params.set('template_id', tplFilter)
+      const params = new URLSearchParams({ from, to })
+      if (storeIds.length) params.set('storeId', storeIds.join(','))
+      if (tplIds.length)   params.set('template_id', tplIds.join(','))
       const res = await fetch('/api/reports/store-tasks?' + params, { headers: { Authorization: 'Bearer ' + getToken() } })
       if (!res.ok) throw new Error('Server returned ' + res.status)
       const blob = await res.blob()
@@ -471,17 +487,23 @@ function StoreTaskReports() {
             <div className="filter-field"><label>To</label>
               <input type="date" value={to}   onChange={e => setTo(e.target.value)} /></div>
             {isBO && (
-              <div className="filter-field"><label>Store</label>
-                <select value={storeFilter} onChange={e => setStoreFilter(e.target.value)}>
-                  <option value="all">All stores</option>
-                  {stores.filter(s => s.is_active).map(s => <option key={s.id} value={s.id}>{s.store_name}</option>)}
-                </select></div>
+              <div className="filter-field filter-field--wide"><label>Stores</label>
+                <MultiSelectDropdown
+                  value={storeIds}
+                  onChange={setStoreIds}
+                  options={stores.filter(s => s.is_active).map(s => ({ id: s.id, label: s.store_name }))}
+                  placeholder="All stores"
+                />
+              </div>
             )}
-            <div className="filter-field filter-field--wide"><label>Template</label>
-              <select value={tplFilter} onChange={e => setTplFilter(e.target.value)}>
-                <option value="all">All templates</option>
-                {templates.filter(t => t.is_active).map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
-              </select></div>
+            <div className="filter-field filter-field--wide"><label>Templates</label>
+              <MultiSelectDropdown
+                value={tplIds}
+                onChange={setTplIds}
+                options={templates.filter(t => t.is_active).map(t => ({ id: t.id, label: t.title }))}
+                placeholder="All templates"
+              />
+            </div>
             <div className="filter-actions">
               <button className="btn btn-sm btn-primary" onClick={run} disabled={loading}>
                 {loading ? (<><span className="spinner" /> Loading…</>) : 'Run report'}

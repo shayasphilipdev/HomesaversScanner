@@ -355,6 +355,9 @@ body {
   width: auto; max-width: 220px;
 }
 .filter-field--wide select, .filter-field--wide input { max-width: 320px; }
+/* MultiSelectDropdown trigger button — let the field control width. */
+.filter-field > div { min-width: 220px; }
+.filter-field--wide > div { min-width: 260px; }
 .filter-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
 
 label {

@@ -1134,21 +1134,23 @@ export async function onRequest(context) {
         order:  'due_date.asc,created_at.asc',
         limit:  '5000'
       }
+      const csvList = (s) => (s || '').split(',').map(x => x.trim()).filter(x => x && x !== 'all')
+      const emptyCsv = () => new Response('template,store_name,due_date,status,completed_at\n', {
+        headers: { 'Content-Type': 'text/csv;charset=utf-8', 'Content-Disposition': 'attachment; filename="store-tasks-empty.csv"' }
+      })
+
       if (range.length) params['due_date'] = range
-      if (templateId)   params['template_id'] = `eq.${templateId}`
-      if (explicit && explicit !== 'all') {
-        if (scope !== null && !scope.includes(explicit)) {
-          return new Response('template,store_name,due_date,status,completed_at\n', {
-            headers: { 'Content-Type': 'text/csv;charset=utf-8', 'Content-Disposition': 'attachment; filename="store-tasks-empty.csv"' }
-          })
-        }
-        params['store_id'] = `eq.${explicit}`
+      const tplWanted = csvList(templateId)
+      if (tplWanted.length) {
+        params['template_id'] = tplWanted.length === 1 ? `eq.${tplWanted[0]}` : `in.(${tplWanted.join(',')})`
+      }
+      const storesWanted = csvList(explicit)
+      if (storesWanted.length) {
+        const allowed = scope === null ? storesWanted : storesWanted.filter(id => scope.includes(id))
+        if (!allowed.length) return emptyCsv()
+        params['store_id'] = allowed.length === 1 ? `eq.${allowed[0]}` : `in.(${allowed.join(',')})`
       } else if (scope !== null) {
-        if (!scope.length) {
-          return new Response('template,store_name,due_date,status,completed_at\n', {
-            headers: { 'Content-Type': 'text/csv;charset=utf-8', 'Content-Disposition': 'attachment; filename="store-tasks-empty.csv"' }
-          })
-        }
+        if (!scope.length) return emptyCsv()
         params['store_id'] = `in.(${scope.join(',')})`
       }
 
@@ -1231,11 +1233,18 @@ export async function onRequest(context) {
         order:  'due_date.desc',
         limit:  '500'
       }
+      const csvJson = (s) => (s || '').split(',').map(x => x.trim()).filter(x => x && x !== 'all')
+
       if (range.length) params['due_date'] = range
-      if (templateId)   params['template_id'] = `eq.${templateId}`
-      if (explicit && explicit !== 'all') {
-        if (scope !== null && !scope.includes(explicit)) return json([])
-        params['store_id'] = `eq.${explicit}`
+      const tplWantedJ = csvJson(templateId)
+      if (tplWantedJ.length) {
+        params['template_id'] = tplWantedJ.length === 1 ? `eq.${tplWantedJ[0]}` : `in.(${tplWantedJ.join(',')})`
+      }
+      const storesWantedJ = csvJson(explicit)
+      if (storesWantedJ.length) {
+        const allowed = scope === null ? storesWantedJ : storesWantedJ.filter(id => scope.includes(id))
+        if (!allowed.length) return json([])
+        params['store_id'] = allowed.length === 1 ? `eq.${allowed[0]}` : `in.(${allowed.join(',')})`
       } else if (scope !== null) {
         if (!scope.length) return json([])
         params['store_id'] = `in.(${scope.join(',')})`
@@ -1520,18 +1529,26 @@ export async function onRequest(context) {
         select: 'id,task_type,store_id,supplier_id,supplier_name_text,suppliers(supplier_name),product_code,product_barcode,product_name_label,description,uom,quantity,notes,photo_product_url,photo_barcode_url,details,status,review_notes,reviewed_at,marked_for_deletion,completed_at,store_completed_at,cleared_at,created_at,updated_at',
         order: 'created_at.desc'
       }
-      if (explicit && explicit !== 'all') {
-        if (scope !== null && !scope.includes(explicit)) return json([])
-        params['store_id'] = `eq.${explicit}`
+      // storeId / taskType / status now accept comma-separated lists so the
+      // Reports UI can filter by multiple values at once. 'all' or empty
+      // means no filter (equivalent to all scoped stores).
+      const csv = (s) => (s || '').split(',').map(x => x.trim()).filter(x => x && x !== 'all')
+      const storesWanted = csv(explicit)
+      if (storesWanted.length) {
+        const allowed = scope === null ? storesWanted : storesWanted.filter(id => scope.includes(id))
+        if (!allowed.length) return json([])
+        params['store_id'] = allowed.length === 1 ? `eq.${allowed[0]}` : `in.(${allowed.join(',')})`
       } else if (scope !== null) {
         if (!scope.length) return json([])
         params['store_id'] = `in.(${scope.join(',')})`
       }
-      if (taskType && taskType !== 'all') params['task_type'] = `eq.${taskType}`
-      if (status)                          params['status']    = `eq.${status}`
+      const tt = csv(taskType)
+      if (tt.length) params['task_type'] = tt.length === 1 ? `eq.${tt[0]}` : `in.(${tt.join(',')})`
+      const ss = csv(status)
+      if (ss.length)                       params['status'] = ss.length === 1 ? `eq.${ss[0]}` : `in.(${ss.join(',')})`
       // By default hide 'cleared' records — they stay in the database but
       // disappear from active forms and reports. Pass includeCleared=1 to see them.
-      else if (!includeCleared)            params['status']    = `neq.cleared`
+      else if (!includeCleared)            params['status'] = `neq.cleared`
 
       const range = []
       if (from) range.push(`gte.${new Date(from).toISOString()}`)
@@ -1679,18 +1696,27 @@ export async function onRequest(context) {
         order:  'created_at.asc'
       }
       if (range.length) params['created_at'] = range
-      if (!includeCleared) params['status'] = `neq.cleared`
-      // Scope-aware store filter
-      if (explicit && explicit !== 'all') {
-        if (scope !== null && !scope.includes(explicit)) {
-          return new Response('', { headers: { 'Content-Type': 'text/csv;charset=utf-8' } })
-        }
-        params['store_id'] = `eq.${explicit}`
+      const statusCsvList = (p.get('status') || '').split(',').map(s => s.trim()).filter(s => s && s !== 'all')
+      if (statusCsvList.length) {
+        params['status'] = statusCsvList.length === 1 ? `eq.${statusCsvList[0]}` : `in.(${statusCsvList.join(',')})`
+      } else if (!includeCleared) {
+        params['status'] = `neq.cleared`
+      }
+      const emptyCsv = () => new Response('', { headers: { 'Content-Type': 'text/csv;charset=utf-8' } })
+      const csv2 = (s) => (s || '').split(',').map(x => x.trim()).filter(x => x && x !== 'all')
+
+      // Scope-aware store filter — comma-separated list supported.
+      const storesWanted = csv2(explicit)
+      if (storesWanted.length) {
+        const allowed = scope === null ? storesWanted : storesWanted.filter(id => scope.includes(id))
+        if (!allowed.length) return emptyCsv()
+        params['store_id'] = allowed.length === 1 ? `eq.${allowed[0]}` : `in.(${allowed.join(',')})`
       } else if (scope !== null) {
-        if (!scope.length) return new Response('', { headers: { 'Content-Type': 'text/csv;charset=utf-8' } })
+        if (!scope.length) return emptyCsv()
         params['store_id'] = `in.(${scope.join(',')})`
       }
-      if (taskType && taskType !== 'all') params['task_type'] = `eq.${taskType}`
+      const ttCsv = csv2(taskType)
+      if (ttCsv.length) params['task_type'] = ttCsv.length === 1 ? `eq.${ttCsv[0]}` : `in.(${ttCsv.join(',')})`
 
       const records   = await db.select('task_records', params)
       const stores    = await db.select('stores',    { select: 'id,store_name' })
