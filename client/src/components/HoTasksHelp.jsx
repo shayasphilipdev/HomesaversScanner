@@ -33,10 +33,8 @@ const DAILY_TASKS = [
 ]
 
 export default function HoTasksHelp() {
-  const [open, setOpen] = useState(() => {
-    const v = localStorage.getItem(STORAGE_KEY)
-    return v === null ? true : v === '1'
-  })
+  // Collapsed by default. Stays closed/open per browser via localStorage.
+  const [open, setOpen] = useState(() => localStorage.getItem(STORAGE_KEY) === '1')
   useEffect(() => { localStorage.setItem(STORAGE_KEY, open ? '1' : '0') }, [open])
 
   return (

@@ -12,6 +12,7 @@ export default function BottomNav() {
     { to: '/dashboard', icon: '◧', label: 'Home' }
   ]
   if (canDoStoreTasks(session)) items.push({ to: '/store-tasks', icon: '☑', label: 'Tasks' })
+  items.push({ to: '/product-query', icon: '💬', label: 'Query' })
   if (canDoHQTasks(session))    items.push({ to: '/tasks',       icon: '✚', label: 'HO' })
   items.push({ to: '/reports', icon: '▤', label: 'Reports' })
   if (canSeeAnyAdminLink(session)) {

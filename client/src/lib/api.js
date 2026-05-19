@@ -184,6 +184,13 @@ export const adminGetCapacity         = () => request('/admin/capacity')
 // Append-only audit ledger for one task_records row.
 export const getTaskRecordEvents      = (id) => request(`/task-records/${id}/events`)
 
+// ── Product Query board ───────────────────────────────────────────────
+export const listProductQuestions   = ()        => request('/product-questions')
+export const getProductQuestion     = (id)      => request(`/product-questions/${id}`)
+export const createProductQuestion  = (body)    => request('/product-questions',           { method: 'POST',  body })
+export const answerProductQuestion  = (id, b)   => request(`/product-questions/${id}/answers`, { method: 'POST',  body: b })
+export const closeProductQuestion   = (id)      => request(`/product-questions/${id}`,     { method: 'PATCH', body: { status: 'closed' } })
+
 export const adminListAreas   = () => request('/admin/areas')
 export const adminCreateArea  = (area) => request('/admin/areas', { method: 'POST', body: area })
 export const adminUpdateArea  = (id, updates) => request(`/admin/areas/${id}`, { method: 'PATCH', body: updates })

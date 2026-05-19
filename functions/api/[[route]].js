@@ -1904,6 +1904,108 @@ export async function onRequest(context) {
       })
     }
 
+    // ── Product Query board ──────────────────────────────────────────────
+    // Standalone chain-wide notice board. Any signed-in user can list / post
+    // / answer. Closed threads are invisible to every user (asker included).
+    // Only the asker can close their own thread; no delete, no moderation.
+
+    if (path === '/product-questions' && method === 'GET') {
+      // Always filters to status='open' -- closed threads are invisible.
+      const rows = await db.select('product_questions', {
+        select: 'id,photo_url,notes,store_id,created_by,created_by_name,status,created_at',
+        status: 'eq.open',
+        order:  'created_at.desc',
+        limit:  '200'
+      })
+      // Stamp answer counts in one batched query.
+      if (rows.length) {
+        const ids = rows.map(r => r.id)
+        const counts = await db.select('product_question_answers', {
+          select:      'question_id',
+          question_id: `in.(${ids.join(',')})`
+        })
+        const byQ = {}
+        for (const c of counts) byQ[c.question_id] = (byQ[c.question_id] || 0) + 1
+        for (const r of rows) r.answer_count = byQ[r.id] || 0
+      }
+      return json(rows)
+    }
+
+    if (path === '/product-questions' && method === 'POST') {
+      const body = await request.json()
+      if (!body.photo_url || typeof body.photo_url !== 'string') return err('photo_url required', 400)
+      // Asker's store: their single store if scope.length === 1, else nullable.
+      const scope = await scopedStoreIds(db, session)
+      const store_id = (scope && scope.length === 1) ? scope[0] : (body.store_id || null)
+      if (scope !== null && store_id && !scope.includes(store_id)) return err('store_id not in scope', 403)
+
+      const inserted = await db.insert('product_questions', {
+        photo_url:       body.photo_url,
+        notes:           body.notes ? String(body.notes).trim() : null,
+        store_id,
+        created_by:      session.user_id || null,
+        created_by_name: session.display_name || session.username || 'unknown',
+        status:          'open'
+      })
+      return json(inserted[0] ?? inserted, 201)
+    }
+
+    const pqOne = path.match(/^\/product-questions\/([a-f0-9-]+)$/)
+    if (pqOne && method === 'GET') {
+      const id = pqOne[1]
+      const [q] = await db.select('product_questions', {
+        select: 'id,photo_url,notes,store_id,created_by,created_by_name,status,created_at,resolved_at',
+        id:     `eq.${id}`,
+        limit:  '1'
+      })
+      if (!q || q.status !== 'open') return err('Not found', 404)
+      const answers = await db.select('product_question_answers', {
+        select:      'id,photo_url,notes,store_id,by_user_id,by_user_name,at',
+        question_id: `eq.${id}`,
+        order:       'at.asc'
+      })
+      return json({ ...q, answers })
+    }
+
+    if (pqOne && method === 'PATCH') {
+      // Only the asker can close their own question (status -> 'closed').
+      const id = pqOne[1]
+      const body = await request.json()
+      if (body.status !== 'closed') return err('Only status=closed is supported', 400)
+      const [q] = await db.select('product_questions', {
+        select: 'created_by,status', id: `eq.${id}`, limit: '1'
+      })
+      if (!q) return err('Not found', 404)
+      if (q.status === 'closed') return json({ ok: true, already_closed: true })
+      if (q.created_by !== session.user_id) return err('Only the asker can close this thread', 403)
+      const updated = await db.update('product_questions', { id: `eq.${id}` }, {
+        status: 'closed', resolved_at: new Date().toISOString()
+      })
+      return json(updated[0] || { ok: true })
+    }
+
+    const pqAns = path.match(/^\/product-questions\/([a-f0-9-]+)\/answers$/)
+    if (pqAns && method === 'POST') {
+      const qid = pqAns[1]
+      const body = await request.json()
+      if (!body.notes || !String(body.notes).trim()) return err('notes required', 400)
+      // Reject answers on closed threads (UI hides them anyway).
+      const [q] = await db.select('product_questions', { select: 'status', id: `eq.${qid}`, limit: '1' })
+      if (!q) return err('Question not found', 404)
+      if (q.status !== 'open') return err('This thread is closed', 409)
+      const scope = await scopedStoreIds(db, session)
+      const store_id = (scope && scope.length === 1) ? scope[0] : (body.store_id || null)
+      const inserted = await db.insert('product_question_answers', {
+        question_id:  qid,
+        photo_url:    body.photo_url || null,
+        notes:        String(body.notes).trim(),
+        store_id,
+        by_user_id:   session.user_id || null,
+        by_user_name: session.display_name || session.username || 'unknown'
+      })
+      return json(inserted[0] ?? inserted, 201)
+    }
+
     return err('Not found', 404)
 
   } catch (e) {

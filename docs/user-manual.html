@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Homesavers Scanner — User Manual</title>
+<style>
+  /* ────────────────────────────────────────────────────────────────────
+     Palette + typography taken from client/src/App.css (light theme).
+     Designed to render identically in any modern browser AND to print
+     to PDF cleanly via Ctrl+P → "Save as PDF" (or "Print to PDF").
+     ──────────────────────────────────────────────────────────────────── */
+  :root {
+    --primary:       #C96442;
+    --primary-dark:  #A85234;
+    --primary-soft:  #F4E4DB;
+    --primary-tint:  #FCEFE6;
+    --bg:            #FAF9F5;
+    --bg-soft:       #F2EEE3;
+    --surface:       #FFFFFF;
+    --surface-warm:  #FBF8F1;
+    --text:          #1F1F1F;
+    --text-muted:    #6E6A60;
+    --text-soft:     #8C8779;
+    --border:        #E8E1D2;
+    --border-soft:   #EFE9DA;
+    --green:         #2D7A4E;
+    --amber:         #E0A03A;
+    --red:           #D14B3D;
+    --blue:          #5B8DEF;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    font-size: 13.5px;
+    line-height: 1.55;
+  }
+
+  /* Page = A4 portrait. Margins keep room for the header/footer running text. */
+  @page {
+    size: A4;
+    margin: 18mm 16mm 22mm;
+  }
+
+  .page {
+    width: 178mm;
+    max-width: 100%;
+    margin: 0 auto 14mm;
+    padding: 18mm 14mm 16mm;
+    background: var(--surface);
+    page-break-after: always;
+    position: relative;
+  }
+  .page:last-child { page-break-after: auto; }
+
+  /* Running footer with page number — visible both on screen and in print. */
+  .page::after {
+    content: counter(page);
+    counter-increment: page;
+    position: absolute;
+    bottom: 8mm; right: 14mm;
+    font-size: 10px;
+    color: var(--text-soft);
+  }
+  .page::before {
+    content: "Homesavers Scanner · User Manual";
+    position: absolute;
+    bottom: 8mm; left: 14mm;
+    font-size: 10px;
+    color: var(--text-soft);
+    letter-spacing: 0.3px;
+  }
+
+  h1 { font-size: 28px; font-weight: 700; color: var(--text); margin: 0 0 6px; letter-spacing: -0.3px; }
+  h2 { font-size: 20px; font-weight: 700; color: var(--text); margin: 22px 0 8px; border-bottom: 2px solid var(--primary); padding-bottom: 4px; }
+  h3 { font-size: 15.5px; font-weight: 600; color: var(--text); margin: 16px 0 6px; }
+  h4 { font-size: 13.5px; font-weight: 600; color: var(--text); margin: 10px 0 4px; }
+  p  { margin: 4px 0 8px; }
+  ul, ol { margin: 4px 0 8px 20px; }
+  li { margin: 2px 0; }
+  code {
+    background: var(--bg-soft);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 12.5px;
+    font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  }
+  strong { color: var(--text); }
+
+  /* ── Cover page ─────────────────────────────────────────────────── */
+  .cover {
+    padding: 0;
+    min-height: 257mm;
+    display: flex;
+    flex-direction: column;
+    background: linear-gradient(155deg, var(--primary-tint) 0%, var(--surface-warm) 60%, var(--bg) 100%);
+    color: var(--text);
+  }
+  .cover-inner {
+    padding: 28mm 18mm 18mm;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+  .cover .brand {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--primary-dark);
+    letter-spacing: 1.6px;
+    text-transform: uppercase;
+  }
+  .cover .brand-dot {
+    display: inline-block;
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--primary);
+    margin-right: 8px;
+    vertical-align: middle;
+  }
+  .cover h1 {
+    font-size: 46px;
+    line-height: 1.05;
+    margin: 24mm 0 8mm;
+    letter-spacing: -1.2px;
+  }
+  .cover .subtitle {
+    font-size: 19px;
+    color: var(--text-muted);
+    max-width: 130mm;
+    margin: 0;
+  }
+  .cover .meta {
+    margin-top: auto;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px 28px;
+    font-size: 12px;
+    color: var(--text-muted);
+    padding-top: 12mm;
+    border-top: 1px solid var(--border);
+  }
+  .cover .meta strong { display: block; color: var(--text); font-size: 13px; margin-bottom: 1px; }
+  .cover::after { content: none; }
+  .cover::before { content: none; }
+
+  /* ── TOC ────────────────────────────────────────────────────────── */
+  .toc-item {
+    display: flex;
+    align-items: baseline;
+    margin: 6px 0;
+    font-size: 14px;
+  }
+  .toc-item .dots {
+    flex: 1;
+    border-bottom: 1px dotted var(--border);
+    margin: 0 6px;
+    position: relative; top: -3px;
+  }
+  .toc-item .num { color: var(--text-muted); font-weight: 600; }
+  .toc-section { font-weight: 700; margin: 14px 0 2px; color: var(--primary-dark); font-size: 13px; letter-spacing: 0.5px; text-transform: uppercase; }
+
+  /* ── Section divider ────────────────────────────────────────────── */
+  .divider-page {
+    background: linear-gradient(155deg, var(--primary-tint) 0%, var(--surface-warm) 70%);
+    min-height: 257mm;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+  }
+  .divider-page::after, .divider-page::before { content: none; }
+  .divider-inner {
+    padding: 0 18mm;
+    width: 100%;
+  }
+  .divider-num {
+    font-size: 78px;
+    font-weight: 800;
+    color: var(--primary);
+    line-height: 1;
+    letter-spacing: -2px;
+  }
+  .divider-title {
+    font-size: 36px;
+    font-weight: 700;
+    margin: 6mm 0 4mm;
+    max-width: 130mm;
+  }
+  .divider-sub {
+    font-size: 15px;
+    color: var(--text-muted);
+    max-width: 130mm;
+  }
+
+  /* ── Components ─────────────────────────────────────────────────── */
+  .lede {
+    background: var(--surface-warm);
+    border-left: 4px solid var(--primary);
+    padding: 10px 14px;
+    border-radius: 4px;
+    margin: 12px 0;
+  }
+  .callout {
+    padding: 10px 14px;
+    border-radius: 6px;
+    margin: 10px 0;
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    border-left: 4px solid;
+  }
+  .callout-icon { font-size: 16px; line-height: 1; }
+  .callout-body { flex: 1; font-size: 13px; }
+  .callout-body strong { display: block; margin-bottom: 2px; }
+  .callout.info    { background: #E8F1FB; border-color: var(--blue); }
+  .callout.warn    { background: #FFF7E0; border-color: var(--amber); }
+  .callout.danger  { background: #FCE7E5; border-color: var(--red); }
+  .callout.success { background: #E6F5E8; border-color: var(--green); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0;
+    font-size: 13px;
+  }
+  th, td {
+    text-align: left;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--border-soft);
+    vertical-align: top;
+  }
+  th {
+    background: var(--bg-soft);
+    color: var(--text);
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    font-weight: 600;
+  }
+  td.code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+
+  /* Status chips — match BlockRenderer/Reports look */
+  .chip {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    font-weight: 600;
+    line-height: 1.5;
+    border: 1px solid;
+  }
+  .chip.pending   { background: #FFF7E0; color: #8a5a14; border-color: var(--amber); }
+  .chip.completed { background: #E6F5E8; color: #1d5b30; border-color: var(--green); }
+  .chip.cleared   { background: #EAF0FA; color: #25457a; border-color: var(--blue); }
+  .chip.muted     { background: var(--bg-soft); color: var(--text-muted); border-color: var(--border); }
+
+  /* Step list — numbered chips */
+  ol.steps { counter-reset: step; margin: 8px 0 12px; padding: 0; list-style: none; }
+  ol.steps > li {
+    counter-increment: step;
+    position: relative;
+    padding: 0 0 0 30px;
+    margin-bottom: 6px;
+    min-height: 22px;
+  }
+  ol.steps > li::before {
+    content: counter(step);
+    position: absolute;
+    left: 0; top: 0;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: white;
+    font-size: 11.5px;
+    font-weight: 700;
+    line-height: 22px;
+    text-align: center;
+  }
+
+  /* Screenshot placeholder — show with caption, look polished even empty */
+  .screenshot {
+    margin: 10px 0 14px;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    background: var(--bg-soft);
+    padding: 0;
+    overflow: hidden;
+  }
+  .screenshot-box {
+    height: 75mm;
+    background: repeating-linear-gradient(45deg, var(--bg-soft) 0 12px, var(--surface-warm) 12px 24px);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-muted);
+    font-size: 12px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .screenshot-caption {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    padding: 6px 10px;
+    background: var(--surface);
+  }
+
+  /* Key combo style */
+  kbd {
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 6px;
+    font-size: 11.5px;
+    font-family: ui-monospace, Menlo, monospace;
+    box-shadow: 0 1px 0 var(--border);
+  }
+
+  /* Quick-reference card */
+  .qref {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .qref-item {
+    background: var(--surface-warm);
+    border: 1px solid var(--border-soft);
+    border-radius: 6px;
+    padding: 10px 12px;
+  }
+  .qref-item h4 { margin: 0 0 4px; color: var(--primary-dark); }
+
+  /* FAQ */
+  .faq-q { font-weight: 600; color: var(--text); margin-top: 14px; }
+  .faq-q::before { content: "Q. "; color: var(--primary); font-weight: 700; }
+  .faq-a { color: var(--text-muted); }
+  .faq-a::before { content: "A. "; color: var(--text); font-weight: 700; }
+
+  /* Print fidelity — keep all backgrounds */
+  @media print {
+    html, body { background: white; }
+    .page { box-shadow: none; margin: 0 auto; }
+    a { color: inherit; text-decoration: none; }
+  }
+
+  /* On-screen preview only — a soft drop shadow + outer body bg */
+  @media screen {
+    body { padding: 28px 0; }
+    .page { box-shadow: 0 8px 24px rgba(0,0,0,0.08); border-radius: 4px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     COVER
+     ════════════════════════════════════════════════════════════════════ -->
+<section class="page cover">
+  <div class="cover-inner">
+    <div class="brand"><span class="brand-dot"></span>Homesavers Scanner</div>
+    <h1>HO Tasks<br>User Manual</h1>
+    <p class="subtitle">
+      A practical, day-one guide for Sales Assistants and Store Managers — how to log
+      product issues, complete daily checklists, and keep your store green on every audit.
+    </p>
+    <div class="meta">
+      <div><strong>Audience</strong>Sales Assistants · Store Managers</div>
+      <div><strong>Version</strong>v1.0 · 2026 edition</div>
+      <div><strong>Theme</strong>Light</div>
+      <div><strong>Pages</strong>This document</div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     TABLE OF CONTENTS
+     ════════════════════════════════════════════════════════════════════ -->
+<section class="page">
+  <h1 style="margin-bottom: 4mm">Contents</h1>
+  <p class="text-muted" style="color: var(--text-muted)">Use this index to jump straight to what you need. Each section starts on its own page.</p>
+
+  <div class="toc-section">Getting started</div>
+  <div class="toc-item"><span>1 · The five-minute orientation</span><span class="dots"></span><span class="num">4</span></div>
+  <div class="toc-item"><span>2 · Signing in &amp; the top badge</span><span class="dots"></span><span class="num">5</span></div>
+
+  <div class="toc-section">Daily workflow</div>
+  <div class="toc-item"><span>3 · Dashboard overview</span><span class="dots"></span><span class="num">7</span></div>
+  <div class="toc-item"><span>4 · HO Tasks — the nine task types</span><span class="dots"></span><span class="num">9</span></div>
+  <div class="toc-item"><span>5 · Filling an HO Task — step by step</span><span class="dots"></span><span class="num">11</span></div>
+  <div class="toc-item"><span>6 · Task statuses: Pending → Completed → Clear</span><span class="dots"></span><span class="num">13</span></div>
+  <div class="toc-item"><span>7 · Store Tasks (daily checklist)</span><span class="dots"></span><span class="num">15</span></div>
+  <div class="toc-item"><span>8 · Product Query — asking other stores</span><span class="dots"></span><span class="num">17</span></div>
+
+  <div class="toc-section">Reports &amp; admin</div>
+  <div class="toc-item"><span>9 · Reports — filters, search, and CSV</span><span class="dots"></span><span class="num">19</span></div>
+  <div class="toc-item"><span>10 · Notifications &amp; alerts on the page</span><span class="dots"></span><span class="num">21</span></div>
+
+  <div class="toc-section">Reference</div>
+  <div class="toc-item"><span>11 · Quick reference card</span><span class="dots"></span><span class="num">22</span></div>
+  <div class="toc-item"><span>12 · Best practices &amp; do/don't</span><span class="dots"></span><span class="num">23</span></div>
+  <div class="toc-item"><span>13 · Troubleshooting</span><span class="dots"></span><span class="num">24</span></div>
+  <div class="toc-item"><span>14 · FAQ</span><span class="dots"></span><span class="num">25</span></div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     SECTION 1 DIVIDER
+     ════════════════════════════════════════════════════════════════════ -->
+<section class="page divider-page">
+  <div class="divider-inner">
+    <div class="divider-num">01</div>
+    <div class="divider-title">Getting started</div>
+    <div class="divider-sub">Your first five minutes with the Scanner app — what you'll see, what to tap, and how to know you're in the right store.</div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     1 · The five-minute orientation
+     ════════════════════════════════════════════════════════════════════ -->
+<section class="page">
+  <h1>1 · The five-minute orientation</h1>
+  <div class="lede">
+    The Scanner app is the single tool your store uses to <strong>flag a problem with a product</strong>
+    (wrong price, no barcode, wrong description, etc.) and to <strong>tick off your daily checklist</strong>.
+    Head Office sees what you log; you see what HO replied. That's the loop.
+  </div>
+
+  <h3>What you can do</h3>
+  <ul>
+    <li><strong>Log an HO Task</strong> when something needs HO to action it — a wrong price, a barcode that won't scan, a promotion not applying at the till. Nine task types, A through I.</li>
+    <li><strong>Complete a Store Task</strong> when HO has assigned your store a daily/weekly checklist item (fridge temp, end-cap photo, opening checklist).</li>
+    <li><strong>Ask other stores</strong> on the Product Query board if you find a product with no barcode and want help.</li>
+    <li><strong>Run a Report</strong> to see what's been logged today/this week and what HO has come back on.</li>
+  </ul>
+
+  <h3>What you'll see on every screen</h3>
+  <ol class="steps">
+    <li>A <strong>green dot</strong> top-right with <em>Store Login · &lt;your store&gt;</em>. If that says the wrong store, sign out and back in.</li>
+    <li>A <strong>side menu</strong> on the left: Dashboard, HO Tasks, Store Tasks, Product Query, Reports.</li>
+    <li>A <strong>Sign out</strong> button in the top-right corner.</li>
+  </ol>
+
+  <div class="callout success">
+    <span class="callout-icon">✅</span>
+    <div class="callout-body"><strong>Rule of thumb</strong>
+      The top badge is the truth. Always glance at it before recording — every record is filed under the store name shown there.
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     2 · Signing in
+     ════════════════════════════════════════════════════════════════════ -->
+<section class="page">
+  <h1>2 · Signing in &amp; the top badge</h1>
+
+  <h3>How to sign in</h3>
+  <ol class="steps">
+    <li>Open the app at <code>homesaversscanner.pages.dev</code> (bookmark it).</li>
+    <li><strong>Username</strong> = the 4-digit store code on your name-tag (e.g. <code>1015</code>).</li>
+    <li><strong>PIN</strong> = the one your Store Manager gave you. First-time PIN is <code>1234</code> — change it on day one.</li>
+    <li>Tap <strong>Sign in</strong>.</li>
+  </ol>
+
+  <div class="screenshot">
+    <div class="screenshot-box">[ screenshot — sign-in form ]</div>
+    <div class="screenshot-caption">Figure 2.1 · The sign-in screen. The same form is used by every staff member.</div>
+  </div>
+
+  <h3>Reading the top badge</h3>
+  <p>Once signed in, the top-right of every screen shows two things:</p>
+  <table>
+    <tr><th>Element</th><th>What it tells you</th></tr>
+    <tr><td><span class="chip completed">Store Login · &lt;Store&gt;</span></td><td>You're signed in as a store user, and every record will go to the store named here.</td></tr>
+    <tr><td><span class="chip muted">Head Office Login</span></td><td>You're signed in as an HO/admin user. Only HO accounts show this.</td></tr>
+    <tr><td>Your <strong>display name</strong></td><td>The account label, e.g. <em>Tallaght</em> or <em>Director</em>.</td></tr>
+  </table>
+
+  <div class="callout warn">
+    <span class="callout-icon">⚠️</span>
+    <div class="callout-body"><strong>If the badge shows the wrong store</strong>
+      Sign out and sign back in with the correct username. Don't log records — they would go to the other shop's report.
+    </div>
+  </div>
+
+  <h3>Changing your PIN</h3>
+  <p>You can't change your own PIN. Ask your Store Manager:</p>
+  <ol class="steps">
+    <li>Manager opens <strong>Admin → Employees</strong>.</li>
+    <li>Finds your name and taps <strong>Reset PIN</strong>.</li>
+    <li>Types your new PIN, saves, and tells you what it is.</li>
+  </ol>
+  <div class="callout danger">
+    <span class="callout-icon">🔒</span>
+    <div class="callout-body"><strong>Never share your PIN</strong>
+      Everything you do is logged under the signed-in account. Sharing PINs means dispute resolution is impossible.
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     SECTION 2 DIVIDER
+     ════════════════════════════════════════════════════════════════════ -->
+<section class="page divider-page">
+  <div class="divider-inner">
+    <div class="divider-num">02</div>
+    <div class="divider-title">Daily workflow</div>
+    <div class="divider-sub">The four screens you'll actually use day-to-day, and the exact tap sequence for each common action.</div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     3 · Dashboard
+     ════════════════════════════════════════════════════════════════════ -->
+<section class="page">
+  <h1>3 · Dashboard overview</h1>
+  <p>The Dashboard is a status board — you can't enter data here. It's the first screen after sign-in and shows how the day is going.</p>
+
+  <div class="screenshot">
+    <div class="screenshot-box">[ screenshot — Dashboard, light theme ]</div>
+    <div class="screenshot-caption">Figure 3.1 · Dashboard with KPI tiles and the 14-day activity chart.</div>
+  </div>
+
+  <h3>What each tile means</h3>
+  <table>
+    <tr><th>Tile</th><th>What it counts</th></tr>
+    <tr><td><strong>Total records</strong></td><td>Every HO Task record created in the selected date range, scoped to your stores.</td></tr>
+    <tr><td><strong>Pending review</strong></td><td>HO Tasks you've raised that HO hasn't actioned yet.</td></tr>
+    <tr><td><strong>HO reviewed</strong></td><td>Records HO has marked <em>Completed</em> or <em>No change needed</em>.</td></tr>
+    <tr><td><strong>Store confirmed</strong></td><td>Older flow — records the store explicitly confirmed back to HO.</td></tr>
+  </table>
+
+  <h3>Date range &amp; scope</h3>
+  <p>Top right of the page:</p>
+  <ul>
+    <li><strong>Today / This week / This month</strong> — pick the window.</li>
+    <li><strong>Scope dropdown</strong> (HO users only) — <em>All stores in scope</em>, by Area, or one specific Store.</li>
+  </ul>
+
+  <div class="callout info">
+    <span class="callout-icon">ℹ️</span>
+    <div class="callout-body"><strong>Don't see a tile filled?</strong>
+      Switch the range to <strong>This month</strong> and check the top-right scope is set to where you'd expect activity. Most of the time it's a filter mismatch, not a missing record.
+    </div>
+  </div>
+
+  <h3>The activity chart &amp; recent list</h3>
+  <p>Below the tiles:</p>
+  <ul>
+    <li><strong>Activity · last 14 days</strong> — a bar per day, height = records logged.</li>
+    <li><strong>By task type</strong> — horizontal bars showing which task types you've been logging most.</li>
+    <li><strong>By store</strong> (HO only) — which stores are the biggest contributors today.</li>
+    <li><strong>Recent activity</strong> — the latest few records as a feed.</li>
+  </ul>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     4 · HO Tasks - the nine task types
+     ════════════════════════════════════════════════════════════════════ -->
+<section class="page">
+  <h1>4 · HO Tasks — the nine task types</h1>
+  <p>An <strong>HO Task</strong> is a single problem you've spotted with a product. Each task type has its own form designed to capture exactly the information HO needs to fix it once.</p>
+
+  <h3>Daily task types (A–G)</h3>
+  <table>
+    <tr><th style="width: 8%">Code</th><th>Name</th><th>Use it when…</th></tr>
+    <tr><td><strong>A</strong></td><td>UOM Errors</td><td>Shelf-label unit is wrong (label says "each" but the product is a 6-pack).</td></tr>
+    <tr><td><strong>B</strong></td><td>Non-Scans</td><td>Till can't scan the barcode — beeps red, or shows "item not found". Photo of product + photo of barcode required.</td></tr>
+    <tr><td><strong>C</strong></td><td>Wrong Prices</td><td>Shelf price and till price disagree.</td></tr>
+    <tr><td><strong>D</strong></td><td>Wrong Description</td><td>Till receipt name doesn't match the product (wrong, misspelled, foreign language).</td></tr>
+    <tr><td><strong>E</strong></td><td>Price Marked Products</td><td>Product packaging shows a printed price different from the till price.</td></tr>
+    <tr><td><strong>F</strong></td><td>DRS Errors</td><td>Deposit Return Scheme charge is wrong. Always confirm the return logo is on the product first.</td></tr>
+    <tr><td><strong>G</strong></td><td>Promotion Error</td><td>Promotion (2-for-€5, BOGOF, etc.) isn't applying at the till.</td></tr>
+  </table>
+
+  <h3>One-off task types (H–I)</h3>
+  <table>
+    <tr><td><strong>H</strong></td><td>Stock Count</td><td>HO-initiated audit — count product on the shop floor.</td></tr>
+    <tr><td><strong>I</strong></td><td>Miscellaneous</td><td>Anything that doesn't fit A–H but is worth flagging.</td></tr>
+  </table>
+
+  <div class="callout warn">
+    <span class="callout-icon">⚠️</span>
+    <div class="callout-body"><strong>Picking the right task type matters</strong>
+      Each task type routes to a different reviewer at HO and surfaces in a different report. A Wrong Price filed as Miscellaneous is much harder to action.
+    </div>
+  </div>
+
+  <h3>The Quick guide panel</h3>
+  <p>The HO Tasks page has a collapsible <strong>Quick guide — daily HO tasks</strong> card at the top. It's hidden by default; tap <em>Show</em> to bring up the same table you see above. Use it while training new staff.</p>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     5 · Filling an HO Task
+     ════════════════════════════════════════════════════════════════════ -->
+<section class="page">
+  <h1>5 · Filling an HO Task — step by step</h1>
+
+  <h3>The flow</h3>
+  <ol class="steps">
+    <li>Side menu → <strong>HO Tasks</strong>.</li>
+    <li>Check the <strong>Current Store</strong> at the top is correct. If you cover multiple shops, pick the right one before scanning.</li>
+    <li>Pick a <strong>Task Type</strong> from the dropdown.</li>
+    <li>Scan or type the <strong>Product Code</strong>. The description fills in automatically when the product is in our master, and the matched supplier name appears as a note above the form.</li>
+    <li>Fill in any extra fields the form shows — see the task-specific notes below.</li>
+    <li>Add a <strong>Note</strong> if helpful (e.g. <em>"Customer flagged at till"</em>).</li>
+    <li>Tap <strong>Save Record</strong>.</li>
+  </ol>
+
+  <div class="screenshot">
+    <div class="screenshot-box">[ screenshot — Task A form, light theme ]</div>
+    <div class="screenshot-caption">Figure 5.1 · Task A (UOM Errors) — typical HO Task form with auto-filled description and supplier.</div>
+  </div>
+
+  <h3>Task-specific bits worth knowing</h3>
+  <table>
+    <tr><th style="width: 14%">Task</th><th>What's special</th></tr>
+    <tr><td><strong>B</strong> Non-Scans</td><td>Two photos required — one of the product (label visible), one of the barcode area. UOM and Quantity are <em>optional</em>; only describe what you see.</td></tr>
+    <tr><td><strong>C</strong> Wrong Prices</td><td>Pick a reason code from the dropdown — "shelf-edge label", "shop-floor sticker", etc.</td></tr>
+    <tr><td><strong>F</strong> DRS Errors</td><td>Pick the bottle size and how many are in the pack. The app calculates the deposit for you: <em>6 × 25c = €1.50</em>. Always check the return logo is on the product first.</td></tr>
+    <tr><td><strong>G</strong> Promotion Error</td><td>Type the promotion description ("2 for €5") and the price the till actually charged.</td></tr>
+  </table>
+
+  <div class="callout success">
+    <span class="callout-icon">📡</span>
+    <div class="callout-body"><strong>If the connection drops</strong>
+      You'll see <em>"Saved offline — will sync when you're back online"</em>. Keep working. Records send automatically the moment Wi-Fi or 4G is back. Don't log the same record twice.
+    </div>
+  </div>
+
+  <h3>Editing the supplier</h3>
+  <p>Right under the Product Code the app shows <em>Supplier: B&amp;M Retail Limited</em> (or whoever matched). If that's wrong, the Supplier dropdown immediately below lets you override it without re-typing anything else.</p>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     6 · Task statuses
+     ════════════════════════════════════════════════════════════════════ -->
+<section class="page">
+  <h1>6 · Task statuses: Pending → Completed → Clear</h1>
+  <p>Every HO Task moves through a small set of statuses. Knowing which is which is the most important thing in this app.</p>
+
+  <table>
+    <tr><th style="width: 22%">Status</th><th>Who sets it</th><th>What it means</th></tr>
+    <tr><td><span class="chip pending">Pending</span></td><td>Auto, on save</td><td>You've raised it. HO hasn't reviewed yet.</td></tr>
+    <tr><td><span class="chip completed">Completed by HO</span></td><td>Head Office</td><td>HO has actioned the issue (e.g. corrected the price in the system).</td></tr>
+    <tr><td><span class="chip muted">No change needed</span></td><td>Head Office</td><td>HO reviewed and decided nothing needs changing. A note explaining why is usually attached.</td></tr>
+    <tr><td><span class="chip cleared">Clear</span></td><td>Store, after verifying the fix</td><td>You've checked the till/shelf, the fix is live. The record disappears from your list (kept in the database for audit).</td></tr>
+  </table>
+
+  <h3>The loop in pictures</h3>
+  <div class="screenshot">
+    <div class="screenshot-box">[ diagram — Pending → Completed by HO → Clear ]</div>
+    <div class="screenshot-caption">Figure 6.1 · The three-state review loop. The store closes every record once the fix is verified.</div>
+  </div>
+
+  <h3>How to clear a completed record</h3>
+  <ol class="steps">
+    <li>Open <strong>HO Tasks</strong>. Filter by <em>HO completed</em>.</li>
+    <li>For each row, go to the till/shelf and confirm the fix is in.</li>
+    <li>Tap <strong>✓ Clear</strong> at the end of the row.</li>
+  </ol>
+  <p>The row leaves your active list immediately. Back-office can still find it via <em>Status → Clear (archived)</em> in Reports.</p>
+
+  <div class="callout warn">
+    <span class="callout-icon">🚦</span>
+    <div class="callout-body"><strong>"Clear" is not "Delete"</strong>
+      Clearing only hides the record from working views. The data stays in the database forever. If you want it back, HO can filter by Clear status in Reports.
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     7 · Store Tasks
+     ════════════════════════════════════════════════════════════════════ -->
+<section class="page">
+  <h1>7 · Store Tasks — the daily checklist</h1>
+  <p>Store Tasks are <strong>checklists HO sends to your store</strong> on a schedule — daily, weekly, or one-off. They're listed under <strong>Store Tasks</strong> in the side menu.</p>
+
+  <div class="screenshot">
+    <div class="screenshot-box">[ screenshot — Store Tasks list with To-do and Done sections ]</div>
+    <div class="screenshot-caption">Figure 7.1 · Today's checklist split into <em>To do</em> and <em>Done today</em>.</div>
+  </div>
+
+  <h3>Completing a task</h3>
+  <ol class="steps">
+    <li>Tap a task card under <strong>To do</strong>.</li>
+    <li>Read the <em>Instructions</em> at the top (if any). Some tasks include warnings or safety notices.</li>
+    <li>Answer every required field — these have a red <span style="color: var(--red)">*</span>. Optional fields can be skipped.</li>
+    <li>Take any photos the task asks for using the camera button.</li>
+    <li>Tap <strong>✓ Mark complete</strong>. The card moves to <em>Done today</em>.</li>
+  </ol>
+
+  <h3>The 19 block types HO can use</h3>
+  <p>Each task is built from a flexible set of blocks. You'll mostly see:</p>
+  <ul>
+    <li><strong>Text / Long notes</strong> — short answer or comments box.</li>
+    <li><strong>Number, Amount, Percentage, Temperature, Rating</strong> — numeric entries with units.</li>
+    <li><strong>Yes/No, Multiple choice, Checkboxes</strong> — quick pick controls.</li>
+    <li><strong>Date / Time</strong> — pickers with the system keyboard.</li>
+    <li><strong>Signature</strong> — type your name to sign off.</li>
+    <li><strong>Photo / File upload</strong> — camera capture or document attach.</li>
+    <li><strong>Auto-calculated</strong> — a total/average computed from your other numbers; you don't fill it in.</li>
+    <li><strong>Heading / Instruction / Alert / Divider</strong> — display-only; nothing to fill.</li>
+  </ul>
+
+  <div class="callout success">
+    <span class="callout-icon">📷</span>
+    <div class="callout-body"><strong>Photos tip</strong>
+      The camera button takes a fresh photo. Choose a well-lit angle, fill the frame with the product/shelf, and check the preview before saving.
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     8 · Product Query
+     ════════════════════════════════════════════════════════════════════ -->
+<section class="page">
+  <h1>8 · Product Query — asking other stores</h1>
+  <p>Sometimes a product turns up at your store with <strong>no barcode</strong>, an obscure brand, or a returns problem nobody recognises. <strong>Product Query</strong> is a chain-wide notice board: post a photo, ask a question, any other store can answer.</p>
+
+  <h3>When to use it</h3>
+  <ul>
+    <li>You've found a product with no scannable barcode and can't identify it.</li>
+    <li>A customer returned something you didn't recognise, and you want to know if other stores stock it.</li>
+    <li>You need a supplier name and our master doesn't help.</li>
+  </ul>
+
+  <div class="screenshot">
+    <div class="screenshot-box">[ screenshot — Product Query feed, light theme ]</div>
+    <div class="screenshot-caption">Figure 8.1 · The Product Query feed showing open threads with photos and answer counts.</div>
+  </div>
+
+  <h3>Posting a question</h3>
+  <ol class="steps">
+    <li>Side menu → <strong>Product Query</strong>.</li>
+    <li>Tap <strong>+ Ask all stores</strong>.</li>
+    <li>Take or upload a photo of the product. This is required.</li>
+    <li>Write a short note saying what you'd like to know.</li>
+    <li>Tap <strong>Post question</strong>.</li>
+  </ol>
+
+  <h3>Answering a question</h3>
+  <p>Anyone signed in can answer.</p>
+  <ol class="steps">
+    <li>Open a thread, tap <strong>+ Add answer</strong>.</li>
+    <li>Type your note. Attach a photo if it helps (optional).</li>
+    <li>Tap <strong>Post answer</strong>.</li>
+  </ol>
+
+  <h3>Closing your own thread</h3>
+  <p>When you've got the answer you need, tap <strong>✓ Close thread</strong>. <strong>Closed threads are hidden from every user</strong> — only the asker can close, and there's no way to re-open from the UI (the data is kept for audit if HO ever needs it).</p>
+
+  <div class="callout info">
+    <span class="callout-icon">💬</span>
+    <div class="callout-body"><strong>Etiquette</strong>
+      Keep the photo focused and the question short. <em>"No barcode — anyone know the supplier?"</em> works better than <em>"help"</em>.
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     SECTION 3 DIVIDER
+     ════════════════════════════════════════════════════════════════════ -->
+<section class="page divider-page">
+  <div class="divider-inner">
+    <div class="divider-num">03</div>
+    <div class="divider-title">Reports &amp; admin</div>
+    <div class="divider-sub">Looking back at what's been logged, filtering and exporting, and what the small icons in the top nav are trying to tell you.</div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     9 · Reports
+     ════════════════════════════════════════════════════════════════════ -->
+<section class="page">
+  <h1>9 · Reports — filters, search, and CSV</h1>
+  <p>The <strong>Reports</strong> page lets you look back at any time range and slice by store, task type, status, or template.</p>
+
+  <div class="screenshot">
+    <div class="screenshot-box">[ screenshot — Reports HO records tab ]</div>
+    <div class="screenshot-caption">Figure 9.1 · The compact one-line filter row. Multi-select dropdowns mean you can pick several stores or task types at once.</div>
+  </div>
+
+  <h3>Two tabs</h3>
+  <table>
+    <tr><th>Tab</th><th>What it shows</th></tr>
+    <tr><td><strong>HO records</strong></td><td>Every HO Task (A–I) with its current status. Default hides <em>Cleared</em> records — change the Status filter to see them.</td></tr>
+    <tr><td><strong>Store tasks</strong></td><td>Completed/pending checklist instances with their answers per template.</td></tr>
+  </table>
+
+  <h3>Filters</h3>
+  <ul>
+    <li><strong>From / To</strong> — date and time range.</li>
+    <li><strong>Stores</strong> — multi-select. <em>Select all</em>, <em>Clear all</em>, search-as-you-type.</li>
+    <li><strong>Task types</strong> — multi-select (HO records tab).</li>
+    <li><strong>Status</strong> — multi-select (HO records tab). Pick <em>Clear (archived)</em> to look at closed records.</li>
+    <li><strong>Templates</strong> — multi-select (Store tasks tab).</li>
+  </ul>
+
+  <h3>Running the report</h3>
+  <ol class="steps">
+    <li>Set your filters.</li>
+    <li>Tap <strong>Run report</strong>.</li>
+    <li>Use the table that appears: scroll, sort, expand <strong>History</strong> on any row for the audit trail.</li>
+    <li>Tap <strong>↓ CSV</strong> to download the same data as an Excel-friendly file.</li>
+  </ol>
+
+  <div class="callout info">
+    <span class="callout-icon">📊</span>
+    <div class="callout-body"><strong>Audit trail</strong>
+      Every row in HO records has a <em>▾ History</em> button. Tap it to see who created the record, who marked it complete, who cleared it, and when. The trail is immutable — once a transition is logged it can't be edited.
+    </div>
+  </div>
+
+  <h3>Search</h3>
+  <p>There's no global search box. Search is done via the filters: pick the Store / Task type / Status / Template combination you want, run the report, and use your browser's <kbd>Ctrl</kbd>+<kbd>F</kbd> to find a product code or description in the visible table.</p>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     10 · Notifications & alerts
+     ════════════════════════════════════════════════════════════════════ -->
+<section class="page">
+  <h1>10 · Notifications &amp; alerts on the page</h1>
+  <p>The app uses on-page indicators rather than pop-ups. Here's what each means.</p>
+
+  <table>
+    <tr><th>Indicator</th><th>Where</th><th>What it means</th></tr>
+    <tr><td>🟢 <strong>Store Login · &lt;Store&gt;</strong></td><td>Top-right of every page</td><td>You're signed in to that store. Every record will go there.</td></tr>
+    <tr><td>🟠 <strong>Offline pill</strong></td><td>Top nav</td><td>You're offline. Records queue locally and sync automatically when you reconnect.</td></tr>
+    <tr><td>⚠️ <strong>Capacity alert</strong></td><td>Top nav (admins only)</td><td>Database or photo storage is filling up. Tap to open Settings and run cleanups.</td></tr>
+    <tr><td>📡 <strong>Saved offline — will sync</strong></td><td>Toast after Save</td><td>Connection dropped during save; record is held locally and will upload when online.</td></tr>
+    <tr><td>✅ <strong>Record saved</strong></td><td>Toast after Save</td><td>Saved straight to the cloud. You can move on.</td></tr>
+  </table>
+
+  <div class="screenshot">
+    <div class="screenshot-box">[ screenshot — top nav with offline pill and Store Login chip ]</div>
+    <div class="screenshot-caption">Figure 10.1 · The top nav with all four states visible.</div>
+  </div>
+
+  <div class="callout danger">
+    <span class="callout-icon">⚠️</span>
+    <div class="callout-body"><strong>Don't sign out while the offline pill is showing</strong>
+      You'd lose any records still queued. Wait until the pill clears (records have synced) before signing out.
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     11 · Quick reference
+     ════════════════════════════════════════════════════════════════════ -->
+<section class="page">
+  <h1>11 · Quick reference card</h1>
+  <p>One-page summary you can laminate and keep on the till.</p>
+
+  <div class="qref">
+    <div class="qref-item">
+      <h4>Sign in</h4>
+      <p style="font-size: 12.5px; margin: 0">Username = store code · PIN = the one your Manager gave you · Check the badge top-right.</p>
+    </div>
+    <div class="qref-item">
+      <h4>Log an HO Task</h4>
+      <p style="font-size: 12.5px; margin: 0">HO Tasks → Task Type → scan code → fill form → Save Record.</p>
+    </div>
+    <div class="qref-item">
+      <h4>Close a record</h4>
+      <p style="font-size: 12.5px; margin: 0">When status is <span class="chip completed">Completed by HO</span>, check the till and tap <strong>✓ Clear</strong>.</p>
+    </div>
+    <div class="qref-item">
+      <h4>Tick a Store Task</h4>
+      <p style="font-size: 12.5px; margin: 0">Store Tasks → tap card → fill required fields → ✓ Mark complete.</p>
+    </div>
+    <div class="qref-item">
+      <h4>Ask other stores</h4>
+      <p style="font-size: 12.5px; margin: 0">Product Query → + Ask all stores → photo + notes → Post.</p>
+    </div>
+    <div class="qref-item">
+      <h4>Look it up</h4>
+      <p style="font-size: 12.5px; margin: 0">Reports → set filters → Run report → <kbd>Ctrl</kbd>+<kbd>F</kbd> to search in the table.</p>
+    </div>
+    <div class="qref-item">
+      <h4>Offline?</h4>
+      <p style="font-size: 12.5px; margin: 0">Keep working. The amber pill shows queued records. They send when you're back online.</p>
+    </div>
+    <div class="qref-item">
+      <h4>Forgot PIN</h4>
+      <p style="font-size: 12.5px; margin: 0">Ask your Store Manager — Admin → Employees → Reset PIN.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     12 · Best practices
+     ════════════════════════════════════════════════════════════════════ -->
+<section class="page">
+  <h1>12 · Best practices &amp; do/don't</h1>
+
+  <h3>Do</h3>
+  <ul>
+    <li><strong>Pick the right task type</strong> — the routing at HO depends on it.</li>
+    <li><strong>Add a note</strong> if the situation isn't obvious from the data.</li>
+    <li><strong>Take clear photos</strong>: well lit, product fills the frame, no blur.</li>
+    <li><strong>Verify and clear</strong> completed records on the same day. Don't let them stack up.</li>
+    <li><strong>Glance at the top badge before saving</strong> — every single record.</li>
+  </ul>
+
+  <h3>Don't</h3>
+  <ul>
+    <li>Log the same product twice unless the issue is genuinely different.</li>
+    <li>Sign out while the offline pill is amber.</li>
+    <li>Share your PIN with another staff member.</li>
+    <li>Use Task I (Miscellaneous) when one of A–G actually fits.</li>
+    <li>Treat <em>Clear</em> as <em>Delete</em> — it isn't.</li>
+  </ul>
+
+  <h3>Workflow example: a customer flagged a wrong price</h3>
+  <ol class="steps">
+    <li>Confirm the price at the shelf vs. the price at the till.</li>
+    <li>HO Tasks → <strong>C — Wrong Prices</strong>.</li>
+    <li>Scan the barcode. Description auto-fills.</li>
+    <li>Pick the reason code that matches (shelf-edge label / shop-floor sticker).</li>
+    <li>Type the current shelf and till prices.</li>
+    <li>Note: <em>"Customer Mary flagged at till 10:32"</em>.</li>
+    <li>Save Record.</li>
+    <li>Status: <span class="chip pending">Pending</span>. HO will action and flip it to <span class="chip completed">Completed by HO</span>.</li>
+    <li>Once Completed, check the till is now charging the correct price.</li>
+    <li>Tap <strong>✓ Clear</strong>. Done.</li>
+  </ol>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     13 · Troubleshooting
+     ════════════════════════════════════════════════════════════════════ -->
+<section class="page">
+  <h1>13 · Troubleshooting</h1>
+
+  <table>
+    <tr><th>What you see</th><th>Likely cause</th><th>Fix</th></tr>
+    <tr><td>"Username or PIN doesn't match"</td><td>Wrong code or PIN; Caps Lock</td><td>Try again. If still stuck, ask Manager for a Reset PIN.</td></tr>
+    <tr><td>Top badge shows <em>Head Office Login</em></td><td>You're on an HO account by mistake</td><td>Sign out, sign back in with your store account.</td></tr>
+    <tr><td>Top badge shows the wrong store</td><td>Account scoped elsewhere</td><td>Sign out, sign in as the right user. Don't log anything until corrected.</td></tr>
+    <tr><td>Mandatory "Current Store" picker stays red</td><td>You haven't picked a store yet</td><td>Pick your shop from the dropdown at the top.</td></tr>
+    <tr><td>"Saved offline — will sync"</td><td>Wi-Fi or 4G dropped</td><td>Keep working. Records send when connection returns.</td></tr>
+    <tr><td>Records list shows nothing</td><td>Filter applied (e.g. Pending only)</td><td>Tap <strong>All</strong> at the top to reset the filter.</td></tr>
+    <tr><td>Same record keeps appearing as Completed</td><td>You haven't tapped <strong>✓ Clear</strong></td><td>Tap it once you've verified the fix at the till.</td></tr>
+    <tr><td>Camera button says "Loading camera…"</td><td>Permission not granted</td><td>Browser settings → Site permissions → allow camera for this site. Refresh.</td></tr>
+    <tr><td>Product code scan doesn't fill description</td><td>Product not in our master yet</td><td>Type the description manually. Mention to HO so they can add it.</td></tr>
+    <tr><td>"⚠️ DB 87%" red flashing chip</td><td>Database almost full (admin only)</td><td>Open Settings → run the photo and task-record cleanups. Adjust retention if needed.</td></tr>
+  </table>
+
+  <div class="callout info">
+    <span class="callout-icon">📨</span>
+    <div class="callout-body"><strong>Still stuck?</strong>
+      Screenshot the error and send it to your Store Manager. The Manager can contact HO Support if the issue can't be resolved locally.
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════
+     14 · FAQ
+     ════════════════════════════════════════════════════════════════════ -->
+<section class="page">
+  <h1>14 · FAQ</h1>
+
+  <p class="faq-q">Can I edit a record after I've saved it?</p>
+  <p class="faq-a">No, by design. If something needs correcting, raise a new record with a note explaining what changed. HO will see both, and the audit trail stays intact.</p>
+
+  <p class="faq-q">What's the difference between "Completed by HO" and "Clear"?</p>
+  <p class="faq-a"><em>Completed by HO</em> means HO has actioned the issue. <em>Clear</em> means you've verified at the till that the fix is live. The record only disappears from your list once you tap Clear.</p>
+
+  <p class="faq-q">Can I see my closed Product Query threads later?</p>
+  <p class="faq-a">No — closed threads are hidden from every user. The data is retained in the database for audit but isn't surfaced anywhere in the UI. Only close once you're done.</p>
+
+  <p class="faq-q">Why is my UOM warning showing on an Eachs record?</p>
+  <p class="faq-a"><em>Eachs</em> means a single piece. If the product comes in a pack, every item inside must use the same UOM. Verify pack contents before saving.</p>
+
+  <p class="faq-q">I logged a record on the wrong store — what now?</p>
+  <p class="faq-a">Tell your Store Manager. Back-office can delete the misfiled record from the Reports page. Then re-log it under the correct store.</p>
+
+  <p class="faq-q">Does the app work on iPhone / Android / desktop?</p>
+  <p class="faq-a">All three. It's a website that works in any modern browser; install it as a PWA on iPhone/Android for a faster home-screen launcher.</p>
+
+  <p class="faq-q">My scanner gun isn't working in the form.</p>
+  <p class="faq-a">Click into the Product Code field once (gives it keyboard focus), then scan. The gun behaves as a keyboard, so a focused input is required.</p>
+
+  <p class="faq-q">How long are records kept?</p>
+  <p class="faq-a">Indefinitely by default. Cleared / store-confirmed records can be purged by an admin after 90 days. Photos can be purged after 7 days. Both retention windows are editable by admins.</p>
+
+  <p class="faq-q">Can two people use the same login?</p>
+  <p class="faq-a">Don't. Every action is logged under the signed-in account; sharing a login makes the audit trail meaningless. Each Sales Assistant has their own username and PIN.</p>
+
+  <p class="faq-q">Is there a dark mode?</p>
+  <p class="faq-a">Yes — toggle the moon/sun icon at the top of the screen. This manual itself is light-mode only.</p>
+
+  <div class="callout success" style="margin-top: 18px">
+    <span class="callout-icon">🎓</span>
+    <div class="callout-body"><strong>Last word</strong>
+      The app is small on purpose — if a workflow feels like more than 5 steps, ask your Manager whether you're using the right task type. Most jobs are 3 taps.
+    </div>
+  </div>
+</section>
+
+</body>
+</html>
