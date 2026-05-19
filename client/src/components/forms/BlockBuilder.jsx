@@ -51,19 +51,21 @@ export default function BlockBuilder({ value, onChange }) {
         />
       ))}
 
-      <div style={{ position: 'relative', marginTop: 10 }}>
+      <div style={{ marginTop: 10 }}>
         <button type="button" className="btn btn-sm btn-outline" onClick={() => setPicker(v => !v)}>
           {picker ? '✕ Close' : '+ Add block'}
         </button>
         {picker && (
           <div style={{
-            position: 'absolute', top: 'calc(100% + 6px)', left: 0,
+            marginTop: 8,
             background: 'var(--surface)', border: '1px solid var(--border)',
-            borderRadius: 10, boxShadow: 'var(--shadow-md)', padding: 6,
-            zIndex: 50, minWidth: 280, maxHeight: 360, overflow: 'auto'
+            borderRadius: 10, padding: 6,
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 4
           }}>
-            <PickerSection title="Inputs"  types={inputTypes}   onAdd={add} />
-            <PickerSection title="Display" types={displayTypes} onAdd={add} />
+            <div style={{ gridColumn: '1 / -1', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--text-muted)', padding: '6px 10px 4px' }}>Inputs</div>
+            {inputTypes.map(t => <PickerItem key={t.type} type={t} onAdd={add} />)}
+            <div style={{ gridColumn: '1 / -1', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--text-muted)', padding: '10px 10px 4px' }}>Display</div>
+            {displayTypes.map(t => <PickerItem key={t.type} type={t} onAdd={add} />)}
           </div>
         )}
       </div>
@@ -71,30 +73,24 @@ export default function BlockBuilder({ value, onChange }) {
   )
 }
 
-function PickerSection({ title, types, onAdd }) {
+function PickerItem({ type, onAdd }) {
   return (
-    <>
-      <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--text-muted)', padding: '6px 10px 4px' }}>{title}</div>
-      {types.map(t => (
-        <button
-          key={t.type}
-          type="button"
-          onClick={() => onAdd(t.type)}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 10,
-            width: '100%', padding: '8px 10px',
-            background: 'transparent', border: 'none',
-            borderRadius: 6, cursor: 'pointer', textAlign: 'left',
-            fontFamily: 'inherit', fontSize: 13, color: 'var(--text)'
-          }}
-          onMouseOver={e => e.currentTarget.style.background = 'var(--bg-soft)'}
-          onMouseOut={e  => e.currentTarget.style.background = 'transparent'}
-        >
-          <span style={{ width: 22, textAlign: 'center', opacity: .8 }}>{t.icon}</span>
-          <span>{t.label}</span>
-        </button>
-      ))}
-    </>
+    <button
+      type="button"
+      onClick={() => onAdd(type.type)}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 10,
+        width: '100%', padding: '8px 10px',
+        background: 'transparent', border: 'none',
+        borderRadius: 6, cursor: 'pointer', textAlign: 'left',
+        fontFamily: 'inherit', fontSize: 13, color: 'var(--text)'
+      }}
+      onMouseOver={e => e.currentTarget.style.background = 'var(--bg-soft)'}
+      onMouseOut={e  => e.currentTarget.style.background = 'transparent'}
+    >
+      <span style={{ width: 22, textAlign: 'center', opacity: .8 }}>{type.icon}</span>
+      <span>{type.label}</span>
+    </button>
   )
 }
 

@@ -7,6 +7,7 @@ import {
 import { useToast } from '../components/Toast.jsx'
 import AdminNav from '../components/AdminNav.jsx'
 import BlockBuilder from '../components/forms/BlockBuilder.jsx'
+import MultiSelectDropdown from '../components/forms/MultiSelectDropdown.jsx'
 
 // Templates page (Phase 9D). Visible to task creators.
 const ROLE_OPTIONS = [
@@ -309,19 +310,15 @@ function TemplateForm({ template, areas, stores, users, categories = [], onClose
 
             <div className="form-group full">
               <label>Also visible to these roles (optional)</label>
-              <div className="flex-row" style={{ flexWrap: 'wrap', gap: 6 }}>
-                {ROLE_OPTIONS.filter(o => o.value !== 'all' && o.value !== form.assigned_to_role).map(o => {
-                  const on = form.assigned_to_roles.includes(o.value)
-                  return (
-                    <button type="button" key={o.value}
-                      className={`btn btn-sm ${on ? 'btn-primary' : 'btn-outline'}`}
-                      onClick={() => toggleId('assigned_to_roles', o.value)}>
-                      {on ? '✓ ' : '+ '}{o.label}
-                    </button>
-                  )
-                })}
-              </div>
-              <span className="note" style={{ fontSize: 12 }}>Anyone with one of these roles will also see this task.</span>
+              <MultiSelectDropdown
+                value={form.assigned_to_roles}
+                onChange={next => setForm(f => ({ ...f, assigned_to_roles: next }))}
+                options={ROLE_OPTIONS
+                  .filter(o => o.value !== 'all' && o.value !== form.assigned_to_role)
+                  .map(o => ({ id: o.value, label: o.label }))}
+                allLabel="All roles (no extra visibility)"
+              />
+              <span className="note" style={{ fontSize: 12 }}>Anyone with one of these roles will also see this task. Leave on "All roles" to skip.</span>
             </div>
 
             {/* Specific employees */}
@@ -334,20 +331,18 @@ function TemplateForm({ template, areas, stores, users, categories = [], onClose
                     : 'No active users yet.'}
                 </span>
               ) : (
-                <div className="flex-row" style={{ flexWrap: 'wrap', gap: 6 }}>
-                  {eligibleUsers.map(u => {
-                    const on = form.assigned_to_user_ids.includes(u.id)
-                    return (
-                      <button type="button" key={u.id}
-                        className={`btn btn-sm ${on ? 'btn-primary' : 'btn-outline'}`}
-                        onClick={() => toggleId('assigned_to_user_ids', u.id)}>
-                        {on ? '✓ ' : ''}{u.display_name}
-                      </button>
-                    )
-                  })}
-                </div>
+                <MultiSelectDropdown
+                  value={form.assigned_to_user_ids}
+                  onChange={next => setForm(f => ({ ...f, assigned_to_user_ids: next }))}
+                  options={eligibleUsers.map(u => ({
+                    id: u.id,
+                    label: u.display_name,
+                    subLabel: u.username
+                  }))}
+                  allLabel="All users (use role filter)"
+                />
               )}
-              <span className="note" style={{ fontSize: 12 }}>If picked, only these people see the task (instead of the role filter).</span>
+              <span className="note" style={{ fontSize: 12 }}>If specific people are picked, only they see the task (instead of the role filter).</span>
             </div>
 
             <div className="form-group">
