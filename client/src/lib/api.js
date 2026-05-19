@@ -177,7 +177,9 @@ export const adminUpdateProduct = (id, updates) => request(`/admin/products/${id
 
 export const adminGetSettings    = () => request('/admin/settings')
 export const adminUpdateSettings = (updates) => request('/admin/settings', { method: 'PATCH', body: updates })
-export const adminCleanupPhotos  = () => request('/admin/cleanup/photos', { method: 'POST' })
+export const adminCleanupPhotos       = () => request('/admin/cleanup/photos',       { method: 'POST' })
+export const adminCleanupTaskRecords  = () => request('/admin/cleanup/task-records', { method: 'POST' })
+export const adminGetCapacity         = () => request('/admin/capacity')
 
 export const adminListAreas   = () => request('/admin/areas')
 export const adminCreateArea  = (area) => request('/admin/areas', { method: 'POST', body: area })

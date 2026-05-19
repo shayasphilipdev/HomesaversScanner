@@ -5,6 +5,7 @@ import { resolvedTheme, setTheme } from '../lib/theme.js'
 import { canSeeAnyAdminLink, canAccessAdmin, canDoHQTasks, canDoStoreTasks, STORE_ROLE_KEYS, roleLabel } from '../lib/roles.js'
 import { useCurrentStore } from '../lib/currentStore.jsx'
 import OfflineIndicator from './OfflineIndicator.jsx'
+import CapacityAlert from './CapacityAlert.jsx'
 
 export default function Nav() {
   const { session, logout } = useStore()
@@ -37,6 +38,7 @@ export default function Nav() {
       )}
 
       <OfflineIndicator />
+      <CapacityAlert />
 
       <span className="nav-context-chip" title={`Signed in as ${roleLabel(session.role)}`}>
         <span className={`nav-context-dot ${isStoreRole ? 'is-store' : 'is-ho'}`} />

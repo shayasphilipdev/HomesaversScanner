@@ -133,6 +133,9 @@ function hasRole(s, allowed) {
 
 function isBackOffice(s)   { return hasRole(s, BO_ROLES) }
 function isAdminRole(s)    { return hasRole(s, ADMIN_ROLES) }
+// Strict "admin" role only — used for top-of-stack stats like the capacity
+// meters that buying_manager (also in ADMIN_ROLES) shouldn't see.
+function isOnlyAdmin(s)    { return !!s && s.role === 'admin' }
 function canCreateTasks(s) { return hasRole(s, TASK_CREATORS) }
 
 function buildSessionForUser(_db, user) {
@@ -871,6 +874,42 @@ export async function onRequest(context) {
 
     // ── Back-office admin: settings ──────────────────────────────────────
 
+    // GET /admin/capacity — DB + storage usage, restricted to the strict
+    // 'admin' role only. Limits are pulled from app_settings so they can be
+    // edited if the Supabase plan is upgraded.
+    if (path === '/admin/capacity' && method === 'GET') {
+      if (!isOnlyAdmin(session)) return err('Forbidden', 403)
+      // Call the SECURITY DEFINER RPC via PostgREST.
+      const rpcRes = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/get_capacity_stats`, {
+        method: 'POST',
+        headers: {
+          'apikey':         env.SUPABASE_ANON_KEY,
+          'Authorization':  `Bearer ${env.SUPABASE_ANON_KEY}`,
+          'Content-Type':   'application/json'
+        },
+        body: '{}'
+      })
+      if (!rpcRes.ok) return err(`Capacity RPC failed: ${await rpcRes.text()}`, 502)
+      const stats = await rpcRes.json()
+      const settings = await db.select('app_settings', {
+        select: 'key,value',
+        key: 'in.(capacity_db_limit_bytes,capacity_storage_limit_bytes)'
+      })
+      const byKey = Object.fromEntries(settings.map(r => [r.key, Number(r.value) || 0]))
+      return json({
+        db: {
+          used_bytes:  Number(stats.db_size_bytes) || 0,
+          limit_bytes: byKey.capacity_db_limit_bytes || 524288000
+        },
+        storage: {
+          used_bytes:    Number(stats.storage_bytes) || 0,
+          limit_bytes:   byKey.capacity_storage_limit_bytes || 1073741824,
+          object_count:  Number(stats.storage_object_count) || 0
+        },
+        computed_at: stats.computed_at
+      })
+    }
+
     if (path === '/admin/settings' && method === 'GET') {
       if (!isAdminRole(session)) return err('Forbidden', 403)
       const rows = await db.select('app_settings', { select: 'key,value,updated_at', order: 'key.asc' })
@@ -898,6 +937,22 @@ export async function onRequest(context) {
       })
       if (!upsertRes.ok) throw new Error(await upsertRes.text())
       return json(await upsertRes.json())
+    }
+
+    // POST /admin/cleanup/task-records — delete cleared/store_completed task
+    // records older than scan_record_retention_days. The records stay in the
+    // DB forever otherwise; this is the hatch the admin pulls when storage
+    // pressure is high.
+    if (path === '/admin/cleanup/task-records' && method === 'POST') {
+      if (!isAdminRole(session)) return err('Forbidden', 403)
+      const [setting] = await db.select('app_settings', { select: 'value', key: 'eq.scan_record_retention_days' })
+      const days = Math.max(1, Number(setting?.value || 90))
+      const cutoff = new Date(Date.now() - days * 86400000).toISOString()
+      const removed = await db.remove('task_records', {
+        status:     `in.(cleared,store_completed)`,
+        updated_at: `lt.${cutoff}`
+      })
+      return json({ deleted: removed.length, days, cutoff })
     }
 
     // POST /admin/cleanup/photos — delete photos older than photo_retention_days.
