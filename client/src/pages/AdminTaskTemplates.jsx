@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { useStore } from '../App.jsx'
 import {
   adminListTemplates, adminCreateTemplate, adminUpdateTemplate, adminDeleteTemplate,
-  adminListAreas, adminListStores, adminListUsers, getLookupOptions
+  adminListAreas, adminListStores, adminListUsers, getLookupOptions,
+  adminCreateLookup
 } from '../lib/api.js'
 import { useToast } from '../components/Toast.jsx'
 import AdminNav from '../components/AdminNav.jsx'
@@ -97,6 +98,10 @@ export default function AdminTaskTemplates() {
           areas={areas} stores={stores} users={users} categories={categories}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); load() }}
+          onCategoriesChanged={async () => {
+            const c = await getLookupOptions({ kind: 'task_category' }).catch(() => [])
+            setCategories(c)
+          }}
           toast={toast}
         />
       )}
@@ -118,7 +123,6 @@ export default function AdminTaskTemplates() {
                   <th>Frequency</th>
                   <th>Scope</th>
                   <th>For role</th>
-                  <th>Requires</th>
                   <th>Status</th>
                   <th></th>
                 </tr>
@@ -135,11 +139,6 @@ export default function AdminTaskTemplates() {
                     <td>{t.frequency}{t.due_window ? ` · by ${t.due_window}` : ''}</td>
                     <td>{describeScope(t, areas, stores)}</td>
                     <td>{ROLE_OPTIONS.find(r => r.value === t.assigned_to_role)?.label.replace(' at the targeted stores', '') || t.assigned_to_role}</td>
-                    <td>
-                      {t.requires_photo && <span className="chip" style={{ marginRight: 4 }}>📷 photo</span>}
-                      {t.requires_notes && <span className="chip">📝 notes</span>}
-                      {!t.requires_photo && !t.requires_notes && <span className="td-muted">—</span>}
-                    </td>
                     <td>{t.is_active ? <span className="badge badge-completed">Active</span> : <span className="badge badge-pending">Inactive</span>}</td>
                     <td>
                       <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>
@@ -185,7 +184,7 @@ function describeScope(t, areas, stores) {
   return t.applies_to
 }
 
-function TemplateForm({ template, areas, stores, users, categories = [], onClose, onSaved, toast }) {
+function TemplateForm({ template, areas, stores, users, categories = [], onClose, onSaved, onCategoriesChanged, toast }) {
   const [form, setForm] = useState(() => ({
     title:                template?.title || '',
     description:          template?.description || '',
@@ -193,14 +192,11 @@ function TemplateForm({ template, areas, stores, users, categories = [], onClose
     category:             template?.category || '',
     frequency:            template?.frequency || 'daily',
     due_window:           template?.due_window || '',
-    requires_photo:       !!template?.requires_photo,
-    requires_notes:       !!template?.requires_notes,
     applies_to:           template?.applies_to || 'all',
     area_ids:             template?.area_ids || [],
     store_ids:            template?.store_ids || [],
     assigned_to_role:     template?.assigned_to_role || 'all',
     assigned_to_roles:    template?.assigned_to_roles || [],
-    assigned_to_user_ids: template?.assigned_to_user_ids || [],
     start_at:             template?.start_at ? toLocalDT(template.start_at) : '',
     end_at:               template?.end_at   ? toLocalDT(template.end_at)   : '',
     blocks:               template?.blocks || [],
@@ -239,20 +235,6 @@ function TemplateForm({ template, areas, stores, users, categories = [], onClose
     } catch (e) { setErr(e.message); toast.error(e.message) } finally { setSaving(false) }
   }
 
-  const toggleId = (key, id) => setForm(f => ({
-    ...f,
-    [key]: f[key].includes(id) ? f[key].filter(x => x !== id) : [...f[key], id]
-  }))
-
-  // Eligible "assignee" users: store_manager / sales_assistant when scope
-  // targets specific stores, otherwise everyone.
-  const eligibleUsers = (users || []).filter(u => {
-    if (!u.is_active) return false
-    if (form.applies_to === 'stores' || form.applies_to === 'one')
-      return form.store_ids.includes(u.store_id)
-    return true
-  })
-
   return (
     <div className="card" style={{ marginBottom: 16 }}>
       <div className="card-header">{template?.id ? 'Edit template' : 'Create template'}</div>
@@ -273,11 +255,13 @@ function TemplateForm({ template, areas, stores, users, categories = [], onClose
             </div>
             <div className="form-group">
               <label>Category</label>
-              <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>
-                <option value="">— None —</option>
-                {categories.map(c => <option key={c.id} value={c.label}>{c.label}</option>)}
-              </select>
-              <span className="note" style={{ fontSize: 12 }}>Manage the list under Admin → Reason / Size lookups (kind: task_category).</span>
+              <CategoryPicker
+                value={form.category}
+                onChange={v => setForm(f => ({ ...f, category: v }))}
+                categories={categories}
+                onCreated={() => onCategoriesChanged?.()}
+                toast={toast}
+              />
             </div>
             <div className="form-group">
               <label>Priority</label>
@@ -316,33 +300,8 @@ function TemplateForm({ template, areas, stores, users, categories = [], onClose
                 options={ROLE_OPTIONS
                   .filter(o => o.value !== 'all' && o.value !== form.assigned_to_role)
                   .map(o => ({ id: o.value, label: o.label }))}
-                allLabel="All roles (no extra visibility)"
+                placeholder="No extra roles — primary assignee only"
               />
-              <span className="note" style={{ fontSize: 12 }}>Anyone with one of these roles will also see this task. Leave on "All roles" to skip.</span>
-            </div>
-
-            {/* Specific employees */}
-            <div className="form-group full">
-              <label>Assign to specific people (optional)</label>
-              {!eligibleUsers.length ? (
-                <span className="note" style={{ fontSize: 12 }}>
-                  {form.applies_to === 'stores' || form.applies_to === 'one'
-                    ? 'Pick the target stores first to see eligible employees.'
-                    : 'No active users yet.'}
-                </span>
-              ) : (
-                <MultiSelectDropdown
-                  value={form.assigned_to_user_ids}
-                  onChange={next => setForm(f => ({ ...f, assigned_to_user_ids: next }))}
-                  options={eligibleUsers.map(u => ({
-                    id: u.id,
-                    label: u.display_name,
-                    subLabel: u.username
-                  }))}
-                  allLabel="All users (use role filter)"
-                />
-              )}
-              <span className="note" style={{ fontSize: 12 }}>If specific people are picked, only they see the task (instead of the role filter).</span>
             </div>
 
             <div className="form-group">
@@ -355,53 +314,31 @@ function TemplateForm({ template, areas, stores, users, categories = [], onClose
             </div>
             {form.applies_to === 'area' && (
               <div className="form-group full">
-                <label>Pick areas</label>
-                <div className="flex-row" style={{ flexWrap: 'wrap', gap: 6 }}>
-                  {areas.filter(a => a.is_active).map(a => (
-                    <button type="button" key={a.id}
-                      className={`btn btn-sm ${form.area_ids.includes(a.id) ? 'btn-primary' : 'btn-outline'}`}
-                      onClick={() => toggleId('area_ids', a.id)}>
-                      {a.area_name}
-                    </button>
-                  ))}
-                </div>
+                <label>Pick areas *</label>
+                <MultiSelectDropdown
+                  value={form.area_ids}
+                  onChange={next => setForm(f => ({ ...f, area_ids: next }))}
+                  options={areas.filter(a => a.is_active).map(a => ({ id: a.id, label: a.area_name }))}
+                  placeholder="Pick one or more areas…"
+                />
               </div>
             )}
             {form.applies_to === 'stores' && (
               <div className="form-group full">
-                <label>Pick stores</label>
-                <div className="flex-row" style={{ flexWrap: 'wrap', gap: 6 }}>
-                  {stores.filter(s => s.is_active).map(s => (
-                    <button type="button" key={s.id}
-                      className={`btn btn-sm ${form.store_ids.includes(s.id) ? 'btn-primary' : 'btn-outline'}`}
-                      onClick={() => toggleId('store_ids', s.id)}>
-                      {s.store_name}
-                    </button>
-                  ))}
-                </div>
+                <label>Pick stores *</label>
+                <MultiSelectDropdown
+                  value={form.store_ids}
+                  onChange={next => setForm(f => ({ ...f, store_ids: next }))}
+                  options={stores.filter(s => s.is_active).map(s => ({ id: s.id, label: s.store_name, subLabel: s.store_code }))}
+                  placeholder="Pick one or more stores…"
+                />
               </div>
             )}
-            <div className="form-group">
-              <label>Requires photo</label>
-              <label className="flex-row" style={{ gap: 8 }}>
-                <input type="checkbox" checked={form.requires_photo} onChange={e => setForm(f => ({ ...f, requires_photo: e.target.checked }))} />
-                <span className="note">Completer must attach a photo</span>
-              </label>
-              <span className="note" style={{ fontSize: 11 }}>Ignored when blocks are defined below.</span>
-            </div>
-            <div className="form-group">
-              <label>Requires notes</label>
-              <label className="flex-row" style={{ gap: 8 }}>
-                <input type="checkbox" checked={form.requires_notes} onChange={e => setForm(f => ({ ...f, requires_notes: e.target.checked }))} />
-                <span className="note">Completer must add a note</span>
-              </label>
-              <span className="note" style={{ fontSize: 11 }}>Ignored when blocks are defined below.</span>
-            </div>
 
             <div className="form-group full">
               <label>Form blocks</label>
               <span className="note" style={{ fontSize: 12, marginBottom: 8 }}>
-                Build a custom form the completer will fill in. Mix text, numbers, choice questions, dates, photos.
+                Build the form the completer fills in. Mix text, numbers, photos, choice questions, headings, alerts. Required/optional is set per block.
               </span>
               <BlockBuilder value={form.blocks} onChange={blocks => setForm(f => ({ ...f, blocks }))} />
             </div>
@@ -415,6 +352,59 @@ function TemplateForm({ template, areas, stores, users, categories = [], onClose
           </div>
         </form>
       </div>
+    </div>
+  )
+}
+
+// Category dropdown with an inline "+ Add" so the HO user can create a new
+// task_category without leaving this form. New categories are written to
+// the lookup_options table (kind='task_category') and shown immediately.
+function CategoryPicker({ value, onChange, categories, onCreated, toast }) {
+  const [adding, setAdding] = useState(false)
+  const [newLabel, setNewLabel] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const save = async () => {
+    const lbl = newLabel.trim()
+    if (!lbl) return
+    setBusy(true)
+    try {
+      await adminCreateLookup({ kind: 'task_category', label: lbl, is_active: true, sort_order: (categories?.length || 0) + 1 })
+      toast?.success(`Added category "${lbl}".`)
+      onChange(lbl)
+      setNewLabel(''); setAdding(false)
+      onCreated?.()
+    } catch (e) {
+      toast?.error(e.message)
+    } finally { setBusy(false) }
+  }
+
+  if (adding) {
+    return (
+      <div className="flex-row" style={{ gap: 6 }}>
+        <input
+          autoFocus
+          value={newLabel}
+          onChange={e => setNewLabel(e.target.value)}
+          placeholder="New category name"
+          style={{ flex: 1 }}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); save() } }}
+        />
+        <button type="button" className="btn btn-sm btn-primary" onClick={save} disabled={busy}>
+          {busy ? <span className="spinner" /> : 'Add'}
+        </button>
+        <button type="button" className="btn btn-sm btn-outline" onClick={() => { setAdding(false); setNewLabel('') }} disabled={busy}>Cancel</button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex-row" style={{ gap: 6 }}>
+      <select value={value || ''} onChange={e => onChange(e.target.value)} style={{ flex: 1 }}>
+        <option value="">— None —</option>
+        {categories.map(c => <option key={c.id} value={c.label}>{c.label}</option>)}
+      </select>
+      <button type="button" className="btn btn-sm btn-outline" onClick={() => setAdding(true)} title="Add a new category">+ Add</button>
     </div>
   )
 }

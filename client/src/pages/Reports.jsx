@@ -413,6 +413,7 @@ function StoreTaskReports() {
   const [templates, setTemplates] = useState([])
 
   const [rows, setRows]           = useState([])
+  const [selected, setSelected]   = useState(new Set())
   const [loading, setLoading]     = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [error, setError]         = useState('')
@@ -430,9 +431,17 @@ function StoreTaskReports() {
         storeId: storeFilter === 'all' ? undefined : storeFilter,
         template_id: tplFilter === 'all' ? undefined : tplFilter
       })
-      setRows(data)
+      setRows(data); setSelected(new Set())
     } catch (e) { setError(e.message); toast.error(e.message) } finally { setLoading(false) }
   }
+
+  const toggleOne = (id) => setSelected(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return next
+  })
+  const allSelected = rows.length > 0 && selected.size === rows.length
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(rows.map(r => r.id)))
 
   const downloadCSV = async () => {
     setDownloading(true); setError('')
@@ -488,10 +497,19 @@ function StoreTaskReports() {
 
       {rows.length > 0 && (
         <div className="card mt-20">
-          <div className="card-header">{rows.length} result{rows.length === 1 ? '' : 's'}</div>
+          <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span>{rows.length} result{rows.length === 1 ? '' : 's'}</span>
+            {selected.size > 0 && <span className="note" style={{ fontSize: 12 }}>· {selected.size} selected</span>}
+            <span style={{ marginLeft: 'auto' }} />
+            <button className="btn btn-sm btn-outline" onClick={() => setSelected(new Set(rows.map(r => r.id)))}>✓ Select all</button>
+            <button className="btn btn-sm btn-outline" onClick={() => setSelected(new Set())} disabled={!selected.size}>✕ Clear all</button>
+          </div>
           <div className="table-wrap">
             <table>
               <thead><tr>
+                <th style={{ width: 36 }}>
+                  <input type="checkbox" checked={allSelected} onChange={toggleAll} title="Select all rows" />
+                </th>
                 <th>Template</th><th>Store</th><th>Due</th><th>Status</th>
                 <th>Completed at</th><th>Block answers</th>
               </tr></thead>
@@ -503,17 +521,22 @@ function StoreTaskReports() {
                   const lines = blocks.map(b => {
                     const v = ans[b.id]
                     if (v === null || v === undefined || v === '' || (Array.isArray(v) && !v.length)) return null
-                    const display = Array.isArray(v) ? v.join(', ') : (typeof v === 'string' && v.startsWith('http') ? '[photo]' : String(v))
-                    return b.label + ': ' + display
+                    const display = Array.isArray(v)
+                      ? v.join(', ')
+                      : (typeof v === 'string' && v.startsWith('http')
+                          ? <a href={v} target="_blank" rel="noopener noreferrer">📎 view</a>
+                          : String(v))
+                    return { label: b.label, display }
                   }).filter(Boolean)
                   return (
                     <tr key={r.id}>
+                      <td><input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleOne(r.id)} /></td>
                       <td><strong>{t.title || '—'}</strong>{t.category && <span className="chip" style={{ marginLeft: 6 }}>{t.category}</span>}</td>
                       <td>{storeName(r.store_id) || '—'}</td>
                       <td>{r.due_date || '—'}</td>
                       <td><span className={'badge ' + (r.status === 'completed' ? 'badge-completed' : r.status === 'missed' ? 'badge-deleted' : 'badge-pending')}>{r.status}</span></td>
                       <td className="td-muted">{r.completed_at ? new Date(r.completed_at).toLocaleString('en-IE', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '—'}</td>
-                      <td>{lines.length ? lines.map((l, i) => <div key={i} style={{ fontSize: 13 }}>{l}</div>) : (r.notes ? <span className="note" style={{ fontSize: 12 }}>{r.notes}</span> : <span className="td-muted">—</span>)}</td>
+                      <td>{lines.length ? lines.map((l, i) => <div key={i} style={{ fontSize: 13 }}>{l.label}: {l.display}</div>) : (r.notes ? <span className="note" style={{ fontSize: 12 }}>{r.notes}</span> : <span className="td-muted">—</span>)}</td>
                     </tr>
                   )
                 })}

@@ -1,21 +1,24 @@
 import { useEffect, useRef, useState } from 'react'
 
-// Combo dropdown + checkbox list. Replaces large chip rows when there's
-// more than a handful of options. Empty `value` means "no filter" — the
-// "All …" toggle at the top simply clears the array.
+// Plain checkbox dropdown.
+//   * Trigger button with current selection summary.
+//   * Open: "Select all" + "Clear all" buttons on top, optional search,
+//     then a flat list of options with a checkbox on the LEFT of each row.
+//   * Empty selection means nothing is selected -- the caller decides how
+//     to interpret that (e.g., "no filter applied", "require at least one
+//     before submit").
+//   * Closes on outside click. List is internally scrollable when long.
 //
 // Props:
-//   value:      string[] of selected ids
-//   onChange:   (next: string[]) => void
-//   options:    [{ id, label, subLabel? }]
-//   allLabel:   text for the top "All" row (default "All")
-//   searchable: show a quick-filter text input (default true if options >= 8)
-//   placeholder string shown when value is empty
+//   value:        string[] of selected ids
+//   onChange:     (next: string[]) => void
+//   options:      [{ id, label, subLabel? }]
+//   placeholder:  text when nothing selected (default "Nothing selected")
+//   searchable:   force search input on/off (default: auto when 8+ options)
 export default function MultiSelectDropdown({
   value, onChange, options,
-  allLabel = 'All',
-  searchable,
-  placeholder = 'None selected'
+  placeholder = 'Nothing selected',
+  searchable
 }) {
   const ids = Array.isArray(value) ? value : []
   const [open, setOpen] = useState(false)
@@ -34,16 +37,19 @@ export default function MultiSelectDropdown({
     ? options.filter(o => (o.label + ' ' + (o.subLabel || '')).toLowerCase().includes(q.toLowerCase()))
     : options
 
-  const allOn = ids.length === 0
-  const summary = allOn
-    ? allLabel
-    : ids.length === 1
-      ? (options.find(o => o.id === ids[0])?.label || '1 selected')
-      : `${ids.length} selected`
-
   const toggle = (id) => {
     onChange(ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id])
   }
+  const selectAll = () => onChange(filtered.map(o => o.id))
+  const clearAll  = () => onChange([])
+
+  const summary = ids.length === 0
+    ? placeholder
+    : ids.length === options.length
+      ? `All ${options.length} selected`
+      : ids.length === 1
+        ? (options.find(o => o.id === ids[0])?.label || '1 selected')
+        : `${ids.length} of ${options.length} selected`
 
   return (
     <div ref={wrapRef} style={{ position: 'relative' }}>
@@ -52,16 +58,19 @@ export default function MultiSelectDropdown({
         onClick={() => setOpen(o => !o)}
         className="btn btn-outline btn-sm"
         style={{
-          width: '100%', justifyContent: 'space-between',
+          width: '100%',
           display: 'flex', alignItems: 'center', gap: 8,
-          textAlign: 'left', minHeight: 38, paddingRight: 12
+          textAlign: 'left', minHeight: 38, paddingRight: 12, paddingLeft: 12
         }}
         aria-expanded={open}
       >
-        <span style={{ color: allOn ? 'var(--text-muted)' : 'var(--text)' }}>
-          {summary || placeholder}
+        <span style={{
+          color: ids.length === 0 ? 'var(--text-muted)' : 'var(--text)',
+          flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+        }}>
+          {summary}
         </span>
-        <span aria-hidden style={{ marginLeft: 'auto', fontSize: 12 }}>{open ? '▴' : '▾'}</span>
+        <span aria-hidden style={{ fontSize: 12 }}>{open ? '▴' : '▾'}</span>
       </button>
 
       {open && (
@@ -69,41 +78,37 @@ export default function MultiSelectDropdown({
           marginTop: 6,
           background: 'var(--surface)', border: '1px solid var(--border)',
           borderRadius: 10, boxShadow: 'var(--shadow-md)',
-          maxHeight: 320, overflow: 'auto', padding: 4
+          maxHeight: 360, overflow: 'auto'
         }}>
+          {/* Toolbar */}
+          <div style={{
+            display: 'flex', gap: 6, padding: 8,
+            borderBottom: '1px solid var(--border-soft)', position: 'sticky', top: 0,
+            background: 'var(--surface)'
+          }}>
+            <button type="button" className="btn btn-sm btn-outline" onClick={selectAll}>
+              ✓ Select all{q ? ` (${filtered.length})` : ''}
+            </button>
+            <button type="button" className="btn btn-sm btn-outline" onClick={clearAll}>
+              ✕ Clear all
+            </button>
+          </div>
+
           {showSearch && (
-            <input
-              autoFocus
-              type="text"
-              value={q}
-              onChange={e => setQ(e.target.value)}
-              placeholder="Search…"
-              style={{ width: '100%', marginBottom: 4, padding: '6px 8px', fontSize: 13 }}
-            />
+            <div style={{ padding: 8, borderBottom: '1px solid var(--border-soft)' }}>
+              <input
+                autoFocus
+                type="text"
+                value={q}
+                onChange={e => setQ(e.target.value)}
+                placeholder="Search…"
+                style={{ width: '100%', padding: '6px 8px', fontSize: 13 }}
+              />
+            </div>
           )}
 
-          <label
-            style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              padding: '8px 10px', borderRadius: 6, cursor: 'pointer',
-              background: allOn ? 'var(--bg-soft)' : 'transparent',
-              fontSize: 13, fontWeight: 600
-            }}
-            onMouseOver={e => { if (!allOn) e.currentTarget.style.background = 'var(--bg-soft)' }}
-            onMouseOut={e  => { if (!allOn) e.currentTarget.style.background = 'transparent' }}
-          >
-            <input
-              type="checkbox"
-              checked={allOn}
-              onChange={() => onChange([])}
-            />
-            <span>{allLabel}</span>
-          </label>
-
-          <div style={{ height: 1, background: 'var(--border-soft)', margin: '4px 0' }} />
-
           {filtered.length === 0 && (
-            <div className="note" style={{ padding: '8px 10px', fontSize: 12.5 }}>
+            <div className="note" style={{ padding: '10px 12px', fontSize: 12.5 }}>
               No matches.
             </div>
           )}
@@ -114,9 +119,9 @@ export default function MultiSelectDropdown({
               <label
                 key={o.id}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  padding: '8px 10px', borderRadius: 6, cursor: 'pointer',
-                  background: on ? 'var(--bg-soft)' : 'transparent', fontSize: 13
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '8px 12px', cursor: 'pointer', fontSize: 13,
+                  background: on ? 'var(--bg-soft)' : 'transparent'
                 }}
                 onMouseOver={e => { if (!on) e.currentTarget.style.background = 'var(--bg-soft)' }}
                 onMouseOut={e  => { if (!on) e.currentTarget.style.background = 'transparent' }}
