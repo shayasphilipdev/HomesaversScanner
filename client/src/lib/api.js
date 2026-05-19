@@ -181,6 +181,9 @@ export const adminCleanupPhotos       = () => request('/admin/cleanup/photos',  
 export const adminCleanupTaskRecords  = () => request('/admin/cleanup/task-records', { method: 'POST' })
 export const adminGetCapacity         = () => request('/admin/capacity')
 
+// Append-only audit ledger for one task_records row.
+export const getTaskRecordEvents      = (id) => request(`/task-records/${id}/events`)
+
 export const adminListAreas   = () => request('/admin/areas')
 export const adminCreateArea  = (area) => request('/admin/areas', { method: 'POST', body: area })
 export const adminUpdateArea  = (id, updates) => request(`/admin/areas/${id}`, { method: 'PATCH', body: updates })

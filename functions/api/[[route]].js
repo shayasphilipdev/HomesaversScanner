@@ -174,6 +174,25 @@ async function scopedStoreIds(db, session) {
 function userCanAccessHQTasks(s)    { return !!s && s.can_access_hq_tasks    !== false }
 function userCanAccessStoreTasks(s) { return !!s && s.can_access_store_tasks !== false }
 
+// Append-only audit log writer. Records every transition of
+// task_records.status (creation -> pending, HO completion, store
+// clearing, bulk reviews). Best-effort -- a write failure does not
+// abort the main operation; we just log to the Worker console.
+async function writeTaskEvent(db, { record_id, from_status, to_status, session, note }) {
+  try {
+    await db.insert('task_record_events', {
+      record_id,
+      from_status:  from_status || null,
+      to_status,
+      by_user_id:   session?.user_id || null,
+      by_user_name: session?.display_name || session?.username || 'unknown',
+      note:         note || null
+    })
+  } catch (e) {
+    console.warn('[audit] task_record_events write failed:', e?.message || e)
+  }
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 const json = (data, status = 200) =>
@@ -1646,8 +1665,49 @@ export async function onRequest(context) {
       if (status === 'completed') updates.completed_at = now
       if (review_notes !== undefined) updates.review_notes = review_notes || null
 
+      // Capture pre-update statuses so the audit ledger gets accurate
+      // from_status values per record.
+      const pre = await db.select('task_records', {
+        select: 'id,status',
+        id: `in.(${safeIds.join(',')})`
+      })
+      const preMap = Object.fromEntries(pre.map(r => [r.id, r.status]))
+
       const updated = await db.update('task_records', { id: `in.(${safeIds.join(',')})` }, updates)
+
+      for (const r of updated) {
+        if (preMap[r.id] !== status) {
+          await writeTaskEvent(db, {
+            record_id:   r.id,
+            from_status: preMap[r.id] || null,
+            to_status:   status,
+            session,
+            note:        review_notes || null
+          })
+        }
+      }
       return json({ updated: updated.length })
+    }
+
+    // GET /task-records/:id/events -- immutable history for one record.
+    const recEventsMatch = path.match(/^\/task-records\/([a-f0-9-]+)\/events$/)
+    if (recEventsMatch && method === 'GET') {
+      if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled for this account', 403)
+      const recId = recEventsMatch[1]
+      // Scope: a non-BO user can only read events for records in their own stores.
+      const scope = await scopedStoreIds(db, session)
+      if (scope !== null) {
+        const [own] = await db.select('task_records', {
+          select: 'store_id', id: `eq.${recId}`, limit: '1'
+        })
+        if (!own || !scope.includes(own.store_id)) return err('Record not found or not allowed', 404)
+      }
+      const rows = await db.select('task_record_events', {
+        select: 'id,record_id,from_status,to_status,by_user_id,by_user_name,at,note',
+        record_id: `eq.${recId}`,
+        order: 'at.asc'
+      })
+      return json(rows)
     }
 
     if (path === '/task-records' && method === 'POST') {
@@ -1695,7 +1755,17 @@ export async function onRequest(context) {
         created_at:          now,
         updated_at:          now
       })
-      return json(inserted[0] ?? inserted, 201)
+      const created = Array.isArray(inserted) ? inserted[0] : inserted
+      if (created?.id) {
+        await writeTaskEvent(db, {
+          record_id:   created.id,
+          from_status: null,
+          to_status:   created.status || 'pending',
+          session,
+          note:        'Created'
+        })
+      }
+      return json(created ?? inserted, 201)
     }
 
     const recMatch = path.match(/^\/task-records\/([a-f0-9-]+)$/)
@@ -1720,8 +1790,24 @@ export async function onRequest(context) {
       if (updates.status === 'cleared' && !updates.cleared_at) {
         updates.cleared_at = new Date().toISOString()
       }
+      // Capture the pre-update status so we can write a precise from->to
+      // audit row only if the status actually changes.
+      let preStatus = null
+      if (updates.status !== undefined) {
+        const [pre] = await db.select('task_records', { select: 'status', id: `eq.${id}`, limit: '1' })
+        preStatus = pre?.status || null
+      }
       const updated = await db.update('task_records', filter, { ...updates, updated_at: new Date().toISOString() })
       if (!updated.length) return err('Record not found or not allowed', 404)
+      if (updates.status !== undefined && updates.status !== preStatus) {
+        await writeTaskEvent(db, {
+          record_id:   id,
+          from_status: preStatus,
+          to_status:   updates.status,
+          session,
+          note:        updates.review_notes || null
+        })
+      }
       return json(updated[0])
     }
 

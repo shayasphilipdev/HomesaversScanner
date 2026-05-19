@@ -3,7 +3,8 @@ import { useStore } from '../App.jsx'
 import {
   getStores, getTaskTypes, getToken, getTaskRecords,
   updateTaskRecord, bulkReviewTaskRecords,
-  adminListTemplates, getStoreTaskReportRows
+  adminListTemplates, getStoreTaskReportRows,
+  getTaskRecordEvents
 } from '../lib/api.js'
 import { useToast } from '../components/Toast.jsx'
 import MultiSelectDropdown from '../components/forms/MultiSelectDropdown.jsx'
@@ -74,6 +75,25 @@ function HQReports() {
   const [error, setError]             = useState('')
   const [reviewRowId, setReviewRowId] = useState(null)
   const [reviewNote, setReviewNote]   = useState('')
+  // Per-row audit-history state: { [recordId]: { loading, events, err } }
+  const [history, setHistory]         = useState({})
+
+  const toggleHistory = async (recordId) => {
+    setHistory(h => {
+      if (h[recordId]) {
+        const { [recordId]: _, ...rest } = h
+        return rest
+      }
+      return { ...h, [recordId]: { loading: true, events: [], err: '' } }
+    })
+    if (history[recordId]) return  // was open -> we just closed it
+    try {
+      const events = await getTaskRecordEvents(recordId)
+      setHistory(h => ({ ...h, [recordId]: { loading: false, events, err: '' } }))
+    } catch (e) {
+      setHistory(h => ({ ...h, [recordId]: { loading: false, events: [], err: e.message } }))
+    }
+  }
 
   useEffect(() => {
     getTaskTypes().then(setTaskTypes).catch(() => setTaskTypes([]))
@@ -355,19 +375,32 @@ function HQReports() {
                         <td className="td-muted">{formatDT(r.created_at)}</td>
                         {isBO && (
                           <td>
-                            {isPending && (
-                              <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>
-                                <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => reviewOne(r.id, 'completed')}>
-                                  Complete
-                                </button>
-                                <button className="btn btn-sm btn-outline" disabled={busy} onClick={() => { setReviewRowId(r.id); setReviewNote('') }}>
-                                  No change
-                                </button>
-                              </div>
-                            )}
+                            <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>
+                              {isPending && (
+                                <>
+                                  <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => reviewOne(r.id, 'completed')}>
+                                    Complete
+                                  </button>
+                                  <button className="btn btn-sm btn-outline" disabled={busy} onClick={() => { setReviewRowId(r.id); setReviewNote('') }}>
+                                    No change
+                                  </button>
+                                </>
+                              )}
+                              <button className="btn btn-sm btn-outline" onClick={() => toggleHistory(r.id)} title="Audit history">
+                                {history[r.id] ? '▴' : '▾'} History
+                              </button>
+                            </div>
                           </td>
                         )}
                       </tr>
+                      {/* Audit-trail panel (BO only) */}
+                      {isBO && history[r.id] && (
+                        <tr>
+                          <td colSpan={isBO ? 9 : 8} style={{ background: 'var(--surface-warm)' }}>
+                            <HistoryPanel state={history[r.id]} />
+                          </td>
+                        </tr>
+                      )}
                       {/* Inline note input for per-row "No change needed" */}
                       {isBO && reviewRowId === r.id && (
                         <tr>
@@ -567,6 +600,29 @@ function StoreTaskReports() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// Audit-ledger panel shown under a record row when History is expanded.
+function HistoryPanel({ state }) {
+  if (state.loading) return <div style={{ padding: 10, fontSize: 13 }}><span className="spinner spinner-dark" /> Loading history…</div>
+  if (state.err)     return <div className="login-error" style={{ margin: 8 }}>{state.err}</div>
+  if (!state.events?.length) return <div className="note" style={{ padding: 10, fontSize: 12 }}>No history yet.</div>
+  return (
+    <div style={{ padding: '10px 14px' }}>
+      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Audit history</div>
+      <ol style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>
+        {state.events.map(ev => (
+          <li key={ev.id} style={{ marginBottom: 4 }}>
+            <strong>{ev.from_status || '—'} → {ev.to_status}</strong>
+            <span className="td-muted" style={{ marginLeft: 6 }}>
+              by {ev.by_user_name} · {new Date(ev.at).toLocaleString('en-IE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+            </span>
+            {ev.note && <div className="note" style={{ fontSize: 12.5, marginLeft: 0 }}>“{ev.note}”</div>}
+          </li>
+        ))}
+      </ol>
     </div>
   )
 }
