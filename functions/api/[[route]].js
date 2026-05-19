@@ -1419,11 +1419,33 @@ export async function onRequest(context) {
       if (!['product', 'barcode', 'store_task'].includes(slot)) return err('Invalid slot', 400)
       if (!/^[a-zA-Z0-9-]{8,64}$/.test(tempId))   return err('Invalid tempId', 400)
 
-      // store_task photos live under their own prefix so the existing
-      // retention rules can target each kind separately if needed.
+      // Derive an extension. Photos always end up as .jpg (client compresses
+      // to JPEG before sending). For store_task uploads we keep whatever the
+      // browser told us so PDFs / CSVs / docs stay viewable. Fallback: .bin.
+      const extFromMime = (mime) => {
+        const m = String(mime || '').toLowerCase()
+        if (m.startsWith('image/jpeg') || m.startsWith('image/jpg')) return 'jpg'
+        if (m.startsWith('image/png'))  return 'png'
+        if (m.startsWith('image/webp')) return 'webp'
+        if (m.startsWith('image/'))     return 'jpg'
+        if (m === 'application/pdf')    return 'pdf'
+        if (m === 'text/csv')           return 'csv'
+        if (m === 'text/plain')         return 'txt'
+        if (m === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') return 'xlsx'
+        if (m === 'application/vnd.ms-excel') return 'xls'
+        if (m === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return 'docx'
+        if (m === 'application/msword') return 'doc'
+        return 'bin'
+      }
+      const ext = (slot === 'product' || slot === 'barcode')
+        ? 'jpg'                                   // these are always compressed images
+        : extFromMime(file.type)                  // store_task — keep the actual format
+
+      // store_task photos / files live under their own prefix so retention
+      // rules can target each kind separately if needed.
       const objectPath = slot === 'store_task'
-        ? `store-tasks/${tempId}.jpg`
-        : `${tempId}/${slot}.jpg`
+        ? `store-tasks/${tempId}.${ext}`
+        : `${tempId}/${slot}.${ext}`
       const uploadUrl  = `${env.SUPABASE_URL}/storage/v1/object/task-photos/${objectPath}`
 
       const upRes = await fetch(uploadUrl, {
@@ -1431,7 +1453,7 @@ export async function onRequest(context) {
         headers: {
           'apikey':        env.SUPABASE_ANON_KEY,
           'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`,
-          'Content-Type':  file.type || 'image/jpeg',
+          'Content-Type':  file.type || 'application/octet-stream',
           'x-upsert':      'true'
         },
         body: await file.arrayBuffer()
@@ -1447,8 +1469,8 @@ export async function onRequest(context) {
     // DELETE /photos?path=<objectPath>   — cleanup on cancel / save failure
     if (path === '/photos' && method === 'DELETE') {
       const objectPath = url.searchParams.get('path') || ''
-      const isProductPhoto = /^[a-zA-Z0-9-]{8,64}\/(product|barcode)\.jpg$/.test(objectPath)
-      const isStorePhoto   = /^store-tasks\/[a-zA-Z0-9-]{8,64}\.jpg$/.test(objectPath)
+      const isProductPhoto = /^[a-zA-Z0-9-]{8,64}\/(product|barcode)\.(jpg|png|webp)$/.test(objectPath)
+      const isStorePhoto   = /^store-tasks\/[a-zA-Z0-9-]{8,64}\.[a-z0-9]{2,5}$/.test(objectPath)
       if (!isProductPhoto && !isStorePhoto) return err('Invalid path', 400)
       const delUrl = `${env.SUPABASE_URL}/storage/v1/object/task-photos/${objectPath}`
       const dRes   = await fetch(delUrl, {
