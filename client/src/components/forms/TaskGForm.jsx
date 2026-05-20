@@ -1,11 +1,10 @@
-import { useState } from 'react'
-import { createTaskRecord, lookupProduct } from '../../lib/api.js'
+import { createTaskRecord } from '../../lib/api.js'
 import { useStore } from '../../App.jsx'
 import ScannerInput from './ScannerInput.jsx'
 import SupplierPicker from './SupplierPicker.jsx'
+import { useTaskForm, LookupBanner } from './useTaskForm.js'
 
 // Task G — Promotion Error
-// product_code, promotion_description, promotion_price, supplier, notes
 const EMPTY = {
   product_code: '', promotion_description: '', promotion_price: '',
   supplier_id: '', supplier_name_text: '', notes: ''
@@ -13,57 +12,33 @@ const EMPTY = {
 
 export default function TaskGForm({ onSaved, storeId }) {
   const { session } = useStore()
-  const [form, setForm]     = useState(EMPTY)
-  const [saving, setSaving] = useState(false)
-  const [error, setError]   = useState('')
-  const [lookupLoading, setLookupLoading] = useState(false)
-  const [lookupInfo, setLookupInfo] = useState(null)
-
-  const triggerLookup = async (code) => {
-    if (!code || code.length < 4) { setLookupInfo(null); return }
-    setLookupLoading(true)
-    try {
-      const p = await lookupProduct(code)
-      if (p) {
-        setForm(f => ({
-          ...f,
-          supplier_id:        p.supplier_id || f.supplier_id,
-          supplier_name_text: p.supplier_id ? '' : f.supplier_name_text
-        }))
-        setLookupInfo(p)
-      } else { setLookupInfo(null) }
-    } catch {} finally { setLookupLoading(false) }
-  }
+  const t = useTaskForm({ initial: EMPTY })
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!form.product_code.trim())          return setError('Product code is required.')
-    if (!form.promotion_description.trim()) return setError('Promotion description is required.')
-    if (form.promotion_price === '' || isNaN(Number(form.promotion_price)))
-                                            return setError('Promotion price must be a number.')
+    if (!t.form.product_code.trim())          return t.setError('Product code is required.')
+    if (!t.form.promotion_description.trim()) return t.setError('Promotion description is required.')
+    if (t.form.promotion_price === '' || isNaN(Number(t.form.promotion_price)))
+                                              return t.setError('Promotion price must be a number.')
 
-    setSaving(true); setError('')
+    t.setSaving(true); t.setError('')
     try {
       const res = await createTaskRecord({
-        task_type:    'G',
+        task_type:          'G',
         store_id:           storeId || session.storeId || null,
-        product_code: form.product_code.trim(),
-        supplier_id:        form.supplier_id || null,
-        supplier_name_text: form.supplier_name_text.trim() || null,
-        notes:        form.notes.trim() || null,
+        product_code:       t.form.product_code.trim(),
+        supplier_id:        t.form.supplier_id || null,
+        supplier_name_text: t.form.supplier_name_text.trim() || null,
+        notes:              t.form.notes.trim() || null,
         details: {
-          promotion_description: form.promotion_description.trim(),
-          promotion_price:       Number(form.promotion_price)
+          promotion_description: t.form.promotion_description.trim(),
+          promotion_price:       Number(t.form.promotion_price)
         },
         status: 'pending'
       })
-      setForm(EMPTY); setLookupInfo(null)
+      t.reset()
       onSaved?.({ queued: !!res?.queued })
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setSaving(false)
-    }
+    } catch (err) { t.setError(err.message) } finally { t.setSaving(false) }
   }
 
   return (
@@ -74,29 +49,21 @@ export default function TaskGForm({ onSaved, storeId }) {
           <div className="form-grid">
             <ScannerInput
               label="Product Code *"
-              value={form.product_code}
-              onChange={v => { setForm(f => ({ ...f, product_code: v })); setError('') }}
-              onConfirm={triggerLookup}
-              lookupLoading={lookupLoading}
+              value={t.form.product_code}
+              onChange={t.update('product_code')}
+              onConfirm={t.triggerLookup}
+              lookupLoading={t.lookupLoading}
               readerId="reader-g"
               placeholder="Scan or type the product ID"
             />
 
-            {lookupInfo && (
-              <div className="form-group full" style={{ marginTop: -6 }}>
-                <span className="note" style={{ fontSize: 12.5 }}>
-                  {lookupInfo.description && <>Product: <strong>{lookupInfo.description}</strong></>}
-                  {lookupInfo.description && lookupInfo.supplier_name && ' · '}
-                  {lookupInfo.supplier_name && <>Supplier: <strong>{lookupInfo.supplier_name}</strong></>}
-                </span>
-              </div>
-            )}
+            <LookupBanner info={t.lookupInfo} />
 
             <div className="form-group">
               <label>Promotion Price *</label>
               <input
-                type="number" value={form.promotion_price}
-                onChange={e => setForm(f => ({ ...f, promotion_price: e.target.value }))}
+                type="number" value={t.form.promotion_price}
+                onChange={t.update('promotion_price')}
                 placeholder="€0.00" min="0" step="0.01"
               />
             </div>
@@ -104,35 +71,29 @@ export default function TaskGForm({ onSaved, storeId }) {
             <div className="form-group full">
               <label>Promotion Description *</label>
               <input
-                type="text" value={form.promotion_description}
-                onChange={e => setForm(f => ({ ...f, promotion_description: e.target.value }))}
+                type="text" value={t.form.promotion_description}
+                onChange={t.update('promotion_description')}
                 placeholder="e.g. 2 for €5, Buy 1 Get 1, etc."
               />
             </div>
 
             <SupplierPicker
-              value={{ supplier_id: form.supplier_id, supplier_name_text: form.supplier_name_text }}
-              onChange={({ supplier_id, supplier_name_text }) => setForm(f => ({ ...f, supplier_id, supplier_name_text }))}
+              value={{ supplier_id: t.form.supplier_id, supplier_name_text: t.form.supplier_name_text }}
+              onChange={({ supplier_id, supplier_name_text }) => t.patch({ supplier_id, supplier_name_text })}
             />
 
             <div className="form-group full">
               <label>Notes (optional)</label>
-              <textarea
-                rows={2} value={form.notes}
-                onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-                placeholder="Anything worth flagging…"
-              />
+              <textarea rows={2} value={t.form.notes} onChange={t.update('notes')} placeholder="Anything worth flagging…" />
             </div>
           </div>
 
-          {error && <div className="login-error mt-12">{error}</div>}
+          {t.error && <div className="login-error mt-12">{t.error}</div>}
 
           <div className="flex-row mt-20" style={{ justifyContent: 'flex-end' }}>
-            <button type="button" className="btn btn-outline" onClick={() => { setForm(EMPTY); setLookupInfo(null); setError('') }}>
-              Clear
-            </button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>
-              {saving ? <><span className="spinner" /> Saving…</> : 'Save Record'}
+            <button type="button" className="btn btn-outline" onClick={t.reset}>Clear</button>
+            <button type="submit" className="btn btn-primary" disabled={t.saving}>
+              {t.saving ? <><span className="spinner" /> Saving…</> : 'Save Record'}
             </button>
           </div>
         </form>
