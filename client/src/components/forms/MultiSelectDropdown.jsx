@@ -79,10 +79,14 @@ export default function MultiSelectDropdown({
 
       {open && (
         <div style={{
-          marginTop: 6,
+          // Absolute so opening this dropdown doesn't reflow the rest of
+          // the filter row -- it floats over whatever's below.
+          position: 'absolute', top: 'calc(100% + 6px)', left: 0,
+          minWidth: '100%',
           background: 'var(--surface)', border: '1px solid var(--border)',
           borderRadius: 10, boxShadow: 'var(--shadow-md)',
-          maxHeight: 360, overflow: 'auto'
+          maxHeight: 360, overflow: 'auto',
+          zIndex: 100
         }}>
           {/* Toolbar */}
           <div style={{
