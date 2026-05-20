@@ -13,6 +13,7 @@ import Reports from './pages/Reports.jsx'
 import Sync from './pages/Sync.jsx'
 import StoreTasks from './pages/StoreTasks.jsx'
 import ProductQuery from './pages/ProductQuery.jsx'
+import ManagerDashboard from './pages/ManagerDashboard.jsx'
 import AdminTaskTemplates from './pages/AdminTaskTemplates.jsx'
 import AdminStores from './pages/AdminStores.jsx'
 import AdminAreas from './pages/AdminAreas.jsx'
@@ -87,7 +88,7 @@ export default function App() {
 // main content area for data-dense pages (Reports, Dashboard).
 function Shell() {
   const { pathname } = useLocation()
-  const wide = pathname.startsWith('/reports') || pathname.startsWith('/dashboard')
+  const wide = pathname.startsWith('/reports') || pathname.startsWith('/dashboard') || pathname.startsWith('/manager')
 
   return (
     <div className="app">
@@ -103,6 +104,7 @@ function Shell() {
             <Route path="/sync"          element={<Sync />} />
             <Route path="/store-tasks"   element={<StoreTasks />} />
             <Route path="/product-query" element={<ProductQuery />} />
+            <Route path="/manager"       element={<ManagerDashboard />} />
             <Route path="/admin/task-templates" element={<AdminGuard mode="templates"><AdminTaskTemplates /></AdminGuard>} />
             <Route path="/admin"            element={<Navigate to="/admin/stores" replace />} />
             <Route path="/admin/stores"     element={<AdminGuard><AdminStores /></AdminGuard>} />

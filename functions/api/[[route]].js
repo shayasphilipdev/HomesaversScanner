@@ -122,6 +122,10 @@ async function authenticate(request, env) {
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
 const ADMIN_ROLES    = ['admin', 'buying_manager']
+// Manager dashboard — anyone above shop-floor level. Same set as BO_ROLES
+// plus store_manager + assistant_store_manager so an in-store manager can
+// see their own store's rollup on their phone.
+const MANAGER_ROLES  = ['store_manager', 'assistant_store_manager', ...BO_ROLES]
 const TASK_CREATORS  = ['buying_manager', 'area_manager', 'buying_head', 'admin']
 
 // Single role per user. The legacy `roles text[]` column on users is
@@ -133,6 +137,7 @@ function hasRole(s, allowed) {
 
 function isBackOffice(s)   { return hasRole(s, BO_ROLES) }
 function isAdminRole(s)    { return hasRole(s, ADMIN_ROLES) }
+function isManagerRole(s)  { return hasRole(s, MANAGER_ROLES) }
 // Strict "admin" role only — used for top-of-stack stats like the capacity
 // meters that buying_manager (also in ADMIN_ROLES) shouldn't see.
 function isOnlyAdmin(s)    { return !!s && s.role === 'admin' }
@@ -1459,6 +1464,148 @@ export async function onRequest(context) {
           status:       r.status,
           created_at:   r.created_at
         }))
+      })
+    }
+
+    // GET /manager/overview — phone-friendly rollup for store/area managers.
+    // Returns:
+    //   - totals: chain-wide-but-scoped KPI numbers for today
+    //   - per_store: rollup row per store the user can see
+    //   - by_day_7: each store's last-7-days completion % for the heatmap
+    if (path === '/manager/overview' && method === 'GET') {
+      if (!isManagerRole(session)) return err('Forbidden', 403)
+      const scope = await scopedStoreIds(db, session)
+      if (scope !== null && !scope.length) {
+        return json({ totals: { ho_today:0, ho_pending:0, ho_to_clear:0, store_completion_pct:0, photos_today:0 }, per_store: [], by_day_7: [] })
+      }
+
+      // Date helpers — today + 7-day window in UTC for the DB filters.
+      const todayUTC    = new Date(); todayUTC.setUTCHours(0,0,0,0)
+      const sevenAgo    = new Date(todayUTC.getTime() - 6 * 86400000)
+      const todayISO    = todayUTC.toISOString()
+      const sevenAgoStr = sevenAgo.toISOString().slice(0, 10)
+      const todayDate   = todayUTC.toISOString().slice(0, 10)
+
+      const storeFilter = scope === null ? null : scope
+      const inFilter    = storeFilter ? `in.(${storeFilter.join(',')})` : null
+
+      // 1) Stores in scope (for names + ordering).
+      const storeParams = { select: 'id,store_name,store_code,is_active', order: 'store_name.asc', is_active: 'eq.true' }
+      if (inFilter) storeParams['id'] = inFilter
+      const stores = await db.select('stores', storeParams)
+      if (!stores.length) {
+        return json({ totals: { ho_today:0, ho_pending:0, ho_to_clear:0, store_completion_pct:0, photos_today:0 }, per_store: [], by_day_7: [] })
+      }
+      const allStoreIds = stores.map(s => s.id)
+      const storeIdInFilter = `in.(${allStoreIds.join(',')})`
+
+      // 2) HO task_records for the last 7 days, scoped, excluding cleared.
+      const trParams = {
+        select: 'id,store_id,status,photo_product_url,photo_barcode_url,created_at',
+        store_id: storeIdInFilter,
+        created_at: `gte.${sevenAgo.toISOString()}`,
+        status: 'neq.cleared',
+        limit: '5000'
+      }
+      const taskRecords = await db.select('task_records', trParams)
+
+      // 3) Store-task instances for the last 7 days (for completion %).
+      const stiParams = {
+        select: 'id,store_id,status,due_date,completed_at,photo_url,answers',
+        store_id: storeIdInFilter,
+        due_date: `gte.${sevenAgoStr}`,
+        limit: '5000'
+      }
+      const instances = await db.select('store_task_instances', stiParams)
+
+      // ── Aggregate per store ─────────────────────────────────────────────
+      const perStore = {}
+      for (const s of stores) {
+        perStore[s.id] = {
+          store_id: s.id,
+          store_name: s.store_name,
+          store_code: s.store_code,
+          ho_today: 0,
+          ho_pending: 0,
+          ho_to_clear: 0,
+          tasks_today_total: 0,
+          tasks_today_done: 0,
+          completion_pct: 0,
+          photos_today: 0
+        }
+      }
+
+      // HO records
+      for (const r of taskRecords) {
+        const row = perStore[r.store_id]; if (!row) continue
+        const onToday = String(r.created_at).slice(0,10) === todayDate
+        if (onToday) row.ho_today += 1
+        if (r.status === 'pending')                         row.ho_pending += 1
+        if (r.status === 'completed' || r.status === 'no_change_needed') row.ho_to_clear += 1
+        if (onToday && (r.photo_product_url || r.photo_barcode_url)) row.photos_today += 1
+      }
+
+      // Store-task instances today + 7-day heatmap
+      const heatmapBuckets = {} // { store_id: { 'YYYY-MM-DD': { done, total } } }
+      for (const i of instances) {
+        const sid  = i.store_id
+        const date = i.due_date
+        if (!heatmapBuckets[sid]) heatmapBuckets[sid] = {}
+        if (!heatmapBuckets[sid][date]) heatmapBuckets[sid][date] = { done: 0, total: 0 }
+        heatmapBuckets[sid][date].total += 1
+        if (i.status === 'completed') heatmapBuckets[sid][date].done += 1
+        if (date === todayDate) {
+          const row = perStore[sid]; if (!row) continue
+          row.tasks_today_total += 1
+          if (i.status === 'completed') row.tasks_today_done += 1
+          if (i.photo_url) row.photos_today += 1
+        }
+      }
+      for (const row of Object.values(perStore)) {
+        row.completion_pct = row.tasks_today_total
+          ? Math.round((row.tasks_today_done / row.tasks_today_total) * 100)
+          : null
+      }
+
+      // ── 7-day heatmap series ──────────────────────────────────────────
+      const dayKeys = []
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(todayUTC.getTime() - i * 86400000)
+        dayKeys.push(d.toISOString().slice(0, 10))
+      }
+      const by_day_7 = Object.values(perStore).map(row => {
+        const days = dayKeys.map(d => {
+          const b = heatmapBuckets[row.store_id]?.[d]
+          if (!b || !b.total) return { date: d, pct: null }
+          return { date: d, pct: Math.round((b.done / b.total) * 100) }
+        })
+        return { store_id: row.store_id, store_name: row.store_name, days }
+      })
+
+      // ── Totals across all of the user's stores ──────────────────────
+      const totals = { ho_today: 0, ho_pending: 0, ho_to_clear: 0, photos_today: 0,
+                       tasks_today_total: 0, tasks_today_done: 0 }
+      for (const r of Object.values(perStore)) {
+        totals.ho_today          += r.ho_today
+        totals.ho_pending        += r.ho_pending
+        totals.ho_to_clear       += r.ho_to_clear
+        totals.photos_today      += r.photos_today
+        totals.tasks_today_total += r.tasks_today_total
+        totals.tasks_today_done  += r.tasks_today_done
+      }
+      totals.store_completion_pct = totals.tasks_today_total
+        ? Math.round((totals.tasks_today_done / totals.tasks_today_total) * 100)
+        : null
+
+      return json({
+        totals,
+        per_store: Object.values(perStore).sort((a,b) =>
+          // Worst first: lowest completion %, then most pending HO.
+          (a.completion_pct ?? 101) - (b.completion_pct ?? 101) ||
+          b.ho_pending - a.ho_pending
+        ),
+        by_day_7,
+        as_of: new Date().toISOString()
       })
     }
 

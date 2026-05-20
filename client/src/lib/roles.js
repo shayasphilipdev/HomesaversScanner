@@ -80,3 +80,8 @@ export const canSeeAnyAdminLink   = (session) => canAccessAdmin(session) || canA
 // Per-employee feature toggles (Phase 9J)
 export const canDoHQTasks    = (session) => !!session && session.can_access_hq_tasks    !== false
 export const canDoStoreTasks = (session) => !!session && session.can_access_store_tasks !== false
+
+// Manager dashboard — anyone above shop-floor level. Sales Assistant /
+// Supervisor stay on the regular Dashboard.
+const MANAGER_ROLES = ['store_manager','assistant_store_manager','area_manager','support_admin','buying_manager','buying_head','admin']
+export const canSeeManagerDashboard = (session) => !!session && MANAGER_ROLES.includes(session.role)

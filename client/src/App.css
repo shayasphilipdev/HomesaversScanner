@@ -685,6 +685,22 @@ tbody tr:hover { background: var(--bg-soft); }
 .kpi-card.kpi-feature .kpi-label,
 .kpi-card.kpi-feature .kpi-sub { color: rgba(255,255,255,.82); }
 
+/* Tonal KPI variants for the Manager dashboard. Soft tinted card to
+   draw the eye when something needs the manager's attention. */
+.kpi-card.kpi-card-warn {
+  background: #FFF7E0;
+  border-color: #E0A03A;
+}
+.kpi-card.kpi-card-warn .kpi-label { color: #8a5a14; }
+.kpi-card.kpi-card-ok {
+  background: #E6F5E8;
+  border-color: #3E9F4B;
+}
+.kpi-card.kpi-card-ok   .kpi-label { color: #1d5b30; }
+/* Tiles are tappable links — make hover feedback obvious. */
+a.kpi-card { transition: transform 80ms ease, box-shadow 120ms ease; }
+a.kpi-card:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
+
 .kpi-label {
   font-size: 12px;
   font-weight: 500;

@@ -1,6 +1,6 @@
 import { NavLink, useLocation } from 'react-router-dom'
 import { useStore } from '../App.jsx'
-import { canSeeAnyAdminLink, canAccessAdmin, canDoHQTasks, canDoStoreTasks } from '../lib/roles.js'
+import { canSeeAnyAdminLink, canAccessAdmin, canDoHQTasks, canDoStoreTasks, canSeeManagerDashboard } from '../lib/roles.js'
 
 // Desktop sidebar (visible on screens ≥ 1024px). Replaces the top-bar
 // links at that width. Active state matches `/admin/*` for the Admin
@@ -12,6 +12,7 @@ export default function Sidebar() {
   const items = [
     { to: '/dashboard',    icon: '◧', label: 'Dashboard' }
   ]
+  if (canSeeManagerDashboard(session)) items.push({ to: '/manager', icon: '◑', label: 'Manager view' })
   if (canDoHQTasks(session))    items.push({ to: '/tasks',       icon: '✚', label: 'HO Tasks' })
   if (canDoStoreTasks(session)) items.push({ to: '/store-tasks', icon: '☑', label: 'Store Tasks' })
   items.push({ to: '/product-query', icon: '💬', label: 'Product Query' })

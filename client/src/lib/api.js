@@ -184,6 +184,9 @@ export const adminGetCapacity         = () => request('/admin/capacity')
 // Append-only audit ledger for one task_records row.
 export const getTaskRecordEvents      = (id) => request(`/task-records/${id}/events`)
 
+// Manager mobile dashboard rollup (today + 7-day heatmap, scope-aware).
+export const getManagerOverview       = () => request('/manager/overview')
+
 // ── Product Query board ───────────────────────────────────────────────
 export const listProductQuestions   = ()        => request('/product-questions')
 export const getProductQuestion     = (id)      => request(`/product-questions/${id}`)
