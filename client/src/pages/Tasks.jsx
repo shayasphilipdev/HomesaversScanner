@@ -39,9 +39,12 @@ export default function Tasks() {
       const data = await getTaskRecords({
         storeId:  currentStoreId,
         taskType: selectedType,
-        status:   filter !== 'all' ? filter : undefined
+        status:   filter !== 'all' ? filter : undefined,
+        limit:    500   // a store + task-type pair is normally tiny; one page is plenty
       })
-      setRecords(data)
+      // Backend returns { records, total, ... }; older responses were a bare
+      // array, so tolerate both for a clean rolling deploy.
+      setRecords(Array.isArray(data) ? data : (data?.records || []))
     } catch (e) {
       console.error(e)
     } finally {

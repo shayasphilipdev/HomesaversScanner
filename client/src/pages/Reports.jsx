@@ -67,6 +67,9 @@ function HQReports() {
   const [taskTypes, setTaskTypes]     = useState([])
 
   const [records, setRecords]         = useState([])
+  const [total, setTotal]             = useState(0)
+  const [hasMore, setHasMore]         = useState(false)
+  const PAGE_SIZE = 200
   const [storesById, setStoresById]   = useState({})
   const [selected, setSelected]       = useState(new Set())
   const [loading, setLoading]         = useState(false)
@@ -105,16 +108,41 @@ function HQReports() {
     }
   }, [isBO])
 
+  const fetchPage = async (offset) => {
+    return await getTaskRecords({
+      storeId:  storeIds.length    ? storeIds.join(',')    : undefined,
+      taskType: taskTypeIds.length ? taskTypeIds.join(',') : undefined,
+      status:   statusIds.length   ? statusIds.join(',')   : undefined,
+      limit:    PAGE_SIZE,
+      offset,
+      filters:  { from, to }
+    })
+  }
+
   const runReport = async () => {
     setLoading(true); setError(''); setSelected(new Set()); setReviewRowId(null)
     try {
-      const data = await getTaskRecords({
-        storeId:  storeIds.length    ? storeIds.join(',')    : undefined,
-        taskType: taskTypeIds.length ? taskTypeIds.join(',') : undefined,
-        status:   statusIds.length   ? statusIds.join(',')   : undefined,
-        filters:  { from, to }
-      })
-      setRecords(data)
+      const data = await fetchPage(0)
+      // Tolerate bare-array (legacy) and paginated ({records,total,has_more}).
+      const rows  = Array.isArray(data) ? data           : (data?.records || [])
+      const tot   = Array.isArray(data) ? rows.length    : (data?.total ?? rows.length)
+      const more  = Array.isArray(data) ? false          : !!data?.has_more
+      setRecords(rows); setTotal(tot); setHasMore(more)
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadMore = async () => {
+    setLoading(true)
+    try {
+      const data = await fetchPage(records.length)
+      const rows = Array.isArray(data) ? data : (data?.records || [])
+      const tot  = Array.isArray(data) ? rows.length : (data?.total ?? rows.length + records.length)
+      const more = Array.isArray(data) ? false : !!data?.has_more
+      setRecords(prev => [...prev, ...rows]); setTotal(tot); setHasMore(more)
     } catch (e) {
       setError(e.message)
     } finally {
@@ -294,12 +322,19 @@ function HQReports() {
 
       {records.length > 0 && (
         <div className="card mt-20">
-          <div className="card-header">
-            Results · {records.length} record{records.length !== 1 ? 's' : ''}
+          <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span>
+              Showing {records.length.toLocaleString('en-IE')}
+              {total > records.length && <> of {total.toLocaleString('en-IE')}</>}
+              {' '}record{records.length !== 1 ? 's' : ''}
+            </span>
             {pendingIds.length > 0 && isBO && (
-              <span style={{ marginLeft: 10, fontWeight: 'normal', fontSize: 13, color: 'var(--text-muted)' }}>
-                ({pendingIds.length} pending)
-              </span>
+              <span className="note" style={{ fontSize: 12 }}>· {pendingIds.length} pending</span>
+            )}
+            {hasMore && (
+              <button className="btn btn-sm btn-outline" style={{ marginLeft: 'auto' }} onClick={loadMore} disabled={loading}>
+                {loading ? <><span className="spinner" /> Loading…</> : `Load more (${(total - records.length).toLocaleString('en-IE')} left)`}
+              </button>
             )}
           </div>
 

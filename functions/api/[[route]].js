@@ -34,6 +34,21 @@ function sb(env) {
       if (!res.ok) throw new Error(await res.text())
       return res.json()
     },
+    // Like select, but also returns the total row count via PostgREST's
+    // Content-Range header. Used by paginated endpoints to fill the UI's
+    // "Showing N of M" indicator without a second query.
+    async selectPage(table, params = {}) {
+      const res = await fetch(`${url}/rest/v1/${table}?${buildQuery(params)}`, {
+        headers: { ...headers, Prefer: 'count=exact' }
+      })
+      if (!res.ok) throw new Error(await res.text())
+      const rows  = await res.json()
+      const range = res.headers.get('content-range') || ''
+      // Format: "0-99/1234" or "*/0"
+      const totalStr = range.split('/')[1]
+      const total    = totalStr && totalStr !== '*' ? Number(totalStr) : rows.length
+      return { rows, total }
+    },
     async insert(table, body) {
       const res = await fetch(`${url}/rest/v1/${table}`, {
         method: 'POST', headers, body: JSON.stringify(body)
@@ -1728,32 +1743,39 @@ export async function onRequest(context) {
       const to        = p.get('to')
       const explicit  = p.get('storeId')
 
+      // Pagination -- caps mean a single request can never blow the Worker
+      // budget even at 55-store scale. Default 200 rows / max 1000.
+      const MAX_LIMIT     = 1000
+      const DEFAULT_LIMIT = 200
+      const reqLimit  = Number(p.get('limit'))  || DEFAULT_LIMIT
+      const limit     = Math.min(Math.max(1, reqLimit), MAX_LIMIT)
+      const offset    = Math.max(0, Number(p.get('offset')) || 0)
+
+      const empty = () => json({ records: [], total: 0, limit, offset, has_more: false })
+
       const includeCleared = p.get('includeCleared') === '1'
       const scope = await scopedStoreIds(db, session)
       // null = unrestricted; otherwise filter to the scope's stores.
       const params = {
         select: 'id,task_type,store_id,supplier_id,supplier_name_text,suppliers(supplier_name),product_code,product_barcode,product_name_label,description,uom,quantity,notes,photo_product_url,photo_barcode_url,details,status,review_notes,reviewed_at,marked_for_deletion,completed_at,store_completed_at,cleared_at,created_at,updated_at',
-        order: 'created_at.desc'
+        order:  'created_at.desc',
+        limit:  String(limit),
+        offset: String(offset)
       }
-      // storeId / taskType / status now accept comma-separated lists so the
-      // Reports UI can filter by multiple values at once. 'all' or empty
-      // means no filter (equivalent to all scoped stores).
       const csv = (s) => (s || '').split(',').map(x => x.trim()).filter(x => x && x !== 'all')
       const storesWanted = csv(explicit)
       if (storesWanted.length) {
         const allowed = scope === null ? storesWanted : storesWanted.filter(id => scope.includes(id))
-        if (!allowed.length) return json([])
+        if (!allowed.length) return empty()
         params['store_id'] = allowed.length === 1 ? `eq.${allowed[0]}` : `in.(${allowed.join(',')})`
       } else if (scope !== null) {
-        if (!scope.length) return json([])
+        if (!scope.length) return empty()
         params['store_id'] = `in.(${scope.join(',')})`
       }
       const tt = csv(taskType)
       if (tt.length) params['task_type'] = tt.length === 1 ? `eq.${tt[0]}` : `in.(${tt.join(',')})`
       const ss = csv(status)
       if (ss.length)                       params['status'] = ss.length === 1 ? `eq.${ss[0]}` : `in.(${ss.join(',')})`
-      // By default hide 'cleared' records — they stay in the database but
-      // disappear from active forms and reports. Pass includeCleared=1 to see them.
       else if (!includeCleared)            params['status'] = `neq.cleared`
 
       const range = []
@@ -1761,14 +1783,20 @@ export async function onRequest(context) {
       if (to)   range.push(`lte.${new Date(to).toISOString()}`)
       if (range.length) params['created_at'] = range
 
-      const rows = await db.select('task_records', params)
-      // Flatten the embedded suppliers join so the client gets a flat supplier_name.
+      // selectPage returns total via PostgREST count=exact.
+      const { rows, total } = await db.selectPage('task_records', params)
       const flat = rows.map(r => ({
         ...r,
         supplier_name: r.suppliers?.supplier_name || r.supplier_name_text || null,
         suppliers:     undefined
       }))
-      return json(flat)
+      return json({
+        records:  flat,
+        total,
+        limit,
+        offset,
+        has_more: offset + flat.length < total
+      })
     }
 
     // Bulk review (back office) — mark many records as completed or

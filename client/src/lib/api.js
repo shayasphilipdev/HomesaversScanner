@@ -113,11 +113,15 @@ export const deletePhoto = (objectPath) =>
 
 // ── Task records ────────────────────────────────────────────────────────────
 
-export const getTaskRecords = ({ storeId, taskType, status, filters = {} } = {}) => {
+// Returns { records, total, limit, offset, has_more } -- backend caps each
+// page at 1000 rows. Pass { limit, offset } to paginate; defaults are 200/0.
+export const getTaskRecords = ({ storeId, taskType, status, limit, offset, filters = {} } = {}) => {
   const q = new URLSearchParams()
-  if (storeId)  q.set('storeId', storeId)
-  if (taskType) q.set('task_type', taskType)
-  if (status)   q.set('status', status)
+  if (storeId)        q.set('storeId',   storeId)
+  if (taskType)       q.set('task_type', taskType)
+  if (status)         q.set('status',    status)
+  if (limit  != null) q.set('limit',     String(limit))
+  if (offset != null) q.set('offset',    String(offset))
   for (const [k, v] of Object.entries(filters)) q.set(k, v)
   return request('/task-records' + (q.toString() ? `?${q}` : ''))
 }
