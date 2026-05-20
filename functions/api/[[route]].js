@@ -1393,78 +1393,54 @@ export async function onRequest(context) {
       const scope = await scopedStoreIds(db, session)
       const empty = () => json({ totals: { all: 0, pending: 0, completed: 0, no_change_needed: 0, store_completed: 0 }, by_task_type: [], by_store: [], by_day: [], recent: [] })
 
-      const params = {
-        select: 'id,task_type,store_id,product_code,product_barcode,status,created_at',
-        order:  'created_at.desc',
-        limit:  '5000'
-      }
-      const range = []
-      if (from) range.push(`gte.${new Date(from).toISOString()}`)
-      if (to)   range.push(`lte.${new Date(to).toISOString()}`)
-      if (range.length) params['created_at'] = range
+      // Resolve which store_ids the SQL should see (null = no scope filter,
+      // [] = nothing accessible, [...] = explicit set).
+      let storeIds = null
       if (multi.length) {
-        const filtered = scope === null ? multi : multi.filter(id => scope.includes(id))
-        if (!filtered.length) return empty()
-        params['store_id'] = `in.(${filtered.join(',')})`
+        storeIds = scope === null ? multi : multi.filter(id => scope.includes(id))
+        if (!storeIds.length) return empty()
       } else if (explicit && explicit !== 'all') {
         if (scope !== null && !scope.includes(explicit)) return empty()
-        params['store_id'] = `eq.${explicit}`
+        storeIds = [explicit]
       } else if (scope !== null) {
         if (!scope.length) return empty()
-        params['store_id'] = `in.(${scope.join(',')})`
+        storeIds = scope
       }
 
-      const records = await db.select('task_records', params)
-
-      const totals = { all: records.length, pending: 0, completed: 0, no_change_needed: 0, store_completed: 0 }
-      const byTask = {}, byStore = {}, byDay = {}
-
-      // Build a continuous 14-day window so the line chart has flat days too.
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      for (let i = 13; i >= 0; i--) {
-        const d = new Date(today.getTime() - i * 86400000)
-        byDay[d.toISOString().slice(0, 10)] = 0
-      }
-
-      for (const r of records) {
-        totals[r.status] = (totals[r.status] || 0) + 1
-        byTask[r.task_type] = (byTask[r.task_type] || 0) + 1
-        if (r.store_id) byStore[r.store_id] = (byStore[r.store_id] || 0) + 1
-        const d = String(r.created_at).slice(0, 10)
-        if (d in byDay) byDay[d] = (byDay[d] || 0) + 1
-      }
-
-      const [taskTypes, stores] = await Promise.all([
-        db.select('task_types', { select: 'code,name' }),
-        isBO ? db.select('stores', { select: 'id,store_name' }) : Promise.resolve([])
-      ])
-      const taskName  = Object.fromEntries(taskTypes.map(t => [t.code, t.name]))
-      const storeName = Object.fromEntries(stores.map(s => [s.id, s.store_name]))
-
-      return json({
-        totals,
-        by_task_type: Object.entries(byTask)
-          .map(([code, count]) => ({ code, name: taskName[code] || code, count }))
-          .sort((a, b) => b.count - a.count),
-        by_store: isBO
-          ? Object.entries(byStore)
-              .map(([id, count]) => ({ id, store_name: storeName[id] || '', count }))
-              .sort((a, b) => b.count - a.count)
-          : [],
-        by_day: Object.entries(byDay)
-          .map(([date, count]) => ({ date, count }))
-          .sort((a, b) => a.date.localeCompare(b.date)),
-        recent: records.slice(0, 10).map(r => ({
-          id:           r.id,
-          task_type:    r.task_type,
-          store_id:     r.store_id,
-          store_name:   storeName[r.store_id] || '',
-          product:      r.product_code || r.product_barcode || '',
-          status:       r.status,
-          created_at:   r.created_at
-        }))
+      // Push all the heavy aggregation into Postgres -- the RPC returns a
+      // single JSON blob with totals, by_task_type, by_store, by_day, recent.
+      // Saves a 5000-row Worker fetch on every dashboard load.
+      const rpcRes = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/dashboard_stats`, {
+        method: 'POST',
+        headers: {
+          'apikey':        env.SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`,
+          'Content-Type':  'application/json'
+        },
+        body: JSON.stringify({
+          p_from:      from ? new Date(from).toISOString() : null,
+          p_to:        to   ? new Date(to).toISOString()   : null,
+          p_store_ids: storeIds
+        })
       })
+      if (!rpcRes.ok) {
+        return err(`Dashboard RPC failed: ${await rpcRes.text()}`, 502)
+      }
+      const stats = await rpcRes.json()
+
+      // RPC's by_day only includes days that had records -- fill the
+      // missing days so the chart shows a continuous 14-day window.
+      const today = new Date(); today.setHours(0, 0, 0, 0)
+      const byDay = Object.fromEntries((stats.by_day || []).map(d => [d.date, d.count]))
+      const filled = []
+      for (let i = 13; i >= 0; i--) {
+        const d = new Date(today.getTime() - i * 86400000).toISOString().slice(0, 10)
+        filled.push({ date: d, count: byDay[d] || 0 })
+      }
+      stats.by_day = filled
+      // Hide by_store for non-BO -- only HO needs the per-store split.
+      if (!isBO) stats.by_store = []
+      return json(stats)
     }
 
     // GET /manager/overview — phone-friendly rollup for store/area managers.
