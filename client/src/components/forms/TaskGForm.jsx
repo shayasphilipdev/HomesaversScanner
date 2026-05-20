@@ -2,7 +2,7 @@ import { createTaskRecord } from '../../lib/api.js'
 import { useStore } from '../../App.jsx'
 import ScannerInput from './ScannerInput.jsx'
 import SupplierPicker from './SupplierPicker.jsx'
-import { useTaskForm, LookupBanner } from './useTaskForm.js'
+import { useTaskForm, LookupBanner } from './useTaskForm.jsx'
 
 // Task G — Promotion Error
 const EMPTY = {
