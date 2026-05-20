@@ -191,6 +191,14 @@ export const getTaskRecordEvents      = (id) => request(`/task-records/${id}/eve
 // Manager mobile dashboard rollup (today + 7-day heatmap, scope-aware).
 export const getManagerOverview       = () => request('/manager/overview')
 
+// Admin activity report — paginated task_record_events with optional date
+// + user filters. Returns { events, total, limit, offset, has_more }.
+export const adminListActivity = (params = {}) => {
+  const q = new URLSearchParams()
+  for (const [k, v] of Object.entries(params)) if (v != null && v !== '') q.set(k, String(v))
+  return request('/admin/activity' + (q.toString() ? `?${q}` : ''))
+}
+
 // ── Product Query board ───────────────────────────────────────────────
 export const listProductQuestions   = ()        => request('/product-questions')
 export const getProductQuestion     = (id)      => request(`/product-questions/${id}`)

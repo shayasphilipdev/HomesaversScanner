@@ -23,6 +23,7 @@ import AdminSuppliers from './pages/AdminSuppliers.jsx'
 import AdminLookups from './pages/AdminLookups.jsx'
 import AdminProducts from './pages/AdminProducts.jsx'
 import AdminSettings from './pages/AdminSettings.jsx'
+import AdminReports from './pages/AdminReports.jsx'
 import { setToken, clearToken } from './lib/api.js'
 
 export const StoreContext = createContext(null)
@@ -115,6 +116,7 @@ function Shell() {
             <Route path="/admin/lookups"    element={<AdminGuard><AdminLookups /></AdminGuard>} />
             <Route path="/admin/products"   element={<AdminGuard><AdminProducts /></AdminGuard>} />
             <Route path="/admin/settings"   element={<AdminGuard><AdminSettings /></AdminGuard>} />
+            <Route path="/admin/reports"    element={<AdminGuard><AdminReports /></AdminGuard>} />
           <Route path="*"                 element={<Navigate to="/dashboard" replace />} />
         </Routes>
         </main>

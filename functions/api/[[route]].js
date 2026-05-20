@@ -982,6 +982,34 @@ export async function onRequest(context) {
     // records older than scan_record_retention_days. The records stay in the
     // DB forever otherwise; this is the hatch the admin pulls when storage
     // pressure is high.
+    // GET /admin/activity?from=&to=&user=&limit= — paginated audit ledger
+    // view for the Admin Reports page. Returns chronological events with
+    // store + record details for context.
+    if (path === '/admin/activity' && method === 'GET') {
+      if (!isAdminRole(session)) return err('Forbidden', 403)
+      const p = url.searchParams
+      const from   = p.get('from')
+      const to     = p.get('to')
+      const userId = p.get('user_id')
+      const limit  = Math.min(Math.max(1, Number(p.get('limit')) || 200), 1000)
+      const offset = Math.max(0, Number(p.get('offset')) || 0)
+
+      const params = {
+        select: 'id,record_id,from_status,to_status,by_user_id,by_user_name,at,note',
+        order:  'at.desc',
+        limit:  String(limit),
+        offset: String(offset)
+      }
+      const range = []
+      if (from) range.push(`gte.${new Date(from).toISOString()}`)
+      if (to)   range.push(`lte.${new Date(to).toISOString()}`)
+      if (range.length) params['at'] = range
+      if (userId) params['by_user_id'] = `eq.${userId}`
+
+      const { rows, total } = await db.selectPage('task_record_events', params)
+      return json({ events: rows, total, limit, offset, has_more: offset + rows.length < total })
+    }
+
     if (path === '/admin/cleanup/task-records' && method === 'POST') {
       if (!isAdminRole(session)) return err('Forbidden', 403)
       const [setting] = await db.select('app_settings', { select: 'value', key: 'eq.scan_record_retention_days' })

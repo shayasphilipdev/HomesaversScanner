@@ -12,6 +12,7 @@ const ADMIN_TABS = [
   { to: '/admin/suppliers',       label: 'Suppliers' },
   { to: '/admin/lookups',         label: 'Reason / Size lookups' },
   { to: '/admin/products',        label: 'Products' },
+  { to: '/admin/reports',         label: 'Reports' },
   { to: '/admin/settings',        label: 'Settings' }
 ]
 const TEMPLATE_TAB = { to: '/admin/task-templates', label: 'Task templates' }
