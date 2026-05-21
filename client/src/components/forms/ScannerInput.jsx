@@ -75,39 +75,31 @@ export default function ScannerInput({
           Formats.CODE_128, Formats.CODE_39, Formats.ITF
         ].filter(f => f !== undefined)
 
-        const scanner = new Html5Qrcode(readerId, {
-          formatsToSupport,
-          // Use the browser's native, hardware-accelerated BarcodeDetector
-          // when available (Android Chrome/Edge) instead of the slower JS
-          // decoder. This is the single biggest speed + accuracy win.
+        // Constructor config — only pass formatsToSupport when we actually
+        // resolved the enum (an empty array makes the constructor throw).
+        const ctorConfig = {
           experimentalFeatures: { useBarCodeDetectorIfSupported: true },
           verbose: false
-        })
+        }
+        if (formatsToSupport.length) ctorConfig.formatsToSupport = formatsToSupport
+
+        const scanner = new Html5Qrcode(readerId, ctorConfig)
         scannerRef.current = scanner
         setCameraStatus('Requesting camera permission…')
 
+        // Minimal, widely-supported start config. The previous version passed
+        // a videoConstraints object with focusMode keys that threw a
+        // TypeError on some browsers; focus/zoom are now applied AFTER start
+        // via the live track instead.
         await scanner.start(
           { facingMode: 'environment' },
           {
-            fps: 12,
-            // Small, landscape "region of interest". html5-qrcode only
-            // decodes inside this box, so a barcode is read only when it's
-            // centred — and the small box nudges users to hold the phone
-            // close, which sharpens focus.
-            qrbox: (vw, vh) => {
-              const w = Math.max(180, Math.min(280, Math.floor(vw * 0.7)))
-              const h = Math.max(90,  Math.floor(w * 0.5))
-              return { width: w, height: h }
-            },
-            aspectRatio: 1.7,
-            // Ask for a sharp back camera with continuous autofocus.
-            videoConstraints: {
-              facingMode: 'environment',
-              width:  { ideal: 1920 },
-              height: { ideal: 1080 },
-              focusMode: 'continuous',
-              advanced: [{ focusMode: 'continuous' }]
-            }
+            fps: 10,
+            // Small, landscape "region of interest" — html5-qrcode only
+            // decodes inside this box, so a barcode reads only when centred,
+            // and the small box nudges users to hold the phone close.
+            qrbox: { width: 240, height: 130 },
+            aspectRatio: 1.777
           },
           (decoded) => {
             const code = String(decoded || '').trim()
@@ -135,7 +127,13 @@ export default function ScannerInput({
         // capabilities for zoom + torch and apply a sensible default zoom.
         setTimeout(async () => {
           const rawTrack = getRawTrack(readerId)
-          const tcaps = rawTrack?.getCapabilities?.() || {}
+          if (!rawTrack) return
+          const tcaps = rawTrack.getCapabilities?.() || {}
+          // Continuous autofocus where the browser supports it (guarded — an
+          // unsupported constraint here is what caused the original error).
+          if (Array.isArray(tcaps.focusMode) && tcaps.focusMode.includes('continuous')) {
+            await rawTrack.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => {})
+          }
           if (tcaps.zoom) {
             const min = tcaps.zoom.min ?? 1, max = tcaps.zoom.max ?? 5, step = tcaps.zoom.step ?? 0.1
             setZoomCaps({ min, max, step })
