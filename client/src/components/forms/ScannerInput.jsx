@@ -24,6 +24,9 @@ export default function ScannerInput({
   const scannerRef = useRef(null)
   const [cameraOn, setCameraOn]         = useState(false)
   const [cameraStatus, setCameraStatus] = useState('')
+  // Chain-wide toggle (Admin → Settings). Stores use a scanner gun 99% of
+  // the time, so the camera button is hidden unless an admin turns it on.
+  const cameraEnabled = localStorage.getItem('hs_camera_enabled') === '1'
 
   // Scanner gun keystroke buffer — global
   useEffect(() => {
@@ -115,19 +118,21 @@ export default function ScannerInput({
           </span>
         )}
       </div>
-      <div className="flex-row" style={{ gap: 8, marginTop: 6 }}>
-        <button
-          type="button"
-          className={`btn btn-sm ${cameraOn ? 'btn-danger' : 'btn-outline'}`}
-          onClick={() => setCameraOn(v => !v)}
-        >
-          {cameraOn ? '✕ Stop camera' : '📷 Use camera'}
-        </button>
-        <span className="note" style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-          Scanner gun and typing work without enabling the camera.
-        </span>
-      </div>
-      {cameraOn && (
+      {cameraEnabled && (
+        <div className="flex-row" style={{ gap: 8, marginTop: 6 }}>
+          <button
+            type="button"
+            className={`btn btn-sm ${cameraOn ? 'btn-danger' : 'btn-outline'}`}
+            onClick={() => setCameraOn(v => !v)}
+          >
+            {cameraOn ? '✕ Stop camera' : '📷 Use camera'}
+          </button>
+          <span className="note" style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+            Scanner gun and typing work without enabling the camera.
+          </span>
+        </div>
+      )}
+      {cameraEnabled && cameraOn && (
         <div className="mt-12">
           <div id={readerId} style={{ width: '100%', maxWidth: 480, minHeight: 240, background: '#eee', borderRadius: 10, overflow: 'hidden' }} />
           <div className="note mt-12" style={{ fontSize: 13, color: 'var(--text-muted)' }}>

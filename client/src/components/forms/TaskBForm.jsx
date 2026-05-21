@@ -1,5 +1,4 @@
 ﻿import { useState } from 'react'
-import { UOM_OPTIONS, PACK_WARNING_TRIGGER, EACHS_WARNING } from '../../lib/uom.js'
 import { createTaskRecord, uploadPhoto, deletePhoto, lookupProduct } from '../../lib/api.js'
 import { newPhotoNamespace } from '../../lib/photos.js'
 import { add as outboxAdd, isOfflineError } from '../../lib/outbox.js'
@@ -9,12 +8,12 @@ import SupplierPicker from './SupplierPicker.jsx'
 import PhotoCapture from './PhotoCapture.jsx'
 
 const EMPTY = {
-  product_barcode: '', description: '', uom: '', quantity: '',
+  product_barcode: '', description: '',
   supplier_id: '', supplier_name_text: '', notes: ''
 }
 
 // Task B — Non-Scans
-// Fields: product_barcode, description, uom, quantity,
+// Fields: product_barcode, description,
 //         photo of product (mandatory), photo of barcode (mandatory),
 //         supplier, notes
 export default function TaskBForm({ onSaved, storeId }) {
@@ -37,7 +36,6 @@ export default function TaskBForm({ onSaved, storeId }) {
         setForm(f => ({
           ...f,
           description:        p.description || f.description,
-          uom:                p.uom || f.uom,
           supplier_id:        p.supplier_id || f.supplier_id,
           supplier_name_text: p.supplier_id ? '' : f.supplier_name_text
         }))
@@ -52,8 +50,6 @@ export default function TaskBForm({ onSaved, storeId }) {
     e.preventDefault()
     if (!form.product_barcode.trim())              return setError('Product barcode is required.')
     if (!form.description.trim())                   return setError('Description is required.')
-    if (form.quantity !== '' && isNaN(Number(form.quantity)))
-                                                    return setError('Quantity must be a number if you enter one.')
     if (!productPhoto)                              return setError('Product photo is required.')
     if (!barcodePhoto)                              return setError('Barcode photo is required.')
 
@@ -66,8 +62,6 @@ export default function TaskBForm({ onSaved, storeId }) {
       store_id:           storeId || session.storeId || null,
       product_barcode:    form.product_barcode.trim(),
       description:        form.description.trim(),
-      uom:                form.uom || null,
-      quantity:           form.quantity === '' ? null : Number(form.quantity),
       supplier_id:        form.supplier_id || null,
       supplier_name_text: form.supplier_name_text.trim() || null,
       notes:              form.notes.trim() || null,
@@ -109,8 +103,6 @@ export default function TaskBForm({ onSaved, storeId }) {
     }
   }
 
-  const showEachsWarning = form.uom === PACK_WARNING_TRIGGER
-
   return (
     <div className="card" style={{ marginBottom: 24 }}>
       <div className="card-header">B — Non-Scans</div>
@@ -136,29 +128,12 @@ export default function TaskBForm({ onSaved, storeId }) {
               </div>
             )}
 
-            <div className="form-group">
-              <label>UOM (optional)</label>
-              <select value={form.uom} onChange={e => setForm(f => ({ ...f, uom: e.target.value }))}>
-                <option value="">— Not specified —</option>
-                {UOM_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </div>
-
             <div className="form-group full">
               <label>Description *</label>
               <input
                 type="text" value={form.description}
                 onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
                 placeholder="What is the product?"
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Quantity (optional)</label>
-              <input
-                type="number" value={form.quantity}
-                onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))}
-                placeholder="—" min="0" step="any"
               />
             </div>
 
@@ -190,13 +165,6 @@ export default function TaskBForm({ onSaved, storeId }) {
               />
             </div>
           </div>
-
-          {showEachsWarning && (
-            <div className="warning-box mt-12">
-              <span className="warning-icon">⚠️</span>
-              <div><strong>{EACHS_WARNING.title}</strong>{EACHS_WARNING.body}</div>
-            </div>
-          )}
 
           {error && <div className="login-error mt-12">{error}</div>}
 

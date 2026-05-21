@@ -13,7 +13,8 @@ export const TASK_FORMS = {
        warning: '⚠ Check for the Return Logo on the product before scanning.' },
   G: { name: 'Promotion Error',      implemented: true,  warning: null },
   H: { name: 'Stock Count',          implemented: true,  warning: null },
-  I: { name: 'Miscellaneous Tasks',  implemented: true,  warning: null }
+  I: { name: 'Miscellaneous Tasks',  implemented: true,  warning: null },
+  J: { name: 'Department Check',     implemented: true,  warning: null }
 }
 
 export const FREQUENCY_LABEL = {

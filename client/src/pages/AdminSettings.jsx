@@ -46,6 +46,11 @@ const KEY_META = {
     label: 'Product sync Excel sheet',
     hint:  'Sheet to read inside the workbook. "1" = first sheet by index, or enter a sheet name.'
   },
+  scanner_camera_enabled: {
+    label: 'Camera scanning',
+    hint:  'When on, every barcode field shows a "Use camera" button. Off by default — stores use a scanner gun.',
+    bool:  true
+  },
   capacity_db_limit_bytes: {
     label: 'Database size limit (bytes)',
     hint:  'Used by the Capacity meter at the top of this page. Free Supabase tier = 524288000 (500 MB). Update if you upgrade plan.'
@@ -186,14 +191,26 @@ export default function AdminSettings() {
               <div className="form-grid">
                 {settings.map(s => {
                   const meta = KEY_META[s.key] || { label: s.key, hint: '' }
+                  const isOn = values[s.key] === 'true'
                   return (
                     <div className="form-group full" key={s.key}>
                       <label>{meta.label}</label>
-                      <input
-                        type="text"
-                        value={values[s.key] || ''}
-                        onChange={e => updateValue(s.key, e.target.value)}
-                      />
+                      {meta.bool ? (
+                        <label className="flex-row" style={{ gap: 8, alignItems: 'center' }}>
+                          <input
+                            type="checkbox"
+                            checked={isOn}
+                            onChange={e => updateValue(s.key, e.target.checked ? 'true' : 'false')}
+                          />
+                          <span className="note" style={{ fontSize: 13 }}>{isOn ? 'On' : 'Off'}</span>
+                        </label>
+                      ) : (
+                        <input
+                          type="text"
+                          value={values[s.key] || ''}
+                          onChange={e => updateValue(s.key, e.target.value)}
+                        />
+                      )}
                       {meta.hint && <span className="note" style={{ fontSize: 12 }}>{meta.hint}</span>}
                     </div>
                   )

@@ -60,6 +60,7 @@ export const verifyUserPin        = (username, pin) => request('/users/verify-pi
 // ── Reference data ──────────────────────────────────────────────────────────
 
 export const getTaskTypes      = () => request('/task-types')
+export const getAppConfig      = () => request('/app-config')
 export const getLookupOptions  = ({ kind, task_type } = {}) => {
   const q = new URLSearchParams()
   if (kind)      q.set('kind', kind)

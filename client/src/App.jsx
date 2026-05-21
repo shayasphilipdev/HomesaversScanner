@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import { useState, createContext, useContext } from 'react'
+import { useState, useEffect, createContext, useContext } from 'react'
 import StoreSelector from './components/StoreSelector.jsx'
 import Nav from './components/Nav.jsx'
 import Sidebar from './components/Sidebar.jsx'
@@ -24,7 +24,7 @@ import AdminLookups from './pages/AdminLookups.jsx'
 import AdminProducts from './pages/AdminProducts.jsx'
 import AdminSettings from './pages/AdminSettings.jsx'
 import AdminReports from './pages/AdminReports.jsx'
-import { setToken, clearToken } from './lib/api.js'
+import { setToken, clearToken, getAppConfig } from './lib/api.js'
 
 export const StoreContext = createContext(null)
 export const useStore = () => useContext(StoreContext)
@@ -53,6 +53,16 @@ function clearSession() {
 
 export default function App() {
   const [session, setSession] = useState(loadSession)
+
+  // Pull chain-wide client flags once we have a session. Currently just the
+  // camera-scan toggle; cached in localStorage so ScannerInput can read it
+  // synchronously. Default off until proven on.
+  useEffect(() => {
+    if (!session) return
+    getAppConfig()
+      .then(cfg => localStorage.setItem('hs_camera_enabled', cfg?.scanner_camera_enabled ? '1' : '0'))
+      .catch(() => {})
+  }, [session])
 
   const login = ({ token, ...sessionData }) => {
     setToken(token, sessionData.mode)

@@ -1628,6 +1628,19 @@ export async function onRequest(context) {
       })
     }
 
+    // GET /app-config — small set of client-facing flags any signed-in user
+    // can read (e.g. whether the camera scan button is enabled chain-wide).
+    if (path === '/app-config' && method === 'GET') {
+      const rows = await db.select('app_settings', {
+        select: 'key,value',
+        key: 'in.(scanner_camera_enabled)'
+      })
+      const byKey = Object.fromEntries(rows.map(r => [r.key, r.value]))
+      return json({
+        scanner_camera_enabled: byKey.scanner_camera_enabled === 'true'
+      })
+    }
+
     // GET /task-types
     if (path === '/task-types' && method === 'GET') {
       const rows = await db.select('task_types', {
