@@ -23,13 +23,31 @@ export default function MultiSelectDropdown({
   const ids = Array.isArray(value) ? value : []
   const [open, setOpen] = useState(false)
   const [q, setQ]       = useState('')
+  const [rect, setRect] = useState(null)   // trigger position for the fixed panel
   const wrapRef = useRef(null)
+  const btnRef  = useRef(null)
+
+  // Recompute the panel's screen position from the trigger button. Using
+  // position:fixed means no ancestor's overflow:hidden/auto can clip the
+  // panel (which is what was locking it inside the Reports card).
+  const place = () => {
+    const r = btnRef.current?.getBoundingClientRect()
+    if (r) setRect({ left: r.left, top: r.bottom + 6, width: r.width })
+  }
 
   useEffect(() => {
     if (!open) return
+    place()
     const onDoc = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false) }
+    const onMove = () => place()   // keep it anchored while scrolling / resizing
     document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
+    window.addEventListener('scroll', onMove, true)
+    window.addEventListener('resize', onMove)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      window.removeEventListener('scroll', onMove, true)
+      window.removeEventListener('resize', onMove)
+    }
   }, [open])
 
   const showSearch = searchable ?? options.length >= 8
@@ -59,6 +77,7 @@ export default function MultiSelectDropdown({
     <div ref={wrapRef} style={{ position: 'relative' }}>
       <button
         type="button"
+        ref={btnRef}
         onClick={() => setOpen(o => !o)}
         className="btn btn-outline btn-sm"
         style={{
@@ -77,16 +96,16 @@ export default function MultiSelectDropdown({
         <span aria-hidden style={{ fontSize: 12 }}>{open ? '▴' : '▾'}</span>
       </button>
 
-      {open && (
+      {open && rect && (
         <div style={{
-          // Absolute so opening this dropdown doesn't reflow the rest of
-          // the filter row -- it floats over whatever's below.
-          position: 'absolute', top: 'calc(100% + 6px)', left: 0,
-          minWidth: '100%',
+          // Fixed + screen coordinates from the trigger: floats above the
+          // page so no card overflow can clip or "lock" it.
+          position: 'fixed', top: rect.top, left: rect.left,
+          width: Math.max(rect.width, 220),
           background: 'var(--surface)', border: '1px solid var(--border)',
           borderRadius: 10, boxShadow: 'var(--shadow-md)',
-          maxHeight: 360, overflow: 'auto',
-          zIndex: 100
+          maxHeight: 'min(360px, 60vh)', overflow: 'auto',
+          zIndex: 1000
         }}>
           {/* Toolbar */}
           <div style={{
