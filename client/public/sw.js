@@ -1,13 +1,17 @@
 /* Homesavers Scanner — service worker
    Strategy:
      /api/*           → never intercept (let the app handle outbox + auth)
-     navigation reqs  → stale-while-revalidate against the cached SPA shell
+     navigation reqs  → NETWORK-FIRST against the SPA shell, fall back to
+                        cache only when offline. Guarantees an online user
+                        always gets the freshest index.html (and therefore
+                        the freshest hashed bundle) on the very first load
+                        after a deploy — no second reload needed.
      /assets/*        → cache-first (Vite hashes filenames, so they're immutable)
      everything else  → pass through
 
    Bump CACHE_VERSION on cache-shape changes to evict old shells. */
 
-const CACHE_VERSION = 'v1'
+const CACHE_VERSION = 'v2'
 const CACHE_NAME    = `homesavers-${CACHE_VERSION}`
 const SHELL         = ['/', '/manifest.webmanifest']
 
@@ -39,16 +43,19 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname.startsWith('/api/')) return
   if (url.origin !== self.location.origin) return
 
-  // SPA shell — stale-while-revalidate.
+  // SPA shell — network-first. Fetch the live index.html; only fall back to
+  // the cached shell if the network is unavailable (genuine offline). This
+  // is what stops users being stuck on a stale bundle after a deploy.
   if (req.mode === 'navigate') {
     event.respondWith((async () => {
-      const cache  = await caches.open(CACHE_NAME)
-      const cached = await cache.match('/')
-      const network = fetch('/').then(res => {
+      const cache = await caches.open(CACHE_NAME)
+      try {
+        const res = await fetch('/')
         if (res && res.ok) cache.put('/', res.clone())
         return res
-      }).catch(() => null)
-      return cached || (await network) || new Response('Offline', { status: 503, statusText: 'Offline' })
+      } catch {
+        return (await cache.match('/')) || new Response('Offline', { status: 503, statusText: 'Offline' })
+      }
     })())
     return
   }

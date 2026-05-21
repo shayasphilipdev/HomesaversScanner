@@ -24,6 +24,10 @@ export default function ScannerInput({
   const scannerRef = useRef(null)
   const [cameraOn, setCameraOn]         = useState(false)
   const [cameraStatus, setCameraStatus] = useState('')
+  const [zoom, setZoom]                 = useState(2)      // default 2× — barcodes are small
+  const [zoomCaps, setZoomCaps]         = useState(null)   // {min,max,step} when supported
+  const [torchOn, setTorchOn]           = useState(false)
+  const [torchCap, setTorchCap]         = useState(false)
   // Chain-wide toggle (Admin → Settings). Stores use a scanner gun 99% of
   // the time, so the camera button is hidden unless an admin turns it on.
   const cameraEnabled = localStorage.getItem('hs_camera_enabled') === '1'
@@ -62,12 +66,49 @@ export default function ScannerInput({
         const mod = await import('html5-qrcode')
         if (cancelled) return
         const Html5Qrcode = mod.Html5Qrcode || mod.default?.Html5Qrcode
-        const scanner = new Html5Qrcode(readerId)
+        const Formats     = mod.Html5QrcodeSupportedFormats || mod.default?.Html5QrcodeSupportedFormats || {}
+
+        // Restrict to the retail 1-D symbologies. Fewer formats = the decoder
+        // does far less work per frame and is much less likely to misread.
+        const formatsToSupport = [
+          Formats.EAN_13, Formats.EAN_8, Formats.UPC_A, Formats.UPC_E,
+          Formats.CODE_128, Formats.CODE_39, Formats.ITF
+        ].filter(f => f !== undefined)
+
+        const scanner = new Html5Qrcode(readerId, {
+          formatsToSupport,
+          // Use the browser's native, hardware-accelerated BarcodeDetector
+          // when available (Android Chrome/Edge) instead of the slower JS
+          // decoder. This is the single biggest speed + accuracy win.
+          experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+          verbose: false
+        })
         scannerRef.current = scanner
         setCameraStatus('Requesting camera permission…')
+
         await scanner.start(
           { facingMode: 'environment' },
-          { fps: 5, qrbox: { width: 260, height: 140 } },
+          {
+            fps: 12,
+            // Small, landscape "region of interest". html5-qrcode only
+            // decodes inside this box, so a barcode is read only when it's
+            // centred — and the small box nudges users to hold the phone
+            // close, which sharpens focus.
+            qrbox: (vw, vh) => {
+              const w = Math.max(180, Math.min(280, Math.floor(vw * 0.7)))
+              const h = Math.max(90,  Math.floor(w * 0.5))
+              return { width: w, height: h }
+            },
+            aspectRatio: 1.7,
+            // Ask for a sharp back camera with continuous autofocus.
+            videoConstraints: {
+              facingMode: 'environment',
+              width:  { ideal: 1920 },
+              height: { ideal: 1080 },
+              focusMode: 'continuous',
+              advanced: [{ focusMode: 'continuous' }]
+            }
+          },
           (decoded) => {
             const code = String(decoded || '').trim()
             if (code.length < CAMERA_MIN_LENGTH || code.length > CAMERA_MAX_LENGTH) return
@@ -77,6 +118,7 @@ export default function ScannerInput({
             if (candidateN >= CAMERA_CONFIRM_COUNT) {
               onChange(code)
               onConfirm?.(code)
+              if (navigator.vibrate) navigator.vibrate(60)   // haptic confirm
               setCameraStatus('Saved code — close camera or scan another.')
               candidate = ''
               candidateN = 0
@@ -84,13 +126,32 @@ export default function ScannerInput({
           },
           () => {}
         )
-        setCameraStatus('Point the box at a barcode.')
+        setCameraStatus('Hold the barcode inside the box.')
+
+        // Inspect the live track for zoom + torch capabilities and apply the
+        // default zoom. Not all devices/browsers expose these (iOS Safari
+        // notably does not support zoom), so guard everything.
+        // Give the video a moment to attach, then read the track's
+        // capabilities for zoom + torch and apply a sensible default zoom.
+        setTimeout(async () => {
+          const rawTrack = getRawTrack(readerId)
+          const tcaps = rawTrack?.getCapabilities?.() || {}
+          if (tcaps.zoom) {
+            const min = tcaps.zoom.min ?? 1, max = tcaps.zoom.max ?? 5, step = tcaps.zoom.step ?? 0.1
+            setZoomCaps({ min, max, step })
+            const z = Math.min(Math.max(2, min), max)   // default 2× (clamped)
+            await rawTrack.applyConstraints({ advanced: [{ zoom: z }] }).catch(() => {})
+            setZoom(z)
+          }
+          if (tcaps.torch) setTorchCap(true)
+        }, 600)
       } catch (e) {
         setCameraStatus(cameraErrorMessage(e))
       }
     })()
     return () => {
       cancelled = true
+      setTorchOn(false); setZoomCaps(null); setTorchCap(false)
       if (scannerRef.current) {
         scannerRef.current.stop().catch(() => {}).finally(() => {
           try { scannerRef.current.clear() } catch {}
@@ -99,6 +160,22 @@ export default function ScannerInput({
       }
     }
   }, [cameraOn, onChange, onConfirm, readerId])
+
+  // Apply a zoom level to the live camera track.
+  const applyZoom = async (z) => {
+    setZoom(z)
+    const track = getRawTrack(readerId)
+    if (track) await track.applyConstraints({ advanced: [{ zoom: z }] }).catch(() => {})
+  }
+
+  // Toggle the torch / flash if the device supports it.
+  const toggleTorch = async () => {
+    const track = getRawTrack(readerId)
+    if (!track) return
+    const next = !torchOn
+    await track.applyConstraints({ advanced: [{ torch: next }] }).catch(() => {})
+    setTorchOn(next)
+  }
 
   return (
     <div className="form-group">
@@ -134,14 +211,48 @@ export default function ScannerInput({
       )}
       {cameraEnabled && cameraOn && (
         <div className="mt-12">
-          <div id={readerId} style={{ width: '100%', maxWidth: 480, minHeight: 240, background: '#eee', borderRadius: 10, overflow: 'hidden' }} />
-          <div className="note mt-12" style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+          {/* Smaller viewport so the user holds the phone close → sharper focus. */}
+          <div id={readerId} style={{ width: '100%', maxWidth: 320, minHeight: 200, background: '#eee', borderRadius: 10, overflow: 'hidden', margin: '0 auto' }} />
+
+          <div className="flex-row" style={{ gap: 10, marginTop: 8, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center' }}>
+            {zoomCaps && (
+              <label className="flex-row" style={{ gap: 6, fontSize: 12, alignItems: 'center' }}>
+                🔍
+                <input
+                  type="range"
+                  min={zoomCaps.min} max={zoomCaps.max} step={zoomCaps.step}
+                  value={zoom}
+                  onChange={e => applyZoom(Number(e.target.value))}
+                  style={{ width: 120 }}
+                />
+                <span style={{ width: 34 }}>{zoom.toFixed(1)}×</span>
+              </label>
+            )}
+            {torchCap && (
+              <button type="button" className={`btn btn-sm ${torchOn ? 'btn-primary' : 'btn-outline'}`} onClick={toggleTorch}>
+                {torchOn ? '🔦 Light on' : '🔦 Light'}
+              </button>
+            )}
+          </div>
+
+          <div className="note mt-12" style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center' }}>
             {cameraStatus || 'Starting camera…'}
           </div>
         </div>
       )}
     </div>
   )
+}
+
+// html5-qrcode renders a <video> inside the reader div. Reach into it to get
+// the live MediaStreamTrack so we can apply zoom / torch constraints, which
+// the library doesn't expose a stable API for across versions.
+function getRawTrack(readerId) {
+  try {
+    const video = document.getElementById(readerId)?.querySelector('video')
+    const stream = video?.srcObject
+    return stream?.getVideoTracks?.()[0] || null
+  } catch { return null }
 }
 
 function cameraErrorMessage(error) {
