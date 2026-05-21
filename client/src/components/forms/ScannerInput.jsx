@@ -22,6 +22,16 @@ export default function ScannerInput({
 }) {
   const inputRef   = useRef(null)
   const scannerRef = useRef(null)
+  // Keep the latest callbacks in refs. The parent passes new function
+  // identities on every render (e.g. t.update('code')); without this the
+  // camera effect below would tear down and restart the scanner on every
+  // keystroke / state change — which crashes html5-qrcode mid-scan and
+  // blanks the screen.
+  const onChangeRef  = useRef(onChange)
+  const onConfirmRef = useRef(onConfirm)
+  onChangeRef.current  = onChange
+  onConfirmRef.current = onConfirm
+
   const [cameraOn, setCameraOn]         = useState(false)
   const [cameraStatus, setCameraStatus] = useState('')
   const [zoom, setZoom]                 = useState(2)      // default 2× — barcodes are small
@@ -40,8 +50,8 @@ export default function ScannerInput({
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return
       if (e.key === 'Enter') {
         if (buffer.length >= 4) {
-          onChange(buffer)
-          onConfirm?.(buffer)
+          onChangeRef.current(buffer)
+          onConfirmRef.current?.(buffer)
           inputRef.current?.focus()
         }
         buffer = ''
@@ -54,7 +64,8 @@ export default function ScannerInput({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onChange, onConfirm])
+    // Refs keep the latest callbacks; the listener attaches once.
+  }, [])
 
   // Camera scanner — lazy-loaded
   useEffect(() => {
@@ -102,19 +113,21 @@ export default function ScannerInput({
             aspectRatio: 1.777
           },
           (decoded) => {
-            const code = String(decoded || '').trim()
-            if (code.length < CAMERA_MIN_LENGTH || code.length > CAMERA_MAX_LENGTH) return
-            if (code === candidate) candidateN += 1
-            else { candidate = code; candidateN = 1 }
-            setCameraStatus(`Reading: ${code} (${candidateN}/${CAMERA_CONFIRM_COUNT})`)
-            if (candidateN >= CAMERA_CONFIRM_COUNT) {
-              onChange(code)
-              onConfirm?.(code)
-              if (navigator.vibrate) navigator.vibrate(60)   // haptic confirm
-              setCameraStatus('Saved code — close camera or scan another.')
-              candidate = ''
-              candidateN = 0
-            }
+            try {
+              const code = String(decoded || '').trim()
+              if (code.length < CAMERA_MIN_LENGTH || code.length > CAMERA_MAX_LENGTH) return
+              if (code === candidate) candidateN += 1
+              else { candidate = code; candidateN = 1 }
+              setCameraStatus(`Reading: ${code} (${candidateN}/${CAMERA_CONFIRM_COUNT})`)
+              if (candidateN >= CAMERA_CONFIRM_COUNT) {
+                onChangeRef.current(code)
+                onConfirmRef.current?.(code)
+                if (navigator.vibrate) navigator.vibrate(60)   // haptic confirm
+                setCameraStatus('Saved code — close camera or scan another.')
+                candidate = ''
+                candidateN = 0
+              }
+            } catch { /* never let a decode callback crash the app */ }
           },
           () => {}
         )
@@ -157,7 +170,9 @@ export default function ScannerInput({
         })
       }
     }
-  }, [cameraOn, onChange, onConfirm, readerId])
+    // Only re-run when the camera is toggled — NOT when callback identities
+    // change. The refs above always hold the latest onChange/onConfirm.
+  }, [cameraOn, readerId])
 
   // Apply a zoom level to the live camera track.
   const applyZoom = async (z) => {
