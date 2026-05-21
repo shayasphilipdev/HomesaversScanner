@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 // Plain checkbox dropdown.
 //   * Trigger button with current selection summary.
@@ -24,12 +25,11 @@ export default function MultiSelectDropdown({
   const [open, setOpen] = useState(false)
   const [q, setQ]       = useState('')
   const [rect, setRect] = useState(null)   // trigger position for the fixed panel
-  const wrapRef = useRef(null)
-  const btnRef  = useRef(null)
+  const wrapRef  = useRef(null)
+  const btnRef   = useRef(null)
+  const panelRef = useRef(null)
 
-  // Recompute the panel's screen position from the trigger button. Using
-  // position:fixed means no ancestor's overflow:hidden/auto can clip the
-  // panel (which is what was locking it inside the Reports card).
+  // Recompute the panel's screen position from the trigger button.
   const place = () => {
     const r = btnRef.current?.getBoundingClientRect()
     if (r) setRect({ left: r.left, top: r.bottom + 6, width: r.width })
@@ -38,7 +38,13 @@ export default function MultiSelectDropdown({
   useEffect(() => {
     if (!open) return
     place()
-    const onDoc = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false) }
+    // The panel is portalled to document.body, so check BOTH the trigger
+    // wrapper and the panel itself when deciding an outside click.
+    const onDoc = (e) => {
+      const inWrap  = wrapRef.current  && wrapRef.current.contains(e.target)
+      const inPanel = panelRef.current && panelRef.current.contains(e.target)
+      if (!inWrap && !inPanel) setOpen(false)
+    }
     const onMove = () => place()   // keep it anchored while scrolling / resizing
     document.addEventListener('mousedown', onDoc)
     window.addEventListener('scroll', onMove, true)
@@ -96,16 +102,16 @@ export default function MultiSelectDropdown({
         <span aria-hidden style={{ fontSize: 12 }}>{open ? '▴' : '▾'}</span>
       </button>
 
-      {open && rect && (
-        <div style={{
-          // Fixed + screen coordinates from the trigger: floats above the
-          // page so no card overflow can clip or "lock" it.
+      {open && rect && createPortal(
+        <div ref={panelRef} style={{
+          // Portalled to document.body + position:fixed so NO ancestor's
+          // overflow / backdrop-filter / transform can clip or re-anchor it.
           position: 'fixed', top: rect.top, left: rect.left,
           width: Math.max(rect.width, 220),
           background: 'var(--surface)', border: '1px solid var(--border)',
           borderRadius: 10, boxShadow: 'var(--shadow-md)',
           maxHeight: 'min(360px, 60vh)', overflow: 'auto',
-          zIndex: 1000
+          zIndex: 4000
         }}>
           {/* Toolbar */}
           <div style={{
@@ -164,7 +170,8 @@ export default function MultiSelectDropdown({
               </label>
             )
           })}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )
