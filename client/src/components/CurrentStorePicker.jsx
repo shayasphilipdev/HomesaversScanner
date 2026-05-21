@@ -19,11 +19,12 @@ export default function CurrentStorePicker({ subject = 'task' }) {
   }
   if (scopedStores.length === 1) {
     const s = scopedStores[0]
+    // Single-store users: a tiny top-left line, no card, no "Working at".
+    // The store is also shown in the top nav badge, so this stays minimal
+    // to keep the form fields high on a phone screen.
     return (
-      <div className="store-pick-bar" data-locked>
-        <span className="store-pick-label">Working at</span>
-        <strong className="store-pick-name">{s.store_name}</strong>
-        <span className="td-muted" style={{ fontSize: 12 }}>({s.store_code})</span>
+      <div style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '0 0 8px 2px' }}>
+        📍 <strong style={{ color: 'var(--text)' }}>{s.store_name}</strong> <span style={{ opacity: 0.7 }}>({s.store_code})</span>
       </div>
     )
   }

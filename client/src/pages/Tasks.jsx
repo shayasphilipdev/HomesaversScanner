@@ -64,18 +64,16 @@ export default function Tasks() {
 
   return (
     <div>
-      <div className="page-header">
-        <div>
-          <div className="page-title">HO Tasks</div>
-          <div className="page-subtitle">
-            {records.length} record{records.length !== 1 ? 's' : ''} shown
-          </div>
-        </div>
-      </div>
-
-      <HoTasksHelp />
-
+      {/* Compact top: store name (left) + small title, so the form fields
+          sit high on a phone screen instead of below the fold. */}
       <CurrentStorePicker subject="task" />
+
+      <div className="flex-row" style={{ alignItems: 'baseline', gap: 8, marginBottom: 10 }}>
+        <div className="page-title" style={{ fontSize: 22 }}>HO Tasks</div>
+        <span className="note" style={{ fontSize: 12 }}>
+          {records.length} record{records.length !== 1 ? 's' : ''}
+        </span>
+      </div>
 
       <TaskTypePicker taskTypes={taskTypes} selected={selectedType} onSelect={setSelectedType} />
 
@@ -133,6 +131,12 @@ export default function Tasks() {
         onRefresh={load}
         onOptimisticRemove={(id) => setRecords(rs => rs.filter(r => r.id !== id))}
       />
+
+      {/* Quick guide moved to the bottom — reference material, not something
+          that should push the scan field down the screen. */}
+      <div style={{ marginTop: 20 }}>
+        <HoTasksHelp />
+      </div>
     </div>
   )
 }

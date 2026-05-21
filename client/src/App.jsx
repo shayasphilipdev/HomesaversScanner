@@ -25,6 +25,7 @@ import AdminProducts from './pages/AdminProducts.jsx'
 import AdminSettings from './pages/AdminSettings.jsx'
 import AdminReports from './pages/AdminReports.jsx'
 import { setToken, clearToken, getAppConfig } from './lib/api.js'
+import { canDoHQTasks } from './lib/roles.js'
 
 export const StoreContext = createContext(null)
 export const useStore = () => useContext(StoreContext)
@@ -98,8 +99,12 @@ export default function App() {
 // Sits inside the Router so we can read the current path and widen the
 // main content area for data-dense pages (Reports, Dashboard).
 function Shell() {
+  const { session } = useStore()
   const { pathname } = useLocation()
   const wide = pathname.startsWith('/reports') || pathname.startsWith('/dashboard') || pathname.startsWith('/manager')
+  // Land on HO Tasks (the primary shop-floor screen) for anyone who can log
+  // them; back-office-only accounts without HO-task access get the Dashboard.
+  const home = canDoHQTasks(session) ? '/tasks' : '/dashboard'
 
   return (
     <div className="app">
@@ -108,7 +113,7 @@ function Shell() {
         <Sidebar />
         <main className={`main-content${wide ? ' main-content--wide' : ''}`}>
           <Routes>
-            <Route path="/"              element={<Navigate to="/dashboard" replace />} />
+            <Route path="/"              element={<Navigate to={home} replace />} />
             <Route path="/dashboard"     element={<Dashboard />} />
             <Route path="/tasks"         element={<Tasks />} />
             <Route path="/reports"       element={<Reports />} />
@@ -127,7 +132,7 @@ function Shell() {
             <Route path="/admin/products"   element={<AdminGuard><AdminProducts /></AdminGuard>} />
             <Route path="/admin/settings"   element={<AdminGuard><AdminSettings /></AdminGuard>} />
             <Route path="/admin/reports"    element={<AdminGuard><AdminReports /></AdminGuard>} />
-          <Route path="*"                 element={<Navigate to="/dashboard" replace />} />
+          <Route path="*"                 element={<Navigate to={home} replace />} />
         </Routes>
         </main>
       </div>

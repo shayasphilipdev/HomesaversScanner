@@ -37,25 +37,25 @@ export default function TaskJForm({ onSaved, storeId }) {
       <div className="card-header">J — Department Check</div>
       <div className="card-body">
         <form onSubmit={handleSubmit}>
-          <div className="form-grid">
-            <ScannerInput
-              label="Barcode *"
-              value={t.form.product_code}
-              onChange={t.update('product_code')}
-              lookupLoading={false}
-              readerId="reader-j"
-              placeholder="Scan or type the barcode"
-            />
+          {/* Barcode + Save side by side so the action is right next to the
+              scan field — no scrolling under the keyboard on a phone. */}
+          <div className="flex-row" style={{ gap: 8, alignItems: 'flex-end' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <ScannerInput
+                label="Barcode *"
+                value={t.form.product_code}
+                onChange={t.update('product_code')}
+                lookupLoading={false}
+                readerId="reader-j"
+                placeholder="Scan or type the barcode"
+              />
+            </div>
+            <button type="submit" className="btn btn-primary" disabled={t.saving} style={{ marginBottom: 2, whiteSpace: 'nowrap' }}>
+              {t.saving ? <span className="spinner" /> : 'Save'}
+            </button>
           </div>
 
           {t.error && <div className="login-error mt-12">{t.error}</div>}
-
-          <div className="flex-row mt-20" style={{ justifyContent: 'flex-end' }}>
-            <button type="button" className="btn btn-outline" onClick={t.reset}>Clear</button>
-            <button type="submit" className="btn btn-primary" disabled={t.saving}>
-              {t.saving ? <><span className="spinner" /> Saving…</> : 'Save Record'}
-            </button>
-          </div>
         </form>
       </div>
     </div>
