@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useStore } from '../App.jsx'
 import {
   adminGetSettings, adminUpdateSettings,
-  adminCleanupPhotos, adminCleanupTaskRecords, adminGetCapacity
+  adminCleanupPhotos, adminCleanupTaskRecords, adminGetCapacity, adminListSyncRuns
 } from '../lib/api.js'
 import AdminNav from '../components/AdminNav.jsx'
 import { useToast } from '../components/Toast.jsx'
@@ -51,6 +51,23 @@ const KEY_META = {
     hint:  'When on, every barcode field shows a "Use camera" button. Off by default — stores use a scanner gun.',
     bool:  true
   },
+  alt_barcode_sync_folder: {
+    label: 'Alt-barcode sync folder',
+    hint:  'Network path the daily PowerShell job reads. e.g. Y:\\Supply Chain & Buying - Shared\\Data\\VRSDAILYDATADUMP\\ProductMaster-ALTBarcode\\2026'
+  },
+  alt_barcode_sync_pattern: {
+    label: 'Alt-barcode file pattern',
+    hint:  'Glob to match in the folder — e.g. *.xlsx. Newest matching file wins.'
+  },
+  alt_barcode_sync_sheet: {
+    label: 'Alt-barcode Excel sheet',
+    hint:  '"1" = first sheet by index, or a sheet name.'
+  },
+  alt_barcode_sync_schedule: {
+    label: 'Alt-barcode sync schedule',
+    hint:  'How often the PowerShell job should run. Set the same frequency in Windows Task Scheduler.',
+    choices: ['daily', 'weekly', 'monthly']
+  },
   capacity_db_limit_bytes: {
     label: 'Database size limit (bytes)',
     hint:  'Used by the Capacity meter at the top of this page. Free Supabase tier = 524288000 (500 MB). Update if you upgrade plan.'
@@ -76,13 +93,18 @@ export default function AdminSettings() {
   const [cleanupResult, setCleanupResult] = useState(null)
   const [recordCleanupBusy, setRecordCleanupBusy] = useState(false)
   const [capacity, setCapacity] = useState(null)
+  const [syncRuns, setSyncRuns] = useState([])
   const isOnlyAdmin = session?.role === 'admin'
 
   const loadCapacity = async () => {
     if (!isOnlyAdmin) return
     try { setCapacity(await adminGetCapacity()) } catch (e) { /* admin-only endpoint; silent */ }
   }
+  const loadSyncRuns = async () => {
+    try { setSyncRuns(await adminListSyncRuns()) } catch { /* silent */ }
+  }
   useEffect(() => { loadCapacity() }, [isOnlyAdmin])
+  useEffect(() => { if (isBO) loadSyncRuns() }, [isBO])
 
   const load = async () => {
     setLoading(true); setError('')
@@ -152,6 +174,47 @@ export default function AdminSettings() {
 
       {error && <div className="login-error mt-12">{error}</div>}
 
+      {/* Alt-barcode sync status — last few PowerShell runs. */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span>Alt-barcode sync</span>
+          <button className="btn btn-sm btn-outline" style={{ marginLeft: 'auto' }} onClick={loadSyncRuns}>↻ Refresh</button>
+        </div>
+        <div className="card-body">
+          {!syncRuns.length ? (
+            <p className="note" style={{ margin: 0 }}>No sync has run yet. The PowerShell job records its status here after each run.</p>
+          ) : (
+            <div className="table-wrap">
+              <table style={{ fontSize: 13 }}>
+                <thead><tr>
+                  <th>When</th><th>File</th><th className="td-right">Imported</th><th className="td-right">Skipped</th><th className="td-right">Size</th><th>Status</th>
+                </tr></thead>
+                <tbody>
+                  {syncRuns.map(r => (
+                    <tr key={r.id}>
+                      <td className="td-muted">{r.finished_at ? new Date(r.finished_at).toLocaleString('en-IE', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '—'}</td>
+                      <td>{r.file_name || '—'}</td>
+                      <td className="td-right">{r.records_imported ?? '—'}</td>
+                      <td className="td-right">{r.records_skipped ?? '—'}</td>
+                      <td className="td-right">{r.file_size_bytes ? fmtBytes(r.file_size_bytes) : '—'}</td>
+                      <td>
+                        <span className={'badge ' + (r.status === 'ok' ? 'badge-completed' : 'badge-deleted')}>{r.status}</span>
+                        {r.status === 'error' && r.message && <div className="note" style={{ fontSize: 11, marginTop: 2 }}>{r.message}</div>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className="note" style={{ fontSize: 12, marginTop: 10, marginBottom: 0 }}>
+            <strong>Sync Now:</strong> run the desktop job manually on the PC —
+            <code>powershell -ExecutionPolicy Bypass -File C:\Scraping\homesavers-scanner\scripts\sync-alt-barcodes.ps1</code>.
+            Set the recurring schedule (daily/weekly/monthly) below and match it in Windows Task Scheduler.
+          </p>
+        </div>
+      </div>
+
       {isOnlyAdmin && capacity && (
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -204,6 +267,10 @@ export default function AdminSettings() {
                           />
                           <span className="note" style={{ fontSize: 13 }}>{isOn ? 'On' : 'Off'}</span>
                         </label>
+                      ) : meta.choices ? (
+                        <select value={values[s.key] || ''} onChange={e => updateValue(s.key, e.target.value)} style={{ maxWidth: 220 }}>
+                          {meta.choices.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
                       ) : (
                         <input
                           type="text"

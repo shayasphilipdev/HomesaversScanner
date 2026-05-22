@@ -358,6 +358,84 @@ export async function onRequest(context) {
       })
     }
 
+    // ── Alternate Barcode sync (Phase 2) ──────────────────────────────────
+    // Config for the alt-barcode PowerShell job (folder/pattern/sheet).
+    if (path === '/alt-barcodes/sync-config' && method === 'GET') {
+      if (!env.PRODUCT_SYNC_SECRET) return err('PRODUCT_SYNC_SECRET not configured', 500)
+      if ((request.headers.get('X-Sync-Secret') || '') !== env.PRODUCT_SYNC_SECRET) return err('Forbidden', 403)
+      const wanted = ['alt_barcode_sync_folder', 'alt_barcode_sync_pattern', 'alt_barcode_sync_sheet', 'alt_barcode_sync_schedule']
+      const rows = await db.select('app_settings', { select: 'key,value', key: `in.(${wanted.join(',')})` })
+      const cfg = Object.fromEntries(rows.map(r => [r.key, r.value]))
+      return json({
+        folder:       cfg.alt_barcode_sync_folder  || '',
+        file_pattern: cfg.alt_barcode_sync_pattern || '*.xlsx',
+        sheet:        cfg.alt_barcode_sync_sheet    || '1',
+        schedule:     cfg.alt_barcode_sync_schedule || 'daily'
+      })
+    }
+
+    // Bulk upsert of alt-barcode rows (chunked by the PowerShell job).
+    // Key = barcode_no. Rows with barcode_no empty/0/'0' are dropped.
+    if (path === '/alt-barcodes/sync' && method === 'POST') {
+      if (!env.PRODUCT_SYNC_SECRET) return err('PRODUCT_SYNC_SECRET not configured', 500)
+      if ((request.headers.get('X-Sync-Secret') || '') !== env.PRODUCT_SYNC_SECRET) return err('Forbidden', 403)
+      const rows = await request.json()
+      if (!Array.isArray(rows) || !rows.length) return err('Empty payload', 400)
+      const now = new Date().toISOString()
+
+      const byKey = new Map()
+      let skipped = 0
+      for (const r of rows) {
+        const bno = r?.barcode_no == null ? '' : String(r.barcode_no).trim()
+        if (!bno || bno === '0') { skipped++; continue }   // barcode_no must be a real value
+        byKey.set(bno, {
+          barcode_no:     bno,
+          ean_barcode:    r.ean_barcode    ? String(r.ean_barcode).trim()    : null,
+          item_name:      r.item_name      ? String(r.item_name).trim()      : null,
+          supl_id:        r.supl_id        ? String(r.supl_id).trim()        : null,
+          supplier_code:  r.supplier_code  ? String(r.supplier_code).trim()  : null,
+          item_status:    r.item_status    ? String(r.item_status).trim()    : null,
+          barcode_status: r.barcode_status ? String(r.barcode_status).trim() : null,
+          updated_at:     now
+        })
+      }
+      const clean = Array.from(byKey.values())
+      if (!clean.length) return json({ written: 0, skipped })
+
+      const upRes = await fetch(`${env.SUPABASE_URL}/rest/v1/alt_barcodes?on_conflict=barcode_no`, {
+        method: 'POST',
+        headers: {
+          'apikey':        env.SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`,
+          'Content-Type':  'application/json',
+          'Prefer':        'return=representation,resolution=merge-duplicates'
+        },
+        body: JSON.stringify(clean)
+      })
+      if (!upRes.ok) return err(`Alt-barcode upsert failed: ${(await upRes.text()).slice(0, 400)}`, 400)
+      const written = await upRes.json()
+      return json({ written: written.length, skipped })
+    }
+
+    // Record a completed sync run (called once by the PowerShell job at the end).
+    if (path === '/sync-runs' && method === 'POST') {
+      if (!env.PRODUCT_SYNC_SECRET) return err('PRODUCT_SYNC_SECRET not configured', 500)
+      if ((request.headers.get('X-Sync-Secret') || '') !== env.PRODUCT_SYNC_SECRET) return err('Forbidden', 403)
+      const b = await request.json()
+      const inserted = await db.insert('sync_runs', {
+        kind:             b.kind || 'alt_barcodes',
+        file_name:        b.file_name || null,
+        file_size_bytes:  b.file_size_bytes != null ? Number(b.file_size_bytes) : null,
+        records_imported: b.records_imported != null ? Number(b.records_imported) : null,
+        records_skipped:  b.records_skipped  != null ? Number(b.records_skipped)  : null,
+        status:           b.status === 'error' ? 'error' : 'ok',
+        message:          b.message || null,
+        started_at:       b.started_at || null,
+        finished_at:      new Date().toISOString()
+      })
+      return json(inserted[0] ?? inserted, 201)
+    }
+
     // Service-account bulk product sync — used by the scheduled
     // PowerShell job to push the daily product master Excel.
     // Auth: shared secret in the X-Sync-Secret header (set as a Cloudflare
@@ -912,6 +990,18 @@ export async function onRequest(context) {
     }
 
     // ── Back-office admin: settings ──────────────────────────────────────
+
+    // GET /admin/sync-runs — recent alt-barcode sync history for the
+    // status panel in Admin → Settings.
+    if (path === '/admin/sync-runs' && method === 'GET') {
+      if (!isAdminRole(session)) return err('Forbidden', 403)
+      const rows = await db.select('sync_runs', {
+        select: 'id,kind,file_name,file_size_bytes,records_imported,records_skipped,status,message,started_at,finished_at',
+        order:  'finished_at.desc',
+        limit:  '20'
+      })
+      return json(rows)
+    }
 
     // GET /admin/capacity — DB + storage usage, restricted to the strict
     // 'admin' role only. Limits are pulled from app_settings so they can be
@@ -1771,6 +1861,19 @@ export async function onRequest(context) {
         supplier_id:   r.supplier_id,
         supplier_name: r.suppliers?.supplier_name || null
       })
+    }
+
+    // GET /alt-barcodes/lookup?barcode=  — scan lookup by barcode_no.
+    // Returns the item details to show in the task body after a scan.
+    if (path === '/alt-barcodes/lookup' && method === 'GET') {
+      const barcode = url.searchParams.get('barcode')
+      if (!barcode) return json(null)
+      const rows = await db.select('alt_barcodes', {
+        select: 'barcode_no,ean_barcode,item_name,supl_id,supplier_code,item_status,barcode_status',
+        barcode_no: `eq.${String(barcode).trim()}`,
+        limit: '1'
+      })
+      return json(rows[0] || null)
     }
 
     // ── Task records ──────────────────────────────────────────────────────

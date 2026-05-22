@@ -185,6 +185,7 @@ export const adminUpdateSettings = (updates) => request('/admin/settings', { met
 export const adminCleanupPhotos       = () => request('/admin/cleanup/photos',       { method: 'POST' })
 export const adminCleanupTaskRecords  = () => request('/admin/cleanup/task-records', { method: 'POST' })
 export const adminGetCapacity         = () => request('/admin/capacity')
+export const adminListSyncRuns         = () => request('/admin/sync-runs')
 
 // Append-only audit ledger for one task_records row.
 export const getTaskRecordEvents      = (id) => request(`/task-records/${id}/events`)
