@@ -34,26 +34,24 @@ export default function TaskJForm({ onSaved, storeId }) {
 
   return (
     <div className="card" style={{ marginBottom: 24 }}>
-      <div className="card-header">J — Department Check</div>
+      {/* No card-header — the task name is already shown in the dropdown above. */}
       <div className="card-body">
         <form onSubmit={handleSubmit}>
-          {/* Barcode + Save side by side so the action is right next to the
-              scan field — no scrolling under the keyboard on a phone. */}
-          <div className="flex-row" style={{ gap: 8, alignItems: 'flex-end' }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <ScannerInput
-                label="Barcode *"
-                value={t.form.product_code}
-                onChange={t.update('product_code')}
-                lookupLoading={false}
-                readerId="reader-j"
-                placeholder="Scan or type the barcode"
-              />
-            </div>
-            <button type="submit" className="btn btn-primary" disabled={t.saving} style={{ marginBottom: 2, whiteSpace: 'nowrap' }}>
-              {t.saving ? <span className="spinner" /> : 'Save'}
-            </button>
-          </div>
+          {/* Save sits inline to the right of the barcode (and so ABOVE the
+              camera band), reachable without scrolling under the keyboard. */}
+          <ScannerInput
+            label="Barcode *"
+            value={t.form.product_code}
+            onChange={t.update('product_code')}
+            lookupLoading={false}
+            readerId="reader-j"
+            placeholder="Scan or type the barcode"
+            inlineAction={
+              <button type="submit" className="btn btn-primary" disabled={t.saving} style={{ whiteSpace: 'nowrap' }}>
+                {t.saving ? <span className="spinner" /> : 'Save'}
+              </button>
+            }
+          />
 
           {t.error && <div className="login-error mt-12">{t.error}</div>}
         </form>

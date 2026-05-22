@@ -18,7 +18,9 @@ const CAMERA_MAX_LENGTH    = 80
 export default function ScannerInput({
   value, onChange, label, placeholder = 'Scan or type…',
   onConfirm, lookupLoading,
-  readerId = 'reader'
+  readerId = 'reader',
+  inlineAction = null   // node rendered to the right of the input (e.g. a Save
+                        // button) so the action sits ABOVE the camera band.
 }) {
   const inputRef   = useRef(null)
   const scannerRef = useRef(null)
@@ -193,20 +195,24 @@ export default function ScannerInput({
   return (
     <div className="form-group">
       <label>{label}</label>
-      <div style={{ position: 'relative' }}>
-        <input
-          ref={inputRef}
-          type="text" className="scan-input" autoComplete="off" spellCheck={false}
-          value={value} onChange={e => onChange(e.target.value)}
-          onBlur={() => onConfirm?.(value)}
-          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onConfirm?.(value) } }}
-          placeholder={placeholder}
-        />
-        {lookupLoading && (
-          <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)' }}>
-            <span className="spinner spinner-dark" />
-          </span>
-        )}
+      <div className="flex-row" style={{ gap: 8, alignItems: 'stretch' }}>
+        <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+          <input
+            ref={inputRef}
+            type="text" className="scan-input" autoComplete="off" spellCheck={false}
+            style={{ width: '100%' }}
+            value={value} onChange={e => onChange(e.target.value)}
+            onBlur={() => onConfirm?.(value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onConfirm?.(value) } }}
+            placeholder={placeholder}
+          />
+          {lookupLoading && (
+            <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)' }}>
+              <span className="spinner spinner-dark" />
+            </span>
+          )}
+        </div>
+        {inlineAction}
       </div>
       {cameraEnabled && (
         <div className="flex-row" style={{ gap: 8, marginTop: 6 }}>
@@ -224,8 +230,10 @@ export default function ScannerInput({
       )}
       {cameraEnabled && cameraOn && (
         <div className="mt-12">
-          {/* Smaller viewport so the user holds the phone close → sharper focus. */}
-          <div id={readerId} style={{ width: '100%', maxWidth: 320, minHeight: 200, background: '#eee', borderRadius: 10, overflow: 'hidden', margin: '0 auto' }} />
+          {/* Show only a short scan band, not the full video — crops the
+              camera to roughly the qrbox so the user lines the barcode up in
+              a tight window and holds the phone close. */}
+          <div id={readerId} style={{ width: '100%', maxWidth: 300, height: 170, background: '#000', borderRadius: 10, overflow: 'hidden', margin: '0 auto' }} />
 
           <div className="flex-row" style={{ gap: 10, marginTop: 8, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center' }}>
             {zoomCaps && (
