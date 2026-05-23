@@ -14,6 +14,7 @@ param(
   [string]$ExcelPath,                 # force a specific file (optional)
   [string]$Folder,                    # override the configured folder
   [string]$FilePattern,
+  [string]$NamePrefix,                # only files whose name starts with this
   [string]$Sheet,
   [string]$BaseUrl    = "https://homesaversscanner.pages.dev",
   [string]$SecretFile = "C:\Homesavers\.sync-secret",
@@ -69,14 +70,15 @@ try {
   if (-not $secret) { throw "Secret file is empty: $SecretFile" }
   $headers = @{ "X-Sync-Secret" = $secret; "Content-Type" = "application/json" }
 
-  # Pull folder/pattern/sheet from the app unless overridden on the CLI.
-  if (-not $ExcelPath -or -not $Sheet -or -not $Folder -or -not $FilePattern) {
+  # Pull folder/pattern/sheet/name-prefix from the app unless overridden on the CLI.
+  if (-not $ExcelPath -or -not $Sheet -or -not $Folder -or -not $FilePattern -or -not $NamePrefix) {
     try {
       $cfg = Invoke-RestMethod -Method Get -Uri "$BaseUrl/api/alt-barcodes/sync-config" -Headers $headers -TimeoutSec 30
       if (-not $Folder)      { $Folder      = $cfg.folder }
       if (-not $FilePattern) { $FilePattern = $cfg.file_pattern }
       if (-not $Sheet)       { $Sheet       = $cfg.sheet }
-      Write-Log "Config: folder='$Folder' pattern='$FilePattern' sheet='$Sheet' schedule='$($cfg.schedule) at $($cfg.time)' (set this in Task Scheduler)"
+      if (-not $NamePrefix)  { $NamePrefix  = $cfg.name_prefix }
+      Write-Log "Config: folder='$Folder' pattern='$FilePattern' nameStartsWith='$NamePrefix' sheet='$Sheet' schedule='$($cfg.schedule) at $($cfg.time)' (set this in Task Scheduler)"
     } catch { Write-Log "Could not fetch config: $($_.Exception.Message). Using defaults." "WARN" }
   }
 
@@ -84,8 +86,18 @@ try {
     if (-not $Folder)      { throw "No folder configured (set alt_barcode_sync_folder in Admin -> Settings or pass -Folder)" }
     if (-not $FilePattern) { $FilePattern = '*.xlsx' }
     if (-not (Test-Path $Folder)) { throw "Folder not accessible: $Folder. Check the network drive is mapped for this account." }
-    $candidates = Get-ChildItem -Path $Folder -Filter $FilePattern -File -ErrorAction Stop | Sort-Object LastWriteTime -Descending
-    if (-not $candidates -or $candidates.Count -eq 0) { throw "No files matching '$FilePattern' in $Folder" }
+    $candidates = Get-ChildItem -Path $Folder -Filter $FilePattern -File -ErrorAction Stop
+    # Guard against the wrong workbook being dropped in the folder: only accept
+    # files whose name starts with the configured prefix (e.g. "ALT Barcode
+    # Master"). Case-insensitive. Skipped when no prefix is configured.
+    if ($NamePrefix) {
+      $candidates = $candidates | Where-Object { $_.Name.StartsWith($NamePrefix, [System.StringComparison]::OrdinalIgnoreCase) }
+    }
+    $candidates = $candidates | Sort-Object LastWriteTime -Descending
+    if (-not $candidates -or $candidates.Count -eq 0) {
+      $hint = if ($NamePrefix) { " starting with '$NamePrefix'" } else { "" }
+      throw "No files matching '$FilePattern'$hint in $Folder"
+    }
     $ExcelPath = $candidates[0].FullName
   }
   if (-not $Sheet) { $Sheet = "1" }

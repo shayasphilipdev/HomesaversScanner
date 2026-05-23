@@ -176,15 +176,14 @@ export const adminCreateLookup  = (opt) => request('/admin/lookup-options', { me
 export const adminUpdateLookup  = (id, updates) => request(`/admin/lookup-options/${id}`, { method: 'PATCH', body: updates })
 export const adminDeleteLookup  = (id) => request(`/admin/lookup-options/${id}`, { method: 'DELETE' })
 
-export const adminListProducts  = ({ limit, q } = {}) => {
+// Products admin page now lists the imported Alternate Barcode table.
+export const adminListAltBarcodes = ({ limit, q } = {}) => {
   const p = new URLSearchParams()
   if (limit) p.set('limit', limit)
   if (q)     p.set('q', q)
-  return request('/admin/products' + (p.toString() ? `?${p}` : ''))
+  return request('/admin/alt-barcodes' + (p.toString() ? `?${p}` : ''))
 }
-export const adminProductsCount = () => request('/admin/products/count')
-export const adminBulkProducts  = (rows) => request('/admin/products/bulk', { method: 'POST', body: rows })
-export const adminUpdateProduct = (id, updates) => request(`/admin/products/${id}`, { method: 'PATCH', body: updates })
+export const adminAltBarcodesCount = () => request('/admin/alt-barcodes/count')
 
 export const adminGetSettings    = () => request('/admin/settings')
 export const adminUpdateSettings = (updates) => request('/admin/settings', { method: 'PATCH', body: updates })

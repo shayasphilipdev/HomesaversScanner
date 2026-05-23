@@ -363,7 +363,7 @@ export async function onRequest(context) {
     if (path === '/alt-barcodes/sync-config' && method === 'GET') {
       if (!env.PRODUCT_SYNC_SECRET) return err('PRODUCT_SYNC_SECRET not configured', 500)
       if ((request.headers.get('X-Sync-Secret') || '') !== env.PRODUCT_SYNC_SECRET) return err('Forbidden', 403)
-      const wanted = ['alt_barcode_sync_folder', 'alt_barcode_sync_pattern', 'alt_barcode_sync_sheet', 'alt_barcode_sync_schedule', 'alt_barcode_sync_time']
+      const wanted = ['alt_barcode_sync_folder', 'alt_barcode_sync_pattern', 'alt_barcode_sync_sheet', 'alt_barcode_sync_schedule', 'alt_barcode_sync_time', 'alt_barcode_sync_name_prefix']
       const rows = await db.select('app_settings', { select: 'key,value', key: `in.(${wanted.join(',')})` })
       const cfg = Object.fromEntries(rows.map(r => [r.key, r.value]))
       return json({
@@ -371,7 +371,8 @@ export async function onRequest(context) {
         file_pattern: cfg.alt_barcode_sync_pattern || '*.xlsx',
         sheet:        cfg.alt_barcode_sync_sheet    || '1',
         schedule:     cfg.alt_barcode_sync_schedule || 'daily',
-        time:         cfg.alt_barcode_sync_time     || '06:00'
+        time:         cfg.alt_barcode_sync_time     || '06:00',
+        name_prefix:  cfg.alt_barcode_sync_name_prefix || ''
       })
     }
 
@@ -893,44 +894,25 @@ export async function onRequest(context) {
 
     // ── Back-office admin: products master ───────────────────────────────
 
-    if (path === '/admin/products' && method === 'GET') {
+    // Products admin page now reads the imported Alternate Barcode table.
+    // Read-only: the data is owned by the daily sync, not edited by hand.
+    if (path === '/admin/alt-barcodes' && method === 'GET') {
       if (!isAdminRole(session)) return err('Forbidden', 403)
       const limit = url.searchParams.get('limit') || '100'
       const q     = url.searchParams.get('q')
       const params = {
-        select: 'id,product_id,description,uom,category,supplier_id,suppliers(supplier_name),is_active,updated_at',
+        select: 'id,barcode_no,ean_barcode,item_name,supl_id,supplier_code,item_status,barcode_status,updated_at',
         order:  'updated_at.desc',
         limit
       }
-      if (q) params['or'] = `(product_id.ilike.*${q}*,description.ilike.*${q}*)`
-      const rows = await db.select('products', params)
-      return json(rows.map(r => ({ ...r, supplier_name: r.suppliers?.supplier_name || null, suppliers: undefined })))
+      if (q) params['or'] = `(barcode_no.ilike.*${q}*,ean_barcode.ilike.*${q}*,item_name.ilike.*${q}*,supl_id.ilike.*${q}*)`
+      const rows = await db.select('alt_barcodes', params)
+      return json(rows)
     }
 
-    // PATCH /admin/products/:id — used by the inline supplier picker on the
-    // products admin page.
-    const adminProductMatch = path.match(/^\/admin\/products\/([a-f0-9-]+)$/)
-    if (adminProductMatch && method === 'PATCH') {
+    if (path === '/admin/alt-barcodes/count' && method === 'GET') {
       if (!isAdminRole(session)) return err('Forbidden', 403)
-      const id   = adminProductMatch[1]
-      const body = await request.json()
-      const updates = {}
-      if (body.description !== undefined) updates.description = body.description || null
-      if (body.uom         !== undefined) updates.uom         = body.uom         || null
-      if (body.category    !== undefined) updates.category    = body.category    || null
-      if (body.supplier_id !== undefined) updates.supplier_id = body.supplier_id || null
-      if (body.is_active   !== undefined) updates.is_active   = !!body.is_active
-      if (!Object.keys(updates).length) return err('No editable fields supplied', 400)
-      updates.updated_at = new Date().toISOString()
-      const updated = await db.update('products', { id: `eq.${id}` }, updates)
-      if (!updated.length) return err('Product not found', 404)
-      return json(updated[0])
-    }
-
-    if (path === '/admin/products/count' && method === 'GET') {
-      if (!isAdminRole(session)) return err('Forbidden', 403)
-      // Use a HEAD request with count=exact to get just the total
-      const headRes = await fetch(`${env.SUPABASE_URL}/rest/v1/products?select=id`, {
+      const headRes = await fetch(`${env.SUPABASE_URL}/rest/v1/alt_barcodes?select=id`, {
         method: 'HEAD',
         headers: {
           'apikey':         env.SUPABASE_ANON_KEY,
@@ -943,72 +925,6 @@ export async function onRequest(context) {
       const cr = headRes.headers.get('content-range') || ''
       const total = Number(cr.split('/')[1]) || 0
       return json({ count: total })
-    }
-
-    // Bulk upsert from a client-parsed CSV (key = product_id).
-    // Optional supplier_name column is resolved to supplier_id by name match
-    // (case-insensitive) against active suppliers; unknown names are ignored.
-    if (path === '/admin/products/bulk' && method === 'POST') {
-      if (!isAdminRole(session)) return err('Forbidden', 403)
-      const rows = await request.json()
-      if (!Array.isArray(rows) || !rows.length) return err('Empty payload', 400)
-      const now = new Date().toISOString()
-
-      // Pre-load suppliers once for the supplier_name → supplier_id map.
-      const allSuppliers = await db.select('suppliers', { select: 'id,supplier_name,is_active' })
-      const supplierByName = new Map(
-        allSuppliers
-          .filter(s => s.is_active)
-          .map(s => [s.supplier_name.trim().toLowerCase(), s.id])
-      )
-
-      const mapped = rows
-        .filter(r => r?.product_id && String(r.product_id).trim())
-        .map(r => {
-          // Either explicit supplier_id, or look up by supplier_name.
-          let supplier_id = r.supplier_id && /^[a-f0-9-]{36}$/.test(r.supplier_id) ? r.supplier_id : null
-          if (!supplier_id && r.supplier_name) {
-            const key = String(r.supplier_name).trim().toLowerCase()
-            supplier_id = supplierByName.get(key) || null
-          }
-          return {
-            product_id:  String(r.product_id).trim(),
-            description: r.description?.trim() || null,
-            uom:         r.uom?.trim() || null,
-            category:    r.category?.trim() || null,
-            supplier_id,
-            is_active:   true,
-            updated_at:  now
-          }
-        })
-      // Deduplicate by product_id within this payload — Postgres rejects
-      // ON CONFLICT updates that touch the same row twice in one statement.
-      // Last occurrence wins so a CSV can list a corrected row after an
-      // earlier mistake without crashing the import.
-      const byId  = new Map()
-      let duplicates = 0
-      for (const row of mapped) {
-        if (byId.has(row.product_id)) duplicates++
-        byId.set(row.product_id, row)
-      }
-      const clean = Array.from(byId.values())
-      if (!clean.length) return err('No valid rows', 400)
-      const upsertRes = await fetch(`${env.SUPABASE_URL}/rest/v1/products?on_conflict=product_id`, {
-        method: 'POST',
-        headers: {
-          'apikey':        env.SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`,
-          'Content-Type':  'application/json',
-          'Prefer':        'return=representation,resolution=merge-duplicates'
-        },
-        body: JSON.stringify(clean)
-      })
-      if (!upsertRes.ok) {
-        const txt = await upsertRes.text()
-        return err(`Import failed: ${txt.slice(0, 400)}`, 400)
-      }
-      const written = await upsertRes.json()
-      return json({ written: written.length, duplicates_collapsed: duplicates })
     }
 
     // ── Back-office admin: settings ──────────────────────────────────────

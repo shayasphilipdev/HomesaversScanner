@@ -57,6 +57,11 @@ const KEY_META = {
     label: 'File pattern',
     hint:  'Glob to match in the folder — e.g. *.xlsx. Newest matching file wins.'
   },
+  alt_barcode_sync_name_prefix: {
+    section: 'Alt-barcode sync',
+    label: 'File name starts with',
+    hint:  'Safety guard: only files whose name begins with this are synced (e.g. "ALT Barcode Master"). Stops a stray workbook in the folder being imported. Leave blank to allow any matching file.'
+  },
   alt_barcode_sync_sheet: {
     section: 'Alt-barcode sync',
     label: 'Excel sheet',
@@ -100,13 +105,15 @@ const KEY_META = {
   // ── Capacity ───────────────────────────────────────────────────────────
   capacity_db_limit_bytes: {
     section: 'Capacity',
-    label: 'Database size limit (bytes)',
-    hint:  'Used by the Capacity meter at the top of this page. Free Supabase tier = 524288000 (500 MB). Update if you upgrade plan.'
+    label: 'Database size limit (MB)',
+    mb:    true,
+    hint:  'Used by the Capacity meter at the top of this page. Free Supabase tier = 500 MB. Update if you upgrade plan.'
   },
   capacity_storage_limit_bytes: {
     section: 'Capacity',
-    label: 'Storage size limit (bytes)',
-    hint:  'Used by the Capacity meter at the top of this page. Free Supabase tier = 1073741824 (1 GB).'
+    label: 'Storage size limit (MB)',
+    mb:    true,
+    hint:  'Used by the Capacity meter at the top of this page. Free Supabase tier = 1024 MB (1 GB).'
   }
 }
 
@@ -311,6 +318,12 @@ export default function AdminSettings() {
                               type="time"
                               value={values[s.key] || ''}
                               onChange={e => updateValue(s.key, e.target.value)}
+                            />
+                          ) : meta.mb ? (
+                            <input
+                              type="number" min="0" step="1"
+                              value={values[s.key] ? Math.round(Number(values[s.key]) / 1048576) : ''}
+                              onChange={e => updateValue(s.key, e.target.value === '' ? '' : String(Math.round(Number(e.target.value) * 1048576)))}
                             />
                           ) : (
                             <input

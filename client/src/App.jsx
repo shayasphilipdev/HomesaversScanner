@@ -20,6 +20,7 @@ import AdminAreas from './pages/AdminAreas.jsx'
 import AdminUsers from './pages/AdminUsers.jsx'
 import AdminEmployees from './pages/AdminEmployees.jsx'
 import AdminLookups from './pages/AdminLookups.jsx'
+import AdminProducts from './pages/AdminProducts.jsx'
 import AdminSettings from './pages/AdminSettings.jsx'
 import AdminReports from './pages/AdminReports.jsx'
 import { setToken, clearToken, getAppConfig } from './lib/api.js'
@@ -126,6 +127,7 @@ function Shell() {
             <Route path="/admin/users"      element={<AdminGuard><AdminUsers /></AdminGuard>} />
             <Route path="/admin/employees"  element={<AdminGuard><AdminEmployees /></AdminGuard>} />
             <Route path="/admin/lookups"    element={<AdminGuard><AdminLookups /></AdminGuard>} />
+            <Route path="/admin/products"   element={<AdminGuard><AdminProducts /></AdminGuard>} />
             <Route path="/admin/settings"   element={<AdminGuard><AdminSettings /></AdminGuard>} />
             <Route path="/admin/reports"    element={<AdminGuard><AdminReports /></AdminGuard>} />
           <Route path="*"                 element={<Navigate to={home} replace />} />
