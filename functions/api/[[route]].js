@@ -1922,7 +1922,7 @@ export async function onRequest(context) {
       const scope = await scopedStoreIds(db, session)
       // null = unrestricted; otherwise filter to the scope's stores.
       const params = {
-        select: 'id,task_type,store_id,supplier_id,supplier_name_text,suppliers(supplier_name),product_code,product_barcode,product_name_label,description,uom,quantity,notes,photo_product_url,photo_barcode_url,details,status,review_notes,reviewed_at,marked_for_deletion,completed_at,store_completed_at,cleared_at,created_at,updated_at',
+        select: 'id,task_type,store_id,supplier_id,supplier_name_text,suppliers(supplier_name),product_code,product_barcode,product_name_label,description,uom,quantity,notes,photo_product_url,photo_barcode_url,details,status,review_notes,reviewed_at,marked_for_deletion,completed_at,store_completed_at,cleared_at,created_at,updated_at,barcode_no,item_name,supl_id,supplier_code,item_status,barcode_status',
         order:  'created_at.desc',
         limit:  String(limit),
         offset: String(offset)
@@ -2166,7 +2166,7 @@ export async function onRequest(context) {
 
       const includeCleared = p.get('includeCleared') === '1'
       const params = {
-        select: 'id,task_type,store_id,supplier_id,supplier_name_text,product_code,product_barcode,product_name_label,description,uom,quantity,notes,photo_product_url,photo_barcode_url,details,status,review_notes,created_at',
+        select: 'id,task_type,store_id,supplier_id,supplier_name_text,product_code,product_barcode,product_name_label,description,uom,quantity,notes,photo_product_url,photo_barcode_url,details,status,review_notes,created_at,barcode_no,item_name,supl_id,supplier_code,item_status,barcode_status',
         order:  'created_at.asc'
       }
       if (range.length) params['created_at'] = range
@@ -2201,11 +2201,17 @@ export async function onRequest(context) {
       const flat = records.map(r => ({
         task_type:         r.task_type,
         store_name:        storeName[r.store_id] || '',
+        barcode_no:        r.barcode_no || '',
         product_code:      r.product_code || '',
         product_barcode:   r.product_barcode || '',
+        item_name:         r.item_name || '',
         description:       r.description || r.product_name_label || '',
         uom:               r.uom || '',
         quantity:          r.quantity ?? '',
+        supl_id:           r.supl_id || '',
+        supplier_code:     r.supplier_code || '',
+        item_status:       r.item_status || '',
+        barcode_status:    r.barcode_status || '',
         supplier:          r.supplier_id ? (supplierName[r.supplier_id] || '') : (r.supplier_name_text || ''),
         notes:             r.notes || '',
         status:            r.status,
@@ -2216,7 +2222,7 @@ export async function onRequest(context) {
         created_at:        r.created_at
       }))
 
-      const cols = ['task_type','store_name','product_code','product_barcode','description','uom','quantity','supplier','notes','status','review_notes','photo_product_url','photo_barcode_url','details','created_at']
+      const cols = ['task_type','store_name','barcode_no','product_code','product_barcode','item_name','description','uom','quantity','supl_id','supplier_code','item_status','barcode_status','supplier','notes','status','review_notes','photo_product_url','photo_barcode_url','details','created_at']
       const csv  = toCSV(flat, cols)
       const filename = `task-records-${(from || 'start').slice(0,10)}-to-${(to || 'now').slice(0,10)}.csv`
 
