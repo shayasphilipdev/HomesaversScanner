@@ -1,13 +1,11 @@
 import { createTaskRecord } from '../../lib/api.js'
 import { useStore } from '../../App.jsx'
 import ScannerInput from './ScannerInput.jsx'
-import SupplierPicker from './SupplierPicker.jsx'
-import { useTaskForm, LookupBanner } from './useTaskForm.jsx'
+import { useTaskForm, LookupBanner, altFields } from './useTaskForm.jsx'
 
 // Task G — Promotion Error
 const EMPTY = {
-  product_code: '', promotion_description: '', promotion_price: '',
-  supplier_id: '', supplier_name_text: '', notes: ''
+  product_code: '', promotion_description: '', promotion_price: '', notes: ''
 }
 
 export default function TaskGForm({ onSaved, storeId }) {
@@ -27,9 +25,8 @@ export default function TaskGForm({ onSaved, storeId }) {
         task_type:          'G',
         store_id:           storeId || session.storeId || null,
         product_code:       t.form.product_code.trim(),
-        supplier_id:        t.form.supplier_id || null,
-        supplier_name_text: t.form.supplier_name_text.trim() || null,
         notes:              t.form.notes.trim() || null,
+        ...altFields(t.lookupInfo, t.form.product_code.trim()),
         details: {
           promotion_description: t.form.promotion_description.trim(),
           promotion_price:       Number(t.form.promotion_price)
@@ -76,11 +73,6 @@ export default function TaskGForm({ onSaved, storeId }) {
                 placeholder="e.g. 2 for €5, Buy 1 Get 1, etc."
               />
             </div>
-
-            <SupplierPicker
-              value={{ supplier_id: t.form.supplier_id, supplier_name_text: t.form.supplier_name_text }}
-              onChange={({ supplier_id, supplier_name_text }) => t.patch({ supplier_id, supplier_name_text })}
-            />
 
             <div className="form-group full">
               <label>Notes (optional)</label>

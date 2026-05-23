@@ -1,15 +1,14 @@
 ﻿import { useState } from 'react'
-import { createTaskRecord, uploadPhoto, deletePhoto, lookupProduct } from '../../lib/api.js'
+import { createTaskRecord, uploadPhoto, deletePhoto, lookupAltBarcode } from '../../lib/api.js'
 import { newPhotoNamespace } from '../../lib/photos.js'
 import { add as outboxAdd, isOfflineError } from '../../lib/outbox.js'
 import { useStore } from '../../App.jsx'
 import ScannerInput from './ScannerInput.jsx'
-import SupplierPicker from './SupplierPicker.jsx'
 import PhotoCapture from './PhotoCapture.jsx'
+import { LookupBanner, altFields } from './useTaskForm.jsx'
 
 const EMPTY = {
-  product_barcode: '', description: '',
-  supplier_id: '', supplier_name_text: '', notes: ''
+  product_barcode: '', description: '', notes: ''
 }
 
 // Task B — Non-Scans
@@ -28,17 +27,12 @@ export default function TaskBForm({ onSaved, storeId }) {
   const [lookupInfo, setLookupInfo] = useState(null)
 
   const triggerLookup = async (code) => {
-    if (!code || code.length < 4) return
+    if (!code || code.length < 4) { setLookupInfo(null); return }
     setLookupLoading(true)
     try {
-      const p = await lookupProduct(code)
+      const p = await lookupAltBarcode(code)
       if (p) {
-        setForm(f => ({
-          ...f,
-          description:        p.description || f.description,
-          supplier_id:        p.supplier_id || f.supplier_id,
-          supplier_name_text: p.supplier_id ? '' : f.supplier_name_text
-        }))
+        setForm(f => ({ ...f, description: f.description || p.item_name || '' }))
         setLookupInfo(p)
       } else {
         setLookupInfo(null)
@@ -62,9 +56,8 @@ export default function TaskBForm({ onSaved, storeId }) {
       store_id:           storeId || session.storeId || null,
       product_barcode:    form.product_barcode.trim(),
       description:        form.description.trim(),
-      supplier_id:        form.supplier_id || null,
-      supplier_name_text: form.supplier_name_text.trim() || null,
       notes:              form.notes.trim() || null,
+      ...altFields(lookupInfo, form.product_barcode.trim()),
       status:             'pending'
     }
 
@@ -118,15 +111,7 @@ export default function TaskBForm({ onSaved, storeId }) {
               readerId="reader-b"
             />
 
-            {lookupInfo && (
-              <div className="form-group full" style={{ marginTop: -6 }}>
-                <span className="note" style={{ fontSize: 12.5 }}>
-                  {lookupInfo.description && <>Product: <strong>{lookupInfo.description}</strong></>}
-                  {lookupInfo.description && lookupInfo.supplier_name && ' · '}
-                  {lookupInfo.supplier_name && <>Supplier: <strong>{lookupInfo.supplier_name}</strong></>}
-                </span>
-              </div>
-            )}
+            <LookupBanner info={lookupInfo} />
 
             <div className="form-group full">
               <label>Description *</label>
@@ -149,11 +134,6 @@ export default function TaskBForm({ onSaved, storeId }) {
               value={barcodePhoto}
               onChange={setBarcodePhoto}
               required
-            />
-
-            <SupplierPicker
-              value={{ supplier_id: form.supplier_id, supplier_name_text: form.supplier_name_text }}
-              onChange={({ supplier_id, supplier_name_text }) => setForm(f => ({ ...f, supplier_id, supplier_name_text }))}
             />
 
             <div className="form-group full">

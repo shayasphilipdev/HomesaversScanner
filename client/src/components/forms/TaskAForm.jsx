@@ -2,26 +2,20 @@ import { UOM_OPTIONS, PACK_WARNING_TRIGGER, EACHS_WARNING } from '../../lib/uom.
 import { createTaskRecord } from '../../lib/api.js'
 import { useStore } from '../../App.jsx'
 import ScannerInput from './ScannerInput.jsx'
-import SupplierPicker from './SupplierPicker.jsx'
-import { useTaskForm, LookupBanner } from './useTaskForm.jsx'
+import { useTaskForm, LookupBanner, altFields } from './useTaskForm.jsx'
 
 const EMPTY = {
-  product_code: '', description: '', uom: '', quantity: '',
-  supplier_id: '', supplier_name_text: '', notes: ''
+  product_code: '', description: '', uom: '', quantity: '', notes: ''
 }
 
-// Task A — UOM Errors. Auto-fills description + uom + supplier on scan.
+// Task A — UOM Errors. Auto-fills description from the Alternate Barcode item.
 export default function TaskAForm({ onSaved, storeId }) {
   const { session } = useStore()
   const t = useTaskForm({
     initial: EMPTY,
-    // Task-A specific extra auto-fills: pull description + uom from the master.
+    // Pull the item name into the description on scan (UOM stays manual).
     onLookup: ({ product, setForm }) =>
-      setForm(f => ({
-        ...f,
-        description: f.description || product.description || '',
-        uom:         f.uom         || product.uom || ''
-      }))
+      setForm(f => ({ ...f, description: f.description || product.item_name || '' }))
   })
 
   const handleSubmit = async (e) => {
@@ -40,9 +34,8 @@ export default function TaskAForm({ onSaved, storeId }) {
         description:        t.form.description.trim() || null,
         uom:                t.form.uom,
         quantity:           Number(t.form.quantity),
-        supplier_id:        t.form.supplier_id || null,
-        supplier_name_text: t.form.supplier_name_text.trim() || null,
         notes:              t.form.notes.trim() || null,
+        ...altFields(t.lookupInfo, t.form.product_code.trim()),
         status:             'pending'
       })
       t.reset()
@@ -98,11 +91,6 @@ export default function TaskAForm({ onSaved, storeId }) {
                 placeholder="0" min="0" step="any"
               />
             </div>
-
-            <SupplierPicker
-              value={{ supplier_id: t.form.supplier_id, supplier_name_text: t.form.supplier_name_text }}
-              onChange={({ supplier_id, supplier_name_text }) => t.patch({ supplier_id, supplier_name_text })}
-            />
 
             <div className="form-group full">
               <label>Notes (optional)</label>

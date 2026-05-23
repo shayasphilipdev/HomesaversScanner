@@ -383,19 +383,40 @@ export async function onRequest(context) {
       if (!Array.isArray(rows) || !rows.length) return err('Empty payload', 400)
       const now = new Date().toISOString()
 
+      // Normalise the status words to a fixed Active / Inactive vocabulary.
+      //   Item_Status:    "Active" -> Active, "De-Actived" -> Inactive
+      //   Barcode_Status: "Active" -> Active, "DeActive"   -> Inactive
+      // Match loosely (case + punctuation insensitive) so minor source
+      // spelling drift still maps correctly.
+      const normStatus = (v) => {
+        if (v == null) return null
+        const s = String(v).trim()
+        if (!s) return null
+        const k = s.toLowerCase().replace(/[^a-z]/g, '')
+        if (k === 'active') return 'Active'
+        if (k === 'deactived' || k === 'deactive' || k === 'deactivated' || k === 'inactive') return 'Inactive'
+        return s
+      }
+
       const byKey = new Map()
       let skipped = 0
       for (const r of rows) {
         const bno = r?.barcode_no == null ? '' : String(r.barcode_no).trim()
         if (!bno || bno === '0') { skipped++; continue }   // barcode_no must be a real value
+        const bcStatus = normStatus(r.barcode_status)
+        // Dedup within the chunk on barcode_no: if we already kept an Active
+        // barcode for this code, do NOT let a later Inactive row overwrite it.
+        const prev = byKey.get(bno)
+        if (prev && prev.barcode_status === 'Active' && bcStatus !== 'Active') { skipped++; continue }
+        if (prev && bcStatus !== 'Active' && prev.barcode_status !== 'Active') { skipped++; continue }
         byKey.set(bno, {
           barcode_no:     bno,
           ean_barcode:    r.ean_barcode    ? String(r.ean_barcode).trim()    : null,
           item_name:      r.item_name      ? String(r.item_name).trim()      : null,
           supl_id:        r.supl_id        ? String(r.supl_id).trim()        : null,
           supplier_code:  r.supplier_code  ? String(r.supplier_code).trim()  : null,
-          item_status:    r.item_status    ? String(r.item_status).trim()    : null,
-          barcode_status: r.barcode_status ? String(r.barcode_status).trim() : null,
+          item_status:    normStatus(r.item_status),
+          barcode_status: bcStatus,
           updated_at:     now
         })
       }
@@ -2045,6 +2066,14 @@ export async function onRequest(context) {
         photo_product_url:   body.photo_product_url || null,
         photo_barcode_url:   body.photo_barcode_url || null,
         details:             body.details || {},
+        // Phase 3 — Alternate Barcode snapshot captured at scan time so reports
+        // show item/supplier/status without a second lookup.
+        barcode_no:          body.barcode_no || null,
+        item_name:           body.item_name || null,
+        supl_id:             body.supl_id || null,
+        supplier_code:       body.supplier_code || null,
+        item_status:         body.item_status || null,
+        barcode_status:      body.barcode_status || null,
         status:              body.status || 'pending',
         marked_for_deletion: false,
         created_at:          now,

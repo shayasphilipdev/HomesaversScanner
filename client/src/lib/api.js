@@ -84,6 +84,12 @@ export const getDashboardStats = ({ from, to, storeId, storeIds } = {}) => {
 export const lookupProduct = (productCode) =>
   request(`/products/lookup?code=${encodeURIComponent(productCode)}`)
 
+// Phase 3: scan lookup against the Alternate Barcode table (Barcode_No is the
+// primary key). Returns { barcode_no, ean_barcode, item_name, supl_id,
+// supplier_code, item_status, barcode_status } or null.
+export const lookupAltBarcode = (barcode) =>
+  request(`/alt-barcodes/lookup?barcode=${encodeURIComponent(barcode)}`)
+
 // ── Photos ──────────────────────────────────────────────────────────────────
 // Note: photo upload uses multipart/form-data so we bypass the JSON `request`.
 

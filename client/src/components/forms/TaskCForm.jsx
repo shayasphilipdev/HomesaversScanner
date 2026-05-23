@@ -2,13 +2,11 @@ import { useEffect, useState } from 'react'
 import { createTaskRecord, getLookupOptions } from '../../lib/api.js'
 import { useStore } from '../../App.jsx'
 import ScannerInput from './ScannerInput.jsx'
-import SupplierPicker from './SupplierPicker.jsx'
-import { useTaskForm, LookupBanner } from './useTaskForm.jsx'
+import { useTaskForm, LookupBanner, altFields } from './useTaskForm.jsx'
 
 // Task C — Wrong Prices
 const EMPTY = {
-  product_code: '', reason_code: '', current_price: '',
-  supplier_id: '', supplier_name_text: '', notes: ''
+  product_code: '', reason_code: '', current_price: '', notes: ''
 }
 
 export default function TaskCForm({ onSaved, storeId }) {
@@ -34,9 +32,8 @@ export default function TaskCForm({ onSaved, storeId }) {
         task_type:          'C',
         store_id:           storeId || session.storeId || null,
         product_code:       t.form.product_code.trim(),
-        supplier_id:        t.form.supplier_id || null,
-        supplier_name_text: t.form.supplier_name_text.trim() || null,
         notes:              t.form.notes.trim() || null,
+        ...altFields(t.lookupInfo, t.form.product_code.trim()),
         details: {
           reason_code:   t.form.reason_code,
           current_price: t.form.current_price === '' ? null : Number(t.form.current_price)
@@ -82,11 +79,6 @@ export default function TaskCForm({ onSaved, storeId }) {
                 placeholder="€0.00" min="0" step="0.01"
               />
             </div>
-
-            <SupplierPicker
-              value={{ supplier_id: t.form.supplier_id, supplier_name_text: t.form.supplier_name_text }}
-              onChange={({ supplier_id, supplier_name_text }) => t.patch({ supplier_id, supplier_name_text })}
-            />
 
             <div className="form-group full">
               <label>Notes (optional)</label>

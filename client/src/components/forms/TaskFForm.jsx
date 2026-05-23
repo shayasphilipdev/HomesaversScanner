@@ -1,8 +1,8 @@
 ﻿import { useEffect, useState } from 'react'
-import { createTaskRecord, lookupProduct, getLookupOptions } from '../../lib/api.js'
+import { createTaskRecord, lookupAltBarcode, getLookupOptions } from '../../lib/api.js'
 import { useStore } from '../../App.jsx'
 import ScannerInput from './ScannerInput.jsx'
-import SupplierPicker from './SupplierPicker.jsx'
+import { LookupBanner, altFields } from './useTaskForm.jsx'
 
 // Task F — DRS (Deposit Return Scheme) Errors
 // product_code, drs_size (from lookup_options master),
@@ -11,8 +11,7 @@ import SupplierPicker from './SupplierPicker.jsx'
 // Shows a persistent warning: the staff member must verify the Return Logo
 // is on the product before logging a DRS error.
 const EMPTY = {
-  product_code: '', drs_size: '', units_per_package: '',
-  supplier_id: '', supplier_name_text: '', notes: ''
+  product_code: '', drs_size: '', units_per_package: '', notes: ''
 }
 
 // Parse a size label like "500ml", "330 ml", "1L", "1.5 l", "33cl" → millilitres.
@@ -56,15 +55,8 @@ export default function TaskFForm({ onSaved, storeId }) {
     if (!code || code.length < 4) { setLookupInfo(null); return }
     setLookupLoading(true)
     try {
-      const p = await lookupProduct(code)
-      if (p) {
-        setForm(f => ({
-          ...f,
-          supplier_id:        p.supplier_id || f.supplier_id,
-          supplier_name_text: p.supplier_id ? '' : f.supplier_name_text
-        }))
-        setLookupInfo(p)
-      } else { setLookupInfo(null) }
+      const p = await lookupAltBarcode(code)
+      setLookupInfo(p || null)
     } catch {} finally { setLookupLoading(false) }
   }
 
@@ -83,9 +75,8 @@ export default function TaskFForm({ onSaved, storeId }) {
         task_type:          'F',
         store_id:           storeId || session.storeId || null,
         product_code:       form.product_code.trim(),
-        supplier_id:        form.supplier_id || null,
-        supplier_name_text: form.supplier_name_text.trim() || null,
         notes:              form.notes.trim() || null,
+        ...altFields(lookupInfo, form.product_code.trim()),
         details: {
           drs_size:          form.drs_size,
           units_per_package: Number(form.units_per_package)
@@ -127,15 +118,7 @@ export default function TaskFForm({ onSaved, storeId }) {
               placeholder="Scan or type the product ID"
             />
 
-            {lookupInfo && (
-              <div className="form-group full" style={{ marginTop: -6 }}>
-                <span className="note" style={{ fontSize: 12.5 }}>
-                  {lookupInfo.description && <>Product: <strong>{lookupInfo.description}</strong></>}
-                  {lookupInfo.description && lookupInfo.supplier_name && ' · '}
-                  {lookupInfo.supplier_name && <>Supplier: <strong>{lookupInfo.supplier_name}</strong></>}
-                </span>
-              </div>
-            )}
+            <LookupBanner info={lookupInfo} />
 
             <div className="form-group">
               <label>Size of the Product *</label>
@@ -175,11 +158,6 @@ export default function TaskFForm({ onSaved, storeId }) {
                 </div>
               )
             })()}
-
-            <SupplierPicker
-              value={{ supplier_id: form.supplier_id, supplier_name_text: form.supplier_name_text }}
-              onChange={({ supplier_id, supplier_name_text }) => setForm(f => ({ ...f, supplier_id, supplier_name_text }))}
-            />
 
             <div className="form-group full">
               <label>Notes (optional)</label>

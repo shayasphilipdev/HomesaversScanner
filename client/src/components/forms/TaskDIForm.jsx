@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { createTaskRecord, lookupProduct } from '../../lib/api.js'
+import { createTaskRecord, lookupAltBarcode } from '../../lib/api.js'
 import { useStore } from '../../App.jsx'
 import ScannerInput from './ScannerInput.jsx'
-import SupplierPicker from './SupplierPicker.jsx'
+import { LookupBanner, altFields } from './useTaskForm.jsx'
 
 // Tasks D (Wrong Description) and I (Miscellaneous Tasks) share an identical
 // field set: product_code, product_name_label, product_barcode, supplier, notes.
@@ -10,8 +10,7 @@ import SupplierPicker from './SupplierPicker.jsx'
 // The task_type prop decides which header is shown and which code lands in
 // the DB. Behaviour is otherwise identical.
 const EMPTY = {
-  product_code: '', product_name_label: '', product_barcode: '',
-  supplier_id: '', supplier_name_text: '', notes: ''
+  product_code: '', product_name_label: '', product_barcode: '', notes: ''
 }
 
 const HEADERS = {
@@ -36,14 +35,9 @@ export default function TaskDIForm({ taskType, onSaved, storeId }) {
     if (!code || code.length < 4) { setLookupInfo(null); return }
     setLookupLoading(true)
     try {
-      const p = await lookupProduct(code)
+      const p = await lookupAltBarcode(code)
       if (p) {
-        setForm(f => ({
-          ...f,
-          product_name_label: f.product_name_label || p.description || '',
-          supplier_id:        p.supplier_id || f.supplier_id,
-          supplier_name_text: p.supplier_id ? '' : f.supplier_name_text
-        }))
+        setForm(f => ({ ...f, product_name_label: f.product_name_label || p.item_name || '' }))
         setLookupInfo(p)
       } else { setLookupInfo(null) }
     } catch {} finally { setLookupLoading(false) }
@@ -62,9 +56,8 @@ export default function TaskDIForm({ taskType, onSaved, storeId }) {
         product_code:       form.product_code.trim(),
         product_name_label: form.product_name_label.trim(),
         product_barcode:    form.product_barcode.trim() || null,
-        supplier_id:        form.supplier_id || null,
-        supplier_name_text: form.supplier_name_text.trim() || null,
         notes:              form.notes.trim() || null,
+        ...altFields(lookupInfo, form.product_code.trim()),
         status:             'pending'
       })
       setForm(EMPTY); setLookupInfo(null)
@@ -101,15 +94,7 @@ export default function TaskDIForm({ taskType, onSaved, storeId }) {
               placeholder="Scan or type the printed barcode"
             />
 
-            {lookupInfo && (
-              <div className="form-group full" style={{ marginTop: -6 }}>
-                <span className="note" style={{ fontSize: 12.5 }}>
-                  {lookupInfo.description && <>Product: <strong>{lookupInfo.description}</strong></>}
-                  {lookupInfo.description && lookupInfo.supplier_name && ' · '}
-                  {lookupInfo.supplier_name && <>Supplier: <strong>{lookupInfo.supplier_name}</strong></>}
-                </span>
-              </div>
-            )}
+            <LookupBanner info={lookupInfo} />
 
             <div className="form-group full">
               <label>Product Name (as on the product) *</label>
@@ -119,11 +104,6 @@ export default function TaskDIForm({ taskType, onSaved, storeId }) {
                 placeholder="Exactly what is printed on the product"
               />
             </div>
-
-            <SupplierPicker
-              value={{ supplier_id: form.supplier_id, supplier_name_text: form.supplier_name_text }}
-              onChange={({ supplier_id, supplier_name_text }) => setForm(f => ({ ...f, supplier_id, supplier_name_text }))}
-            />
 
             <div className="form-group full">
               <label>Notes (optional)</label>

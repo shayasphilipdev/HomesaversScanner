@@ -1,7 +1,8 @@
 ﻿import { useState } from 'react'
-import { createTaskRecord, lookupProduct } from '../../lib/api.js'
+import { createTaskRecord, lookupAltBarcode } from '../../lib/api.js'
 import { useStore } from '../../App.jsx'
 import ScannerInput from './ScannerInput.jsx'
+import { LookupBanner, altFields } from './useTaskForm.jsx'
 
 // Task H — Stock Count
 // product_code, shop_floor_count, notes
@@ -13,11 +14,15 @@ export default function TaskHForm({ onSaved, storeId }) {
   const [saving, setSaving] = useState(false)
   const [error, setError]   = useState('')
   const [lookupLoading, setLookupLoading] = useState(false)
+  const [lookupInfo, setLookupInfo] = useState(null)
 
   const triggerLookup = async (code) => {
-    if (!code || code.length < 4) return
+    if (!code || code.length < 4) { setLookupInfo(null); return }
     setLookupLoading(true)
-    try { await lookupProduct(code) } catch {} finally { setLookupLoading(false) }
+    try {
+      const p = await lookupAltBarcode(code)
+      setLookupInfo(p || null)
+    } catch {} finally { setLookupLoading(false) }
   }
 
   const handleSubmit = async (e) => {
@@ -35,10 +40,11 @@ export default function TaskHForm({ onSaved, storeId }) {
         store_id:           storeId || session.storeId || null,
         product_code: form.product_code.trim(),
         notes:        form.notes.trim() || null,
+        ...altFields(lookupInfo, form.product_code.trim()),
         details: { shop_floor_count: Number(form.shop_floor_count) },
         status:       'pending'
       })
-      setForm(EMPTY)
+      setForm(EMPTY); setLookupInfo(null)
       onSaved?.({ queued: !!res?.queued })
     } catch (err) {
       setError(err.message)
@@ -63,6 +69,8 @@ export default function TaskHForm({ onSaved, storeId }) {
               placeholder="Scan or type the product ID"
             />
 
+            <LookupBanner info={lookupInfo} />
+
             <div className="form-group">
               <label>Count in the Shop Floor *</label>
               <input
@@ -86,7 +94,7 @@ export default function TaskHForm({ onSaved, storeId }) {
           {error && <div className="login-error mt-12">{error}</div>}
 
           <div className="flex-row mt-20" style={{ justifyContent: 'flex-end' }}>
-            <button type="button" className="btn btn-outline" onClick={() => { setForm(EMPTY); setError('') }}>
+            <button type="button" className="btn btn-outline" onClick={() => { setForm(EMPTY); setLookupInfo(null); setError('') }}>
               Clear
             </button>
             <button type="submit" className="btn btn-primary" disabled={saving}>

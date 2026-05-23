@@ -144,6 +144,39 @@ try {
   Write-Log "Prepared $($payload.Count) row(s), skipped $recordsSkipped (no/zero Barcode_No)"
   if ($payload.Count -eq 0) { throw "No rows with a valid Barcode_No" }
 
+  # ── De-duplicate on Barcode_No ────────────────────────────────────────────
+  # Barcode_No is the primary key. When the same Barcode_No appears more than
+  # once, keep the Active barcode and drop the 'DeActive' one. (Status words:
+  # Active -> Active, DeActive/De-Actived -> Inactive.) If every duplicate is
+  # inactive, keep the first. This must run BEFORE chunking so the right row
+  # survives regardless of where chunk boundaries fall.
+  function Test-ActiveStatus {
+    param([string]$Value)
+    if (-not $Value) { return $false }
+    return (($Value -replace '[^A-Za-z]', '').ToLower() -eq 'active')
+  }
+  $byKey = [ordered]@{}
+  $dupDropped = 0
+  foreach ($row in $payload) {
+    $key = "$($row['barcode_no'])"
+    $isActive = Test-ActiveStatus $row['barcode_status']
+    if (-not $byKey.Contains($key)) {
+      $byKey[$key] = $row
+    } else {
+      $dupDropped++
+      $existingActive = Test-ActiveStatus $byKey[$key]['barcode_status']
+      # Replace the kept row only when the incoming one is Active and the
+      # one we already have is not — i.e. always prefer the Active barcode.
+      if ($isActive -and -not $existingActive) { $byKey[$key] = $row }
+    }
+  }
+  $deduped = New-Object System.Collections.Generic.List[hashtable]
+  foreach ($v in $byKey.Values) { $deduped.Add($v) | Out-Null }
+  $recordsSkipped += $dupDropped
+  $payload = $deduped
+  Write-Log "After de-dup on Barcode_No: $($payload.Count) row(s), dropped $dupDropped duplicate(s) (kept Active over DeActive)"
+  if ($payload.Count -eq 0) { throw "No rows after de-duplication" }
+
   if ($DryRun) {
     Write-Log "DryRun -- first row: $($payload[0] | ConvertTo-Json -Compress)"
     Write-Log "=== Dry run complete ==="

@@ -1,7 +1,7 @@
 import { createTaskRecord } from '../../lib/api.js'
 import { useStore } from '../../App.jsx'
 import ScannerInput from './ScannerInput.jsx'
-import { useTaskForm } from './useTaskForm.jsx'
+import { useTaskForm, LookupBanner, altFields } from './useTaskForm.jsx'
 
 // Task J — Department Check. The simplest task: scan a barcode, save.
 // No supplier, no description, no extra fields.
@@ -21,6 +21,7 @@ export default function TaskJForm({ onSaved, storeId }) {
         task_type:    'J',
         store_id:     storeId || session.storeId || null,
         product_code: t.form.product_code.trim(),
+        ...altFields(t.lookupInfo, t.form.product_code.trim()),
         status:       'pending'
       })
       t.reset()
@@ -43,7 +44,8 @@ export default function TaskJForm({ onSaved, storeId }) {
             label="Barcode *"
             value={t.form.product_code}
             onChange={t.update('product_code')}
-            lookupLoading={false}
+            onConfirm={t.triggerLookup}
+            lookupLoading={t.lookupLoading}
             readerId="reader-j"
             placeholder="Scan or type the barcode"
             inlineAction={
@@ -52,6 +54,8 @@ export default function TaskJForm({ onSaved, storeId }) {
               </button>
             }
           />
+
+          <LookupBanner info={t.lookupInfo} />
 
           {t.error && <div className="login-error mt-12">{t.error}</div>}
         </form>

@@ -1,13 +1,11 @@
 import { createTaskRecord } from '../../lib/api.js'
 import { useStore } from '../../App.jsx'
 import ScannerInput from './ScannerInput.jsx'
-import SupplierPicker from './SupplierPicker.jsx'
-import { useTaskForm, LookupBanner } from './useTaskForm.jsx'
+import { useTaskForm, LookupBanner, altFields } from './useTaskForm.jsx'
 
 // Task E — Price Marked Products
 const EMPTY = {
-  product_code: '', price_marked_price: '',
-  supplier_id: '', supplier_name_text: '', notes: ''
+  product_code: '', price_marked_price: '', notes: ''
 }
 
 export default function TaskEForm({ onSaved, storeId }) {
@@ -26,9 +24,8 @@ export default function TaskEForm({ onSaved, storeId }) {
         task_type:          'E',
         store_id:           storeId || session.storeId || null,
         product_code:       t.form.product_code.trim(),
-        supplier_id:        t.form.supplier_id || null,
-        supplier_name_text: t.form.supplier_name_text.trim() || null,
         notes:              t.form.notes.trim() || null,
+        ...altFields(t.lookupInfo, t.form.product_code.trim()),
         details:            { price_marked_price: Number(t.form.price_marked_price) },
         status:             'pending'
       })
@@ -63,11 +60,6 @@ export default function TaskEForm({ onSaved, storeId }) {
                 placeholder="€0.00" min="0" step="0.01"
               />
             </div>
-
-            <SupplierPicker
-              value={{ supplier_id: t.form.supplier_id, supplier_name_text: t.form.supplier_name_text }}
-              onChange={({ supplier_id, supplier_name_text }) => t.patch({ supplier_id, supplier_name_text })}
-            />
 
             <div className="form-group full">
               <label>Notes (optional)</label>
