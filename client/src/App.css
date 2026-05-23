@@ -337,6 +337,18 @@ body {
 .form-group { display: flex; flex-direction: column; gap: 6px; }
 .form-group.full { grid-column: 1 / -1; }
 
+/* Settings section sub-heading — groups related fields (sync, retention…). */
+.section-subhead {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
 /* Compact Settings grid — more, narrower fields per row, tighter spacing so
    the whole page is shorter. Path fields still span full width via .full. */
 .form-grid--settings {

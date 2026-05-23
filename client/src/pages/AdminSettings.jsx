@@ -21,60 +21,90 @@ function fmtBytes(b) {
 const WARN_PCT = 70
 const CRIT_PCT = 85
 
+// Group the raw settings rows into ordered sections for display. Within a
+// section, fields follow the order they appear in KEY_META. Unknown keys
+// (no meta) collect under "Other" at the end.
+function groupSettings(settings) {
+  const metaKeys = Object.keys(KEY_META)
+  const buckets = {}
+  for (const s of settings) {
+    const section = KEY_META[s.key]?.section || 'Other'
+    ;(buckets[section] ||= []).push(s)
+  }
+  const order = [...SECTION_ORDER, 'Other']
+  return order
+    .filter(sec => buckets[sec]?.length)
+    .map(section => ({
+      section,
+      rows: buckets[section].sort((a, b) => metaKeys.indexOf(a.key) - metaKeys.indexOf(b.key))
+    }))
+}
+
+// Settings are rendered grouped into these sections, in this order. Each
+// KEY_META entry names its section so related fields stay together.
+const SECTION_ORDER = ['Alt-barcode sync', 'Camera', 'Retention', 'Capacity']
+
 const KEY_META = {
-  list_auto_close_hours: {
-    label: 'List auto-close (hours)',
-    hint:  'How long after creation a list auto-closes (planned feature — currently informational).'
-  },
-  scan_record_retention_days: {
-    label: 'Scan record retention (days)',
-    hint:  'How long task records are kept before cleanup (planned feature).'
-  },
-  photo_retention_days: {
-    label: 'Photo retention (days)',
-    hint:  'Photos older than this can be removed via the cleanup button below.'
-  },
-  product_sync_folder: {
-    label: 'Product sync folder',
+  // ── Alt-barcode sync (kept together) ──────────────────────────────────
+  alt_barcode_sync_folder: {
+    section: 'Alt-barcode sync',
+    label: 'Sync folder',
     wide:  true,
-    hint:  'UNC or local path the daily 06:00 PowerShell job reads. Use the same path the Windows machine can see — e.g. Y:\\Supply Chain & Buying - Shared\\Data\\VRSDAILYDATADUMP\\ProductMaster\\2026'
+    hint:  'Network path the PowerShell job reads. e.g. Y:\\Supply Chain & Buying - Shared\\Data\\VRSDAILYDATADUMP\\ProductMaster-ALTBarcode\\2026'
   },
-  product_sync_file_pattern: {
-    label: 'Product sync file pattern',
-    hint:  'Glob to match within the folder — e.g. *.xlsx. The newest matching file by modified date is used each day.'
+  alt_barcode_sync_pattern: {
+    section: 'Alt-barcode sync',
+    label: 'File pattern',
+    hint:  'Glob to match in the folder — e.g. *.xlsx. Newest matching file wins.'
   },
-  product_sync_sheet: {
-    label: 'Product sync Excel sheet',
-    hint:  'Sheet to read inside the workbook. "1" = first sheet by index, or enter a sheet name.'
+  alt_barcode_sync_sheet: {
+    section: 'Alt-barcode sync',
+    label: 'Excel sheet',
+    hint:  '"1" = first sheet by index, or a sheet name.'
   },
+  alt_barcode_sync_schedule: {
+    section: 'Alt-barcode sync',
+    label: 'Schedule',
+    hint:  'How often the job runs. Works with the time below — e.g. "daily at 06:00". Match this in Windows Task Scheduler.',
+    choices: ['daily', 'weekly', 'monthly']
+  },
+  alt_barcode_sync_time: {
+    section: 'Alt-barcode sync',
+    label: 'Schedule time',
+    time:  true,
+    hint:  'Time of day the job runs (24h). Pairs with the schedule above. Set the same time in Windows Task Scheduler.'
+  },
+  // ── Camera ─────────────────────────────────────────────────────────────
   scanner_camera_enabled: {
+    section: 'Camera',
     label: 'Camera scanning',
     hint:  'When on, every barcode field shows a "Use camera" button. Off by default — stores use a scanner gun.',
     bool:  true
   },
-  alt_barcode_sync_folder: {
-    label: 'Alt-barcode sync folder',
-    wide:  true,
-    hint:  'Network path the daily PowerShell job reads. e.g. Y:\\Supply Chain & Buying - Shared\\Data\\VRSDAILYDATADUMP\\ProductMaster-ALTBarcode\\2026'
+  // ── Retention ──────────────────────────────────────────────────────────
+  list_auto_close_hours: {
+    section: 'Retention',
+    label: 'List auto-close (hours)',
+    hint:  'How long after creation a list auto-closes (planned feature — currently informational).'
   },
-  alt_barcode_sync_pattern: {
-    label: 'Alt-barcode file pattern',
-    hint:  'Glob to match in the folder — e.g. *.xlsx. Newest matching file wins.'
+  scan_record_retention_days: {
+    section: 'Retention',
+    label: 'Scan record retention (days)',
+    hint:  'How long task records are kept before cleanup (planned feature).'
   },
-  alt_barcode_sync_sheet: {
-    label: 'Alt-barcode Excel sheet',
-    hint:  '"1" = first sheet by index, or a sheet name.'
+  photo_retention_days: {
+    section: 'Retention',
+    label: 'Photo retention (days)',
+    hint:  'Photos older than this can be removed via the cleanup button below.'
   },
-  alt_barcode_sync_schedule: {
-    label: 'Alt-barcode sync schedule',
-    hint:  'How often the PowerShell job should run. Set the same frequency in Windows Task Scheduler.',
-    choices: ['daily', 'weekly', 'monthly']
-  },
+  // ── Capacity ───────────────────────────────────────────────────────────
   capacity_db_limit_bytes: {
+    section: 'Capacity',
     label: 'Database size limit (bytes)',
     hint:  'Used by the Capacity meter at the top of this page. Free Supabase tier = 524288000 (500 MB). Update if you upgrade plan.'
   },
   capacity_storage_limit_bytes: {
+    section: 'Capacity',
     label: 'Storage size limit (bytes)',
     hint:  'Used by the Capacity meter at the top of this page. Free Supabase tier = 1073741824 (1 GB).'
   }
@@ -212,7 +242,7 @@ export default function AdminSettings() {
           <p className="note" style={{ fontSize: 12, marginTop: 10, marginBottom: 0 }}>
             <strong>Sync Now:</strong> run the desktop job manually on the PC —
             <code>powershell -ExecutionPolicy Bypass -File C:\Scraping\homesavers-scanner\scripts\sync-alt-barcodes.ps1</code>.
-            Set the recurring schedule (daily/weekly/monthly) below and match it in Windows Task Scheduler.
+            Set the schedule + time below and match them in Windows Task Scheduler.
           </p>
         </div>
       </div>
@@ -253,38 +283,49 @@ export default function AdminSettings() {
             <div className="empty-state"><p>No editable settings.</p></div>
           ) : (
             <>
-              <div className="form-grid form-grid--settings">
-                {settings.map(s => {
-                  const meta = KEY_META[s.key] || { label: s.key, hint: '' }
-                  const isOn = values[s.key] === 'true'
-                  return (
-                    <div className={`form-group${meta.wide ? ' full' : ''}`} key={s.key}>
-                      <label>{meta.label}</label>
-                      {meta.bool ? (
-                        <label className="flex-row" style={{ gap: 8, alignItems: 'center' }}>
-                          <input
-                            type="checkbox"
-                            checked={isOn}
-                            onChange={e => updateValue(s.key, e.target.checked ? 'true' : 'false')}
-                          />
-                          <span className="note" style={{ fontSize: 13 }}>{isOn ? 'On' : 'Off'}</span>
-                        </label>
-                      ) : meta.choices ? (
-                        <select value={values[s.key] || ''} onChange={e => updateValue(s.key, e.target.value)}>
-                          {meta.choices.map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                      ) : (
-                        <input
-                          type="text"
-                          value={values[s.key] || ''}
-                          onChange={e => updateValue(s.key, e.target.value)}
-                        />
-                      )}
-                      {meta.hint && <span className="note" style={{ fontSize: 11.5, lineHeight: 1.35 }}>{meta.hint}</span>}
-                    </div>
-                  )
-                })}
-              </div>
+              {groupSettings(settings).map(({ section, rows }) => (
+                <div key={section} style={{ marginBottom: 20 }}>
+                  <div className="section-subhead">{section}</div>
+                  <div className="form-grid form-grid--settings">
+                    {rows.map(s => {
+                      const meta = KEY_META[s.key] || { label: s.key, hint: '' }
+                      const isOn = values[s.key] === 'true'
+                      return (
+                        <div className={`form-group${meta.wide ? ' full' : ''}`} key={s.key}>
+                          <label>{meta.label}</label>
+                          {meta.bool ? (
+                            <label className="flex-row" style={{ gap: 8, alignItems: 'center' }}>
+                              <input
+                                type="checkbox"
+                                checked={isOn}
+                                onChange={e => updateValue(s.key, e.target.checked ? 'true' : 'false')}
+                              />
+                              <span className="note" style={{ fontSize: 13 }}>{isOn ? 'On' : 'Off'}</span>
+                            </label>
+                          ) : meta.choices ? (
+                            <select value={values[s.key] || ''} onChange={e => updateValue(s.key, e.target.value)}>
+                              {meta.choices.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                          ) : meta.time ? (
+                            <input
+                              type="time"
+                              value={values[s.key] || ''}
+                              onChange={e => updateValue(s.key, e.target.value)}
+                            />
+                          ) : (
+                            <input
+                              type="text"
+                              value={values[s.key] || ''}
+                              onChange={e => updateValue(s.key, e.target.value)}
+                            />
+                          )}
+                          {meta.hint && <span className="note" style={{ fontSize: 11.5, lineHeight: 1.35 }}>{meta.hint}</span>}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
               <div className="flex-row mt-20" style={{ justifyContent: 'flex-end', gap: 8 }}>
                 <button className="btn btn-outline btn-sm" onClick={load} disabled={saving}>Reload</button>
                 <button className="btn btn-primary btn-sm" onClick={save} disabled={!dirty || saving}>

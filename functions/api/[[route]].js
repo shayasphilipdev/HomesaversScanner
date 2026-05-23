@@ -363,14 +363,15 @@ export async function onRequest(context) {
     if (path === '/alt-barcodes/sync-config' && method === 'GET') {
       if (!env.PRODUCT_SYNC_SECRET) return err('PRODUCT_SYNC_SECRET not configured', 500)
       if ((request.headers.get('X-Sync-Secret') || '') !== env.PRODUCT_SYNC_SECRET) return err('Forbidden', 403)
-      const wanted = ['alt_barcode_sync_folder', 'alt_barcode_sync_pattern', 'alt_barcode_sync_sheet', 'alt_barcode_sync_schedule']
+      const wanted = ['alt_barcode_sync_folder', 'alt_barcode_sync_pattern', 'alt_barcode_sync_sheet', 'alt_barcode_sync_schedule', 'alt_barcode_sync_time']
       const rows = await db.select('app_settings', { select: 'key,value', key: `in.(${wanted.join(',')})` })
       const cfg = Object.fromEntries(rows.map(r => [r.key, r.value]))
       return json({
         folder:       cfg.alt_barcode_sync_folder  || '',
         file_pattern: cfg.alt_barcode_sync_pattern || '*.xlsx',
         sheet:        cfg.alt_barcode_sync_sheet    || '1',
-        schedule:     cfg.alt_barcode_sync_schedule || 'daily'
+        schedule:     cfg.alt_barcode_sync_schedule || 'daily',
+        time:         cfg.alt_barcode_sync_time     || '06:00'
       })
     }
 

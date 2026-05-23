@@ -76,7 +76,7 @@ try {
       if (-not $Folder)      { $Folder      = $cfg.folder }
       if (-not $FilePattern) { $FilePattern = $cfg.file_pattern }
       if (-not $Sheet)       { $Sheet       = $cfg.sheet }
-      Write-Log "Config: folder='$Folder' pattern='$FilePattern' sheet='$Sheet' schedule='$($cfg.schedule)'"
+      Write-Log "Config: folder='$Folder' pattern='$FilePattern' sheet='$Sheet' schedule='$($cfg.schedule) at $($cfg.time)' (set this in Task Scheduler)"
     } catch { Write-Log "Could not fetch config: $($_.Exception.Message). Using defaults." "WARN" }
   }
 
