@@ -36,6 +36,7 @@ const KEY_META = {
   },
   product_sync_folder: {
     label: 'Product sync folder',
+    wide:  true,
     hint:  'UNC or local path the daily 06:00 PowerShell job reads. Use the same path the Windows machine can see — e.g. Y:\\Supply Chain & Buying - Shared\\Data\\VRSDAILYDATADUMP\\ProductMaster\\2026'
   },
   product_sync_file_pattern: {
@@ -53,6 +54,7 @@ const KEY_META = {
   },
   alt_barcode_sync_folder: {
     label: 'Alt-barcode sync folder',
+    wide:  true,
     hint:  'Network path the daily PowerShell job reads. e.g. Y:\\Supply Chain & Buying - Shared\\Data\\VRSDAILYDATADUMP\\ProductMaster-ALTBarcode\\2026'
   },
   alt_barcode_sync_pattern: {
@@ -251,12 +253,12 @@ export default function AdminSettings() {
             <div className="empty-state"><p>No editable settings.</p></div>
           ) : (
             <>
-              <div className="form-grid">
+              <div className="form-grid form-grid--settings">
                 {settings.map(s => {
                   const meta = KEY_META[s.key] || { label: s.key, hint: '' }
                   const isOn = values[s.key] === 'true'
                   return (
-                    <div className="form-group full" key={s.key}>
+                    <div className={`form-group${meta.wide ? ' full' : ''}`} key={s.key}>
                       <label>{meta.label}</label>
                       {meta.bool ? (
                         <label className="flex-row" style={{ gap: 8, alignItems: 'center' }}>
@@ -268,7 +270,7 @@ export default function AdminSettings() {
                           <span className="note" style={{ fontSize: 13 }}>{isOn ? 'On' : 'Off'}</span>
                         </label>
                       ) : meta.choices ? (
-                        <select value={values[s.key] || ''} onChange={e => updateValue(s.key, e.target.value)} style={{ maxWidth: 220 }}>
+                        <select value={values[s.key] || ''} onChange={e => updateValue(s.key, e.target.value)}>
                           {meta.choices.map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
                       ) : (
@@ -278,7 +280,7 @@ export default function AdminSettings() {
                           onChange={e => updateValue(s.key, e.target.value)}
                         />
                       )}
-                      {meta.hint && <span className="note" style={{ fontSize: 12 }}>{meta.hint}</span>}
+                      {meta.hint && <span className="note" style={{ fontSize: 11.5, lineHeight: 1.35 }}>{meta.hint}</span>}
                     </div>
                   )
                 })}

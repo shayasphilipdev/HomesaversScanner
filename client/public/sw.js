@@ -11,7 +11,7 @@
 
    Bump CACHE_VERSION on cache-shape changes to evict old shells. */
 
-const CACHE_VERSION = 'v2'
+const CACHE_VERSION = 'v3'
 const CACHE_NAME    = `homesavers-${CACHE_VERSION}`
 const SHELL         = ['/', '/manifest.webmanifest']
 

@@ -337,6 +337,22 @@ body {
 .form-group { display: flex; flex-direction: column; gap: 6px; }
 .form-group.full { grid-column: 1 / -1; }
 
+/* Compact Settings grid — more, narrower fields per row, tighter spacing so
+   the whole page is shorter. Path fields still span full width via .full. */
+.form-grid--settings {
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px 16px;
+}
+.form-grid--settings .form-group label { font-size: 13px; }
+.form-grid--settings input[type="text"],
+.form-grid--settings select { max-width: 100%; }
+@media (max-width: 900px) {
+  .form-grid--settings { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 600px) {
+  .form-grid--settings { grid-template-columns: 1fr; }
+}
+
 /* Compact horizontal filter row — Reports filters, etc. */
 .filter-row {
   display: flex;

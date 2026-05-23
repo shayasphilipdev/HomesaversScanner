@@ -190,7 +190,7 @@ function EmployeesReport() {
         </div>
         <div className="filter-field">
           <label>Status</label>
-          <MultiSelectDropdown value={active} onChange={setActive}
+          <MultiSelectDropdown single value={active} onChange={setActive}
             options={[{ id: 'active', label: 'Active' }, { id: 'inactive', label: 'Inactive' }]}
             placeholder="Any" />
         </div>
@@ -364,7 +364,7 @@ function SuppliersReport() {
       filters={<>
         <div className="filter-field">
           <label>Status</label>
-          <MultiSelectDropdown value={active} onChange={setActive}
+          <MultiSelectDropdown single value={active} onChange={setActive}
             options={[{ id: 'active', label: 'Active' }, { id: 'inactive', label: 'Inactive' }]}
             placeholder="Any" />
         </div>
@@ -423,7 +423,7 @@ function StoresReport() {
         </div>
         <div className="filter-field">
           <label>Status</label>
-          <MultiSelectDropdown value={active} onChange={setActive}
+          <MultiSelectDropdown single value={active} onChange={setActive}
             options={[{ id: 'active', label: 'Active' }, { id: 'inactive', label: 'Inactive' }]} placeholder="Any" />
         </div>
       </>}
@@ -517,7 +517,7 @@ function TemplatesReport() {
         </div>
         <div className="filter-field">
           <label>Status</label>
-          <MultiSelectDropdown value={active} onChange={setActive}
+          <MultiSelectDropdown single value={active} onChange={setActive}
             options={[{ id: 'active', label: 'Active' }, { id: 'inactive', label: 'Inactive' }]} placeholder="Any" />
         </div>
       </>}

@@ -16,10 +16,12 @@ import { createPortal } from 'react-dom'
 //   options:      [{ id, label, subLabel? }]
 //   placeholder:  text when nothing selected (default "Nothing selected")
 //   searchable:   force search input on/off (default: auto when 8+ options)
+//   single:       single-select mode — renders radios, hides Select-all,
+//                 and CLOSES the panel as soon as one option is picked.
 export default function MultiSelectDropdown({
   value, onChange, options,
   placeholder = 'Nothing selected',
-  searchable
+  searchable, single = false
 }) {
   const ids = Array.isArray(value) ? value : []
   const [open, setOpen] = useState(false)
@@ -62,6 +64,13 @@ export default function MultiSelectDropdown({
     : options
 
   const toggle = (id) => {
+    if (single) {
+      // Pick exactly one (or unpick if the same value is chosen again) and
+      // close the panel immediately — radio-style behaviour.
+      onChange(ids.includes(id) ? [] : [id])
+      setOpen(false)
+      return
+    }
     onChange(ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id])
   }
   // When a search filter is active, "Select all" only picks the visible
@@ -113,7 +122,18 @@ export default function MultiSelectDropdown({
           maxHeight: 'min(360px, 60vh)', overflow: 'auto',
           zIndex: 4000
         }}>
-          {/* Toolbar */}
+          {/* Toolbar — single-select needs only a Clear; no Select-all. */}
+          {single ? (
+          <div style={{
+            display: 'flex', gap: 6, padding: 8,
+            borderBottom: '1px solid var(--border-soft)', position: 'sticky', top: 0,
+            background: 'var(--surface)'
+          }}>
+            <button type="button" className="btn btn-sm btn-outline" onClick={() => { clearAll(); setOpen(false) }}>
+              ✕ Clear
+            </button>
+          </div>
+          ) : (
           <div style={{
             display: 'flex', gap: 6, padding: 8,
             borderBottom: '1px solid var(--border-soft)', position: 'sticky', top: 0,
@@ -131,6 +151,7 @@ export default function MultiSelectDropdown({
               ✕ Clear all
             </button>
           </div>
+          )}
 
           {showSearch && (
             <div style={{ padding: 8, borderBottom: '1px solid var(--border-soft)' }}>
@@ -163,8 +184,11 @@ export default function MultiSelectDropdown({
                 }}
                 onMouseOver={e => { if (!on) e.currentTarget.style.background = 'var(--bg-soft)' }}
                 onMouseOut={e  => { if (!on) e.currentTarget.style.background = 'transparent' }}
+                onClick={single ? () => toggle(o.id) : undefined}
               >
-                <input type="checkbox" checked={on} onChange={() => toggle(o.id)} />
+                {single
+                  ? <span aria-hidden style={{ width: 16, textAlign: 'center', color: on ? 'var(--primary)' : 'transparent' }}>✓</span>
+                  : <input type="checkbox" checked={on} onChange={() => toggle(o.id)} />}
                 <span style={{ flex: 1 }}>{o.label}</span>
                 {o.subLabel && <span className="note" style={{ fontSize: 11 }}>{o.subLabel}</span>}
               </label>

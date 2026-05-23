@@ -108,11 +108,17 @@ export default function ScannerInput({
           { facingMode: 'environment' },
           {
             fps: 10,
-            // Small, landscape "region of interest" — html5-qrcode only
-            // decodes inside this box, so a barcode reads only when centred,
-            // and the small box nudges users to hold the phone close.
-            qrbox: { width: 240, height: 130 },
-            aspectRatio: 1.777
+            // Region of interest sized RELATIVE to the visible viewfinder so
+            // the scan box is always centred inside the band the user sees.
+            // (A fixed-pixel qrbox is centred in the full-resolution video,
+            // which our cropped band then hides — that was the "scanner box
+            // not in the box" bug.) Landscape box: wide + short for barcodes.
+            qrbox: (vw, vh) => {
+              const w = Math.floor(Math.min(vw * 0.92, 260))
+              const h = Math.floor(Math.min(vh * 0.7, 120))
+              return { width: w, height: h }
+            },
+            aspectRatio: 1.333
           },
           (decoded) => {
             try {
@@ -230,10 +236,23 @@ export default function ScannerInput({
       )}
       {cameraEnabled && cameraOn && (
         <div className="mt-12">
-          {/* Show only a short scan band, not the full video — crops the
-              camera to roughly the qrbox so the user lines the barcode up in
-              a tight window and holds the phone close. */}
-          <div id={readerId} style={{ width: '100%', maxWidth: 300, height: 170, background: '#000', borderRadius: 10, overflow: 'hidden', margin: '0 auto' }} />
+          {/* Scoped style: force html5-qrcode's <video> to FILL the container
+              (object-fit: cover, centred) so the qrbox scan region — which the
+              library centres in the video — lands in the box the user sees.
+              Without this the video keeps its native aspect and the scan box
+              ends up off-screen below the cropped band. */}
+          <style>{`
+            #${readerId} { position: relative; }
+            #${readerId} video {
+              width: 100% !important;
+              height: 100% !important;
+              object-fit: cover !important;
+              display: block;
+            }
+            #${readerId} > div:not(#${readerId}__scan_region) { border: none !important; }
+            #${readerId} canvas { display: none !important; }
+          `}</style>
+          <div id={readerId} style={{ width: '100%', maxWidth: 300, height: 200, background: '#000', borderRadius: 10, overflow: 'hidden', margin: '0 auto' }} />
 
           <div className="flex-row" style={{ gap: 10, marginTop: 8, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center' }}>
             {zoomCaps && (
