@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../App.jsx'
 import {
-  adminListStores, adminListAreas, adminListUsers, adminListSuppliers,
-  adminListLookups, adminListTemplates, adminListProducts, adminProductsCount,
+  adminListStores, adminListAreas, adminListUsers,
+  adminListLookups, adminListTemplates,
   adminListActivity, getTaskRecords
 } from '../lib/api.js'
 import AdminNav from '../components/AdminNav.jsx'
@@ -16,9 +16,7 @@ import { canAccessAdmin } from '../lib/roles.js'
 
 const TABS = [
   { key: 'employees', label: 'Employees' },
-  { key: 'products',  label: 'Products' },
   { key: 'activity',  label: 'Activity' },
-  { key: 'suppliers', label: 'Suppliers' },
   { key: 'stores',    label: 'Stores' },
   { key: 'areas',     label: 'Areas' },
   { key: 'templates', label: 'Task templates' },
@@ -55,9 +53,7 @@ export default function AdminReports() {
       </div>
 
       {tab === 'employees' && <EmployeesReport />}
-      {tab === 'products'  && <ProductsReport />}
       {tab === 'activity'  && <ActivityReport />}
-      {tab === 'suppliers' && <SuppliersReport />}
       {tab === 'stores'    && <StoresReport />}
       {tab === 'areas'     && <AreasReport />}
       {tab === 'templates' && <TemplatesReport />}
@@ -199,73 +195,6 @@ function EmployeesReport() {
   )
 }
 
-// ── Products ──────────────────────────────────────────────────────────
-function ProductsReport() {
-  const [data, setData] = useState([])
-  const [count, setCount] = useState(0)
-  const [q, setQ] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [pageLimit, setPageLimit] = useState(500)
-
-  const load = async () => {
-    setLoading(true); setError('')
-    try {
-      const [c, p] = await Promise.all([adminProductsCount().catch(() => ({ count: 0 })), adminListProducts({ limit: pageLimit, q: q || undefined })])
-      setCount(c.count); setData(p)
-    } catch (e) { setError(e.message) } finally { setLoading(false) }
-  }
-  useEffect(() => { load() }, [pageLimit])
-
-  const supplierCounts = useMemo(() => {
-    const m = {}; for (const r of data) { const k = r.supplier_name || '—'; m[k] = (m[k] || 0) + 1 }
-    return m
-  }, [data])
-
-  const columns = [
-    { key: 'product_id',    label: 'Product ID' },
-    { key: 'description',   label: 'Description' },
-    { key: 'uom',           label: 'UOM' },
-    { key: 'category',      label: 'Category' },
-    { key: 'supplier_name', label: 'Supplier' },
-    { key: 'is_active',     label: 'Active', get: r => r.is_active ? 'yes' : 'no' },
-    { key: 'updated_at',    label: 'Updated', get: r => (r.updated_at || '').slice(0, 10) }
-  ]
-
-  return (
-    <ReportShell
-      title="Products"
-      csvName="products"
-      loading={loading} error={error} rows={data} columns={columns}
-      stats={<>
-        <Stat label="Total products"  value={count.toLocaleString('en-IE')} />
-        <Stat label="Shown"           value={data.length.toLocaleString('en-IE')} />
-        <Stat label="No supplier"     value={data.filter(r => !r.supplier_name).length} />
-        <Stat label="Top supplier"    value={Object.entries(supplierCounts).sort((a,b)=>b[1]-a[1])[0]?.[0] || '—'} />
-      </>}
-      filters={<>
-        <div className="filter-field filter-field--wide">
-          <label>Search</label>
-          <input value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && load()} placeholder="product id or description…" />
-        </div>
-        <div className="filter-field">
-          <label>Page size</label>
-          <select value={pageLimit} onChange={e => setPageLimit(Number(e.target.value))}>
-            <option value={100}>100</option>
-            <option value={500}>500</option>
-            <option value={1000}>1000</option>
-            <option value={5000}>5000</option>
-          </select>
-        </div>
-        <div className="filter-field">
-          <label>&nbsp;</label>
-          <button className="btn btn-sm btn-outline" onClick={load}>↻ Refresh</button>
-        </div>
-      </>}
-    />
-  )
-}
-
 // ── Activity (audit ledger) ───────────────────────────────────────────
 function ActivityReport() {
   const today    = new Date().toISOString().slice(0, 10)
@@ -329,49 +258,6 @@ function ActivityReport() {
   )
 }
 
-// ── Suppliers ─────────────────────────────────────────────────────────
-function SuppliersReport() {
-  const [data, setData] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [active, setActive] = useState(['active'])
-
-  useEffect(() => { (async () => {
-    setLoading(true); setError('')
-    try { setData(await adminListSuppliers()) } catch (e) { setError(e.message) } finally { setLoading(false) }
-  })() }, [])
-
-  const rows = useMemo(() => data.filter(r => {
-    if (active.length === 1 && active[0] === 'active'   && !r.is_active) return false
-    if (active.length === 1 && active[0] === 'inactive' &&  r.is_active) return false
-    return true
-  }), [data, active])
-
-  const columns = [
-    { key: 'supplier_code', label: 'Code' },
-    { key: 'supplier_name', label: 'Name' },
-    { key: 'is_active',     label: 'Active', get: r => r.is_active ? 'yes' : 'no' }
-  ]
-
-  return (
-    <ReportShell
-      title="Suppliers" csvName="suppliers"
-      loading={loading} error={error} rows={rows} columns={columns}
-      stats={<>
-        <Stat label="Total"   value={data.length} />
-        <Stat label="Active"  value={data.filter(r => r.is_active).length} />
-      </>}
-      filters={<>
-        <div className="filter-field">
-          <label>Status</label>
-          <MultiSelectDropdown single value={active} onChange={setActive}
-            options={[{ id: 'active', label: 'Active' }, { id: 'inactive', label: 'Inactive' }]}
-            placeholder="Any" />
-        </div>
-      </>}
-    />
-  )
-}
 
 // ── Stores ────────────────────────────────────────────────────────────
 function StoresReport() {

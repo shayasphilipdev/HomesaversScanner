@@ -1922,7 +1922,7 @@ export async function onRequest(context) {
       const scope = await scopedStoreIds(db, session)
       // null = unrestricted; otherwise filter to the scope's stores.
       const params = {
-        select: 'id,task_type,store_id,supplier_id,supplier_name_text,suppliers(supplier_name),product_code,product_barcode,product_name_label,description,uom,quantity,notes,photo_product_url,photo_barcode_url,details,status,review_notes,reviewed_at,marked_for_deletion,completed_at,store_completed_at,cleared_at,created_at,updated_at,barcode_no,item_name,supl_id,supplier_code,item_status,barcode_status',
+        select: 'id,task_type,store_id,supplier_name_text,product_code,product_barcode,product_name_label,description,uom,quantity,notes,photo_product_url,photo_barcode_url,details,status,review_notes,reviewed_at,marked_for_deletion,completed_at,store_completed_at,cleared_at,created_at,updated_at,barcode_no,item_name,supl_id,supplier_code,item_status,barcode_status',
         order:  'created_at.desc',
         limit:  String(limit),
         offset: String(offset)
@@ -1952,8 +1952,10 @@ export async function onRequest(context) {
       const { rows, total } = await db.selectPage('task_records', params)
       const flat = rows.map(r => ({
         ...r,
-        supplier_name: r.suppliers?.supplier_name || r.supplier_name_text || null,
-        suppliers:     undefined
+        // Supplier now comes from the Alternate Barcode snapshot (supl_id /
+        // supplier_code). Old free-text supplier kept as a fallback for rows
+        // created before Phase 3.
+        supplier_name: r.supl_id || r.supplier_name_text || null
       }))
       return json({
         records:  flat,
@@ -2194,9 +2196,7 @@ export async function onRequest(context) {
 
       const records   = await db.select('task_records', params)
       const stores    = await db.select('stores',    { select: 'id,store_name' })
-      const suppliers = await db.select('suppliers', { select: 'id,supplier_name' })
-      const storeName    = Object.fromEntries(stores.map(s    => [s.id, s.store_name]))
-      const supplierName = Object.fromEntries(suppliers.map(s => [s.id, s.supplier_name]))
+      const storeName = Object.fromEntries(stores.map(s => [s.id, s.store_name]))
 
       const flat = records.map(r => ({
         task_type:         r.task_type,
@@ -2212,7 +2212,7 @@ export async function onRequest(context) {
         supplier_code:     r.supplier_code || '',
         item_status:       r.item_status || '',
         barcode_status:    r.barcode_status || '',
-        supplier:          r.supplier_id ? (supplierName[r.supplier_id] || '') : (r.supplier_name_text || ''),
+        supplier:          r.supl_id || r.supplier_name_text || '',
         notes:             r.notes || '',
         status:            r.status,
         review_notes:      r.review_notes || '',

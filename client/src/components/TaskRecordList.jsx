@@ -95,11 +95,11 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
           <tbody>
             {records.map(r => {
               const status   = STATUS_LABEL[r.status] || STATUS_LABEL.pending
-              // Prefer the resolved supplier_name from the backend (joined
-              // suppliers row), falling back to the free-text supplier the
-              // staff member typed when the picker came up dry.
+              // Supplier comes from the Alternate Barcode snapshot (Supl_Id),
+              // resolved server-side into supplier_name; old free-text rows
+              // fall back to supplier_name_text.
               const supplier = r.supplier_name || r.supplier_name_text || ''
-              const description = r.description || r.product_name_label || ''
+              const description = r.description || r.product_name_label || r.item_name || ''
               // Store needs to acknowledge both `completed` and
               // `no_change_needed` — both are HQ-reviewed states.
               const reviewed = r.status === 'completed' || r.status === 'no_change_needed'
