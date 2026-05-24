@@ -69,15 +69,16 @@ export function useTaskForm({ initial, onLookup } = {}) {
 
 // The alt-barcode columns to persist on a task_records row. Spread into the
 // createTaskRecord payload so reports can show item/supplier/status without a
-// second lookup. barcode_no mirrors the scanned product_code.
+// second lookup. barcode_no = scanned Barcode_No; product_barcode = EAN from lookup.
 export function altFields(info, barcode) {
   return {
-    barcode_no:     (barcode || info?.barcode_no || '') || null,
-    item_name:      info?.item_name      || null,
-    supl_id:        info?.supl_id        || null,
-    supplier_code:  info?.supplier_code  || null,
-    item_status:    info?.item_status    || null,
-    barcode_status: info?.barcode_status || null
+    barcode_no:      (barcode || info?.barcode_no || '') || null,
+    product_barcode: info?.ean_barcode   || null,   // EAN → "Product Code" in reports
+    item_name:       info?.item_name     || null,
+    supl_id:         info?.supl_id       || null,
+    supplier_code:   info?.supplier_code || null,
+    item_status:     info?.item_status   || null,
+    barcode_status:  info?.barcode_status|| null
   }
 }
 

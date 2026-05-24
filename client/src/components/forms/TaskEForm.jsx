@@ -1,11 +1,17 @@
+import MultiSelectDropdown from './MultiSelectDropdown.jsx'
 import { createTaskRecord } from '../../lib/api.js'
 import { useStore } from '../../App.jsx'
 import ScannerInput from './ScannerInput.jsx'
 import { useTaskForm, LookupBanner, altFields } from './useTaskForm.jsx'
 
+const CURRENCY_OPTIONS = [
+  { id: 'GBP', label: '£ Pound (GBP)' },
+  { id: 'EUR', label: '€ Euro (EUR)' }
+]
+
 // Task E — Price Marked Products
 const EMPTY = {
-  product_code: '', price_marked_price: '', notes: ''
+  product_code: '', price_marked_price: '', currency: 'GBP', notes: ''
 }
 
 export default function TaskEForm({ onSaved, storeId }) {
@@ -26,7 +32,7 @@ export default function TaskEForm({ onSaved, storeId }) {
         product_code:       t.form.product_code.trim(),
         notes:              t.form.notes.trim() || null,
         ...altFields(t.lookupInfo, t.form.product_code.trim()),
-        details:            { price_marked_price: Number(t.form.price_marked_price) },
+        details:            { price_marked_price: Number(t.form.price_marked_price), price_marked_currency: t.form.currency },
         status:             'pending'
       })
       t.reset()
@@ -51,12 +57,29 @@ export default function TaskEForm({ onSaved, storeId }) {
             <LookupBanner info={t.lookupInfo} />
 
             <div className="form-group">
-              <label>Price Marked Price *</label>
-              <input
-                type="number" value={t.form.price_marked_price}
-                onChange={t.update('price_marked_price')}
-                placeholder="€0.00" min="0" step="0.01"
+              <label>Currency *</label>
+              <MultiSelectDropdown
+                single
+                options={CURRENCY_OPTIONS}
+                value={t.form.currency ? [t.form.currency] : []}
+                onChange={arr => t.update('currency')(arr[0] || 'GBP')}
+                placeholder="Select currency…"
               />
+            </div>
+
+            <div className="form-group">
+              <label>Price Marked Price *</label>
+              <div style={{ position: 'relative' }}>
+                <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontWeight: 600 }}>
+                  {t.form.currency === 'EUR' ? '€' : '£'}
+                </span>
+                <input
+                  type="number" value={t.form.price_marked_price}
+                  onChange={t.update('price_marked_price')}
+                  placeholder="0.00" min="0" step="0.01"
+                  style={{ paddingLeft: 24 }}
+                />
+              </div>
             </div>
 
             <div className="form-group full">

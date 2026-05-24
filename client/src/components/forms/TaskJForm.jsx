@@ -57,6 +57,12 @@ export default function TaskJForm({ onSaved, storeId }) {
 
           <LookupBanner info={t.lookupInfo} />
 
+          <div style={{ marginTop: 8 }}>
+            <button type="button" className="btn btn-sm btn-outline" onClick={t.reset}>
+              ✕ Clear
+            </button>
+          </div>
+
           {t.error && <div className="login-error mt-12">{t.error}</div>}
         </form>
       </div>

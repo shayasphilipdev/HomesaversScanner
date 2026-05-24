@@ -221,17 +221,15 @@ export default function ScannerInput({
         {inlineAction}
       </div>
       {cameraEnabled && (
-        <div className="flex-row" style={{ gap: 8, marginTop: 6 }}>
+        <div style={{ marginTop: 8 }}>
           <button
             type="button"
-            className={`btn btn-sm ${cameraOn ? 'btn-danger' : 'btn-outline'}`}
+            className={`btn ${cameraOn ? 'btn-danger' : 'btn-primary'}`}
+            style={{ width: '100%', fontSize: 15, padding: '10px 0', fontWeight: 600 }}
             onClick={() => setCameraOn(v => !v)}
           >
-            {cameraOn ? '✕ Stop camera' : '📷 Use camera'}
+            {cameraOn ? '✕ Stop Camera' : '📷 Scan with Camera'}
           </button>
-          <span className="note" style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-            Scanner gun and typing work without enabling the camera.
-          </span>
         </div>
       )}
       {cameraEnabled && cameraOn && (
@@ -252,7 +250,7 @@ export default function ScannerInput({
             #${readerId} > div:not(#${readerId}__scan_region) { border: none !important; }
             #${readerId} canvas { display: none !important; }
           `}</style>
-          <div id={readerId} style={{ width: '100%', maxWidth: 300, height: 200, background: '#000', borderRadius: 10, overflow: 'hidden', margin: '0 auto' }} />
+          <div id={readerId} style={{ width: '100%', maxWidth: 420, height: 260, background: '#000', borderRadius: 10, overflow: 'hidden', margin: '0 auto' }} />
 
           <div className="flex-row" style={{ gap: 10, marginTop: 8, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center' }}>
             {zoomCaps && (

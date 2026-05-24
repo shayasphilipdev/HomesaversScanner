@@ -314,10 +314,20 @@ async function ensureInstancesExist(db, env, storeId, date) {
   return Array.isArray(written) ? written.length : 0
 }
 
-// CSV builder with custom column list. Each row is a flat object.
-function toCSV(rows, cols) {
-  const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`
-  return [cols.join(','), ...rows.map(r => cols.map(c => esc(r[c])).join(','))].join('\n') + '\n'
+// CSV builder. cols = object-key names; headers = display names (same order).
+// URL_COLS = set of keys whose values should render as Excel HYPERLINK formulas.
+function toCSV(rows, cols, headers, urlCols) {
+  const esc  = v => `"${String(v ?? '').replace(/"/g, '""')}"`
+  const escUrl = v => {
+    const s = String(v ?? '').trim()
+    if (!s) return '""'
+    return `"=HYPERLINK(""${s.replace(/"/g, '""')}"",""View"")"`
+  }
+  const head = (headers || cols).map(h => esc(h)).join(',')
+  const lines = rows.map(r =>
+    cols.map(c => (urlCols && urlCols.has(c)) ? escUrl(r[c]) : esc(r[c])).join(',')
+  )
+  return [head, ...lines].join('\n') + '\n'
 }
 
 // ── Router ──────────────────────────────────────────────────────────────────
@@ -2116,12 +2126,11 @@ export async function onRequest(context) {
       const storeName = Object.fromEntries(stores.map(s => [s.id, s.store_name]))
 
       const flat = records.map(r => ({
-        task_type:         r.task_type,
-        store_name:        storeName[r.store_id] || '',
         barcode_no:        r.barcode_no || '',
-        product_code:      r.product_code || '',
         product_barcode:   r.product_barcode || '',
         item_name:         r.item_name || '',
+        task_type:         r.task_type,
+        store_name:        storeName[r.store_id] || '',
         description:       r.description || r.product_name_label || '',
         uom:               r.uom || '',
         quantity:          r.quantity ?? '',
@@ -2129,7 +2138,6 @@ export async function onRequest(context) {
         supplier_code:     r.supplier_code || '',
         item_status:       r.item_status || '',
         barcode_status:    r.barcode_status || '',
-        supplier:          r.supl_id || r.supplier_name_text || '',
         notes:             r.notes || '',
         status:            r.status,
         review_notes:      r.review_notes || '',
@@ -2139,8 +2147,10 @@ export async function onRequest(context) {
         created_at:        r.created_at
       }))
 
-      const cols = ['task_type','store_name','barcode_no','product_code','product_barcode','item_name','description','uom','quantity','supl_id','supplier_code','item_status','barcode_status','supplier','notes','status','review_notes','photo_product_url','photo_barcode_url','details','created_at']
-      const csv  = toCSV(flat, cols)
+      const cols    = ['barcode_no','product_barcode','item_name','task_type','store_name','description','uom','quantity','supl_id','supplier_code','item_status','barcode_status','notes','status','review_notes','photo_product_url','photo_barcode_url','details','created_at']
+      const headers = ['Product Barcode','Product Code','Product Description','Task','Store','Description','UOM','Quantity','Supplier ID','Supplier Code','Product Status','Barcode Status','Notes','Status','HO Notes','Product Photo','Barcode Photo','Details','Date']
+      const urlCols = new Set(['photo_product_url','photo_barcode_url'])
+      const csv  = toCSV(flat, cols, headers, urlCols)
       const filename = `task-records-${(from || 'start').slice(0,10)}-to-${(to || 'now').slice(0,10)}.csv`
 
       return new Response(csv, {

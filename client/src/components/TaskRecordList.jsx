@@ -81,8 +81,9 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
           <thead>
             <tr>
               <th>Task</th>
+              <th>Product Barcode</th>
               <th>Product Code</th>
-              <th>Description</th>
+              <th>Product Description</th>
               <th>UOM</th>
               <th className="td-right">Qty</th>
               <th>Supplier</th>
@@ -95,19 +96,15 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
           <tbody>
             {records.map(r => {
               const status   = STATUS_LABEL[r.status] || STATUS_LABEL.pending
-              // Supplier comes from the Alternate Barcode snapshot (Supl_Id),
-              // resolved server-side into supplier_name; old free-text rows
-              // fall back to supplier_name_text.
-              const supplier = r.supplier_name || r.supplier_name_text || ''
-              const description = r.description || r.product_name_label || r.item_name || ''
-              // Store needs to acknowledge both `completed` and
-              // `no_change_needed` — both are HQ-reviewed states.
+              const supplier = r.supplier_name || r.supl_id || r.supplier_name_text || ''
+              const description = r.item_name || r.description || r.product_name_label || ''
               const reviewed = r.status === 'completed' || r.status === 'no_change_needed'
               return (
                 <Fragment key={r.id}>
                   <tr>
                     <td><strong>{r.task_type}</strong></td>
-                    <td className="td-code">{r.product_code || r.product_barcode || ''}</td>
+                    <td className="td-code">{r.barcode_no || r.product_code || ''}</td>
+                    <td className="td-muted" style={{ fontSize: 12 }}>{r.product_barcode || '—'}</td>
                     <td>{description || <span className="td-muted">—</span>}</td>
                     <td>
                       {r.uom || <span className="td-muted">—</span>}
@@ -144,7 +141,7 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
                   </tr>
                   {r.review_notes && (
                     <tr>
-                      <td colSpan={10} style={{ background: 'var(--surface-warm)', fontStyle: 'italic', fontSize: 13, color: 'var(--text-muted)', borderTop: 'none' }}>
+                      <td colSpan={11} style={{ background: 'var(--surface-warm)', fontStyle: 'italic', fontSize: 13, color: 'var(--text-muted)', borderTop: 'none' }}>
                         💬 HO note: {r.review_notes}
                       </td>
                     </tr>
