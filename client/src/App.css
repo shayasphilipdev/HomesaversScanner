@@ -15,10 +15,10 @@
   --primary-soft:   #F4E4DB;
   --primary-tint:   #FCEFE6;
 
-  --bg:             #FAF9F5;
-  --bg-soft:        #F2EEE3;
-  --surface:        #FFFFFF;
-  --surface-warm:   #FBF8F1;
+  --bg:             #F7F3EE;
+  --bg-soft:        #EDE8DC;
+  --surface:        #FEFCFA;
+  --surface-warm:   #FAF6EE;
 
   /* Glass — semi-transparent + blurred */
   --glass:          rgba(255, 255, 255, .55);
@@ -47,9 +47,10 @@
 
   /* Body backdrop — warm radial accents so glass shows through */
   --body-bg:
-    radial-gradient(48vw 40vh at 95% -10%,  rgba(201, 100, 66, .12), transparent 60%),
-    radial-gradient(60vw 50vh at -10% 110%, rgba(201, 100, 66, .07), transparent 60%),
-    #FAF9F5;
+    radial-gradient(52vw 44vh at 98%  -8%,  rgba(201, 100, 66, .22), transparent 58%),
+    radial-gradient(64vw 54vh at -8%  112%, rgba(201, 100, 66, .15), transparent 58%),
+    radial-gradient(40vw 36vh at 50%  108%, rgba(217, 130, 80,  .10), transparent 56%),
+    #F7F3EE;
 }
 
 /* ── Theme: Dark (high-contrast, for bright stores) ─────────────────── */

@@ -191,7 +191,8 @@ async function scopedStoreIds(db, session) {
   return [...set]
 }
 
-function userCanAccessHQTasks(s)    { return !!s && s.can_access_hq_tasks    !== false }
+const HQ_TASK_ROLES = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
+function userCanAccessHQTasks(s)    { return !!s && (HQ_TASK_ROLES.includes(s.role) || s.can_access_hq_tasks !== false) }
 function userCanAccessStoreTasks(s) { return !!s && s.can_access_store_tasks !== false }
 
 // Append-only audit log writer. Records every transition of

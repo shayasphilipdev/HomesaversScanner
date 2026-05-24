@@ -78,7 +78,9 @@ export const canReviewHQRecords   = (session) => !!session && TASK_REVIEWER_ROLE
 export const canSeeAnyAdminLink   = (session) => canAccessAdmin(session) || canAccessTemplates(session)
 
 // Per-employee feature toggles (Phase 9J)
-export const canDoHQTasks    = (session) => !!session && session.can_access_hq_tasks    !== false
+// sales_assistant always gets HO-task access (their primary job is logging them).
+const HQ_TASK_ROLES = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
+export const canDoHQTasks    = (session) => !!session && (HQ_TASK_ROLES.includes(session.role) || session.can_access_hq_tasks !== false)
 export const canDoStoreTasks = (session) => !!session && session.can_access_store_tasks !== false
 
 // Manager dashboard — anyone above shop-floor level. Sales Assistant /
