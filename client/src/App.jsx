@@ -24,7 +24,7 @@ import AdminProducts from './pages/AdminProducts.jsx'
 import AdminSettings from './pages/AdminSettings.jsx'
 import AdminReports from './pages/AdminReports.jsx'
 import { setToken, clearToken, getAppConfig } from './lib/api.js'
-import { canDoHQTasks } from './lib/roles.js'
+import { canDoHQTasks, STORE_ROLE_KEYS } from './lib/roles.js'
 
 export const StoreContext = createContext(null)
 export const useStore = () => useContext(StoreContext)
@@ -101,10 +101,11 @@ function Shell() {
   const { session } = useStore()
   const { pathname } = useLocation()
   const wide = pathname.startsWith('/reports') || pathname.startsWith('/dashboard') || pathname.startsWith('/manager')
-  // Sales assistants always land on HO Tasks — it's their primary screen.
-  // Other users land on HO Tasks only if their account flag allows it;
-  // back-office-only accounts without HO-task access get the Dashboard.
-  const home = (session.role === 'sales_assistant' || canDoHQTasks(session)) ? '/tasks' : '/dashboard'
+  // All store-role users (sales_assistant, supervisor, ASM, store_manager)
+  // always land on HO Tasks — it is their primary screen.
+  // HQ / back-office users go by their per-account flag; those without
+  // HO-task access land on the Dashboard instead.
+  const home = (STORE_ROLE_KEYS.includes(session.role) || canDoHQTasks(session)) ? '/tasks' : '/dashboard'
 
   return (
     <div className="app">
