@@ -250,7 +250,7 @@ export default function ScannerInput({
             #${readerId} > div:not(#${readerId}__scan_region) { border: none !important; }
             #${readerId} canvas { display: none !important; }
           `}</style>
-          <div id={readerId} style={{ width: '100%', maxWidth: 420, height: 260, background: '#000', borderRadius: 10, overflow: 'hidden', margin: '0 auto' }} />
+          <div id={readerId} style={{ width: '100%', maxWidth: 300, height: 200, background: '#000', borderRadius: 10, overflow: 'hidden', margin: '0 auto' }} />
 
           <div className="flex-row" style={{ gap: 10, marginTop: 8, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center' }}>
             {zoomCaps && (
