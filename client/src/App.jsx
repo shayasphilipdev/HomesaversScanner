@@ -101,9 +101,10 @@ function Shell() {
   const { session } = useStore()
   const { pathname } = useLocation()
   const wide = pathname.startsWith('/reports') || pathname.startsWith('/dashboard') || pathname.startsWith('/manager')
-  // Land on HO Tasks (the primary shop-floor screen) for anyone who can log
-  // them; back-office-only accounts without HO-task access get the Dashboard.
-  const home = canDoHQTasks(session) ? '/tasks' : '/dashboard'
+  // Sales assistants always land on HO Tasks — it's their primary screen.
+  // Other users land on HO Tasks only if their account flag allows it;
+  // back-office-only accounts without HO-task access get the Dashboard.
+  const home = (session.role === 'sales_assistant' || canDoHQTasks(session)) ? '/tasks' : '/dashboard'
 
   return (
     <div className="app">
