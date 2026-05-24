@@ -101,11 +101,9 @@ function Shell() {
   const { session } = useStore()
   const { pathname } = useLocation()
   const wide = pathname.startsWith('/reports') || pathname.startsWith('/dashboard') || pathname.startsWith('/manager')
-  // All store-role users (sales_assistant, supervisor, ASM, store_manager)
-  // always land on HO Tasks — it is their primary screen.
-  // HQ / back-office users go by their per-account flag; those without
-  // HO-task access land on the Dashboard instead.
-  const home = (STORE_ROLE_KEYS.includes(session.role) || canDoHQTasks(session)) ? '/tasks' : '/dashboard'
+  // Store users (mode === 'store') always land on HO Tasks.
+  // HQ / back-office users go by their per-account flag.
+  const home = (session.mode === 'store' || canDoHQTasks(session)) ? '/tasks' : '/dashboard'
 
   return (
     <div className="app">

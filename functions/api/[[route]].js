@@ -2126,12 +2126,11 @@ export async function onRequest(context) {
       const storeName = Object.fromEntries(stores.map(s => [s.id, s.store_name]))
 
       const flat = records.map(r => ({
-        barcode_no:        r.barcode_no || '',
+        barcode_no:        r.barcode_no || r.product_code || '',
         product_barcode:   r.product_barcode || '',
-        item_name:         r.item_name || '',
+        item_name:         r.item_name || r.description || r.product_name_label || '',
         task_type:         r.task_type,
         store_name:        storeName[r.store_id] || '',
-        description:       r.description || r.product_name_label || '',
         uom:               r.uom || '',
         quantity:          r.quantity ?? '',
         supl_id:           r.supl_id || '',
@@ -2147,8 +2146,8 @@ export async function onRequest(context) {
         created_at:        r.created_at
       }))
 
-      const cols    = ['barcode_no','product_barcode','item_name','task_type','store_name','description','uom','quantity','supl_id','supplier_code','item_status','barcode_status','notes','status','review_notes','photo_product_url','photo_barcode_url','details','created_at']
-      const headers = ['Product Barcode','Product Code','Product Description','Task','Store','Description','UOM','Quantity','Supplier ID','Supplier Code','Product Status','Barcode Status','Notes','Status','HO Notes','Product Photo','Barcode Photo','Details','Date']
+      const cols    = ['barcode_no','product_barcode','item_name','task_type','store_name','uom','quantity','supl_id','supplier_code','item_status','barcode_status','notes','status','review_notes','photo_product_url','photo_barcode_url','details','created_at']
+      const headers = ['Product Barcode','Product Code','Product Description','Task','Store','UOM','Quantity','Supplier ID','Supplier Code','Product Status','Barcode Status','Notes','Status','HO Notes','Product Photo','Barcode Photo','Details','Date']
       const urlCols = new Set(['photo_product_url','photo_barcode_url'])
       const csv  = toCSV(flat, cols, headers, urlCols)
       const filename = `task-records-${(from || 'start').slice(0,10)}-to-${(to || 'now').slice(0,10)}.csv`

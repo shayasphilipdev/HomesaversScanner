@@ -98,12 +98,13 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
               const status   = STATUS_LABEL[r.status] || STATUS_LABEL.pending
               const supplier = r.supplier_name || r.supl_id || r.supplier_name_text || ''
               const description = r.item_name || r.description || r.product_name_label || ''
+              const barcodeNo  = r.barcode_no || r.product_code || ''
               const reviewed = r.status === 'completed' || r.status === 'no_change_needed'
               return (
                 <Fragment key={r.id}>
                   <tr>
                     <td><strong>{r.task_type}</strong></td>
-                    <td className="td-code">{r.barcode_no || r.product_code || ''}</td>
+                    <td className="td-code">{barcodeNo}</td>
                     <td className="td-muted" style={{ fontSize: 12 }}>{r.product_barcode || '—'}</td>
                     <td>{description || <span className="td-muted">—</span>}</td>
                     <td>
