@@ -103,8 +103,8 @@ function StatusPill({ label, value }) {
 }
 
 // Shown under the scanner input once a barcode resolves against the
-// Alternate Barcode table: item name, supplier (read-only), and the
-// Product / Barcode status pills. Returns null when there's nothing to show.
+// Alternate Barcode table. Shows Product Code (EAN), Product Description,
+// Supplier, and Product / Barcode status pills.
 export function LookupBanner({ info }) {
   if (!info) return null
   const supplier = [info.supl_id, info.supplier_code].filter(Boolean).join(' · ')
@@ -112,15 +112,21 @@ export function LookupBanner({ info }) {
     <div className="form-group full" style={{
       marginTop: -2, marginBottom: 6,
       background: 'var(--surface-warm)', border: '1px solid var(--border)',
-      borderRadius: 10, padding: '10px 12px', gap: 8
+      borderRadius: 10, padding: '10px 12px', gap: 6
     }}>
       {info.item_name && (
-        <div style={{ fontSize: 14, fontWeight: 600 }}>{info.item_name}</div>
+        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 2 }}>
+          <span className="note" style={{ fontSize: 11, fontWeight: 400 }}>Product Description: </span>
+          {info.item_name}
+        </div>
+      )}
+      {info.ean_barcode && (
+        <div className="note" style={{ fontSize: 12.5 }}>Product Code: <strong>{info.ean_barcode}</strong></div>
       )}
       {supplier && (
         <div className="note" style={{ fontSize: 12.5 }}>Supplier: <strong>{supplier}</strong></div>
       )}
-      <div className="flex-row" style={{ gap: 8, flexWrap: 'wrap' }}>
+      <div className="flex-row" style={{ gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
         <StatusPill label="Product" value={info.item_status} />
         <StatusPill label="Barcode" value={info.barcode_status} />
       </div>

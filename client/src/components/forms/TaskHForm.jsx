@@ -55,18 +55,16 @@ export default function TaskHForm({ onSaved, storeId }) {
 
   return (
     <div className="card" style={{ marginBottom: 24 }}>
-      <div className="card-header">H — Stock Count</div>
       <div className="card-body">
         <form onSubmit={handleSubmit}>
           <div className="form-grid">
             <ScannerInput
-              label="Product Code *"
+              label="Product Barcode *"
               value={form.product_code}
               onChange={v => { setForm(f => ({ ...f, product_code: v })); setError('') }}
               onConfirm={triggerLookup}
               lookupLoading={lookupLoading}
               readerId="reader-h"
-              placeholder="Scan or type the product ID"
             />
 
             <LookupBanner info={lookupInfo} />

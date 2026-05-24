@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import MultiSelectDropdown from './MultiSelectDropdown.jsx'
 import { createTaskRecord, getLookupOptions } from '../../lib/api.js'
 import { useStore } from '../../App.jsx'
 import ScannerInput from './ScannerInput.jsx'
@@ -47,28 +48,29 @@ export default function TaskCForm({ onSaved, storeId }) {
 
   return (
     <div className="card" style={{ marginBottom: 24 }}>
-      <div className="card-header">C — Wrong Prices</div>
       <div className="card-body">
         <form onSubmit={handleSubmit}>
           <div className="form-grid">
             <ScannerInput
-              label="Product Code *"
+              label="Product Barcode *"
               value={t.form.product_code}
               onChange={t.update('product_code')}
               onConfirm={t.triggerLookup}
               lookupLoading={t.lookupLoading}
               readerId="reader-c"
-              placeholder="Scan or type the product ID"
             />
 
             <LookupBanner info={t.lookupInfo} />
 
             <div className="form-group">
               <label>Reason Code *</label>
-              <select value={t.form.reason_code} onChange={t.update('reason_code')} required>
-                <option value="">Select reason…</option>
-                {reasons.map(r => <option key={r.id} value={r.label}>{r.label}</option>)}
-              </select>
+              <MultiSelectDropdown
+                single
+                options={reasons.map(r => ({ id: r.label, label: r.label }))}
+                value={t.form.reason_code ? [t.form.reason_code] : []}
+                onChange={arr => t.update('reason_code')(arr[0] || '')}
+                placeholder="Select reason…"
+              />
             </div>
 
             <div className="form-group">

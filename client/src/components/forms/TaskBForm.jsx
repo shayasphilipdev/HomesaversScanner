@@ -98,7 +98,6 @@ export default function TaskBForm({ onSaved, storeId }) {
 
   return (
     <div className="card" style={{ marginBottom: 24 }}>
-      <div className="card-header">B — Non-Scans</div>
       <div className="card-body">
         <form onSubmit={handleSubmit}>
           <div className="form-grid">

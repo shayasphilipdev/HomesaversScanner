@@ -1,3 +1,4 @@
+import MultiSelectDropdown from './MultiSelectDropdown.jsx'
 import { UOM_OPTIONS, PACK_WARNING_TRIGGER, EACHS_WARNING } from '../../lib/uom.js'
 import { createTaskRecord } from '../../lib/api.js'
 import { useStore } from '../../App.jsx'
@@ -5,7 +6,7 @@ import ScannerInput from './ScannerInput.jsx'
 import { useTaskForm, LookupBanner, altFields } from './useTaskForm.jsx'
 
 const EMPTY = {
-  product_code: '', description: '', uom: '', quantity: '', notes: ''
+  product_code: '', uom: '', quantity: '', notes: ''
 }
 
 // Task A — UOM Errors. Auto-fills description from the Alternate Barcode item.
@@ -31,7 +32,6 @@ export default function TaskAForm({ onSaved, storeId }) {
         task_type:          'A',
         store_id:           storeId || session.storeId || null,
         product_code:       t.form.product_code.trim(),
-        description:        t.form.description.trim() || null,
         uom:                t.form.uom,
         quantity:           Number(t.form.quantity),
         notes:              t.form.notes.trim() || null,
@@ -49,14 +49,15 @@ export default function TaskAForm({ onSaved, storeId }) {
 
   const showEachsWarning = t.form.uom === PACK_WARNING_TRIGGER
 
+  const uomOptions = UOM_OPTIONS.map(o => ({ id: o.value, label: o.label }))
+
   return (
     <div className="card" style={{ marginBottom: 24 }}>
-      <div className="card-header">A — UOM Errors</div>
       <div className="card-body">
         <form onSubmit={handleSubmit}>
           <div className="form-grid">
             <ScannerInput
-              label="Product Code *"
+              label="Product Barcode *"
               value={t.form.product_code}
               onChange={v => t.update('product_code')(v)}
               onConfirm={t.triggerLookup}
@@ -68,18 +69,12 @@ export default function TaskAForm({ onSaved, storeId }) {
 
             <div className="form-group">
               <label>UOM *</label>
-              <select value={t.form.uom} onChange={t.update('uom')} required>
-                <option value="">Select UOM…</option>
-                {UOM_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </div>
-
-            <div className="form-group full">
-              <label>Description (optional)</label>
-              <input
-                type="text" value={t.form.description}
-                onChange={t.update('description')}
-                placeholder="Auto-fills from master data if available"
+              <MultiSelectDropdown
+                single
+                options={uomOptions}
+                value={t.form.uom ? [t.form.uom] : []}
+                onChange={arr => t.update('uom')(arr[0] || '')}
+                placeholder="Select UOM…"
               />
             </div>
 

@@ -40,18 +40,16 @@ export default function TaskGForm({ onSaved, storeId }) {
 
   return (
     <div className="card" style={{ marginBottom: 24 }}>
-      <div className="card-header">G — Promotion Error</div>
       <div className="card-body">
         <form onSubmit={handleSubmit}>
           <div className="form-grid">
             <ScannerInput
-              label="Product Code *"
+              label="Product Barcode *"
               value={t.form.product_code}
               onChange={t.update('product_code')}
               onConfirm={t.triggerLookup}
               lookupLoading={t.lookupLoading}
               readerId="reader-g"
-              placeholder="Scan or type the product ID"
             />
 
             <LookupBanner info={t.lookupInfo} />

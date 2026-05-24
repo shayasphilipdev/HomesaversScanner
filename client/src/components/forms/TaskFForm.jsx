@@ -1,4 +1,5 @@
 ﻿import { useEffect, useState } from 'react'
+import MultiSelectDropdown from './MultiSelectDropdown.jsx'
 import { createTaskRecord, lookupAltBarcode, getLookupOptions } from '../../lib/api.js'
 import { useStore } from '../../App.jsx'
 import ScannerInput from './ScannerInput.jsx'
@@ -94,7 +95,6 @@ export default function TaskFForm({ onSaved, storeId }) {
 
   return (
     <div className="card" style={{ marginBottom: 24 }}>
-      <div className="card-header">F — DRS Errors</div>
       <div className="card-body">
 
         {/* Persistent warning — must be visible before any data entry */}
@@ -107,25 +107,27 @@ export default function TaskFForm({ onSaved, storeId }) {
         </div>
 
         <form onSubmit={handleSubmit}>
-          <div className="form-grid">
+          <div className="form-grid" style={{ marginTop: 12 }}>
             <ScannerInput
-              label="Product Code *"
+              label="Product Barcode *"
               value={form.product_code}
               onChange={v => { setForm(f => ({ ...f, product_code: v })); setError('') }}
               onConfirm={triggerLookup}
               lookupLoading={lookupLoading}
               readerId="reader-f"
-              placeholder="Scan or type the product ID"
             />
 
             <LookupBanner info={lookupInfo} />
 
             <div className="form-group">
               <label>Size of the Product *</label>
-              <select value={form.drs_size} onChange={e => setForm(f => ({ ...f, drs_size: e.target.value }))} required>
-                <option value="">Select size…</option>
-                {sizes.map(s => <option key={s.id} value={s.label}>{s.label}</option>)}
-              </select>
+              <MultiSelectDropdown
+                single
+                options={sizes.map(s => ({ id: s.label, label: s.label }))}
+                value={form.drs_size ? [form.drs_size] : []}
+                onChange={arr => setForm(f => ({ ...f, drs_size: arr[0] || '' }))}
+                placeholder="Select size…"
+              />
             </div>
 
             <div className="form-group">

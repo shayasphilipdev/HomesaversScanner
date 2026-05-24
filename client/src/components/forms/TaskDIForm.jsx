@@ -10,7 +10,7 @@ import { LookupBanner, altFields } from './useTaskForm.jsx'
 // The task_type prop decides which header is shown and which code lands in
 // the DB. Behaviour is otherwise identical.
 const EMPTY = {
-  product_code: '', product_name_label: '', product_barcode: '', notes: ''
+  product_code: '', product_name_label: '', notes: ''
 }
 
 const HEADERS = {
@@ -55,7 +55,7 @@ export default function TaskDIForm({ taskType, onSaved, storeId }) {
         store_id:           storeId || session.storeId || null,
         product_code:       form.product_code.trim(),
         product_name_label: form.product_name_label.trim(),
-        product_barcode:    form.product_barcode.trim() || null,
+        product_barcode:    lookupInfo?.ean_barcode || null,
         notes:              form.notes.trim() || null,
         ...altFields(lookupInfo, form.product_code.trim()),
         status:             'pending'
@@ -71,27 +71,17 @@ export default function TaskDIForm({ taskType, onSaved, storeId }) {
 
   return (
     <div className="card" style={{ marginBottom: 24 }}>
-      <div className="card-header">{HEADERS[taskType] || taskType}</div>
       <div className="card-body">
         <p className="note" style={{ marginTop: 0, marginBottom: 14 }}>{HINTS[taskType]}</p>
         <form onSubmit={handleSubmit}>
           <div className="form-grid">
             <ScannerInput
-              label="Product Code *"
+              label="Product Barcode *"
               value={form.product_code}
               onChange={v => { setForm(f => ({ ...f, product_code: v })); setError('') }}
               onConfirm={triggerLookup}
               lookupLoading={lookupLoading}
               readerId={`reader-${taskType.toLowerCase()}-code`}
-              placeholder="Scan or type the product ID"
-            />
-
-            <ScannerInput
-              label="Product Barcode (optional)"
-              value={form.product_barcode}
-              onChange={v => { setForm(f => ({ ...f, product_barcode: v })); setError('') }}
-              readerId={`reader-${taskType.toLowerCase()}-barcode`}
-              placeholder="Scan or type the printed barcode"
             />
 
             <LookupBanner info={lookupInfo} />
