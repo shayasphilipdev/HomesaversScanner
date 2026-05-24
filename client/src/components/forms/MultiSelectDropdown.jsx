@@ -42,6 +42,7 @@ export default function MultiSelectDropdown({
     place()
     // The panel is portalled to document.body, so check BOTH the trigger
     // wrapper and the panel itself when deciding an outside click.
+    // touchstart fires immediately on mobile; mousedown handles desktop.
     const onDoc = (e) => {
       const inWrap  = wrapRef.current  && wrapRef.current.contains(e.target)
       const inPanel = panelRef.current && panelRef.current.contains(e.target)
@@ -49,10 +50,12 @@ export default function MultiSelectDropdown({
     }
     const onMove = () => place()   // keep it anchored while scrolling / resizing
     document.addEventListener('mousedown', onDoc)
+    document.addEventListener('touchstart', onDoc, { passive: true })
     window.addEventListener('scroll', onMove, true)
     window.addEventListener('resize', onMove)
     return () => {
       document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('touchstart', onDoc)
       window.removeEventListener('scroll', onMove, true)
       window.removeEventListener('resize', onMove)
     }
@@ -149,6 +152,9 @@ export default function MultiSelectDropdown({
             )}
             <button type="button" className="btn btn-sm btn-outline" onClick={clearAll}>
               ✕ Clear all
+            </button>
+            <button type="button" className="btn btn-sm btn-primary" onClick={() => setOpen(false)} style={{ marginLeft: 'auto' }}>
+              Done
             </button>
           </div>
           )}
