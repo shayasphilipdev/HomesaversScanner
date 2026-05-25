@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
+import { downloadExcel } from '../lib/excel.js'
 import { useStore } from '../App.jsx'
 import {
   adminListStores, adminListAreas, adminListUsers,
   adminListLookups, adminListTemplates,
-  adminListActivity, getTaskRecords
+  adminListActivity, getTaskRecords,
+  adminListAltBarcodes, adminAltBarcodesCount
 } from '../lib/api.js'
 import AdminNav from '../components/AdminNav.jsx'
 import { useToast } from '../components/Toast.jsx'
@@ -11,7 +13,7 @@ import MultiSelectDropdown from '../components/forms/MultiSelectDropdown.jsx'
 import { canAccessAdmin } from '../lib/roles.js'
 
 // One page · 8 sub-tabs · same shape per tab:
-//   filters → table → "↓ CSV" → optional stats tile.
+//   filters → table → "↓ Excel" → optional stats tile.
 // CSV is generated client-side from the loaded rows.
 
 const TABS = [
@@ -20,7 +22,8 @@ const TABS = [
   { key: 'stores',    label: 'Stores' },
   { key: 'areas',     label: 'Areas' },
   { key: 'templates', label: 'Task templates' },
-  { key: 'lookups',   label: 'Lookups' }
+  { key: 'lookups',   label: 'Lookups' },
+  { key: 'products',  label: 'Products' }
 ]
 
 export default function AdminReports() {
@@ -58,21 +61,22 @@ export default function AdminReports() {
       {tab === 'areas'     && <AreasReport />}
       {tab === 'templates' && <TemplatesReport />}
       {tab === 'lookups'   && <LookupsReport />}
+      {tab === 'products'  && <ProductsReport />}
     </div>
   )
 }
 
 // ── Shared utilities ──────────────────────────────────────────────────
-const csvEscape = v => `"${String(v ?? '').replace(/"/g, '""')}"`
-function downloadCSV(name, columns, rows) {
-  const header = columns.map(c => csvEscape(c.label)).join(',')
-  const body   = rows.map(r => columns.map(c => csvEscape(typeof c.get === 'function' ? c.get(r) : r[c.key])).join(',')).join('\n')
-  const blob   = new Blob([header + '\n' + body], { type: 'text/csv;charset=utf-8' })
-  const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
-  a.download = `${name}-${new Date().toISOString().slice(0,10)}.csv`
-  document.body.appendChild(a); a.click(); a.remove()
-  URL.revokeObjectURL(a.href)
+async function downloadAdminExcel(name, columns, rows) {
+  const cols    = columns.map(c => c.key)
+  const headers = columns.map(c => c.label)
+  // Resolve computed values (get/render) into plain strings before passing to xlsx
+  const flat = rows.map(r =>
+    Object.fromEntries(
+      columns.map(c => [c.key, typeof c.get === 'function' ? c.get(r) : (r[c.key] ?? '')])
+    )
+  )
+  await downloadExcel(`${name}-${new Date().toISOString().slice(0,10)}.xlsx`, flat, cols, headers)
 }
 
 function ReportShell({ title, filters, columns, rows, loading, error, csvName, stats }) {
@@ -83,7 +87,7 @@ function ReportShell({ title, filters, columns, rows, loading, error, csvName, s
       {filters && <div className="card" style={{ marginBottom: 12 }}><div className="card-body"><div className="filter-row" style={{ marginBottom: 0 }}>
         {filters}
         <div className="filter-actions">
-          <button className="btn btn-sm btn-outline" onClick={() => downloadCSV(csvName, columns, rows)} disabled={!rows.length}>↓ CSV</button>
+          <button className="btn btn-sm btn-outline" onClick={() => downloadAdminExcel(csvName, columns, rows)} disabled={!rows.length}>↓ Excel</button>
         </div>
       </div></div></div>}
 
@@ -405,6 +409,72 @@ function TemplatesReport() {
           <label>Status</label>
           <MultiSelectDropdown single value={active} onChange={setActive}
             options={[{ id: 'active', label: 'Active' }, { id: 'inactive', label: 'Inactive' }]} placeholder="Any" />
+        </div>
+      </>}
+    />
+  )
+}
+
+// ── Products (alt_barcodes master) ────────────────────────────────────
+function ProductsReport() {
+  const [data, setData]       = useState([])
+  const [total, setTotal]     = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError]     = useState('')
+  const [q, setQ]             = useState('')
+  const [draftQ, setDraftQ]   = useState('')
+
+  const load = async (search = '') => {
+    setLoading(true); setError('')
+    try {
+      const [rows, cnt] = await Promise.all([
+        adminListAltBarcodes({ limit: 500, q: search || undefined }),
+        adminAltBarcodesCount()
+      ])
+      setData(rows); setTotal(cnt?.count ?? null)
+    } catch (e) { setError(e.message) } finally { setLoading(false) }
+  }
+
+  useEffect(() => { load() }, [])
+
+  const handleSearch = () => { setQ(draftQ); load(draftQ) }
+
+  const columns = [
+    { key: 'barcode_no',    label: 'Product Barcode' },
+    { key: 'ean_barcode',   label: 'Product Code (EAN)' },
+    { key: 'item_name',     label: 'Product Description' },
+    { key: 'supl_id',       label: 'Supplier ID' },
+    { key: 'supplier_code', label: 'Supplier Code' },
+    { key: 'item_status',   label: 'Product Status' },
+    { key: 'barcode_status',label: 'Barcode Status' },
+    { key: 'uom',           label: 'UOM' },
+    { key: 'category',      label: 'Category' },
+    { key: 'updated_at',    label: 'Updated', get: r => (r.updated_at || '').slice(0, 10) }
+  ]
+
+  return (
+    <ReportShell
+      title="Products"
+      csvName="products"
+      loading={loading} error={error} rows={data} columns={columns}
+      stats={<>
+        <Stat label="Total in master" value={total ?? '…'} />
+        <Stat label="Shown" value={data.length} />
+      </>}
+      filters={<>
+        <div className="filter-field filter-field--wide">
+          <label>Search barcode / description</label>
+          <input
+            type="text"
+            value={draftQ}
+            onChange={e => setDraftQ(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSearch()}
+            placeholder="Barcode, EAN or description…"
+          />
+        </div>
+        <div className="filter-field">
+          <label>&nbsp;</label>
+          <button className="btn btn-sm btn-primary" onClick={handleSearch} disabled={loading}>Search</button>
         </div>
       </>}
     />

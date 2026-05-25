@@ -1364,6 +1364,17 @@ export async function onRequest(context) {
         }
       })
 
+      // ?format=json returns flat rows + column metadata for client-side xlsx
+      if (p.get('format') === 'json') {
+        const humanHeaders = [
+          'Task Template', 'Store', 'Due Date', 'Period', 'Status',
+          'Completed At', 'Completed By', 'Notes', 'Photo', ...blockLabels, 'Answers (JSON)'
+        ]
+        return new Response(JSON.stringify({ cols, headers: humanHeaders, rows: flat }), {
+          headers: { 'Content-Type': 'application/json' }
+        })
+      }
+
       const header = cols.join(',')
       const lines  = flat.map(r => cols.map(c => esc(r[c])).join(','))
       const csv    = [header, ...lines].join('\n') + '\n'
@@ -2121,9 +2132,16 @@ export async function onRequest(context) {
       const ttCsv = csv2(taskType)
       if (ttCsv.length) params['task_type'] = ttCsv.length === 1 ? `eq.${ttCsv[0]}` : `in.(${ttCsv.join(',')})`
 
-      const records   = await db.select('task_records', params)
-      const stores    = await db.select('stores',    { select: 'id,store_name' })
-      const storeName = Object.fromEntries(stores.map(s => [s.id, s.store_name]))
+      const [records, stores, suppliers] = await Promise.all([
+        db.select('task_records', params),
+        db.select('stores',    { select: 'id,store_name' }),
+        db.select('suppliers', { select: 'supplier_code,supplier_name' })
+      ])
+      const storeName    = Object.fromEntries(stores.map(s => [s.id, s.store_name]))
+      // supl_id in task_records = supplier_code in the suppliers table
+      const supplierName = Object.fromEntries(
+        suppliers.filter(s => s.supplier_code).map(s => [s.supplier_code.trim().toLowerCase(), s.supplier_name])
+      )
 
       const flat = records.map(r => ({
         barcode_no:        r.barcode_no || r.product_code || '',
@@ -2134,6 +2152,7 @@ export async function onRequest(context) {
         uom:               r.uom || '',
         quantity:          r.quantity ?? '',
         supl_id:           r.supl_id || '',
+        supplier_name:     supplierName[(r.supl_id || '').trim().toLowerCase()] || r.supplier_name_text || '',
         supplier_code:     r.supplier_code || '',
         item_status:       r.item_status || '',
         barcode_status:    r.barcode_status || '',
@@ -2146,8 +2165,16 @@ export async function onRequest(context) {
         created_at:        r.created_at
       }))
 
-      const cols    = ['barcode_no','product_barcode','item_name','task_type','store_name','uom','quantity','supl_id','supplier_code','item_status','barcode_status','notes','status','review_notes','photo_product_url','photo_barcode_url','details','created_at']
-      const headers = ['Product Barcode','Product Code','Product Description','Task','Store','UOM','Quantity','Supplier ID','Supplier Code','Product Status','Barcode Status','Notes','Status','HO Notes','Product Photo','Barcode Photo','Details','Date']
+      const cols    = ['barcode_no','product_barcode','item_name','task_type','store_name','uom','quantity','supl_id','supplier_name','supplier_code','item_status','barcode_status','notes','status','review_notes','photo_product_url','photo_barcode_url','details','created_at']
+      const headers = ['Product Barcode','Product Code','Product Description','Task','Store','UOM','Quantity','Supplier ID','Supplier Name','Supplier Code','Product Status','Barcode Status','Notes','Status','HO Notes','Product Photo','Barcode Photo','Details','Date']
+
+      // ?format=json returns the raw flat rows for client-side Excel generation
+      if (p.get('format') === 'json') {
+        return new Response(JSON.stringify({ cols, headers, rows: flat }), {
+          headers: { 'Content-Type': 'application/json' }
+        })
+      }
+
       const urlCols = new Set(['photo_product_url','photo_barcode_url'])
       const csv  = toCSV(flat, cols, headers, urlCols)
       const filename = `task-records-${(from || 'start').slice(0,10)}-to-${(to || 'now').slice(0,10)}.csv`

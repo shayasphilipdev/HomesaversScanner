@@ -6,6 +6,7 @@ import {
   adminListTemplates, getStoreTaskReportRows,
   getTaskRecordEvents
 } from '../lib/api.js'
+import { downloadExcel } from '../lib/excel.js'
 import { useToast } from '../components/Toast.jsx'
 import MultiSelectDropdown from '../components/forms/MultiSelectDropdown.jsx'
 
@@ -150,10 +151,10 @@ function HQReports() {
     }
   }
 
-  const downloadCSV = async () => {
+  const downloadXLSX = async () => {
     setDownloading(true); setError('')
     try {
-      const params = new URLSearchParams({ from, to })
+      const params = new URLSearchParams({ from, to, format: 'json' })
       if (storeIds.length)    params.set('storeId',    storeIds.join(','))
       if (taskTypeIds.length) params.set('task_type',  taskTypeIds.join(','))
       if (statusIds.length)   params.set('status',     statusIds.join(','))
@@ -162,13 +163,12 @@ function HQReports() {
         headers: { Authorization: `Bearer ${getToken()}` }
       })
       if (!res.ok) throw new Error(`Server returned ${res.status}`)
-      const blob = await res.blob()
-      const a    = document.createElement('a')
-      a.href     = URL.createObjectURL(blob)
+      const { cols, headers, rows } = await res.json()
       const stamp = `${from.slice(0,10)}-to-${to.slice(0,10)}`
-      a.download = `task-records-${stamp}.csv`
-      document.body.appendChild(a); a.click(); a.remove()
-      URL.revokeObjectURL(a.href)
+      await downloadExcel(
+        `task-records-${stamp}.xlsx`, rows, cols, headers,
+        new Set(['photo_product_url', 'photo_barcode_url'])
+      )
     } catch (e) {
       setError(e.message)
     } finally {
@@ -310,8 +310,8 @@ function HQReports() {
               <button className="btn btn-sm btn-primary" onClick={runReport} disabled={loading}>
                 {loading ? <><span className="spinner" /> Loading…</> : 'Run report'}
               </button>
-              <button className="btn btn-sm btn-outline" onClick={downloadCSV} disabled={downloading}>
-                {downloading ? <><span className="spinner spinner-dark" /> Preparing…</> : '↓ CSV'}
+              <button className="btn btn-sm btn-outline" onClick={downloadXLSX} disabled={downloading}>
+                {downloading ? <><span className="spinner spinner-dark" /> Preparing…</> : '↓ Excel'}
               </button>
             </div>
           </div>
@@ -372,8 +372,8 @@ function HQReports() {
                   )}
                   <th>Task</th>
                   <th>Store</th>
-                  <th>Product</th>
-                  <th>Description</th>
+                  <th>Product Barcode</th>
+                  <th>Product Description</th>
                   <th>Photos</th>
                   <th>Status</th>
                   <th>Date</th>
@@ -384,7 +384,7 @@ function HQReports() {
                 {records.map(r => {
                   const status   = STATUS_LABEL[r.status] || STATUS_LABEL.pending
                   const isPending = r.status === 'pending'
-                  const desc = r.description || r.product_name_label || ''
+                  const desc = r.item_name || r.description || r.product_name_label || ''
                   return (
                     <Fragment key={r.id}>
                       <tr>
@@ -397,7 +397,7 @@ function HQReports() {
                         )}
                         <td><strong>{r.task_type}</strong></td>
                         <td>{storesById[r.store_id]?.store_name || <span className="td-muted">—</span>}</td>
-                        <td className="td-code">{r.product_code || r.product_barcode || ''}</td>
+                        <td className="td-code">{r.barcode_no || r.product_code || r.product_barcode || ''}</td>
                         <td>{desc || <span className="td-muted">—</span>}</td>
                         <td>
                           <div className="flex-row" style={{ gap: 6 }}>
@@ -526,20 +526,19 @@ function StoreTaskReports() {
   const allSelected = rows.length > 0 && selected.size === rows.length
   const toggleAll = () => setSelected(allSelected ? new Set() : new Set(rows.map(r => r.id)))
 
-  const downloadCSV = async () => {
+  const downloadXLSX = async () => {
     setDownloading(true); setError('')
     try {
-      const params = new URLSearchParams({ from, to })
+      const params = new URLSearchParams({ from, to, format: 'json' })
       if (storeIds.length) params.set('storeId', storeIds.join(','))
       if (tplIds.length)   params.set('template_id', tplIds.join(','))
       const res = await fetch('/api/reports/store-tasks?' + params, { headers: { Authorization: 'Bearer ' + getToken() } })
       if (!res.ok) throw new Error('Server returned ' + res.status)
-      const blob = await res.blob()
-      const a = document.createElement('a')
-      a.href = URL.createObjectURL(blob)
-      a.download = 'store-tasks-' + from + '-to-' + to + '.csv'
-      document.body.appendChild(a); a.click(); a.remove()
-      URL.revokeObjectURL(a.href)
+      const { cols, headers, rows } = await res.json()
+      await downloadExcel(
+        `store-tasks-${from}-to-${to}.xlsx`, rows, cols, headers,
+        new Set(['photo_url'])
+      )
     } catch (e) { setError(e.message); toast.error(e.message) } finally { setDownloading(false) }
   }
 
@@ -576,8 +575,8 @@ function StoreTaskReports() {
               <button className="btn btn-sm btn-primary" onClick={run} disabled={loading}>
                 {loading ? (<><span className="spinner" /> Loading…</>) : 'Run report'}
               </button>
-              <button className="btn btn-sm btn-outline" onClick={downloadCSV} disabled={downloading}>
-                {downloading ? (<><span className="spinner spinner-dark" /> Preparing…</>) : '↓ CSV'}
+              <button className="btn btn-sm btn-outline" onClick={downloadXLSX} disabled={downloading}>
+                {downloading ? (<><span className="spinner spinner-dark" /> Preparing…</>) : '↓ Excel'}
               </button>
             </div>
           </div>
