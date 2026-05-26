@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Homesavers Scanner App — User Manual</title>
 <style>
   :root {
@@ -13,54 +14,59 @@
   }
   * { box-sizing:border-box; }
   html,body { margin:0; padding:0; background:var(--bg); color:var(--text); }
-  body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; font-size:14px; line-height:1.5; }
-  @page { size:A4; margin:16mm 15mm 18mm; }
-  .page { width:180mm; max-width:100%; margin:0 auto 10mm; padding:14mm 14mm 14mm; background:var(--surface); position:relative; page-break-after:always; }
+  body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; font-size:14px; line-height:1.55; }
+
+  /* ── Phone-sized pages (≈ iPhone 14 proportions) ── */
+  @page { size:105mm 220mm; margin:5mm 4mm 7mm; }
+  .page { width:100%; max-width:100%; margin:0 auto 6mm; padding:10px 12px 14px; background:var(--surface); position:relative; page-break-after:always; }
   .page:last-child { page-break-after:auto; }
-  .page::after { content:counter(page); counter-increment:page; position:absolute; bottom:7mm; right:14mm; font-size:10px; color:var(--text-soft); }
-  .page::before { content:"Homesavers Scanner App — User Manual"; position:absolute; bottom:7mm; left:14mm; font-size:10px; color:var(--text-soft); }
+  /* Slim footer: page number only, right-aligned */
+  .page::after { content:counter(page); counter-increment:page; position:absolute; bottom:4mm; right:4mm; font-size:9px; color:var(--text-soft); }
 
-  .masthead { border-bottom:3px solid var(--primary); padding-bottom:10px; margin-bottom:18px; }
-  .masthead .app { font-size:13px; font-weight:600; letter-spacing:1.4px; text-transform:uppercase; color:var(--primary-dark); }
-  .masthead .app .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--primary); margin-right:7px; vertical-align:middle; }
-  .masthead h1 { font-size:30px; font-weight:700; margin:4px 0 0; letter-spacing:-0.4px; }
+  .masthead { border-bottom:3px solid var(--primary); padding-bottom:8px; margin-bottom:14px; }
+  .masthead .app { font-size:11px; font-weight:600; letter-spacing:1.2px; text-transform:uppercase; color:var(--primary-dark); }
+  .masthead .app .dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--primary); margin-right:6px; vertical-align:middle; }
+  .masthead h1 { font-size:24px; font-weight:700; margin:3px 0 0; letter-spacing:-0.3px; }
 
-  h2 { font-size:18px; font-weight:700; margin:22px 0 6px; color:var(--primary-dark); }
+  h2 { font-size:16px; font-weight:700; margin:18px 0 5px; color:var(--primary-dark); }
   h2:first-of-type { margin-top:0; }
-  h3 { font-size:14px; font-weight:600; margin:12px 0 4px; }
-  p { margin:4px 0 8px; }
-  ul,ol { margin:4px 0 8px 18px; } li { margin:2px 0; }
-  code { background:var(--bg-soft); padding:1px 5px; border-radius:3px; font-size:13px; font-family:ui-monospace,Menlo,Consolas,monospace; }
+  h3 { font-size:13px; font-weight:600; margin:10px 0 3px; }
+  p { margin:3px 0 7px; }
+  ul,ol { margin:3px 0 7px 16px; } li { margin:2px 0; }
+  code { background:var(--bg-soft); padding:1px 4px; border-radius:3px; font-size:12px; font-family:ui-monospace,Menlo,Consolas,monospace; }
   strong { color:var(--text); }
 
   a.app-link { color:var(--primary-dark); font-weight:700; text-decoration:underline; }
-  @media print { a.app-link { color:var(--primary-dark); text-decoration:underline; } }
 
-  ol.steps { counter-reset:step; margin:6px 0 10px; padding:0; list-style:none; }
-  ol.steps>li { counter-increment:step; position:relative; padding:0 0 0 28px; margin-bottom:5px; }
-  ol.steps>li::before { content:counter(step); position:absolute; left:0; top:0; width:20px; height:20px; border-radius:50%; background:var(--primary); color:#fff; font-size:11px; font-weight:700; line-height:20px; text-align:center; }
+  ol.steps { counter-reset:step; margin:5px 0 9px; padding:0; list-style:none; }
+  ol.steps>li { counter-increment:step; position:relative; padding:0 0 0 26px; margin-bottom:5px; }
+  ol.steps>li::before { content:counter(step); position:absolute; left:0; top:1px; width:19px; height:19px; border-radius:50%; background:var(--primary); color:#fff; font-size:10px; font-weight:700; line-height:19px; text-align:center; }
 
-  table { width:100%; border-collapse:collapse; margin:8px 0; font-size:13px; }
-  th,td { text-align:left; padding:6px 9px; border-bottom:1px solid var(--border-soft); vertical-align:top; }
-  th { background:var(--bg-soft); font-size:11px; text-transform:uppercase; letter-spacing:0.3px; font-weight:600; }
+  table { width:100%; border-collapse:collapse; margin:6px 0; font-size:12px; }
+  th,td { text-align:left; padding:5px 7px; border-bottom:1px solid var(--border-soft); vertical-align:top; }
+  th { background:var(--bg-soft); font-size:10px; text-transform:uppercase; letter-spacing:0.3px; font-weight:600; }
 
-  .chip { display:inline-block; padding:1px 9px; border-radius:999px; font-size:11px; font-weight:600; border:1px solid; }
+  .chip { display:inline-block; padding:1px 8px; border-radius:999px; font-size:11px; font-weight:600; border:1px solid; }
   .chip.pending{background:#FFF7E0;color:#8a5a14;border-color:var(--amber);}
   .chip.completed{background:#E6F5E8;color:#1d5b30;border-color:var(--green);}
   .chip.cleared{background:#EAF0FA;color:#25457a;border-color:var(--blue);}
 
-  .callout { padding:8px 12px; border-radius:6px; margin:8px 0; border-left:4px solid; display:flex; gap:8px; font-size:13px; align-items:flex-start; }
-  .callout .i { font-size:15px; line-height:1.2; }
+  .callout { padding:7px 10px; border-radius:6px; margin:7px 0; border-left:4px solid; display:flex; gap:7px; font-size:12.5px; align-items:flex-start; }
+  .callout .i { font-size:14px; line-height:1.3; }
   .callout.info{background:#E8F1FB;border-color:var(--blue);}
   .callout.warn{background:#FFF7E0;border-color:var(--amber);}
   .callout.ok{background:#E6F5E8;border-color:var(--green);}
 
-  figure { margin:8px 0 12px; }
+  figure { margin:7px 0 10px; }
   figure img { width:100%; border:1px solid var(--border); border-radius:8px; display:block; }
-  .ph { border:1px dashed var(--border); border-radius:8px; background:repeating-linear-gradient(45deg,var(--bg-soft) 0 12px,var(--surface-warm) 12px 24px); height:52mm; display:flex; align-items:center; justify-content:center; color:var(--text-muted); font-size:12px; }
-  figcaption { font-size:11.5px; color:var(--text-muted); margin-top:4px; }
+  .ph { border:1px dashed var(--border); border-radius:8px; background:repeating-linear-gradient(45deg,var(--bg-soft) 0 12px,var(--surface-warm) 12px 24px); height:42mm; display:flex; align-items:center; justify-content:center; color:var(--text-muted); font-size:11px; }
+  figcaption { font-size:11px; color:var(--text-muted); margin-top:3px; }
 
-  @media screen { body{padding:24px 0;} .page{box-shadow:0 6px 20px rgba(0,0,0,.08); border-radius:4px;} }
+  /* Screen: full-bleed up to phone width, card shadow */
+  @media screen {
+    body { padding:16px 0; max-width:430px; margin:0 auto; }
+    .page { box-shadow:0 4px 16px rgba(0,0,0,.09); border-radius:6px; margin-bottom:16px; }
+  }
   @media print { a{color:inherit;text-decoration:none;} a.app-link{color:var(--primary-dark);text-decoration:underline;} }
 </style>
 </head>
