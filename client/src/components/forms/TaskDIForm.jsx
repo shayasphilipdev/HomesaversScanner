@@ -1,22 +1,13 @@
-import { useState } from 'react'
-import { createTaskRecord, lookupAltBarcode } from '../../lib/api.js'
+import { createTaskRecord } from '../../lib/api.js'
 import { useStore } from '../../App.jsx'
 import ScannerInput from './ScannerInput.jsx'
-import { LookupBanner, altFields } from './useTaskForm.jsx'
+import { useTaskForm, LookupBanner, altFields } from './useTaskForm.jsx'
 
 // Tasks D (Wrong Description) and I (Miscellaneous Tasks) share an identical
-// field set: product_code, product_name_label, product_barcode, supplier, notes.
-//
-// The task_type prop decides which header is shown and which code lands in
-// the DB. Behaviour is otherwise identical.
-const EMPTY = {
-  product_code: '', product_name_label: '', notes: ''
-}
+// field set: product_code, product_name_label, notes.
+// Uses the shared useTaskForm hook (M22 refactor).
 
-const HEADERS = {
-  D: 'D — Wrong Description',
-  I: 'I — Miscellaneous Tasks'
-}
+const EMPTY = { product_code: '', product_name_label: '', notes: '' }
 
 const HINTS = {
   D: 'Use this when the description in the system does not match the product in front of you.',
@@ -25,47 +16,35 @@ const HINTS = {
 
 export default function TaskDIForm({ taskType, onSaved, storeId }) {
   const { session } = useStore()
-  const [form, setForm]     = useState(EMPTY)
-  const [saving, setSaving] = useState(false)
-  const [error, setError]   = useState('')
-  const [lookupLoading, setLookupLoading] = useState(false)
-  const [lookupInfo, setLookupInfo] = useState(null)
-
-  const triggerLookup = async (code) => {
-    if (!code || code.length < 4) { setLookupInfo(null); return }
-    setLookupLoading(true)
-    try {
-      const p = await lookupAltBarcode(code)
-      if (p) {
-        setForm(f => ({ ...f, product_name_label: f.product_name_label || p.item_name || '' }))
-        setLookupInfo(p)
-      } else { setLookupInfo(null) }
-    } catch {} finally { setLookupLoading(false) }
-  }
+  const t = useTaskForm({
+    initial: EMPTY,
+    onLookup: ({ product, setForm }) => {
+      setForm(f => ({ ...f, product_name_label: f.product_name_label || product.item_name || '' }))
+    }
+  })
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!form.product_code.trim())       return setError('Product code is required.')
-    if (!form.product_name_label.trim()) return setError('Product name (as on the product) is required.')
+    if (!t.form.product_code.trim())       return t.setError('Product code is required.')
+    if (!t.form.product_name_label.trim()) return t.setError('Product name (as on the product) is required.')
 
-    setSaving(true); setError('')
+    t.setSaving(true); t.setError('')
     try {
       const res = await createTaskRecord({
         task_type:          taskType,
         store_id:           storeId || session.storeId || null,
-        product_code:       form.product_code.trim(),
-        product_name_label: form.product_name_label.trim(),
-        product_barcode:    lookupInfo?.ean_barcode || null,
-        notes:              form.notes.trim() || null,
-        ...altFields(lookupInfo, form.product_code.trim()),
+        product_code:       t.form.product_code.trim(),
+        product_name_label: t.form.product_name_label.trim(),
+        notes:              t.form.notes.trim() || null,
+        ...altFields(t.lookupInfo, t.form.product_code.trim()),
         status:             'pending'
       })
-      setForm(EMPTY); setLookupInfo(null)
+      t.reset()
       onSaved?.({ queued: !!res?.queued })
     } catch (err) {
-      setError(err.message)
+      t.setError(err.message)
     } finally {
-      setSaving(false)
+      t.setSaving(false)
     }
   }
 
@@ -77,20 +56,20 @@ export default function TaskDIForm({ taskType, onSaved, storeId }) {
           <div className="form-grid">
             <ScannerInput
               label="Product Barcode *"
-              value={form.product_code}
-              onChange={v => { setForm(f => ({ ...f, product_code: v })); setError('') }}
-              onConfirm={triggerLookup}
-              lookupLoading={lookupLoading}
+              value={t.form.product_code}
+              onChange={v => { t.update('product_code')(v); t.setError('') }}
+              onConfirm={t.triggerLookup}
+              lookupLoading={t.lookupLoading}
               readerId={`reader-${taskType.toLowerCase()}-code`}
             />
 
-            <LookupBanner info={lookupInfo} />
+            <LookupBanner info={t.lookupInfo} />
 
             <div className="form-group full">
               <label>Product Name (as on the product) *</label>
               <input
-                type="text" value={form.product_name_label}
-                onChange={e => setForm(f => ({ ...f, product_name_label: e.target.value }))}
+                type="text" value={t.form.product_name_label}
+                onChange={t.update('product_name_label')}
                 placeholder="Exactly what is printed on the product"
               />
             </div>
@@ -98,21 +77,19 @@ export default function TaskDIForm({ taskType, onSaved, storeId }) {
             <div className="form-group full">
               <label>Notes (optional)</label>
               <textarea
-                rows={2} value={form.notes}
-                onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+                rows={2} value={t.form.notes}
+                onChange={t.update('notes')}
                 placeholder="Anything worth flagging…"
               />
             </div>
           </div>
 
-          {error && <div className="login-error mt-12">{error}</div>}
+          {t.error && <div className="login-error mt-12">{t.error}</div>}
 
           <div className="flex-row mt-20" style={{ justifyContent: 'flex-end' }}>
-            <button type="button" className="btn btn-outline" onClick={() => { setForm(EMPTY); setLookupInfo(null); setError('') }}>
-              Clear
-            </button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>
-              {saving ? <><span className="spinner" /> Saving…</> : 'Save Record'}
+            <button type="button" className="btn btn-outline" onClick={t.reset}>Clear</button>
+            <button type="submit" className="btn btn-primary" disabled={t.saving}>
+              {t.saving ? <><span className="spinner" /> Saving…</> : 'Save Record'}
             </button>
           </div>
         </form>

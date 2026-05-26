@@ -36,6 +36,7 @@ $$;
 CREATE OR REPLACE FUNCTION list_old_photos(days integer)
 RETURNS TABLE(name text)
 LANGUAGE sql SECURITY DEFINER AS $$
+  -- HO task record photos (product + barcode)
   SELECT regexp_replace(photo_product_url,
            '^.*/storage/v1/object/public/task-photos/', '') AS name
   FROM task_records
@@ -48,6 +49,15 @@ LANGUAGE sql SECURITY DEFINER AS $$
            '^.*/storage/v1/object/public/task-photos/', '') AS name
   FROM task_records
   WHERE photo_barcode_url IS NOT NULL
+    AND created_at < now() - (days || ' days')::interval
+
+  -- M18: store task instance photos (store-tasks/ prefix in the bucket)
+  UNION ALL
+
+  SELECT regexp_replace(photo_url,
+           '^.*/storage/v1/object/public/task-photos/', '') AS name
+  FROM store_task_instances
+  WHERE photo_url IS NOT NULL
     AND created_at < now() - (days || ' days')::interval;
 $$;
 

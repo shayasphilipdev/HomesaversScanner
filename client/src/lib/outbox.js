@@ -200,6 +200,12 @@ export async function drain() {
         synced++
       } catch (e) {
         failed++
+        // M15: 401 = session expired mid-drain. Stop immediately — the user
+        // must log in again before the queue can proceed. Don't bump the
+        // attempt counter so the record is retried after re-login.
+        if (/401|Unauthorized|Session expired/.test(e?.message || '')) {
+          break
+        }
         if (isOfflineError(e) || !navigator.onLine) {
           // Pure network failure — leave the item untouched and stop the
           // drain. We'll try again on the next online / visibility event.

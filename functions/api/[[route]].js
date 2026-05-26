@@ -351,24 +351,47 @@ async function runAutoCleanup(db, env) {
       body: JSON.stringify({ key: 'last_auto_cleanup_at', value: now, updated_at: now })
     })
 
-    // 1 — Delete old cleared / store_completed task records.
+    const storageBase = `${env.SUPABASE_URL}/storage/v1/object/public/task-photos/`
+    const deleteStorageFile = async (objectPath) => {
+      await fetch(`${env.SUPABASE_URL}/storage/v1/object/task-photos/${objectPath}`, {
+        method:  'DELETE',
+        headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}` }
+      }).catch(() => {})
+    }
+
+    // 1 — Determine which records are due for deletion.
     const [recSetting] = await db.select('app_settings', { select: 'value', key: 'eq.scan_record_retention_days' })
     const recDays   = Math.max(1, Number(recSetting?.value || 90))
     const recCutoff = new Date(Date.now() - recDays * 86400000).toISOString()
+
+    // M19: delete the photos attached to those records BEFORE removing the rows
+    // so we never orphan storage files (photos can't be found once the record is gone).
+    const doomed = await db.select('task_records', {
+      select:     'photo_product_url,photo_barcode_url',
+      status:     'in.(cleared,store_completed)',
+      updated_at: `lt.${recCutoff}`
+    })
+    for (const r of doomed) {
+      for (const photoUrl of [r.photo_product_url, r.photo_barcode_url].filter(Boolean)) {
+        if (!photoUrl.startsWith(storageBase)) continue
+        await deleteStorageFile(photoUrl.slice(storageBase.length))
+      }
+    }
+
+    // 2 — Now safe to delete the records.
     await db.remove('task_records', {
       status:     'in.(cleared,store_completed)',
       updated_at: `lt.${recCutoff}`
     })
 
-    // 2 — Delete photos older than photo_retention_days from Supabase Storage.
+    // 3 — Delete any remaining old photos by age (catch-all — covers photos
+    // whose records were already deleted in a previous run, plus M18: includes
+    // store_task_instances.photo_url via the updated list_old_photos RPC).
     const [photoSetting] = await db.select('app_settings', { select: 'value', key: 'eq.photo_retention_days' })
     const photoDays = Math.max(1, Number(photoSetting?.value || 7))
     const oldPhotos = await db.rpc('list_old_photos', { days: photoDays })
     for (const o of (oldPhotos || [])) {
-      await fetch(`${env.SUPABASE_URL}/storage/v1/object/task-photos/${o.name}`, {
-        method:  'DELETE',
-        headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}` }
-      }).catch(() => {})
+      await deleteStorageFile(o.name)
     }
   } catch (e) {
     // Best-effort — never throw from a background task.
@@ -1119,8 +1142,24 @@ export async function onRequest(context) {
     if (path === '/admin/cleanup/task-records' && method === 'POST') {
       if (!isAdminRole(session)) return err('Forbidden', 403)
       const [setting] = await db.select('app_settings', { select: 'value', key: 'eq.scan_record_retention_days' })
-      const days = Math.max(1, Number(setting?.value || 90))
+      const days   = Math.max(1, Number(setting?.value || 90))
       const cutoff = new Date(Date.now() - days * 86400000).toISOString()
+      // M19: delete attached photos before removing records so nothing is orphaned.
+      const storBase = `${env.SUPABASE_URL}/storage/v1/object/public/task-photos/`
+      const doomedRecs = await db.select('task_records', {
+        select:     'photo_product_url,photo_barcode_url',
+        status:     'in.(cleared,store_completed)',
+        updated_at: `lt.${cutoff}`
+      })
+      for (const r of doomedRecs) {
+        for (const u of [r.photo_product_url, r.photo_barcode_url].filter(Boolean)) {
+          if (!u.startsWith(storBase)) continue
+          await fetch(`${env.SUPABASE_URL}/storage/v1/object/task-photos/${u.slice(storBase.length)}`, {
+            method: 'DELETE',
+            headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}` }
+          }).catch(() => {})
+        }
+      }
       const removed = await db.remove('task_records', {
         status:     `in.(cleared,store_completed)`,
         updated_at: `lt.${cutoff}`
@@ -1255,7 +1294,23 @@ export async function onRequest(context) {
       // Single-store path: generate today's instances lazily.
       if (explicit && explicit !== 'all') {
         if (scope !== null && !scope.includes(explicit)) return json([])
-        await ensureInstancesExist(db, env, explicit, today)
+
+        // M17: only run ensureInstancesExist if no instances exist yet today.
+        // Prevents N redundant template+store DB queries on every page load.
+        const existing = await db.select('store_task_instances', {
+          select: 'id', store_id: `eq.${explicit}`, due_date: `eq.${todayIso}`, limit: '1'
+        })
+        if (!existing.length) {
+          await ensureInstancesExist(db, env, explicit, today)
+        }
+
+        // M7: mark any prior-day pending instances as 'missed' so compliance
+        // stats are accurate. Best-effort — ignore errors so the page still loads.
+        await db.update('store_task_instances',
+          { store_id: `eq.${explicit}`, status: 'eq.pending', due_date: `lt.${todayIso}` },
+          { status: 'missed', updated_at: new Date().toISOString() }
+        ).catch(() => {})
+
         const rows = await db.select('store_task_instances', {
           select: SELECT,
           store_id: `eq.${explicit}`,
@@ -2041,6 +2096,17 @@ export async function onRequest(context) {
       if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled for this account', 403)
       const body = await request.json()
       if (!body.task_type) return err('task_type required', 400)
+
+      // M11: validate task_type against the task_types table.
+      const validTypes = await db.select('task_types', { select: 'code' })
+      const validCodes = new Set(validTypes.map(t => t.code))
+      if (!validCodes.has(body.task_type)) return err(`Unknown task_type: ${body.task_type}`, 400)
+
+      // M13: details must be a plain object if provided.
+      if (body.details !== undefined && body.details !== null &&
+          (typeof body.details !== 'object' || Array.isArray(body.details))) {
+        return err('details must be a JSON object', 400)
+      }
 
       const now = new Date().toISOString()
 

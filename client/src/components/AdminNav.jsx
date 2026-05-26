@@ -9,6 +9,7 @@ const ADMIN_TABS = [
   { to: '/admin/stores',          label: 'Stores' },
   { to: '/admin/areas',           label: 'Areas' },
   { to: '/admin/employees',       label: 'Employees' },
+  { to: '/admin/users',           label: 'User accounts' },
   { to: '/admin/lookups',         label: 'Reason / Size lookups' },
   { to: '/admin/products',        label: 'Products' },
   { to: '/admin/reports',         label: 'Reports' },

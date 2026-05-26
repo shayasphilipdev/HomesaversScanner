@@ -117,12 +117,12 @@ function HQReports() {
 
   useEffect(() => {
     getTaskTypes().then(setTaskTypes).catch(() => setTaskTypes([]))
-    if (isBO) {
-      getStores().then(rows => {
-        setStores(rows)
-        setStoresById(Object.fromEntries(rows.map(s => [s.id, s])))
-      }).catch(e => setError('Could not load stores: ' + e.message))
-    }
+    // Always load stores so the Store column can show names for all users (N12).
+    // The store filter UI is only shown for back-office users below.
+    getStores().then(rows => {
+      setStores(rows)
+      setStoresById(Object.fromEntries(rows.map(s => [s.id, s])))
+    }).catch(e => { if (isBO) setError('Could not load stores: ' + e.message) })
   }, [isBO])
 
   const fetchPage = async (offset) => {

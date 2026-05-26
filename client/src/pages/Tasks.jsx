@@ -8,11 +8,21 @@ import TaskRecordList from '../components/TaskRecordList.jsx'
 import CurrentStorePicker from '../components/CurrentStorePicker.jsx'
 import HoTasksHelp from '../components/HoTasksHelp.jsx'
 import { useToast } from '../components/Toast.jsx'
+import { failedCount } from '../lib/outbox.js'
 
 export default function Tasks() {
   const { session } = useStore()
   const toast = useToast()
   const { currentStoreId } = useCurrentStore()
+  const [outboxFailed, setOutboxFailed] = useState(0)
+
+  // M14: show a persistent warning when records are stuck in the failed outbox.
+  useEffect(() => {
+    const check = () => failedCount().then(setOutboxFailed).catch(() => {})
+    check()
+    window.addEventListener('hs:outbox-changed', check)
+    return () => window.removeEventListener('hs:outbox-changed', check)
+  }, [])
   const isBO = session.mode === 'backoffice'
 
   const [taskTypes, setTaskTypes] = useState([])
@@ -64,6 +74,20 @@ export default function Tasks() {
 
   return (
     <div>
+      {/* M14: failed outbox warning — visible until the user goes to Sync and resolves them */}
+      {outboxFailed > 0 && (
+        <div style={{
+          background: '#FFF3CD', border: '1px solid #E0A03A', borderRadius: 8,
+          padding: '10px 14px', marginBottom: 12, display: 'flex', gap: 10, alignItems: 'center'
+        }}>
+          <span>⚠️</span>
+          <span style={{ flex: 1, fontSize: 13 }}>
+            <strong>{outboxFailed} record{outboxFailed !== 1 ? 's' : ''} failed to sync</strong> and need attention.{' '}
+            <a href="/sync" style={{ color: 'var(--primary-dark)', fontWeight: 600 }}>Go to Sync →</a>
+          </span>
+        </div>
+      )}
+
       {/* Compact top: store name (left) + small title, so the form fields
           sit high on a phone screen instead of below the fold. */}
       <CurrentStorePicker subject="task" />
