@@ -67,7 +67,45 @@
     body { padding:16px 0; max-width:430px; margin:0 auto; }
     .page { box-shadow:0 4px 16px rgba(0,0,0,.09); border-radius:6px; margin-bottom:16px; }
   }
-  @media print { a{color:inherit;text-decoration:none;} a.app-link{color:var(--primary-dark);text-decoration:underline;} }
+
+  @media print {
+    a { color:inherit; text-decoration:none; }
+    a.app-link { color:var(--primary-dark); text-decoration:underline; }
+
+    /* Remove padding from .page — @page margins already handle whitespace,
+       so no double-counting that shrinks the usable content area. */
+    .page { padding:0; margin:0; }
+
+    /* ── Image height cap ──────────────────────────────────────────────────
+       Phone screenshots are portrait ~2:1. At 97mm content width an
+       uncapped image renders ~210mm tall — nearly one full page on its own,
+       leaving a half-page blank below it.
+       55mm ≈ ¼ of the 220mm page height; keeps every image readable while
+       still leaving room for the surrounding text on the same page. */
+    figure { break-inside:avoid; page-break-inside:avoid; }
+    figure img {
+      max-height:55mm;
+      width:auto;
+      max-width:100%;
+      display:block;
+      margin:0 auto;
+      object-fit:contain;
+    }
+
+    /* ── Break controls ────────────────────────────────────────────────────
+       Prevent callouts, table rows and numbered steps from being sliced
+       across a page boundary. Keep each h2/h3 attached to its first line
+       of following content. */
+    .callout { break-inside:avoid; page-break-inside:avoid; }
+    table { break-inside:avoid; page-break-inside:avoid; }
+    tr { break-inside:avoid; page-break-inside:avoid; }
+    ol.steps > li { break-inside:avoid; page-break-inside:avoid; }
+    h2 { break-after:avoid; page-break-after:avoid; }
+    h3 { break-after:avoid; page-break-after:avoid; }
+
+    /* Reduce widows / orphans in prose */
+    p, li { orphans:3; widows:3; }
+  }
 </style>
 </head>
 <body>
