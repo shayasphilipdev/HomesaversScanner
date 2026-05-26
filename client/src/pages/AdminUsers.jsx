@@ -152,11 +152,11 @@ function AddUser({ onCreated, stores, areas, toast }) {
           <div className="form-grid">
             <div className="form-group">
               <label>Username *</label>
-              <input value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value }))} placeholder="e.g. jdoe or 1015-mgr" />
+              <input value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value }))} placeholder="e.g. 1015 or 1015-mgr" />
             </div>
             <div className="form-group">
               <label>Display Name *</label>
-              <input value={form.display_name} onChange={e => setForm(f => ({ ...f, display_name: e.target.value }))} placeholder="e.g. Jane Doe" />
+              <input value={form.display_name} onChange={e => setForm(f => ({ ...f, display_name: e.target.value }))} placeholder="e.g. 1015" />
             </div>
             <div className="form-group">
               <label>Role *</label>
