@@ -6,16 +6,16 @@ import { useCurrentStore } from '../lib/currentStore.jsx'
 import { useToast } from '../components/Toast.jsx'
 import BlockRenderer from '../components/forms/BlockRenderer.jsx'
 import CurrentStorePicker from '../components/CurrentStorePicker.jsx'
+import { STORE_ROLE_KEYS } from '../lib/roles.js'
 
 // Store tasks (Phase 9E). Two views by role:
-// - Sales Assistant / Store Manager : today's checklist for their store.
-// - Area Manager / Buying Manager / Commercial Manager / Director / Support Admin
-//                                    : compliance overview across stores.
-const STORE_ROLES = ['sales_assistant', 'store_manager']
+// - Store roles (sales_assistant, supervisor, assistant_store_manager, store_manager):
+//   today's checklist for their store.
+// - HQ roles (area_manager and above): compliance overview across stores.
 
 export default function StoreTasks() {
   const { session } = useStore()
-  const isStoreRole = STORE_ROLES.includes(session.role)
+  const isStoreRole = STORE_ROLE_KEYS.includes(session.role)
   return isStoreRole ? <StoreTodayView /> : <ManagerView />
 }
 

@@ -4,7 +4,7 @@ import {
   getStores, getTaskTypes, getToken, getTaskRecords,
   updateTaskRecord, bulkReviewTaskRecords,
   adminListTemplates, getStoreTaskReportRows,
-  getTaskRecordEvents
+  getTaskRecordEvents, clearToken
 } from '../lib/api.js'
 import { downloadExcel } from '../lib/excel.js'
 import { useToast } from '../components/Toast.jsx'
@@ -47,6 +47,22 @@ export default function Reports() {
       {tab === 'hq' ? <HQReports /> : <StoreTaskReports />}
     </div>
   )
+}
+
+// Authenticated fetch for report downloads. Handles 401 the same way api.js
+// does — clears the session and reloads so the user lands on the login screen
+// instead of seeing a confusing "Server returned 401" error message.
+async function authedFetch(url) {
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${getToken()}` } })
+  if (res.status === 401) {
+    clearToken()
+    sessionStorage.removeItem('hs_session')
+    localStorage.removeItem('hs_session')
+    window.location.reload()
+    throw new Error('Session expired — please sign in again.')
+  }
+  if (!res.ok) throw new Error(`Server returned ${res.status}`)
+  return res
 }
 
 function HQReports() {
@@ -159,10 +175,7 @@ function HQReports() {
       if (taskTypeIds.length) params.set('task_type',  taskTypeIds.join(','))
       if (statusIds.length)   params.set('status',     statusIds.join(','))
       if (statusIds.includes('cleared')) params.set('includeCleared', '1')
-      const res = await fetch(`/api/reports/task-records?${params}`, {
-        headers: { Authorization: `Bearer ${getToken()}` }
-      })
-      if (!res.ok) throw new Error(`Server returned ${res.status}`)
+      const res = await authedFetch(`/api/reports/task-records?${params}`)
       const { cols, headers, rows } = await res.json()
       const stamp = `${from.slice(0,10)}-to-${to.slice(0,10)}`
       await downloadExcel(
@@ -532,8 +545,7 @@ function StoreTaskReports() {
       const params = new URLSearchParams({ from, to, format: 'json' })
       if (storeIds.length) params.set('storeId', storeIds.join(','))
       if (tplIds.length)   params.set('template_id', tplIds.join(','))
-      const res = await fetch('/api/reports/store-tasks?' + params, { headers: { Authorization: 'Bearer ' + getToken() } })
-      if (!res.ok) throw new Error('Server returned ' + res.status)
+      const res = await authedFetch('/api/reports/store-tasks?' + params)
       const { cols, headers, rows } = await res.json()
       await downloadExcel(
         `store-tasks-${from}-to-${to}.xlsx`, rows, cols, headers,

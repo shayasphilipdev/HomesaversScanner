@@ -1,6 +1,7 @@
 import { Fragment } from 'react'
 import { updateTaskRecord, deleteTaskRecord } from '../lib/api.js'
 import { useStore } from '../App.jsx'
+import { useToast } from './Toast.jsx'
 
 const STATUS_LABEL = {
   pending:          { label: 'Pending',          cls: 'badge-pending' },
@@ -19,28 +20,42 @@ function formatDT(iso) {
 
 export default function TaskRecordList({ records, loading, onRefresh, onOptimisticRemove }) {
   const { session } = useStore()
+  const toast = useToast()
   const isBO = session.mode === 'backoffice'
 
   const markCompleted = async (id) => {
-    await updateTaskRecord(id, { status: 'completed', completed_at: new Date().toISOString() })
-    onRefresh()
+    try {
+      await updateTaskRecord(id, { status: 'completed', completed_at: new Date().toISOString() })
+      onRefresh()
+    } catch (e) {
+      toast.error('Could not mark complete — ' + (e?.message || 'please try again'))
+    }
   }
 
   const markStoreCompleted = async (id) => {
-    await updateTaskRecord(id, {
-      status: 'store_completed',
-      store_completed_at: new Date().toISOString(),
-      marked_for_deletion: true
-    })
-    onRefresh()
+    try {
+      await updateTaskRecord(id, {
+        status: 'store_completed',
+        store_completed_at: new Date().toISOString(),
+        marked_for_deletion: true
+      })
+      onRefresh()
+    } catch (e) {
+      toast.error('Could not confirm — ' + (e?.message || 'please try again'))
+    }
   }
 
   // Store closes the loop: once they've actioned the HO-completed record
   // in the POs, they mark it 'Clear'. Cleared records stay in the database
   // but disappear from forms and reports (cleared_at is stamped server-side).
   const markCleared = async (id) => {
-    await updateTaskRecord(id, { status: 'cleared' })
-    onOptimisticRemove?.(id)
+    try {
+      await updateTaskRecord(id, { status: 'cleared' })
+      onOptimisticRemove?.(id)
+    } catch (e) {
+      toast.error('Could not clear — ' + (e?.message || 'please try again'))
+      onRefresh()
+    }
   }
 
   const handleDelete = async (id) => {

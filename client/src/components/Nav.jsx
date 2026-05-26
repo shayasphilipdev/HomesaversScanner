@@ -47,7 +47,7 @@ export default function Nav() {
       </span>
 
       <span className="nav-store-badge" title={`Role: ${roleLabel(session.role)}`}>
-        {session.displayName || session.storeName}
+        {session.displayName || session.display_name || session.storeName}
       </span>
 
       <button
