@@ -33,6 +33,9 @@
   code { background:var(--bg-soft); padding:1px 5px; border-radius:3px; font-size:13px; font-family:ui-monospace,Menlo,Consolas,monospace; }
   strong { color:var(--text); }
 
+  a.app-link { color:var(--primary-dark); font-weight:700; text-decoration:underline; }
+  @media print { a.app-link { color:var(--primary-dark); text-decoration:underline; } }
+
   ol.steps { counter-reset:step; margin:6px 0 10px; padding:0; list-style:none; }
   ol.steps>li { counter-increment:step; position:relative; padding:0 0 0 28px; margin-bottom:5px; }
   ol.steps>li::before { content:counter(step); position:absolute; left:0; top:0; width:20px; height:20px; border-radius:50%; background:var(--primary); color:#fff; font-size:11px; font-weight:700; line-height:20px; text-align:center; }
@@ -58,7 +61,7 @@
   figcaption { font-size:11.5px; color:var(--text-muted); margin-top:4px; }
 
   @media screen { body{padding:24px 0;} .page{box-shadow:0 6px 20px rgba(0,0,0,.08); border-radius:4px;} }
-  @media print { a{color:inherit;text-decoration:none;} }
+  @media print { a{color:inherit;text-decoration:none;} a.app-link{color:var(--primary-dark);text-decoration:underline;} }
 </style>
 </head>
 <body>
@@ -72,7 +75,7 @@
 
   <h2>1. Sign in</h2>
   <ol class="steps">
-    <li>Open <code>homesaversscanner.pages.dev</code> and bookmark it.</li>
+    <li>Open <a class="app-link" href="https://homesaversscanner.pages.dev">homesaversscanner.pages.dev</a> and bookmark it.</li>
     <li><strong>Username</strong> = your 4-digit store code (e.g. <code>1015</code>).</li>
     <li><strong>PIN</strong> = the PIN provided.</li>
     <li>Tap <strong>Sign in</strong>.</li>
@@ -89,11 +92,9 @@
   <h2>2. The menu</h2>
   <table>
     <tr><th>Menu</th><th>What it's for</th></tr>
-    <tr><td><strong>Dashboard</strong></td><td>A summary screen. Nothing to fill in.</td></tr>
     <tr><td><strong>HO Tasks</strong></td><td>Report a problem with a product (Non Scans, Wrong Price, Wrong Description, Department Checks, etc.).</td></tr>
-    <tr><td><strong>Store Tasks</strong></td><td>Today's checklist set by Head Office.</td></tr>
+    <tr><td><strong>Reports</strong></td><td>View and track all the records you have logged.</td></tr>
     <tr><td><strong>Product Query</strong></td><td>Ask other stores about a product you don't recognise.</td></tr>
-    <tr><td><strong>Reports</strong></td><td>Look up past records.</td></tr>
   </table>
 </section>
 
@@ -103,34 +104,35 @@
   <ol class="steps">
     <li>Tap <strong>HO Tasks</strong>.</li>
     <li>Pick the <strong>Task Type</strong> from the dropdown.</li>
-    <li>Scan or type the <strong>Product Code</strong>. The description and supplier fill in automatically if we have them.</li>
-    <li>Fill the remaining fields, add a note if useful.</li>
-    <li>Tap <strong>Save Record</strong>.</li>
+    <li>Scan or type the <strong>Product Barcode</strong>. The product description and supplier fill in automatically if we have them.</li>
+    <li>Fill the remaining fields and add a note if useful.</li>
+    <li>Tap <strong>Save</strong>.</li>
   </ol>
 
   <figure>
     <img src="img/2-hotasks.png" alt="HO Tasks form" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
     <div class="ph" style="display:none">Save your screenshot as <code>img/2-hotasks.png</code></div>
-    <figcaption>HO Tasks: pick a type, scan the code, fill the form, Save Record.</figcaption>
+    <figcaption>HO Tasks — pick a task type, scan the barcode, fill the form, tap Save.</figcaption>
   </figure>
 
-  <h3>The task types</h3>
+  <h3>Task types</h3>
   <table>
     <tr><th>Code</th><th>Use it when…</th></tr>
-    <tr><td><strong>A</strong> · UOM Errors</td><td>Shelf-label unit is wrong (says "each" but it's a pack).</td></tr>
+    <tr><td><strong>A</strong> · UOM Errors</td><td>If the price/UOM is wrong or not printed in SEL.</td></tr>
     <tr><td><strong>B</strong> · Non-Scans</td><td>Till can't scan the barcode. Needs 2 photos: product + barcode.</td></tr>
-    <tr><td><strong>C</strong> · Wrong Prices</td><td>Shelf price and till price don't match.</td></tr>
-    <tr><td><strong>D</strong> · Wrong Description</td><td>Receipt name doesn't match the product.</td></tr>
+    <tr><td><strong>C</strong> · Wrong Prices</td><td>If price doesn't match.</td></tr>
+    <tr><td><strong>D</strong> · Wrong Description</td><td>SEL name doesn't match the product.</td></tr>
     <tr><td><strong>E</strong> · Price Marked</td><td>Printed price on the pack differs from the till.</td></tr>
     <tr><td><strong>F</strong> · DRS Errors</td><td>Wrong deposit charge. Check the return logo is on the bottle first.</td></tr>
-    <tr><td><strong>G</strong> · Promotion Error</td><td>A promotion isn't applying at the till.</td></tr>
+    <tr><td><strong>G</strong> · Promotion Error</td><td>Promotion errors.</td></tr>
     <tr><td><strong>H</strong> · Stock Count</td><td>Only when HO asks for a count.</td></tr>
     <tr><td><strong>I</strong> · Miscellaneous</td><td>Anything that doesn't fit the others — add a clear note.</td></tr>
+    <tr><td><strong>J</strong> · Department Check</td><td>Quick barcode log for a department check walkthrough.</td></tr>
   </table>
-  <div class="callout info"><span class="i">💡</span><div>No scanner gun? Tap <strong>Use camera</strong> and point at the barcode.</div></div>
+  <div class="callout info"><span class="i">💡</span><div>No scanner gun? Tap <strong>📷 Scan with Camera</strong> and point the camera at the barcode.</div></div>
 </section>
 
-<!-- PAGE 3 — statuses + store tasks -->
+<!-- PAGE 3 — statuses + reports -->
 <section class="page">
   <h2>4. What the statuses mean</h2>
   <table>
@@ -139,24 +141,28 @@
     <tr><td><span class="chip completed">Completed by HO</span></td><td>HO has fixed it.</td><td>Check the till, then tap <strong>✓ Clear</strong>.</td></tr>
     <tr><td><span class="chip cleared">Clear</span></td><td>You've confirmed the fix.</td><td>Done — it leaves your list.</td></tr>
   </table>
-  <div class="callout ok"><span class="i">✅</span><div><strong>Clear</strong> just hides the record from your list. It's kept safely for Head Office.</div></div>
+  <div class="callout ok"><span class="i">✅</span><div><strong>Clear</strong> just hides the record from your list. It is kept safely for Head Office.</div></div>
 
-  <h2>5. Daily checklist (Store Tasks)</h2>
+  <h2>5. Reports</h2>
+  <p>Use Reports to view and track everything your store has logged — past and present.</p>
   <ol class="steps">
-    <li>Tap <strong>Store Tasks</strong>.</li>
-    <li>Tap <strong>Complete</strong> on a task card.</li>
-    <li>Fill the fields marked with a red <span style="color:var(--red)">*</span> and add any photos.</li>
-    <li>Tap <strong>✓ Mark complete</strong>.</li>
+    <li>Tap <strong>Reports</strong> in the menu.</li>
+    <li>Set the <strong>date range</strong> and any other filters (task type, status).</li>
+    <li>Tap <strong>Run report</strong> to load the records.</li>
+    <li>Each row shows the Product Barcode, Description, Status, and Date logged.</li>
+    <li>Tap <strong>✓ Clear</strong> on any <span class="chip completed">Completed by HO</span> record once you have checked the fix at the till.</li>
   </ol>
 
   <figure>
-    <img src="img/3-storetasks.png" alt="Store Tasks" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-    <div class="ph" style="display:none">Save your screenshot as <code>img/3-storetasks.png</code></div>
-    <figcaption>Store Tasks — today's checklist, split into To do and Done.</figcaption>
+    <img src="img/3-reports.png" alt="Reports screen" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+    <div class="ph" style="display:none">Save your screenshot as <code>img/3-reports.png</code></div>
+    <figcaption>Reports — filter by date, task type or status to find any record.</figcaption>
   </figure>
+
+  <div class="callout info"><span class="i">💡</span><div>If a record is not showing, check the <strong>Status</strong> filter — it may be set to Pending only. Switch it to <strong>All</strong> to see everything.</div></div>
 </section>
 
-<!-- PAGE 4 — product query + offline + reference -->
+<!-- PAGE 4 — product query + offline + quick fixes -->
 <section class="page">
   <h2>6. Product Query</h2>
   <p>For a product with no barcode, or one nobody recognises — ask the whole chain.</p>
@@ -182,9 +188,9 @@
     <tr><th>Problem</th><th>Fix</th></tr>
     <tr><td>"Username or PIN doesn't match"</td><td>Check Caps Lock; ask your manager to reset your PIN.</td></tr>
     <tr><td>Wrong store in the top badge</td><td>Sign out and sign in again. Don't log anything until it's right.</td></tr>
-    <tr><td>List looks empty</td><td>Tap <strong>All</strong> at the top to clear the filter.</td></tr>
-    <tr><td>Scanned code doesn't fill the description</td><td>Type it in. The product may not be in the system yet.</td></tr>
-    <tr><td>Record keeps showing as Completed</td><td>Check the till, then tap <strong>✓ Clear</strong>.</td></tr>
+    <tr><td>List looks empty</td><td>Tap <strong>All</strong> on the Status filter to clear it.</td></tr>
+    <tr><td>Scanned barcode doesn't fill the description</td><td>Type the description in manually. The product may not be in the system yet.</td></tr>
+    <tr><td>Record keeps showing as Completed by HO</td><td>Check the fix at the till, then tap <strong>✓ Clear</strong>.</td></tr>
   </table>
 
   <div class="callout info"><span class="i">📨</span><div>Still stuck? Screenshot the screen and send it to your Store Manager.</div></div>
