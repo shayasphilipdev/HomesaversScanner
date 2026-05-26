@@ -33,8 +33,14 @@ export default function StoreSelector({ onLogin }) {
         storeName:              user?.display_name || username.trim(),
         token
       })
-    } catch {
-      setError('Username or PIN doesn’t match — try again or ask the Admin to reset it.')
+    } catch (e) {
+      // Distinguish a server/network outage from a wrong-credentials error.
+      const msg = e?.message || ‘’
+      if (msg.startsWith(‘Network error’) || msg.includes(‘Failed to fetch’) || msg.includes(‘NetworkError’)) {
+        setError(‘Can’t reach the server — check your internet connection and try again.’)
+      } else {
+        setError(‘Username or PIN doesn’t match — try again or ask the Admin to reset it.’)
+      }
     } finally {
       setLoading(false)
     }

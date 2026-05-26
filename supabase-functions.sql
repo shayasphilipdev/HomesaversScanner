@@ -5,6 +5,13 @@
 -- in the live database for the app to work correctly.
 -- ============================================================
 
+-- ── app_settings additions (Phase 2) ────────────────────────────────────────
+-- Add the last_auto_cleanup_at tracking key (used by the automatic daily
+-- cleanup that fires on back-office login). Safe to run on an existing DB.
+INSERT INTO app_settings (key, value, updated_at)
+VALUES ('last_auto_cleanup_at', '', now())
+ON CONFLICT (key) DO NOTHING;
+
 -- ── hash_pin ─────────────────────────────────────────────────────────────────
 -- Hashes a plain-text PIN with bcrypt inside Postgres.
 -- Called by:

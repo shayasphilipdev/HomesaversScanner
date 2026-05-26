@@ -332,6 +332,50 @@ function toCSV(rows, cols, headers, urlCols) {
 
 // ── Router ──────────────────────────────────────────────────────────────────
 
+// ── Auto-cleanup (C5/C6) ──────────────────────────────────────────────────
+// Runs record + photo cleanup in the background after a back-office login.
+// Called via ctx.waitUntil() so it never blocks or delays the login response.
+// Reads retention settings from app_settings; updates last_auto_cleanup_at
+// when done so it only fires once per ~23 hours.
+async function runAutoCleanup(db, env) {
+  try {
+    // Stamp first so concurrent workers don't double-fire.
+    const now = new Date().toISOString()
+    // Upsert last_auto_cleanup_at before running so concurrent workers don't double-fire.
+    await fetch(`${env.SUPABASE_URL}/rest/v1/app_settings?on_conflict=key`, {
+      method:  'POST',
+      headers: {
+        'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates,return=minimal'
+      },
+      body: JSON.stringify({ key: 'last_auto_cleanup_at', value: now, updated_at: now })
+    })
+
+    // 1 — Delete old cleared / store_completed task records.
+    const [recSetting] = await db.select('app_settings', { select: 'value', key: 'eq.scan_record_retention_days' })
+    const recDays   = Math.max(1, Number(recSetting?.value || 90))
+    const recCutoff = new Date(Date.now() - recDays * 86400000).toISOString()
+    await db.remove('task_records', {
+      status:     'in.(cleared,store_completed)',
+      updated_at: `lt.${recCutoff}`
+    })
+
+    // 2 — Delete photos older than photo_retention_days from Supabase Storage.
+    const [photoSetting] = await db.select('app_settings', { select: 'value', key: 'eq.photo_retention_days' })
+    const photoDays = Math.max(1, Number(photoSetting?.value || 7))
+    const oldPhotos = await db.rpc('list_old_photos', { days: photoDays })
+    for (const o of (oldPhotos || [])) {
+      await fetch(`${env.SUPABASE_URL}/storage/v1/object/task-photos/${o.name}`, {
+        method:  'DELETE',
+        headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}` }
+      }).catch(() => {})
+    }
+  } catch (e) {
+    // Best-effort — never throw from a background task.
+    console.error('[auto-cleanup]', e?.message || e)
+  }
+}
+
 export async function onRequest(context) {
   const { request, env } = context
   const url    = new URL(request.url)
@@ -344,6 +388,16 @@ export async function onRequest(context) {
   try {
 
     // ── Public ────────────────────────────────────────────────────────────
+
+    // GET /ping — lightweight keepalive so Supabase never auto-pauses.
+    // Safe to call without auth; returns the server timestamp.
+    // Point a free cron (cron-job.org) at this URL every 5 days.
+    if (path === '/ping' && method === 'GET') {
+      // Touch the DB so Supabase counts it as activity.
+      await db.select('app_settings', { select: 'key', limit: '1' })
+      return json({ ok: true, ts: new Date().toISOString() })
+    }
+
     if (path === '/stores' && method === 'GET') {
       const rows = await db.select('stores', { select: 'id,store_code,store_name,region,area_id,is_active', order: 'store_name.asc' })
       return json(rows)
@@ -574,6 +628,20 @@ export async function onRequest(context) {
       const session = buildSessionForUser(db, user)
       const hours = STORE_ROLES.includes(user.role) ? STORE_TOKEN_HOURS : BACKOFFICE_TOKEN_HOURS
       const token = await signToken({ ...session, exp: Date.now() + hours * 3600_000 }, env.SESSION_SECRET)
+
+      // C5/C6: fire daily auto-cleanup in the background on back-office logins.
+      // waitUntil() keeps the worker alive until the promise resolves but the
+      // HTTP response is sent immediately — login is never slowed down.
+      if (BO_ROLES.includes(user.role)) {
+        try {
+          const [lastRow] = await db.select('app_settings', { select: 'value', key: 'eq.last_auto_cleanup_at', limit: '1' })
+          const lastAt = lastRow?.value ? new Date(lastRow.value) : null
+          if (!lastAt || (Date.now() - lastAt.getTime()) > 23 * 60 * 60 * 1000) {
+            context.waitUntil(runAutoCleanup(db, env))
+          }
+        } catch { /* don't block login if the settings lookup fails */ }
+      }
+
       return json({
         ok: true, token,
         user: {

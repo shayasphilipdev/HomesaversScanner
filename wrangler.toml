@@ -14,3 +14,10 @@ SUPABASE_URL = "https://eggspkdengnxktwkdwpw.supabase.co"
 #   SUPABASE_ANON_KEY=eyJ...
 # Then run: npx wrangler pages dev --proxy 5173
 # while `cd client && npm run dev` runs on :5173.
+
+# ── Supabase keepalive ────────────────────────────────────────────────────────
+# Supabase free tier pauses after 7 days of inactivity.
+# With 55 active stores this should never happen, but as a safety net:
+# Set up a free cron at https://cron-job.org — call every 5 days:
+#   GET https://homesaversscanner.pages.dev/api/ping
+# No auth required. Returns { ok: true, ts: "..." }.
