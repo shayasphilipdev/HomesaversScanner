@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import { useStore } from '../App.jsx'
 import { useToast } from '../components/Toast.jsx'
 import { getAll, drain, remove, markRetry, resetFailed } from '../lib/outbox.js'
@@ -45,7 +45,7 @@ export default function Sync() {
     try {
       const n = await resetFailed()
       if (n) toast.info(`Retrying ${n} previously failed record${n === 1 ? '' : 's'}…`)
-      if (!navigator.onLine) { toast.error('You’re offline — sync will run when you reconnect.'); return }
+      if (!navigator.onLine) { toast.error("You're offline — sync will run when you reconnect."); return }
       const res = await drain()
       if (res?.synced) toast.success(`Synced ${res.synced} record${res.synced === 1 ? '' : 's'}.`)
       if (res?.failed) toast.error(`${res.failed} record${res.failed === 1 ? '' : 's'} still need attention.`)
@@ -63,7 +63,7 @@ export default function Sync() {
         const res = await drain()
         if (res?.synced) toast.success('Synced.')
         else if (res?.failed) toast.error('Still failing — server returned an error.')
-      } else toast.info('Will retry when you’re back online.')
+      } else toast.info("Will retry when you're back online.")
     } finally {
       setBusy(false)
       load()
@@ -110,7 +110,7 @@ export default function Sync() {
             <div className="empty-state-icon">📭</div>
             <p>Nothing queued.</p>
             <p className="note" style={{ marginTop: 6 }}>
-              Any task you save while offline will appear here until it’s synced.
+              Any task you save while offline will appear here until it's synced.
             </p>
           </div>
         </div>
@@ -163,7 +163,7 @@ export default function Sync() {
 
       {!!items.length && (
         <p className="note mt-20" style={{ fontSize: 12 }}>
-          Tip — sync runs automatically when you’re online and when this app comes back to the foreground.
+          Tip — sync runs automatically when you're online and when this app comes back to the foreground.
           Use “Sync now” if you want to push immediately.
         </p>
       )}

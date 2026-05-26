@@ -1,4 +1,4 @@
-import { Fragment } from 'react'
+﻿import { Fragment } from 'react'
 import { updateTaskRecord, deleteTaskRecord } from '../lib/api.js'
 import { useStore } from '../App.jsx'
 import { useToast } from './Toast.jsx'
@@ -59,7 +59,7 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
   }
 
   const handleDelete = async (id) => {
-    if (!confirm('Delete this record? This can’t be undone.')) return
+    if (!confirm("Delete this record? This can't be undone.")) return
     // Optimistic — drop the row from the table immediately. If the server
     // rejects, onRefresh() re-fetches and the row reappears.
     onOptimisticRemove?.(id)

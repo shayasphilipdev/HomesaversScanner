@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import { useStore } from '../App.jsx'
 import {
   adminListEmployees, adminCreateUser, adminUpdateUser, adminResetUserPin,
@@ -81,7 +81,7 @@ export default function AdminEmployees() {
       ) : !employees.length ? (
         <div className="card"><div className="empty-state">
           <p>No employees yet.</p>
-          <p className="note" style={{ marginTop: 6 }}>Add your first one above — they’ll be able to sign in at the login screen with their username and PIN.</p>
+          <p className="note" style={{ marginTop: 6 }}>Add your first one above — they'll be able to sign in at the login screen with their username and PIN.</p>
         </div></div>
       ) : (
         <div className="card">

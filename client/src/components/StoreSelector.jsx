@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import { verifyUserPin } from '../lib/api.js'
 
 // Phase 9J: single login form. Stores no longer have their own PIN —
@@ -35,11 +35,11 @@ export default function StoreSelector({ onLogin }) {
       })
     } catch (e) {
       // Distinguish a server/network outage from a wrong-credentials error.
-      const msg = e?.message || ‘’
-      if (msg.startsWith(‘Network error’) || msg.includes(‘Failed to fetch’) || msg.includes(‘NetworkError’)) {
-        setError(‘Can’t reach the server — check your internet connection and try again.’)
+      const msg = e?.message || ''
+      if (msg.startsWith('Network error') || msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
+        setError("Can't reach the server — check your internet connection and try again.")
       } else {
-        setError(‘Username or PIN doesn’t match — try again or ask the Admin to reset it.’)
+        setError("Username or PIN doesn't match — try again or ask the Admin to reset it.")
       }
     } finally {
       setLoading(false)

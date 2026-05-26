@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+﻿import { useState, useEffect, useCallback } from 'react'
 import { useStore } from '../App.jsx'
 import { getTaskRecords, getTaskTypes } from '../lib/api.js'
 import { useCurrentStore } from '../lib/currentStore.jsx'
@@ -106,7 +106,7 @@ export default function Tasks() {
           taskType={selectedType}
           storeId={currentStoreId}
           onSaved={(info) => {
-            if (info?.queued) toast.info('Saved offline — will sync when you’re back online.')
+            if (info?.queued) toast.info("Saved offline — will sync when you're back online.")
             else              toast.success('Record saved.')
             load()
           }}

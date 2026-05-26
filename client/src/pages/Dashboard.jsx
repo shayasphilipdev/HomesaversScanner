@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../App.jsx'
 import { getDashboardStats, getStores, getAreas } from '../lib/api.js'
 import Skeleton from '../components/Skeleton.jsx'
@@ -101,7 +101,7 @@ export default function Dashboard() {
       <div className="page-header">
         <div>
           <div className="page-title">Welcome back</div>
-          <div className="page-subtitle">{isBO ? `Showing: ${scopeLabel}` : 'Here’s how your scanner activity is looking'}</div>
+          <div className="page-subtitle">{isBO ? `Showing: ${scopeLabel}` : "Here's how your scanner activity is looking"}</div>
         </div>
         <div className="flex-row" style={{ gap: 6, flexWrap: 'wrap' }}>
           {RANGES.map(r => (
