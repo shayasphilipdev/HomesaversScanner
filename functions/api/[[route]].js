@@ -1880,6 +1880,9 @@ export async function onRequest(context) {
       const ss = csv(status)
       if (ss.length)                       params['status'] = ss.length === 1 ? `eq.${ss[0]}` : `in.(${ss.join(',')})`
       else if (!includeCleared)            params['status'] = `neq.cleared`
+      // C7: hide store-confirmed records that are pending deletion from all
+      // task list views. They remain in the DB until the retention cleanup runs.
+      params['marked_for_deletion'] = 'neq.true'
 
       const range = []
       if (from) range.push(`gte.${new Date(from).toISOString()}`)
@@ -2085,8 +2088,26 @@ export async function onRequest(context) {
         filter['store_id'] = `in.(${scope.join(',')})`
         if (!isBO) filter['status'] = `eq.store_completed`
       }
+      // Fetch the record first so we can delete any attached photos from storage.
+      const [rec] = await db.select('task_records', {
+        select: 'id,photo_product_url,photo_barcode_url',
+        id:     `eq.${id}`,
+        limit:  '1'
+      })
       const removed = await db.remove('task_records', filter)
       if (!removed.length) return err('Record not found or not allowed', 404)
+      // Delete photos from Supabase Storage (best-effort — never fail the delete
+      // just because a photo file is already gone).
+      const storageBase = `${env.SUPABASE_URL}/storage/v1/object/public/task-photos/`
+      const photoUrls = [rec?.photo_product_url, rec?.photo_barcode_url].filter(Boolean)
+      for (const photoUrl of photoUrls) {
+        if (!photoUrl.startsWith(storageBase)) continue
+        const objectPath = photoUrl.slice(storageBase.length)
+        await fetch(`${env.SUPABASE_URL}/storage/v1/object/task-photos/${objectPath}`, {
+          method:  'DELETE',
+          headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}` }
+        }).catch(() => {})
+      }
       return json({ ok: true })
     }
 
@@ -2116,6 +2137,8 @@ export async function onRequest(context) {
       } else if (!includeCleared) {
         params['status'] = `neq.cleared`
       }
+      // C7: exclude store-confirmed records pending deletion from all report views.
+      params['marked_for_deletion'] = 'neq.true'
       const emptyCsv = () => new Response('', { headers: { 'Content-Type': 'text/csv;charset=utf-8' } })
       const csv2 = (s) => (s || '').split(',').map(x => x.trim()).filter(x => x && x !== 'all')
 
