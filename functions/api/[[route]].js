@@ -2289,11 +2289,13 @@ export async function onRequest(context) {
       const ttCsv = csv2(taskType)
       if (ttCsv.length) params['task_type'] = ttCsv.length === 1 ? `eq.${ttCsv[0]}` : `in.(${ttCsv.join(',')})`
 
-      const [records, stores, suppliers] = await Promise.all([
+      const [records, stores] = await Promise.all([
         db.select('task_records', params),
-        db.select('stores',    { select: 'id,store_name' }),
-        db.select('suppliers', { select: 'supplier_code,supplier_name' })
+        db.select('stores', { select: 'id,store_name' }),
       ])
+      // suppliers table is optional — ignore if it doesn't exist
+      let suppliers = []
+      try { suppliers = await db.select('suppliers', { select: 'supplier_code,supplier_name' }) } catch (_) {}
       const storeName    = Object.fromEntries(stores.map(s => [s.id, s.store_name]))
       // supl_id in task_records = supplier_code in the suppliers table
       const supplierName = Object.fromEntries(

@@ -208,8 +208,8 @@ export default function ScannerInput({
             type="text" className="scan-input" autoComplete="off" spellCheck={false}
             style={{ width: '100%' }}
             value={value} onChange={e => onChange(e.target.value)}
-            onBlur={() => onConfirm?.(value)}
-            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onConfirm?.(value) } }}
+            onBlur={e => onConfirm?.(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onConfirm?.(e.target.value) } }}
             placeholder={placeholder}
           />
           {lookupLoading && (
