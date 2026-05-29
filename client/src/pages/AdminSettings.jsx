@@ -505,7 +505,7 @@ function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField
 
   function parseWorkbook(wb, sv) {
     const sheet = resolveSheet(wb, sv)
-    if (!sheet) throw new Error(`Sheet "${sv}" not found. Available: ${wb.SheetNames.join(', ')}`)
+    if (!sheet) throw new Error(`Sheet "${sv}" not found. SheetNames: [${wb.SheetNames.join(', ')}] Sheets keys: [${Object.keys(wb.Sheets).join(', ')}]`)
 
     const jsonRows = XLSX.utils.sheet_to_json(sheet, { defval: '' })
     if (!jsonRows.length) throw new Error('Sheet is empty.')
@@ -541,17 +541,21 @@ function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField
     return { rows, totalRows: jsonRows.length, validRows: rows.length, fieldToSource }
   }
 
-  const handleFile = async (e) => {
+  const handleFile = (e) => {
     const f = e.target.files?.[0]
     if (!f) return
     setResult(null); setError(''); setParsed(null); wbRef.current = null
-    try {
-      const data = await f.arrayBuffer()
-      const wb = XLSX.read(new Uint8Array(data), { type: 'array' })
-      wbRef.current = wb
-      const p = parseWorkbook(wb, sheetVal)
-      setParsed({ ...p, fileName: f.name })
-    } catch (e) { setError('Parse error: ' + e.message) }
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        const wb = XLSX.read(ev.target.result, { type: 'binary' })
+        wbRef.current = wb
+        const p = parseWorkbook(wb, sheetVal)
+        setParsed({ ...p, fileName: f.name })
+      } catch (err) { setError('Parse error: ' + err.message + ' | Sheets: ' + (wbRef.current?.SheetNames?.join(', ') ?? '?')) }
+    }
+    reader.onerror = () => setError('Could not read file.')
+    reader.readAsBinaryString(f)
   }
 
   const handleSheetChange = (e) => {
