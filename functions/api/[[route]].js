@@ -527,54 +527,6 @@ export async function onRequest(context) {
       return json({ written: written.length, skipped })
     }
 
-    // Admin manual import of alt-barcode rows (parsed in browser, posted as JSON).
-    // Same upsert logic as /alt-barcodes/sync but auth = admin session token.
-    if (path === '/alt-barcodes/import' && method === 'POST') {
-      if (!isAdminRole(session)) return err('Forbidden', 403)
-      const rows = await request.json()
-      if (!Array.isArray(rows) || !rows.length) return err('Empty payload', 400)
-      const now = new Date().toISOString()
-      const normStatus = (v) => {
-        if (v == null) return null
-        const s = String(v).trim()
-        if (!s) return null
-        const k = s.toLowerCase().replace(/[^a-z]/g, '')
-        if (k === 'active') return 'Active'
-        if (k === 'deactived' || k === 'deactive' || k === 'deactivated' || k === 'inactive') return 'Inactive'
-        return s
-      }
-      const byKey = new Map()
-      let skipped = 0
-      for (const r of rows) {
-        const bno = r?.barcode_no == null ? '' : String(r.barcode_no).trim()
-        if (!bno || bno === '0') { skipped++; continue }
-        const bcStatus = normStatus(r.barcode_status)
-        const prev = byKey.get(bno)
-        if (prev && prev.barcode_status === 'Active' && bcStatus !== 'Active') { skipped++; continue }
-        if (prev && bcStatus !== 'Active' && prev.barcode_status !== 'Active') { skipped++; continue }
-        byKey.set(bno, {
-          barcode_no:     bno,
-          ean_barcode:    r.ean_barcode    ? String(r.ean_barcode).trim()    : null,
-          item_name:      r.item_name      ? String(r.item_name).trim()      : null,
-          supl_id:        r.supl_id        ? String(r.supl_id).trim()        : null,
-          supplier_code:  r.supplier_code  ? String(r.supplier_code).trim()  : null,
-          item_status:    normStatus(r.item_status),
-          barcode_status: bcStatus,
-          updated_at:     now
-        })
-      }
-      const clean = Array.from(byKey.values())
-      if (!clean.length) return json({ written: 0, skipped })
-      const upRes = await fetch(`${env.SUPABASE_URL}/rest/v1/alt_barcodes?on_conflict=barcode_no`, {
-        method: 'POST',
-        headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation,resolution=merge-duplicates' },
-        body: JSON.stringify(clean)
-      })
-      if (!upRes.ok) return err(`Alt-barcode upsert failed: ${(await upRes.text()).slice(0, 400)}`, 400)
-      const written = await upRes.json()
-      return json({ written: written.length, skipped })
-    }
-
     // ── Prices (ItemMaster) sync ──────────────────────────────────────────
     // Config for the prices PowerShell job (folder/pattern/sheet).
     if (path === '/prices/sync-config' && method === 'GET') {
@@ -628,40 +580,6 @@ export async function onRequest(context) {
           'Content-Type':  'application/json',
           'Prefer':        'return=representation,resolution=merge-duplicates'
         },
-        body: JSON.stringify(clean)
-      })
-      if (!upRes.ok) return err(`Prices upsert failed: ${(await upRes.text()).slice(0, 400)}`, 400)
-      const written = await upRes.json()
-      return json({ written: written.length, skipped })
-    }
-
-    // Admin manual import of prices rows (parsed in browser, posted as JSON).
-    // Same upsert logic as /prices/sync but auth = admin session token.
-    if (path === '/prices/import' && method === 'POST') {
-      if (!isAdminRole(session)) return err('Forbidden', 403)
-      const rows = await request.json()
-      if (!Array.isArray(rows) || !rows.length) return err('Empty payload', 400)
-      const now = new Date().toISOString()
-      const byKey = new Map()
-      let skipped = 0
-      for (const r of rows) {
-        const ean = r?.ean_barcode == null ? '' : String(r.ean_barcode).trim()
-        if (!ean || ean === '0') { skipped++; continue }
-        const saleRate = r.sale_rate != null ? Number(String(r.sale_rate).replace(/[^0-9.-]/g, '')) : null
-        byKey.set(ean, {
-          ean_barcode:    ean,
-          item_group:     r.item_group     ? String(r.item_group).trim()     : null,
-          item_subgrp_id: r.item_subgrp_id ? String(r.item_subgrp_id).trim() : null,
-          product_type:   r.product_type   ? String(r.product_type).trim()   : null,
-          sale_rate:      isNaN(saleRate) ? null : saleRate,
-          updated_at:     now
-        })
-      }
-      const clean = Array.from(byKey.values())
-      if (!clean.length) return json({ written: 0, skipped })
-      const upRes = await fetch(`${env.SUPABASE_URL}/rest/v1/prices?on_conflict=ean_barcode`, {
-        method: 'POST',
-        headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation,resolution=merge-duplicates' },
         body: JSON.stringify(clean)
       })
       if (!upRes.ok) return err(`Prices upsert failed: ${(await upRes.text()).slice(0, 400)}`, 400)
@@ -837,6 +755,91 @@ export async function onRequest(context) {
     const session = await authenticate(request, env)
     if (!session) return err('Unauthorized', 401)
     const isBO = isBackOffice(session)
+
+    // ── Manual imports (browser-side Excel parse, admin token) ─────────────
+    // These must live in the authenticated section so `session` is available.
+
+    // Admin manual import of alt-barcode rows (parsed in browser, posted as JSON).
+    // Same upsert logic as /alt-barcodes/sync but auth = admin session token.
+    if (path === '/alt-barcodes/import' && method === 'POST') {
+      if (!isAdminRole(session)) return err('Forbidden', 403)
+      const rows = await request.json()
+      if (!Array.isArray(rows) || !rows.length) return err('Empty payload', 400)
+      const now = new Date().toISOString()
+      const normStatus = (v) => {
+        if (v == null) return null
+        const s = String(v).trim()
+        if (!s) return null
+        const k = s.toLowerCase().replace(/[^a-z]/g, '')
+        if (k === 'active') return 'Active'
+        if (k === 'deactived' || k === 'deactive' || k === 'deactivated' || k === 'inactive') return 'Inactive'
+        return s
+      }
+      const byKey = new Map()
+      let skipped = 0
+      for (const r of rows) {
+        const bno = r?.barcode_no == null ? '' : String(r.barcode_no).trim()
+        if (!bno || bno === '0') { skipped++; continue }
+        const bcStatus = normStatus(r.barcode_status)
+        const prev = byKey.get(bno)
+        if (prev && prev.barcode_status === 'Active' && bcStatus !== 'Active') { skipped++; continue }
+        if (prev && bcStatus !== 'Active' && prev.barcode_status !== 'Active') { skipped++; continue }
+        byKey.set(bno, {
+          barcode_no:     bno,
+          ean_barcode:    r.ean_barcode    ? String(r.ean_barcode).trim()    : null,
+          item_name:      r.item_name      ? String(r.item_name).trim()      : null,
+          supl_id:        r.supl_id        ? String(r.supl_id).trim()        : null,
+          supplier_code:  r.supplier_code  ? String(r.supplier_code).trim()  : null,
+          item_status:    normStatus(r.item_status),
+          barcode_status: bcStatus,
+          updated_at:     now
+        })
+      }
+      const clean = Array.from(byKey.values())
+      if (!clean.length) return json({ written: 0, skipped })
+      const upRes = await fetch(`${env.SUPABASE_URL}/rest/v1/alt_barcodes?on_conflict=barcode_no`, {
+        method: 'POST',
+        headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation,resolution=merge-duplicates' },
+        body: JSON.stringify(clean)
+      })
+      if (!upRes.ok) return err(`Alt-barcode upsert failed: ${(await upRes.text()).slice(0, 400)}`, 400)
+      const written = await upRes.json()
+      return json({ written: written.length, skipped })
+    }
+
+    // Admin manual import of prices rows (parsed in browser, posted as JSON).
+    // Same upsert logic as /prices/sync but auth = admin session token.
+    if (path === '/prices/import' && method === 'POST') {
+      if (!isAdminRole(session)) return err('Forbidden', 403)
+      const rows = await request.json()
+      if (!Array.isArray(rows) || !rows.length) return err('Empty payload', 400)
+      const now = new Date().toISOString()
+      const byKey = new Map()
+      let skipped = 0
+      for (const r of rows) {
+        const ean = r?.ean_barcode == null ? '' : String(r.ean_barcode).trim()
+        if (!ean || ean === '0') { skipped++; continue }
+        const saleRate = r.sale_rate != null ? Number(String(r.sale_rate).replace(/[^0-9.-]/g, '')) : null
+        byKey.set(ean, {
+          ean_barcode:    ean,
+          item_group:     r.item_group     ? String(r.item_group).trim()     : null,
+          item_subgrp_id: r.item_subgrp_id ? String(r.item_subgrp_id).trim() : null,
+          product_type:   r.product_type   ? String(r.product_type).trim()   : null,
+          sale_rate:      isNaN(saleRate) ? null : saleRate,
+          updated_at:     now
+        })
+      }
+      const clean = Array.from(byKey.values())
+      if (!clean.length) return json({ written: 0, skipped })
+      const upRes = await fetch(`${env.SUPABASE_URL}/rest/v1/prices?on_conflict=ean_barcode`, {
+        method: 'POST',
+        headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation,resolution=merge-duplicates' },
+        body: JSON.stringify(clean)
+      })
+      if (!upRes.ok) return err(`Prices upsert failed: ${(await upRes.text()).slice(0, 400)}`, 400)
+      const written = await upRes.json()
+      return json({ written: written.length, skipped })
+    }
 
     // ── Back-office admin: stores ─────────────────────────────────────────
     // All /admin/* endpoints require back-office mode.

@@ -489,8 +489,15 @@ function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField
 
   function resolveSheet(wb, sv) {
     const s = (sv || '1').trim()
-    if (/^\d+$/.test(s)) return wb.Sheets[wb.SheetNames[Math.max(0, parseInt(s, 10) - 1)]]
-    return wb.Sheets[s] || null
+    if (/^\d+$/.test(s)) {
+      const name = wb.SheetNames[Math.max(0, parseInt(s, 10) - 1)]
+      return name != null ? wb.Sheets[name] : null
+    }
+    // Use SheetNames to find the actual key (case-insensitive, trim) so any
+    // encoding quirk in the workbook doesn't prevent the lookup.
+    const norm = s.toLowerCase()
+    const key  = wb.SheetNames.find(n => n.trim().toLowerCase() === norm)
+    return key != null ? wb.Sheets[key] : null
   }
 
   function parseWorkbook(wb, sv) {
@@ -537,7 +544,7 @@ function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField
     setResult(null); setError(''); setParsed(null); wbRef.current = null
     try {
       const data = await f.arrayBuffer()
-      const wb = XLSX.read(data, { type: 'array' })
+      const wb = XLSX.read(new Uint8Array(data), { type: 'array' })
       wbRef.current = wb
       const p = parseWorkbook(wb, sheetVal)
       setParsed({ ...p, fileName: f.name })
