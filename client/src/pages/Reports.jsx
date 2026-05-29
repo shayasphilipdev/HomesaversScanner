@@ -6,6 +6,7 @@ import {
   adminListTemplates, getStoreTaskReportRows,
   getTaskRecordEvents, clearToken
 } from '../lib/api.js'
+import { TASK_FORMS } from '../lib/taskTypes.js'
 import { downloadExcel } from '../lib/excel.js'
 import { useToast } from '../components/Toast.jsx'
 import MultiSelectDropdown from '../components/forms/MultiSelectDropdown.jsx'
@@ -387,6 +388,7 @@ function HQReports() {
                   <th>Store</th>
                   <th>Product Id</th>
                   <th>Product Description</th>
+                  <th>Department</th>
                   <th>Product Barcode</th>
                   <th>Photos</th>
                   <th>Status</th>
@@ -409,10 +411,11 @@ function HQReports() {
                             )}
                           </td>
                         )}
-                        <td><strong>{r.task_type}</strong></td>
+                        <td><strong>{TASK_FORMS[r.task_type]?.name || r.task_type}</strong></td>
                         <td>{storesById[r.store_id]?.store_name || <span className="td-muted">—</span>}</td>
                         <td className="td-code">{r.product_barcode || r.product_code || <span className="td-muted">—</span>}</td>
                         <td>{desc || <span className="td-muted">—</span>}</td>
+                        <td>{r.details?.item_group || <span className="td-muted">—</span>}</td>
                         <td className="td-code">{r.barcode_no || r.product_code || ''}</td>
                         <td>
                           <div className="flex-row" style={{ gap: 6 }}>
@@ -446,7 +449,7 @@ function HQReports() {
                       {/* Audit-trail panel (BO only) */}
                       {isBO && history[r.id] && (
                         <tr>
-                          <td colSpan={isBO ? 10 : 9} style={{ background: 'var(--surface-warm)' }}>
+                          <td colSpan={isBO ? 11 : 10} style={{ background: 'var(--surface-warm)' }}>
                             <HistoryPanel state={history[r.id]} />
                           </td>
                         </tr>
@@ -454,7 +457,7 @@ function HQReports() {
                       {/* Inline note input for per-row "No change needed" */}
                       {isBO && reviewRowId === r.id && (
                         <tr>
-                          <td colSpan={isBO ? 10 : 9} style={{ background: 'var(--surface-warm)' }}>
+                          <td colSpan={isBO ? 11 : 10} style={{ background: 'var(--surface-warm)' }}>
                             <div className="flex-row" style={{ gap: 6, padding: '6px 0' }}>
                               <input
                                 type="text"
@@ -475,7 +478,7 @@ function HQReports() {
                       {/* Review-notes echo for records that already have one */}
                       {r.review_notes && !(isBO && reviewRowId === r.id) && (
                         <tr>
-                          <td colSpan={isBO ? 10 : 9} style={{ background: 'var(--surface-warm)', fontStyle: 'italic', fontSize: 13, color: 'var(--text-muted)' }}>
+                          <td colSpan={isBO ? 11 : 10} style={{ background: 'var(--surface-warm)', fontStyle: 'italic', fontSize: 13, color: 'var(--text-muted)' }}>
                             HO note: {r.review_notes}
                           </td>
                         </tr>
