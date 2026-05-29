@@ -489,15 +489,15 @@ function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField
 
   function resolveSheet(wb, sv) {
     const s = (sv || '1').trim()
+    // Search wb.Sheets directly (not via SheetNames) to avoid any key mismatch.
+    const entries = Object.entries(wb.Sheets)
     if (/^\d+$/.test(s)) {
-      const name = wb.SheetNames[Math.max(0, parseInt(s, 10) - 1)]
-      return name != null ? wb.Sheets[name] : null
+      const idx = Math.max(0, parseInt(s, 10) - 1)
+      return entries[idx]?.[1] ?? null
     }
-    // Use SheetNames to find the actual key (case-insensitive, trim) so any
-    // encoding quirk in the workbook doesn't prevent the lookup.
     const norm = s.toLowerCase()
-    const key  = wb.SheetNames.find(n => n.trim().toLowerCase() === norm)
-    return key != null ? wb.Sheets[key] : null
+    const found = entries.find(([k]) => k.trim().toLowerCase() === norm)
+    return found?.[1] ?? null
   }
 
   function parseWorkbook(wb, sv) {
@@ -556,8 +556,10 @@ function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField
     setSheetVal(sv)
     if (!wbRef.current) return
     setResult(null); setError('')
-    try { setParsed(p => ({ ...parseWorkbook(wbRef.current, sv), fileName: p?.fileName || '' })) }
-    catch (e) { setParsed(null); setError('Parse error: ' + e.message) }
+    try {
+      const p = parseWorkbook(wbRef.current, sv)
+      setParsed(prev => ({ ...p, fileName: prev?.fileName || '' }))
+    } catch (e) { setParsed(null); setError('Parse error: ' + e.message) }
   }
 
   const handleUpload = async () => {
