@@ -51,6 +51,7 @@ export default function TaskForm({ taskType, storeId, onSaved }) {
     case 'G': return <TaskGForm storeId={storeId} onSaved={onSaved} />
     case 'H': return <TaskHForm storeId={storeId} onSaved={onSaved} />
     case 'J': return <TaskJForm storeId={storeId} onSaved={onSaved} />
+    // K (Price Check) — form added in Phase 6
     default:  return <div className="card"><div className="card-body">No form registered for {taskType}.</div></div>
   }
 }

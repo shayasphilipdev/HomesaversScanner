@@ -12,13 +12,20 @@ export default function TaskTypePicker({ taskTypes, selected, onSelect }) {
   }, {})
   const order = ['daily', 'weekly', 'monthly', 'once_off']
 
+  // Compute a display letter (A, B, C…) from display_order (1, 2, 3…).
+  // Falls back to the DB code when display_order is missing or out of range.
+  const displayLetter = (t) => {
+    const d = t.display_order
+    return (d >= 1 && d <= 26) ? String.fromCharCode(64 + d) : t.code
+  }
+
   const options = order
     .filter(f => groups[f]?.length)
     .flatMap(f => groups[f].map(t => {
       const meta = TASK_FORMS[t.code] || {}
       return {
         id:       t.code,
-        label:    `${t.code} — ${t.name}${!meta.implemented ? ' (coming soon)' : ''}`,
+        label:    `${displayLetter(t)} — ${t.name}${!meta.implemented ? ' (coming soon)' : ''}`,
         subLabel: FREQUENCY_LABEL[f] || f
       }
     }))

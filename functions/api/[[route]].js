@@ -1889,9 +1889,9 @@ export async function onRequest(context) {
     // GET /task-types
     if (path === '/task-types' && method === 'GET') {
       const rows = await db.select('task_types', {
-        select: 'code,name,frequency,sort_order,is_active',
+        select: 'code,name,frequency,sort_order,display_order,is_active',
         is_active: 'eq.true',
-        order: 'sort_order.asc'
+        order: 'display_order.asc,sort_order.asc'
       })
       return json(rows)
     }

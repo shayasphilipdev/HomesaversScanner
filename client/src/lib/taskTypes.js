@@ -2,19 +2,23 @@
 // The list of task types itself is loaded from the server (/api/task-types).
 // This file describes the *form schema* per type, and which are implemented
 // in the current phase.
+//
+// Display order (A–J shown in picker) is driven by the `display_order` column
+// in the DB / API response — not by the DB code letter here.
 
 export const TASK_FORMS = {
-  A: { name: 'UOM Errors',           implemented: true,  warning: null },
+  K: { name: 'Price Check',          implemented: false, comingSoon: 'Price Check form — coming in next update.' },
+  J: { name: 'Department Check',     implemented: true,  warning: null },
   B: { name: 'Non-Scans',            implemented: true,  warning: null },
   C: { name: 'Wrong Prices',         implemented: true,  warning: null },
   D: { name: 'Wrong Description',    implemented: true,  warning: null },
+  A: { name: 'UOM Errors',           implemented: true,  warning: null },
   E: { name: 'Price Marked Products', implemented: true,  warning: null },
   F: { name: 'DRS Errors',           implemented: true,
        warning: '⚠ Check for the Return Logo on the product before scanning.' },
   G: { name: 'Promotion Error',      implemented: true,  warning: null },
   H: { name: 'Stock Count',          implemented: true,  warning: null },
-  I: { name: 'Miscellaneous Tasks',  implemented: true,  warning: null },
-  J: { name: 'Department Check',     implemented: true,  warning: null }
+  I: { name: 'Miscellaneous Tasks',  implemented: true,  warning: null }
 }
 
 export const FREQUENCY_LABEL = {
