@@ -495,18 +495,18 @@ function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField
     return allSheetNames.find(n => n.trim().toLowerCase() === s.toLowerCase()) ?? null
   }
 
-  // Two-pass workbook read:
-  //   Pass 1 – bookSheets:true → get all names with zero data parsing (fast).
-  //   Pass 2 – sheets: N (0-based number) → parse ONLY the target sheet by
-  //            index so we never rely on SheetJS string-name matching (which
-  //            fails when the internal name has encoding quirks or trailing
-  //            whitespace different from what bookSheets reports).
+  // Two-pass workbook read.
+  // rawData must be a Uint8Array (from readAsArrayBuffer).
+  // Pass 1 – bookSheets:true  → names only, no cell data (fast).
+  // Pass 2 – sheets: N        → parse ONLY the target sheet by 0-based index.
+  //   Using type:'array' + Uint8Array is the most reliable SheetJS input mode
+  //   and avoids the byte-mangling that type:'binary' causes for bytes >127.
   function readWorkbook(rawData, sv) {
-    const meta = XLSX.read(rawData, { type: 'binary', bookSheets: true })
+    const meta = XLSX.read(rawData, { type: 'array', bookSheets: true })
     const allNames = meta.SheetNames
     const targetName = resolveSheetName(allNames, sv)
     const targetIdx  = targetName != null ? allNames.indexOf(targetName) : 0
-    const wb = XLSX.read(rawData, { type: 'binary', sheets: targetIdx })
+    const wb = XLSX.read(rawData, { type: 'array', sheets: targetIdx })
     wb.SheetNames = allNames   // restore full list for the sheet selector
     return wb
   }
@@ -570,15 +570,16 @@ function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField
     const reader = new FileReader()
     reader.onload = (ev) => {
       try {
-        rawDataRef.current = ev.target.result
-        const wb = readWorkbook(ev.target.result, sheetVal)
+        const data = new Uint8Array(ev.target.result)
+        rawDataRef.current = data
+        const wb = readWorkbook(data, sheetVal)
         wbRef.current = wb
         const p = parseWorkbook(wb, sheetVal)
         setParsed({ ...p, fileName: f.name })
       } catch (err) { setError('Parse error: ' + err.message) }
     }
     reader.onerror = () => setError('Could not read file.')
-    reader.readAsBinaryString(f)
+    reader.readAsArrayBuffer(f)
   }
 
   const handleSheetChange = (e) => {
