@@ -1,11 +1,11 @@
-# Homesavers Prices (ItemMaster) Sync — Windows Service runner
+# Homesavers Prices (ItemMaster) Sync -- Windows Service runner
 #
 # Run as a persistent Windows Service via NSSM.  Does two things:
-#   1. FileSystemWatcher — fires a sync the moment a new/changed ItemMaster*.xlsx
+#   1. FileSystemWatcher -- fires a sync the moment a new/changed ItemMaster*.xlsx
 #      lands in the configured folder.
-#   2. 5-minute polling fallback — reliable safety net for network drives (Y:\)
+#   2. 5-minute polling fallback -- reliable safety net for network drives
 #      where the OS does not always forward change notifications.
-#   3. Daily heartbeat — full sync at the configured time as a final backstop.
+#   3. Daily heartbeat -- full sync at the configured time as a final backstop.
 #
 # Setup (one-off):
 #   nssm install HomesaversPricesSync powershell -NonInteractive -ExecutionPolicy Bypass -File "C:\Homesavers\scripts\sync-prices-service.ps1"
@@ -24,7 +24,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# ── Logging ───────────────────────────────────────────────────────────────────
+# -- Logging ------------------------------------------------------------------
 $logLock = [System.Object]::new()
 function Write-Log {
   param([string]$Message, [string]$Level = "INFO")
@@ -50,7 +50,7 @@ function Trim-Log {
   } catch {}
 }
 
-# ── Shared state ──────────────────────────────────────────────────────────────
+# -- Shared state -------------------------------------------------------------
 $syncQueue  = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
 $script:watchedFolder  = $null
 $script:filePattern    = '*.xlsx'
@@ -72,7 +72,7 @@ function Load-Secret {
   $script:authHeaders = @{ "X-Sync-Secret" = $s; "Content-Type" = "application/json" }
 }
 
-# ── Fetch config from app ─────────────────────────────────────────────────────
+# -- Fetch config from app ----------------------------------------------------
 function Refresh-Config {
   try {
     $cfg = Invoke-RestMethod -Method Get -Uri "$BaseUrl/api/prices/sync-config" `
@@ -103,12 +103,10 @@ function Refresh-Config {
   }
 }
 
-# ── FileSystemWatcher ─────────────────────────────────────────────────────────
+# -- FileSystemWatcher --------------------------------------------------------
 function Attach-Watcher {
   param([string]$Folder, [string]$Pattern)
 
-  # Unregister old event subscriptions before re-registering (avoids the
-  # duplicate-SourceIdentifier silent-fail bug).
   foreach ($sid in @("HS_FSW_PR_Created","HS_FSW_PR_Changed","HS_FSW_PR_Renamed")) {
     Get-EventSubscriber -SourceIdentifier $sid -ErrorAction SilentlyContinue |
       Unregister-Event -Force -ErrorAction SilentlyContinue
@@ -119,9 +117,9 @@ function Attach-Watcher {
     Write-Log "Previous watcher disposed."
   }
 
-  if (-not $Folder) { Write-Log "No folder configured — watcher not attached." "WARN"; return }
+  if (-not $Folder) { Write-Log "No folder configured -- watcher not attached." "WARN"; return }
   if (-not (Test-Path $Folder)) {
-    Write-Log "Folder not accessible: $Folder — will retry on next config refresh." "WARN"
+    Write-Log "Folder not accessible: $Folder -- will retry on next config refresh." "WARN"
     return
   }
 
@@ -144,21 +142,22 @@ function Attach-Watcher {
   Write-Log "FileSystemWatcher attached: $Folder\$($w.Filter)"
 }
 
-# ── Run the actual sync ───────────────────────────────────────────────────────
+# -- Run the actual sync ------------------------------------------------------
 function Run-Sync {
   param([string]$TriggerFile = "", [string]$Reason = "scheduled")
 
   if ($TriggerFile -and $script:namePrefix) {
     $fname = Split-Path -Leaf $TriggerFile
     if (-not $fname.StartsWith($script:namePrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
-      Write-Log "Skipping '$fname' — does not match prefix '$($script:namePrefix)'" "INFO"
+      Write-Log "Skipping '$fname' -- does not match prefix '$($script:namePrefix)'" "INFO"
       return
     }
   }
 
-  Write-Log "=== Sync triggered ($Reason) — file: $(if ($TriggerFile) { $TriggerFile } else { 'auto-pick' }) ==="
+  $fileLabel = if ($TriggerFile) { $TriggerFile } else { 'auto-pick' }
+  Write-Log "=== Sync triggered ($Reason) -- file: $fileLabel ==="
 
-  $args = @(
+  $procArgs = @(
     "-NonInteractive"
     "-ExecutionPolicy", "Bypass"
     "-File", $SyncScript
@@ -166,15 +165,15 @@ function Run-Sync {
     "-SecretFile", $SecretFile
     "-LogPath", ($LogPath -replace '\.log$', '-detail.log')
   )
-  if ($TriggerFile -and (Test-Path $TriggerFile)) { $args += "-ExcelPath", $TriggerFile }
-  if ($script:sheet) { $args += "-Sheet", $script:sheet }
+  if ($TriggerFile -and (Test-Path $TriggerFile)) { $procArgs += "-ExcelPath", $TriggerFile }
+  if ($script:sheet) { $procArgs += "-Sheet", $script:sheet }
 
   try {
-    $proc = Start-Process powershell -ArgumentList $args -Wait -PassThru -NoNewWindow
+    $proc = Start-Process powershell -ArgumentList $procArgs -Wait -PassThru -NoNewWindow
     if ($proc.ExitCode -eq 0) {
       Write-Log "Sync completed OK (exit 0)."
     } else {
-      Write-Log "Sync finished with exit code $($proc.ExitCode) — check detail log." "WARN"
+      Write-Log "Sync finished with exit code $($proc.ExitCode) -- check detail log." "WARN"
     }
   } catch {
     Write-Log "Failed to start sync process: $($_.Exception.Message)" "ERROR"
@@ -194,7 +193,7 @@ function Test-HeartbeatDue {
   } catch { return $false }
 }
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# -- Main ---------------------------------------------------------------------
 Trim-Log
 Write-Log "=== Homesavers Prices Sync Service starting ==="
 Write-Log "SyncScript : $SyncScript"
@@ -217,13 +216,13 @@ Write-Log "Service loop started."
 while ($true) {
   Start-Sleep -Seconds 5
 
-  # ── Config refresh ────────────────────────────────────────────────────────
+  # Config refresh
   if (((Get-Date) - $lastConfigRefresh).TotalMinutes -ge $ConfigRefreshMin) {
     Refresh-Config
     $lastConfigRefresh = Get-Date
   }
 
-  # ── Drain the watcher queue ───────────────────────────────────────────────
+  # Drain the watcher queue
   $item = $null
   while ($syncQueue.TryDequeue([ref]$item)) {
     Write-Log "File event: $item"
@@ -231,14 +230,14 @@ while ($true) {
     $pendingAt   = Get-Date
   }
 
-  # ── Debounce ─────────────────────────────────────────────────────────────
+  # Debounce
   if ($pendingFile -and $pendingAt -and ((Get-Date) - $pendingAt).TotalSeconds -ge $DebounceSeconds) {
     Run-Sync -TriggerFile $pendingFile -Reason "file event (debounced $DebounceSeconds s)"
     $pendingFile = $null
     $pendingAt   = $null
   }
 
-  # ── 5-minute polling fallback (reliable for network drives) ───────────────
+  # 5-minute polling fallback (reliable for network drives)
   if (((Get-Date) - $script:lastPollAt).TotalMinutes -ge 5) {
     $script:lastPollAt = Get-Date
     if ($script:watchedFolder -and (Test-Path $script:watchedFolder -ErrorAction SilentlyContinue)) {
@@ -250,7 +249,7 @@ while ($true) {
         }
         $newest = $files | Sort-Object LastWriteTime -Descending | Select-Object -First 1
         if ($newest -and $newest.LastWriteTime -gt $script:lastSyncAt) {
-          Write-Log "Poll: new/modified file: $($newest.Name) — queuing."
+          Write-Log "Poll: new/modified file: $($newest.Name) -- queuing."
           $syncQueue.Enqueue($newest.FullName)
         }
       } catch {
@@ -259,7 +258,7 @@ while ($true) {
     }
   }
 
-  # ── Daily heartbeat ───────────────────────────────────────────────────────
+  # Daily heartbeat
   if ((Test-HeartbeatDue)) {
     Run-Sync -Reason "daily heartbeat ($($script:scheduleTime))"
   }

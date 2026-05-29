@@ -200,6 +200,8 @@ export const adminCleanupPhotos       = () => request('/admin/cleanup/photos',  
 export const adminCleanupTaskRecords  = () => request('/admin/cleanup/task-records', { method: 'POST' })
 export const adminGetCapacity         = () => request('/admin/capacity')
 export const adminListSyncRuns         = () => request('/admin/sync-runs')
+export const adminImportAltBarcodes    = (rows) => request('/alt-barcodes/import', { method: 'POST', body: rows })
+export const adminImportPrices         = (rows) => request('/prices/import',        { method: 'POST', body: rows })
 
 // Append-only audit ledger for one task_records row.
 export const getTaskRecordEvents      = (id) => request(`/task-records/${id}/events`)

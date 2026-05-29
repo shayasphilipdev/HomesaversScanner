@@ -27,7 +27,7 @@ CREATE INDEX IF NOT EXISTS idx_prices_updated_at ON prices (updated_at);
 
 INSERT INTO app_settings (key, value, updated_at)
 VALUES
-  ('prices_sync_folder',      'Y:\Supply Chain & Buying - Shared\Data\VRSDAILYDATADUMP\ProductMaster\2026', now()),
+  ('prices_sync_folder',      '\\192.168.1.205\Supply Chain & Buying - Shared\Data\VRSDAILYDATADUMP\ProductMaster\2026', now()),
   ('prices_sync_pattern',     '*.xlsx',       now()),
   ('prices_sync_name_prefix', 'ItemMaster',   now()),
   ('prices_sync_sheet',       'ItemMaster',   now()),
@@ -59,8 +59,8 @@ UPDATE task_types SET display_order = CASE code
 END;
 
 -- Add Price Check task type (code K) if it doesn't already exist.
-INSERT INTO task_types (code, name, frequency, description, is_active, display_order)
-VALUES ('K', 'Price Check', 'daily', 'Check product selling prices against the ItemMaster', true, 1)
+INSERT INTO task_types (code, name, frequency, is_active, display_order)
+VALUES ('K', 'Price Check', 'daily', true, 1)
 ON CONFLICT (code) DO UPDATE SET
   name          = EXCLUDED.name,
   display_order = EXCLUDED.display_order,

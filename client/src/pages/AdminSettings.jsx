@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../App.jsx'
 import {
   adminGetSettings, adminUpdateSettings,
-  adminCleanupPhotos, adminCleanupTaskRecords, adminGetCapacity, adminListSyncRuns
+  adminCleanupPhotos, adminCleanupTaskRecords, adminGetCapacity, adminListSyncRuns,
+  adminImportAltBarcodes, adminImportPrices
 } from '../lib/api.js'
+import * as XLSX from 'xlsx'
 import AdminNav from '../components/AdminNav.jsx'
 import { useToast } from '../components/Toast.jsx'
 
@@ -253,7 +255,16 @@ export default function AdminSettings() {
         runs={syncRuns.filter(r => r.kind === 'alt_barcodes' || !r.kind)}
         onRefresh={loadSyncRuns}
         syncNowCmd="powershell -ExecutionPolicy Bypass -File C:\Scraping\homesavers-scanner\scripts\sync-alt-barcodes.ps1"
-      />
+      >
+        <ExcelImportCard
+          title="Alt-barcode"
+          sheetDefault={values.alt_barcode_sync_sheet || '1'}
+          importFn={adminImportAltBarcodes}
+          aliases={ALT_BARCODE_ALIASES}
+          requiredField="barcode_no"
+          toast={toast}
+        />
+      </SyncRunsCard>
 
       {/* Prices (ItemMaster) sync status */}
       <SyncRunsCard
@@ -261,7 +272,16 @@ export default function AdminSettings() {
         runs={syncRuns.filter(r => r.kind === 'prices')}
         onRefresh={loadSyncRuns}
         syncNowCmd="powershell -ExecutionPolicy Bypass -File C:\Scraping\homesavers-scanner\scripts\sync-prices.ps1"
-      />
+      >
+        <ExcelImportCard
+          title="Prices (ItemMaster)"
+          sheetDefault={values.prices_sync_sheet || 'ItemMaster'}
+          importFn={adminImportPrices}
+          aliases={PRICES_ALIASES}
+          requiredField="ean_barcode"
+          toast={toast}
+        />
+      </SyncRunsCard>
 
       {isOnlyAdmin && capacity && (
         <div className="card" style={{ marginBottom: 16 }}>
@@ -387,7 +407,7 @@ export default function AdminSettings() {
 
 // Reusable sync-run history card. Renders a table of recent runs for a given
 // sync kind. Used for both Alt-barcode sync and Prices sync sections.
-function SyncRunsCard({ title, runs, onRefresh, syncNowCmd }) {
+function SyncRunsCard({ title, runs, onRefresh, syncNowCmd, children }) {
   return (
     <div className="card" style={{ marginBottom: 16 }}>
       <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -426,7 +446,177 @@ function SyncRunsCard({ title, runs, onRefresh, syncNowCmd }) {
           <code>{syncNowCmd}</code>.
           Set the schedule + time below and match them in Windows Task Scheduler.
         </p>
+        {children}
       </div>
+    </div>
+  )
+}
+
+// Column alias maps for Excel import — mirrors the PowerShell sync scripts so
+// the same workbook file works for both the desktop sync and manual upload.
+const ALT_BARCODE_ALIASES = {
+  barcode_no:     ['barcode_no','barcodeno','barcode','barcode_number','alt_barcode','altbarcode'],
+  ean_barcode:    ['ean_barcode','ean','eanbarcode'],
+  item_name:      ['item_name','itemname','name','description','product_name'],
+  supl_id:        ['supl_id','suplid','supplier_id','supplierid'],
+  supplier_code:  ['supplier_code','suppliercode','supl_code'],
+  item_status:    ['item_status','itemstatus','product_status','status'],
+  barcode_status: ['barcode_status','barcodestatus','bc_status'],
+}
+
+const PRICES_ALIASES = {
+  ean_barcode:    ['ean_barcode','eanbarcode','ean','article_number','articleno'],
+  item_group:     ['itemgroup','item_group','department','dept'],
+  item_subgrp_id: ['itemsubgrp_id','item_subgrp_id','subgroup','subgrp_id','subgrpid','itemsubgrpid'],
+  product_type:   ['producttype','product_type','type'],
+  sale_rate:      ['salerate','sale_rate','sellingprice','selling_price','price','retail_price'],
+}
+
+// Manual Excel upload card. Parses an .xlsx in-browser (SheetJS) using the
+// same column aliases as the PowerShell sync scripts, then POSTs rows to the
+// matching /import endpoint. Shown inside each SyncRunsCard.
+function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField, toast }) {
+  const [sheetVal, setSheetVal]   = useState(sheetDefault || '1')
+  const [parsed,   setParsed]     = useState(null)   // { rows, totalRows, validRows, fieldToSource, fileName }
+  const [uploading, setUploading] = useState(false)
+  const [result,   setResult]     = useState(null)   // { written, skipped }
+  const [error,    setError]      = useState('')
+  const wbRef       = useRef(null)
+  const fileInputRef = useRef(null)
+
+  // Keep sheetVal in sync when the settings value loads for the first time.
+  useEffect(() => { setSheetVal(sheetDefault || '1') }, [sheetDefault])
+
+  function resolveSheet(wb, sv) {
+    const s = (sv || '1').trim()
+    if (/^\d+$/.test(s)) return wb.Sheets[wb.SheetNames[Math.max(0, parseInt(s, 10) - 1)]]
+    return wb.Sheets[s] || null
+  }
+
+  function parseWorkbook(wb, sv) {
+    const sheet = resolveSheet(wb, sv)
+    if (!sheet) throw new Error(`Sheet "${sv}" not found. Available: ${wb.SheetNames.join(', ')}`)
+
+    const jsonRows = XLSX.utils.sheet_to_json(sheet, { defval: '' })
+    if (!jsonRows.length) throw new Error('Sheet is empty.')
+
+    // Normalise headers: lowercase, alphanumeric only, for alias matching.
+    const headerByNorm = {}
+    for (const h of Object.keys(jsonRows[0])) headerByNorm[h.trim().toLowerCase().replace(/[^a-z0-9]/g, '')] = h
+
+    const fieldToSource = {}
+    for (const [field, aliasList] of Object.entries(aliases)) {
+      for (const alias of aliasList) {
+        const src = headerByNorm[alias.toLowerCase().replace(/[^a-z0-9]/g, '')]
+        if (src) { fieldToSource[field] = src; break }
+      }
+    }
+
+    if (!fieldToSource[requiredField]) {
+      throw new Error(
+        `Required column "${requiredField}" not found. ` +
+        `Columns in sheet: ${Object.keys(jsonRows[0]).slice(0, 12).join(', ')}${Object.keys(jsonRows[0]).length > 12 ? '…' : ''}`
+      )
+    }
+
+    const rows = []
+    for (const r of jsonRows) {
+      const row = {}
+      for (const [field, src] of Object.entries(fieldToSource)) {
+        const v = r[src]
+        if (v != null && String(v).trim() !== '') row[field] = String(v).trim()
+      }
+      if (row[requiredField] && row[requiredField] !== '0') rows.push(row)
+    }
+    return { rows, totalRows: jsonRows.length, validRows: rows.length, fieldToSource }
+  }
+
+  const handleFile = async (e) => {
+    const f = e.target.files?.[0]
+    if (!f) return
+    setResult(null); setError(''); setParsed(null); wbRef.current = null
+    try {
+      const data = await f.arrayBuffer()
+      const wb = XLSX.read(data, { type: 'array' })
+      wbRef.current = wb
+      const p = parseWorkbook(wb, sheetVal)
+      setParsed({ ...p, fileName: f.name })
+    } catch (e) { setError('Parse error: ' + e.message) }
+  }
+
+  const handleSheetChange = (e) => {
+    const sv = e.target.value
+    setSheetVal(sv)
+    if (!wbRef.current) return
+    setResult(null); setError('')
+    try { setParsed(p => ({ ...parseWorkbook(wbRef.current, sv), fileName: p?.fileName || '' })) }
+    catch (e) { setParsed(null); setError('Parse error: ' + e.message) }
+  }
+
+  const handleUpload = async () => {
+    if (!parsed?.rows?.length || uploading) return
+    setUploading(true); setError(''); setResult(null)
+    try {
+      const res = await importFn(parsed.rows)
+      setResult(res)
+      toast.success(`Import done — ${res.written} written, ${res.skipped} skipped.`)
+      setParsed(null); wbRef.current = null
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    } catch (e) { setError(e.message); toast.error(e.message) }
+    finally { setUploading(false) }
+  }
+
+  return (
+    <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Manual upload — {title}</div>
+      <p className="note" style={{ marginTop: 0, fontSize: 12 }}>
+        Upload directly from your computer. Useful for first-run or when the automatic sync is not yet working.
+      </p>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: '6px 14px', marginBottom: 8 }}>
+        <div>
+          <label style={{ fontSize: 12, display: 'block', marginBottom: 2 }}>Sheet (name or number)</label>
+          <input
+            type="text"
+            value={sheetVal}
+            onChange={handleSheetChange}
+            style={{ width: 140, fontSize: 13 }}
+            placeholder="1 or sheet name"
+          />
+        </div>
+        <div>
+          <label style={{ fontSize: 12, display: 'block', marginBottom: 2 }}>Excel file (.xlsx)</label>
+          <input ref={fileInputRef} type="file" accept=".xlsx" onChange={handleFile} style={{ fontSize: 13 }} />
+        </div>
+      </div>
+
+      {error && <div className="login-error" style={{ marginTop: 4, marginBottom: 6 }}>{error}</div>}
+
+      {parsed && !error && (
+        <div className="note" style={{ fontSize: 12, marginBottom: 8 }}>
+          <strong>{parsed.fileName}</strong> — <strong>{parsed.totalRows.toLocaleString('en-IE')}</strong> rows parsed,{' '}
+          <strong>{parsed.validRows.toLocaleString('en-IE')}</strong> ready to import.
+          {' '}<span style={{ opacity: 0.65 }}>({Object.entries(parsed.fieldToSource).map(([f, s]) => `${f}←${s}`).join(', ')})</span>
+        </div>
+      )}
+
+      {result && (
+        <div className="note" style={{ fontSize: 12, marginBottom: 8, color: '#3E9F4B' }}>
+          ✓ Import complete — <strong>{result.written}</strong> written, <strong>{result.skipped}</strong> skipped.
+        </div>
+      )}
+
+      <button
+        className="btn btn-primary btn-sm"
+        onClick={handleUpload}
+        disabled={!parsed?.validRows || uploading}
+      >
+        {uploading
+          ? <><span className="spinner" /> Uploading…</>
+          : parsed?.validRows
+            ? `Upload ${parsed.validRows.toLocaleString('en-IE')} rows`
+            : 'Upload'}
+      </button>
     </div>
   )
 }
