@@ -7,7 +7,7 @@
 // in the DB / API response — not by the DB code letter here.
 
 export const TASK_FORMS = {
-  K: { name: 'Price Check',          implemented: false, comingSoon: 'Price Check form — coming in next update.' },
+  K: { name: 'Price Check',          implemented: true,  warning: null },
   J: { name: 'Department Check',     implemented: true,  warning: null },
   B: { name: 'Non-Scans',            implemented: true,  warning: null },
   C: { name: 'Wrong Prices',         implemented: true,  warning: null },

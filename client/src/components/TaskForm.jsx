@@ -8,6 +8,7 @@ import TaskFForm  from './forms/TaskFForm.jsx'
 import TaskGForm  from './forms/TaskGForm.jsx'
 import TaskHForm  from './forms/TaskHForm.jsx'
 import TaskJForm  from './forms/TaskJForm.jsx'
+import TaskKForm  from './forms/TaskKForm.jsx'
 
 // Top-level dispatcher: picks the right form component for the chosen task type.
 // `storeId` is the current store from the CurrentStorePicker — required for
@@ -51,7 +52,7 @@ export default function TaskForm({ taskType, storeId, onSaved }) {
     case 'G': return <TaskGForm storeId={storeId} onSaved={onSaved} />
     case 'H': return <TaskHForm storeId={storeId} onSaved={onSaved} />
     case 'J': return <TaskJForm storeId={storeId} onSaved={onSaved} />
-    // K (Price Check) — form added in Phase 6
+    case 'K': return <TaskKForm storeId={storeId} onSaved={onSaved} />
     default:  return <div className="card"><div className="card-body">No form registered for {taskType}.</div></div>
   }
 }
