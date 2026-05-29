@@ -164,6 +164,10 @@ export const deleteTaskRecord = (id) =>
 export const bulkReviewTaskRecords = ({ ids, status, review_notes }) =>
   request('/task-records/bulk-review', { method: 'POST', body: { ids, status, review_notes } })
 
+// Store users: clear multiple pending records for Task J / Task K in one go.
+export const bulkClearTaskRecords = (ids) =>
+  request('/task-records/bulk-clear', { method: 'POST', body: { ids } })
+
 // ── Admin (back office) ─────────────────────────────────────────────────────
 
 export const adminListStores    = () => request('/admin/stores')

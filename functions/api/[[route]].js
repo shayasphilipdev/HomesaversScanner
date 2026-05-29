@@ -2144,6 +2144,44 @@ export async function onRequest(context) {
       return json({ updated: updated.length })
     }
 
+    // Bulk clear (store users) — mark many J/K pending records as cleared.
+    // Store users may only clear their own records; task_type must be J or K.
+    // Back office can bulk-clear any records (no task_type restriction).
+    if (path === '/task-records/bulk-clear' && method === 'POST') {
+      if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled', 403)
+      const { ids } = await request.json()
+      if (!Array.isArray(ids) || !ids.length) return err('ids required', 400)
+      const safeIds = ids.filter(i => /^[a-f0-9-]{36}$/.test(i))
+      if (!safeIds.length) return err('No valid ids', 400)
+
+      const scope = await scopedStoreIds(db, session)
+      const now = new Date().toISOString()
+
+      const filter = { id: `in.(${safeIds.join(',')})` }
+      if (scope !== null) {
+        if (!scope.length) return json({ cleared: 0 })
+        filter['store_id'] = `in.(${scope.join(',')})`
+        // Store users can only clear J/K records from pending.
+        if (!isBO) {
+          filter['task_type'] = 'in.(J,K)'
+          filter['status']    = 'eq.pending'
+        }
+      }
+
+      // Capture pre-update statuses for audit trail.
+      const pre = await db.select('task_records', { select: 'id,status', id: `in.(${safeIds.join(',')})` })
+      const preMap = Object.fromEntries(pre.map(r => [r.id, r.status]))
+
+      const updated = await db.update('task_records', filter, { status: 'cleared', cleared_at: now, updated_at: now })
+
+      for (const r of updated) {
+        if (preMap[r.id] !== 'cleared') {
+          await writeTaskEvent(db, { record_id: r.id, from_status: preMap[r.id] || null, to_status: 'cleared', session, note: null })
+        }
+      }
+      return json({ cleared: updated.length })
+    }
+
     // GET /task-records/:id/events -- immutable history for one record.
     const recEventsMatch = path.match(/^\/task-records\/([a-f0-9-]+)\/events$/)
     if (recEventsMatch && method === 'GET') {

@@ -1,5 +1,5 @@
-﻿import { Fragment } from 'react'
-import { updateTaskRecord, deleteTaskRecord } from '../lib/api.js'
+import { Fragment, useState } from 'react'
+import { updateTaskRecord, deleteTaskRecord, bulkClearTaskRecords } from '../lib/api.js'
 import { useStore } from '../App.jsx'
 import { useToast } from './Toast.jsx'
 
@@ -10,6 +10,9 @@ const STATUS_LABEL = {
   store_completed:  { label: 'Store confirmed',  cls: 'badge-store-done' },
   cleared:          { label: 'Clear',            cls: 'badge-store-done' },
 }
+
+// Task types where store users can clear directly from Pending (no HO review needed).
+const STORE_CLEARABLE = new Set(['J', 'K'])
 
 function formatDT(iso) {
   if (!iso) return '—'
@@ -22,6 +25,26 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
   const { session } = useStore()
   const toast = useToast()
   const isBO = session.mode === 'backoffice'
+
+  // ── Bulk-select state (store users, J/K pending rows only) ────────────────
+  const [selected, setSelected] = useState(new Set())
+  const [bulkClearing, setBulkClearing] = useState(false)
+
+  // Rows eligible for store-side bulk clear.
+  const clearableRows = isBO ? [] : records.filter(r =>
+    STORE_CLEARABLE.has(r.task_type) && r.status === 'pending'
+  )
+  const hasBulkClear = clearableRows.length > 0
+
+  const toggleRow = (id) => setSelected(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+  const toggleAll = () => {
+    const ids = clearableRows.map(r => r.id)
+    setSelected(prev => prev.size === ids.length ? new Set() : new Set(ids))
+  }
 
   const markCompleted = async (id) => {
     try {
@@ -58,6 +81,23 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
     }
   }
 
+  const handleBulkClear = async () => {
+    if (!selected.size) return
+    setBulkClearing(true)
+    try {
+      const { cleared } = await bulkClearTaskRecords([...selected])
+      toast.success(`${cleared} record${cleared === 1 ? '' : 's'} cleared.`)
+      setSelected(new Set())
+      // Optimistically remove all cleared rows.
+      for (const id of selected) onOptimisticRemove?.(id)
+    } catch (e) {
+      toast.error('Bulk clear failed — ' + (e?.message || 'please try again'))
+      onRefresh()
+    } finally {
+      setBulkClearing(false)
+    }
+  }
+
   const handleDelete = async (id) => {
     if (!confirm("Delete this record? This can't be undone.")) return
     // Optimistic — drop the row from the table immediately. If the server
@@ -89,12 +129,37 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
     )
   }
 
+  // Show an extra column only when there are selectable rows.
+  const showCheckCol = hasBulkClear
+
   return (
     <div className="card">
+      {/* Bulk-clear toolbar — appears only for store users with J/K pending rows */}
+      {hasBulkClear && (
+        <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn btn-sm btn-outline" onClick={toggleAll}>
+            {selected.size === clearableRows.length ? 'Deselect all' : `Select all (${clearableRows.length})`}
+          </button>
+          {selected.size > 0 && (
+            <button
+              className="btn btn-sm btn-primary"
+              onClick={handleBulkClear}
+              disabled={bulkClearing}
+            >
+              {bulkClearing ? <><span className="spinner" /> Clearing…</> : `✓ Clear selected (${selected.size})`}
+            </button>
+          )}
+          <span className="note" style={{ fontSize: 12 }}>
+            Select records you have actioned and mark them Clear.
+          </span>
+        </div>
+      )}
+
       <div className="table-wrap">
         <table>
           <thead>
             <tr>
+              {showCheckCol && <th style={{ width: 32 }}></th>}
               <th>Task</th>
               <th>Product Barcode</th>
               <th>Product Code</th>
@@ -115,9 +180,24 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
               const description = r.item_name || r.description || r.product_name_label || ''
               const barcodeNo  = r.barcode_no || r.product_code || ''
               const reviewed = r.status === 'completed' || r.status === 'no_change_needed'
+              // Store-side: J/K records can be cleared directly from pending.
+              const storeCanClearNow = !isBO && STORE_CLEARABLE.has(r.task_type) && r.status === 'pending'
+              const isSelectable = storeCanClearNow
               return (
                 <Fragment key={r.id}>
-                  <tr>
+                  <tr style={isSelectable && selected.has(r.id) ? { background: 'var(--surface-warm)' } : undefined}>
+                    {showCheckCol && (
+                      <td style={{ textAlign: 'center', paddingRight: 0 }}>
+                        {isSelectable && (
+                          <input
+                            type="checkbox"
+                            checked={selected.has(r.id)}
+                            onChange={() => toggleRow(r.id)}
+                            style={{ cursor: 'pointer' }}
+                          />
+                        )}
+                      </td>
+                    )}
                     <td><strong>{r.task_type}</strong></td>
                     <td className="td-code">{barcodeNo}</td>
                     <td className="td-muted" style={{ fontSize: 12 }}>{r.product_barcode || '—'}</td>
@@ -144,8 +224,15 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
                         {isBO && r.status === 'pending' && (
                           <button className="btn btn-sm btn-primary" onClick={() => markCompleted(r.id)}>Mark complete</button>
                         )}
+                        {/* Store: clear HO-reviewed records (standard flow) */}
                         {!isBO && reviewed && (
                           <button className="btn btn-sm btn-primary" onClick={() => markCleared(r.id)} title="PO actioned — clear from list">
+                            ✓ Clear
+                          </button>
+                        )}
+                        {/* Store: clear J/K directly from pending (no HO review needed) */}
+                        {storeCanClearNow && (
+                          <button className="btn btn-sm btn-primary" onClick={() => markCleared(r.id)} title="Mark as actioned — clear from list">
                             ✓ Clear
                           </button>
                         )}
@@ -157,7 +244,7 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
                   </tr>
                   {r.review_notes && (
                     <tr>
-                      <td colSpan={11} style={{ background: 'var(--surface-warm)', fontStyle: 'italic', fontSize: 13, color: 'var(--text-muted)', borderTop: 'none' }}>
+                      <td colSpan={showCheckCol ? 12 : 11} style={{ background: 'var(--surface-warm)', fontStyle: 'italic', fontSize: 13, color: 'var(--text-muted)', borderTop: 'none' }}>
                         💬 HO note: {r.review_notes}
                       </td>
                     </tr>
