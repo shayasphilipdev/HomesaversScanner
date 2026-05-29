@@ -42,7 +42,7 @@ function groupSettings(settings) {
 
 // Settings are rendered grouped into these sections, in this order. Each
 // KEY_META entry names its section so related fields stay together.
-const SECTION_ORDER = ['Alt-barcode sync', 'Camera', 'Retention', 'Capacity']
+const SECTION_ORDER = ['Alt-barcode sync', 'Prices sync', 'Camera', 'Retention', 'Capacity']
 
 const KEY_META = {
   // ── Alt-barcode sync (kept together) ──────────────────────────────────
@@ -78,6 +78,40 @@ const KEY_META = {
     label: 'Schedule time',
     time:  true,
     hint:  'Time of day the job runs (24h). Pairs with the schedule above. Set the same time in Windows Task Scheduler.'
+  },
+  // ── Prices sync (ItemMaster) ───────────────────────────────────────────
+  prices_sync_folder: {
+    section: 'Prices sync',
+    label: 'Sync folder',
+    wide:  true,
+    hint:  'Network path containing ItemMaster*.xlsx files. e.g. Y:\\Supply Chain & Buying - Shared\\Data\\VRSDAILYDATADUMP\\ProductMaster\\2026'
+  },
+  prices_sync_pattern: {
+    section: 'Prices sync',
+    label: 'File pattern',
+    hint:  'Glob to match — e.g. *.xlsx. Newest matching file wins.'
+  },
+  prices_sync_name_prefix: {
+    section: 'Prices sync',
+    label: 'File name starts with',
+    hint:  'Only files whose name begins with this are synced (e.g. "ItemMaster"). Leave blank to allow any matching file.'
+  },
+  prices_sync_sheet: {
+    section: 'Prices sync',
+    label: 'Excel sheet',
+    hint:  'Sheet name in the workbook — e.g. "ItemMaster". Or "1" for the first sheet.'
+  },
+  prices_sync_schedule: {
+    section: 'Prices sync',
+    label: 'Schedule',
+    hint:  'How often the job runs. Match in Windows Task Scheduler.',
+    choices: ['daily', 'weekly', 'monthly']
+  },
+  prices_sync_time: {
+    section: 'Prices sync',
+    label: 'Schedule time',
+    time:  true,
+    hint:  'Time of day the prices sync runs (24h). Match in Windows Task Scheduler.'
   },
   // ── Camera ─────────────────────────────────────────────────────────────
   scanner_camera_enabled: {
@@ -213,46 +247,21 @@ export default function AdminSettings() {
 
       {error && <div className="login-error mt-12">{error}</div>}
 
-      {/* Alt-barcode sync status — last few PowerShell runs. */}
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span>Alt-barcode sync</span>
-          <button className="btn btn-sm btn-outline" style={{ marginLeft: 'auto' }} onClick={loadSyncRuns}>↻ Refresh</button>
-        </div>
-        <div className="card-body">
-          {!syncRuns.length ? (
-            <p className="note" style={{ margin: 0 }}>No sync has run yet. The PowerShell job records its status here after each run.</p>
-          ) : (
-            <div className="table-wrap">
-              <table style={{ fontSize: 13 }}>
-                <thead><tr>
-                  <th>When</th><th>File</th><th className="td-right">Imported</th><th className="td-right">Skipped</th><th className="td-right">Size</th><th>Status</th>
-                </tr></thead>
-                <tbody>
-                  {syncRuns.map(r => (
-                    <tr key={r.id}>
-                      <td className="td-muted">{r.finished_at ? new Date(r.finished_at).toLocaleString('en-IE', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '—'}</td>
-                      <td>{r.file_name || '—'}</td>
-                      <td className="td-right">{r.records_imported ?? '—'}</td>
-                      <td className="td-right">{r.records_skipped ?? '—'}</td>
-                      <td className="td-right">{r.file_size_bytes ? fmtBytes(r.file_size_bytes) : '—'}</td>
-                      <td>
-                        <span className={'badge ' + (r.status === 'ok' ? 'badge-completed' : 'badge-deleted')}>{r.status}</span>
-                        {r.status === 'error' && r.message && <div className="note" style={{ fontSize: 11, marginTop: 2 }}>{r.message}</div>}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <p className="note" style={{ fontSize: 12, marginTop: 10, marginBottom: 0 }}>
-            <strong>Sync Now:</strong> run the desktop job manually on the PC —
-            <code>powershell -ExecutionPolicy Bypass -File C:\Scraping\homesavers-scanner\scripts\sync-alt-barcodes.ps1</code>.
-            Set the schedule + time below and match them in Windows Task Scheduler.
-          </p>
-        </div>
-      </div>
+      {/* Alt-barcode sync status */}
+      <SyncRunsCard
+        title="Alt-barcode sync"
+        runs={syncRuns.filter(r => r.kind === 'alt_barcodes' || !r.kind)}
+        onRefresh={loadSyncRuns}
+        syncNowCmd="powershell -ExecutionPolicy Bypass -File C:\Scraping\homesavers-scanner\scripts\sync-alt-barcodes.ps1"
+      />
+
+      {/* Prices (ItemMaster) sync status */}
+      <SyncRunsCard
+        title="Prices sync"
+        runs={syncRuns.filter(r => r.kind === 'prices')}
+        onRefresh={loadSyncRuns}
+        syncNowCmd="powershell -ExecutionPolicy Bypass -File C:\Scraping\homesavers-scanner\scripts\sync-prices.ps1"
+      />
 
       {isOnlyAdmin && capacity && (
         <div className="card" style={{ marginBottom: 16 }}>
@@ -371,6 +380,52 @@ export default function AdminSettings() {
             )}
           </div>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// Reusable sync-run history card. Renders a table of recent runs for a given
+// sync kind. Used for both Alt-barcode sync and Prices sync sections.
+function SyncRunsCard({ title, runs, onRefresh, syncNowCmd }) {
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span>{title}</span>
+        <button className="btn btn-sm btn-outline" style={{ marginLeft: 'auto' }} onClick={onRefresh}>↻ Refresh</button>
+      </div>
+      <div className="card-body">
+        {!runs.length ? (
+          <p className="note" style={{ margin: 0 }}>No sync has run yet. The PowerShell job records its status here after each run.</p>
+        ) : (
+          <div className="table-wrap">
+            <table style={{ fontSize: 13 }}>
+              <thead><tr>
+                <th>When</th><th>File</th><th className="td-right">Imported</th><th className="td-right">Skipped</th><th className="td-right">Size</th><th>Status</th>
+              </tr></thead>
+              <tbody>
+                {runs.map(r => (
+                  <tr key={r.id}>
+                    <td className="td-muted">{r.finished_at ? new Date(r.finished_at).toLocaleString('en-IE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                    <td>{r.file_name || '—'}</td>
+                    <td className="td-right">{r.records_imported ?? '—'}</td>
+                    <td className="td-right">{r.records_skipped ?? '—'}</td>
+                    <td className="td-right">{r.file_size_bytes ? fmtBytes(r.file_size_bytes) : '—'}</td>
+                    <td>
+                      <span className={'badge ' + (r.status === 'ok' ? 'badge-completed' : 'badge-deleted')}>{r.status}</span>
+                      {r.status === 'error' && r.message && <div className="note" style={{ fontSize: 11, marginTop: 2 }}>{r.message}</div>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="note" style={{ fontSize: 12, marginTop: 10, marginBottom: 0 }}>
+          <strong>Sync Now:</strong> run the desktop job manually on the PC —{' '}
+          <code>{syncNowCmd}</code>.
+          Set the schedule + time below and match them in Windows Task Scheduler.
+        </p>
       </div>
     </div>
   )
