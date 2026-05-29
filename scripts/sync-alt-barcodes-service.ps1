@@ -63,6 +63,7 @@ $script:sheet          = '1'
 $script:scheduleTime   = $null   # e.g. "06:00"
 $script:lastSyncedFile = $null
 $script:lastSyncAt     = [datetime]::MinValue
+$script:lastPollAt     = [datetime]::MinValue   # for the 5-min polling fallback
 $script:secret         = $null
 $script:authHeaders    = $null
 $script:watcher        = $null
@@ -112,7 +113,16 @@ function Refresh-Config {
 function Attach-Watcher {
   param([string]$Folder, [string]$Pattern)
 
-  # Tear down any existing watcher first.
+  # Unregister old event subscriptions FIRST. Without this, a second call with
+  # the same SourceIdentifier throws (silently swallowed by | Out-Null), so the
+  # new watcher's events are never registered — the root cause of the "service
+  # running but not watching" bug.
+  foreach ($sid in @("HS_FSW_AB_Created","HS_FSW_AB_Changed","HS_FSW_AB_Renamed")) {
+    Get-EventSubscriber -SourceIdentifier $sid -ErrorAction SilentlyContinue |
+      Unregister-Event -Force -ErrorAction SilentlyContinue
+  }
+
+  # Tear down any existing watcher object.
   if ($script:watcher) {
     try { $script:watcher.Dispose() } catch {}
     $script:watcher = $null
@@ -138,9 +148,9 @@ function Attach-Watcher {
     $path = $Event.SourceEventArgs.FullPath
     $syncQueue.Enqueue($path)
   }
-  Register-ObjectEvent -InputObject $w -EventName Created -Action $action -SourceIdentifier "HS_FSW_Created" | Out-Null
-  Register-ObjectEvent -InputObject $w -EventName Changed -Action $action -SourceIdentifier "HS_FSW_Changed" | Out-Null
-  Register-ObjectEvent -InputObject $w -EventName Renamed -Action $action -SourceIdentifier "HS_FSW_Renamed" | Out-Null
+  Register-ObjectEvent -InputObject $w -EventName Created -Action $action -SourceIdentifier "HS_FSW_AB_Created" | Out-Null
+  Register-ObjectEvent -InputObject $w -EventName Changed -Action $action -SourceIdentifier "HS_FSW_AB_Changed" | Out-Null
+  Register-ObjectEvent -InputObject $w -EventName Renamed -Action $action -SourceIdentifier "HS_FSW_AB_Renamed" | Out-Null
 
   $script:watcher = $w
   Write-Log "FileSystemWatcher attached: $Folder\$($w.Filter)"
@@ -245,6 +255,31 @@ while ($true) {
     Run-Sync -TriggerFile $pendingFile -Reason "file event (debounced $DebounceSeconds s)"
     $pendingFile = $null
     $pendingAt   = $null
+  }
+
+  # ── 5-minute polling fallback ─────────────────────────────────────────────
+  # FileSystemWatcher is unreliable on network drives (Y:\ etc.) because the
+  # OS may not forward change notifications across the network protocol.
+  # This poll checks every 5 minutes for a file newer than the last sync,
+  # acting as a guaranteed safety net regardless of watcher status.
+  if (((Get-Date) - $script:lastPollAt).TotalMinutes -ge 5) {
+    $script:lastPollAt = Get-Date
+    if ($script:watchedFolder -and (Test-Path $script:watchedFolder -ErrorAction SilentlyContinue)) {
+      try {
+        $filterPatt = if ($script:filePattern) { $script:filePattern } else { '*.xlsx' }
+        $files = Get-ChildItem -Path $script:watchedFolder -Filter $filterPatt -File -ErrorAction Stop
+        if ($script:namePrefix) {
+          $files = $files | Where-Object { $_.Name.StartsWith($script:namePrefix, [System.StringComparison]::OrdinalIgnoreCase) }
+        }
+        $newest = $files | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        if ($newest -and $newest.LastWriteTime -gt $script:lastSyncAt) {
+          Write-Log "Poll: new/modified file detected since last sync: $($newest.Name) (modified $($newest.LastWriteTime)). Queuing."
+          $syncQueue.Enqueue($newest.FullName)
+        }
+      } catch {
+        Write-Log "Poll check failed: $($_.Exception.Message)" "WARN"
+      }
+    }
   }
 
   # ── Daily heartbeat ───────────────────────────────────────────────────────
