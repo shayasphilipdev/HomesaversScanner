@@ -482,37 +482,15 @@ function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField
   const [result,   setResult]     = useState(null)   // { written, skipped }
   const [error,    setError]      = useState('')
   const wbRef       = useRef(null)
-  const rawDataRef  = useRef(null)   // raw binary string kept for re-parsing on sheet change
   const fileInputRef = useRef(null)
 
   // Keep sheetVal in sync when the settings value loads for the first time.
   useEffect(() => { setSheetVal(sheetDefault || '1') }, [sheetDefault])
 
-  // Resolve the sheet NAME string (not the data) from allSheetNames + sv.
-  function resolveSheetName(allSheetNames, sv) {
-    const s = (sv || '1').trim()
-    if (/^\d+$/.test(s)) return allSheetNames[Math.max(0, parseInt(s, 10) - 1)] ?? null
-    return allSheetNames.find(n => n.trim().toLowerCase() === s.toLowerCase()) ?? null
-  }
-
-  // Two-pass workbook read.
-  // rawData must be a Uint8Array (from readAsArrayBuffer).
-  // Pass 1 – bookSheets:true  → names only, no cell data (fast).
-  // Pass 2 – sheets: N        → parse ONLY the target sheet by 0-based index.
-  //   Using type:'array' + Uint8Array is the most reliable SheetJS input mode
-  //   and avoids the byte-mangling that type:'binary' causes for bytes >127.
-  function readWorkbook(rawData, sv) {
-    const meta = XLSX.read(rawData, { type: 'array', bookSheets: true })
-    const allNames = meta.SheetNames
-    const targetName = resolveSheetName(allNames, sv)
-    const targetIdx  = targetName != null ? allNames.indexOf(targetName) : 0
-    const wb = XLSX.read(rawData, { type: 'array', sheets: targetIdx })
-    wb.SheetNames = allNames   // restore full list for the sheet selector
-    return wb
-  }
-
   function resolveSheet(wb, sv) {
     const s = (sv || '1').trim()
+    // For numeric index use SheetNames (authoritative order), then find the
+    // actual key in Sheets with flexible matching to handle encoding quirks.
     const findInSheets = (name) => {
       const norm = name.trim().toLowerCase()
       const hit = Object.entries(wb.Sheets).find(([k]) => k.trim().toLowerCase() === norm)
@@ -527,7 +505,7 @@ function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField
 
   function parseWorkbook(wb, sv) {
     const sheet = resolveSheet(wb, sv)
-    if (!sheet) throw new Error(`Sheet "${sv}" not found. SheetNames: [${wb.SheetNames.join(', ')}] Sheets keys: [${Object.keys(wb.Sheets).filter(k => !k.startsWith('!')).join(', ') || '(empty)'}]`)
+    if (!sheet) throw new Error(`Sheet "${sv}" not found. SheetNames: [${wb.SheetNames.join(', ')}] Sheets keys: [${Object.keys(wb.Sheets).join(', ')}]`)
 
     const jsonRows = XLSX.utils.sheet_to_json(sheet, { defval: '' })
     if (!jsonRows.length) throw new Error('Sheet is empty.')
@@ -563,107 +541,32 @@ function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField
     return { rows, totalRows: jsonRows.length, validRows: rows.length, fieldToSource }
   }
 
-  // Parse a CSV text string into the same { rows, totalRows, validRows, fieldToSource }
-  // shape that parseWorkbook returns. No SheetJS involved.
-  function parseCsv(text) {
-    const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
-    const nonEmpty = lines.filter(l => l.trim())
-    if (nonEmpty.length < 2) throw new Error('CSV has no data rows.')
-
-    // Simple CSV split that handles quoted fields.
-    function splitLine(line) {
-      const out = []; let cur = ''; let inQ = false
-      for (let i = 0; i < line.length; i++) {
-        const c = line[i]
-        if (c === '"') { inQ = !inQ }
-        else if (c === ',' && !inQ) { out.push(cur.trim()); cur = '' }
-        else { cur += c }
-      }
-      out.push(cur.trim()); return out
-    }
-
-    const headers = splitLine(nonEmpty[0])
-    const headerByNorm = {}
-    for (const h of headers) headerByNorm[h.trim().toLowerCase().replace(/[^a-z0-9]/g, '')] = h.trim()
-
-    const fieldToSource = {}
-    for (const [field, aliasList] of Object.entries(aliases)) {
-      for (const alias of aliasList) {
-        const src = headerByNorm[alias.toLowerCase().replace(/[^a-z0-9]/g, '')]
-        if (src) { fieldToSource[field] = src; break }
-      }
-    }
-
-    if (!fieldToSource[requiredField]) {
-      throw new Error(
-        `Required column "${requiredField}" not found. ` +
-        `Columns: ${headers.slice(0, 12).join(', ')}${headers.length > 12 ? '…' : ''}`
-      )
-    }
-
-    const rows = []; let totalRows = 0
-    for (let i = 1; i < nonEmpty.length; i++) {
-      const vals = splitLine(nonEmpty[i])
-      const obj = {}
-      headers.forEach((h, idx) => { obj[h.trim()] = (vals[idx] || '').replace(/^"|"$/g, '').trim() })
-      totalRows++
-      const row = {}
-      for (const [field, src] of Object.entries(fieldToSource)) {
-        const v = obj[src]
-        if (v && v !== '') row[field] = v
-      }
-      if (row[requiredField] && row[requiredField] !== '0') rows.push(row)
-    }
-    return { rows, totalRows, validRows: rows.length, fieldToSource }
-  }
-
   const handleFile = (e) => {
     const f = e.target.files?.[0]
     if (!f) return
-    setResult(null); setError(''); setParsed(null); wbRef.current = null; rawDataRef.current = null
-
-    const isCsv = f.name.toLowerCase().endsWith('.csv')
-
-    if (isCsv) {
-      const reader = new FileReader()
-      reader.onload = (ev) => {
-        try {
-          const p = parseCsv(ev.target.result)
-          setParsed({ ...p, fileName: f.name })
-        } catch (err) { setError('Parse error: ' + err.message) }
-      }
-      reader.onerror = () => setError('Could not read file.')
-      reader.readAsText(f)
-      return
-    }
-
-    // XLSX path
+    setResult(null); setError(''); setParsed(null); wbRef.current = null
     const reader = new FileReader()
     reader.onload = (ev) => {
       try {
-        const data = new Uint8Array(ev.target.result)
-        rawDataRef.current = data
-        const wb = readWorkbook(data, sheetVal)
+        const wb = XLSX.read(ev.target.result, { type: 'binary' })
         wbRef.current = wb
         const p = parseWorkbook(wb, sheetVal)
         setParsed({ ...p, fileName: f.name })
-      } catch (err) { setError('Parse error: ' + err.message) }
+      } catch (err) { setError('Parse error: ' + err.message + ' | Sheets: ' + (wbRef.current?.SheetNames?.join(', ') ?? '?')) }
     }
     reader.onerror = () => setError('Could not read file.')
-    reader.readAsArrayBuffer(f)
+    reader.readAsBinaryString(f)
   }
 
   const handleSheetChange = (e) => {
     const sv = e.target.value
     setSheetVal(sv)
-    if (!rawDataRef.current) return
+    if (!wbRef.current) return
     setResult(null); setError('')
     try {
-      const wb = readWorkbook(rawDataRef.current, sv)
-      wbRef.current = wb
-      const p = parseWorkbook(wb, sv)
+      const p = parseWorkbook(wbRef.current, sv)
       setParsed(prev => ({ ...p, fileName: prev?.fileName || '' }))
-    } catch (err) { setParsed(null); setError('Parse error: ' + err.message) }
+    } catch (e) { setParsed(null); setError('Parse error: ' + e.message) }
   }
 
   const handleUpload = async () => {
@@ -673,7 +576,7 @@ function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField
       const res = await importFn(parsed.rows)
       setResult(res)
       toast.success(`Import done — ${res.written} written, ${res.skipped} skipped.`)
-      setParsed(null); wbRef.current = null; rawDataRef.current = null
+      setParsed(null); wbRef.current = null
       if (fileInputRef.current) fileInputRef.current.value = ''
     } catch (e) { setError(e.message); toast.error(e.message) }
     finally { setUploading(false) }
@@ -698,8 +601,8 @@ function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField
           />
         </div>
         <div>
-          <label style={{ fontSize: 12, display: 'block', marginBottom: 2 }}>Excel (.xlsx) or CSV (.csv)</label>
-          <input ref={fileInputRef} type="file" accept=".xlsx,.csv" onChange={handleFile} style={{ fontSize: 13 }} />
+          <label style={{ fontSize: 12, display: 'block', marginBottom: 2 }}>Excel file (.xlsx)</label>
+          <input ref={fileInputRef} type="file" accept=".xlsx" onChange={handleFile} style={{ fontSize: 13 }} />
         </div>
       </div>
 
