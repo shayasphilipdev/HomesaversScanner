@@ -102,15 +102,23 @@ try {
   $fileSize = $fi.Length
   Write-Log "File: $ExcelPath ($([Math]::Round($fileSize/1MB,1)) MB, modified $($fi.LastWriteTime))"
 
+  # Copy to local temp before processing -- Import-Excel crashes or hangs
+  # reading large files directly over a network share.
+  $localCopy = Join-Path $env:TEMP $fi.Name
+  Write-Log "Copying to local temp: $localCopy"
+  Copy-Item -Path $ExcelPath -Destination $localCopy -Force
+  Write-Log "Copy complete."
+
   if (-not (Get-Module -ListAvailable -Name ImportExcel)) {
     throw "ImportExcel not installed. Run once: Install-Module ImportExcel -Scope CurrentUser"
   }
   Import-Module ImportExcel
-  $importArgs = @{ Path = $ExcelPath; ErrorAction = "Stop" }
-  if ($Sheet -match '^\d+$') { $importArgs["WorksheetName"] = (Get-ExcelSheetInfo -Path $ExcelPath)[[int]$Sheet - 1].Name }
+  $importArgs = @{ Path = $localCopy; ErrorAction = "Stop" }
+  if ($Sheet -match '^\d+$') { $importArgs["WorksheetName"] = (Get-ExcelSheetInfo -Path $localCopy)[[int]$Sheet - 1].Name }
   else                       { $importArgs["WorksheetName"] = $Sheet }
   $excelRows = Import-Excel @importArgs
   Write-Log "Parsed $($excelRows.Count) row(s) from sheet '$($importArgs.WorksheetName)'"
+  Remove-Item $localCopy -Force -ErrorAction SilentlyContinue
 
   # Column aliases — maps our field names to possible Excel column headers.
   $aliases = @{

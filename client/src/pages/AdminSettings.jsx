@@ -563,10 +563,81 @@ function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField
     return { rows, totalRows: jsonRows.length, validRows: rows.length, fieldToSource }
   }
 
+  // Parse a CSV text string into the same { rows, totalRows, validRows, fieldToSource }
+  // shape that parseWorkbook returns. No SheetJS involved.
+  function parseCsv(text) {
+    const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')
+    const nonEmpty = lines.filter(l => l.trim())
+    if (nonEmpty.length < 2) throw new Error('CSV has no data rows.')
+
+    // Simple CSV split that handles quoted fields.
+    function splitLine(line) {
+      const out = []; let cur = ''; let inQ = false
+      for (let i = 0; i < line.length; i++) {
+        const c = line[i]
+        if (c === '"') { inQ = !inQ }
+        else if (c === ',' && !inQ) { out.push(cur.trim()); cur = '' }
+        else { cur += c }
+      }
+      out.push(cur.trim()); return out
+    }
+
+    const headers = splitLine(nonEmpty[0])
+    const headerByNorm = {}
+    for (const h of headers) headerByNorm[h.trim().toLowerCase().replace(/[^a-z0-9]/g, '')] = h.trim()
+
+    const fieldToSource = {}
+    for (const [field, aliasList] of Object.entries(aliases)) {
+      for (const alias of aliasList) {
+        const src = headerByNorm[alias.toLowerCase().replace(/[^a-z0-9]/g, '')]
+        if (src) { fieldToSource[field] = src; break }
+      }
+    }
+
+    if (!fieldToSource[requiredField]) {
+      throw new Error(
+        `Required column "${requiredField}" not found. ` +
+        `Columns: ${headers.slice(0, 12).join(', ')}${headers.length > 12 ? '…' : ''}`
+      )
+    }
+
+    const rows = []; let totalRows = 0
+    for (let i = 1; i < nonEmpty.length; i++) {
+      const vals = splitLine(nonEmpty[i])
+      const obj = {}
+      headers.forEach((h, idx) => { obj[h.trim()] = (vals[idx] || '').replace(/^"|"$/g, '').trim() })
+      totalRows++
+      const row = {}
+      for (const [field, src] of Object.entries(fieldToSource)) {
+        const v = obj[src]
+        if (v && v !== '') row[field] = v
+      }
+      if (row[requiredField] && row[requiredField] !== '0') rows.push(row)
+    }
+    return { rows, totalRows, validRows: rows.length, fieldToSource }
+  }
+
   const handleFile = (e) => {
     const f = e.target.files?.[0]
     if (!f) return
     setResult(null); setError(''); setParsed(null); wbRef.current = null; rawDataRef.current = null
+
+    const isCsv = f.name.toLowerCase().endsWith('.csv')
+
+    if (isCsv) {
+      const reader = new FileReader()
+      reader.onload = (ev) => {
+        try {
+          const p = parseCsv(ev.target.result)
+          setParsed({ ...p, fileName: f.name })
+        } catch (err) { setError('Parse error: ' + err.message) }
+      }
+      reader.onerror = () => setError('Could not read file.')
+      reader.readAsText(f)
+      return
+    }
+
+    // XLSX path
     const reader = new FileReader()
     reader.onload = (ev) => {
       try {
@@ -627,8 +698,8 @@ function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField
           />
         </div>
         <div>
-          <label style={{ fontSize: 12, display: 'block', marginBottom: 2 }}>Excel file (.xlsx)</label>
-          <input ref={fileInputRef} type="file" accept=".xlsx" onChange={handleFile} style={{ fontSize: 13 }} />
+          <label style={{ fontSize: 12, display: 'block', marginBottom: 2 }}>Excel (.xlsx) or CSV (.csv)</label>
+          <input ref={fileInputRef} type="file" accept=".xlsx,.csv" onChange={handleFile} style={{ fontSize: 13 }} />
         </div>
       </div>
 
