@@ -475,8 +475,8 @@ function HQReports() {
                           </td>
                         </tr>
                       )}
-                      {/* Review-notes echo for records that already have one */}
-                      {r.review_notes && !(isBO && reviewRowId === r.id) && (
+                      {/* Review-notes echo — skip for J/K since dept info is already in the row */}
+                      {r.review_notes && !(isBO && reviewRowId === r.id) && r.task_type !== 'J' && r.task_type !== 'K' && (
                         <tr>
                           <td colSpan={isBO ? 11 : 10} style={{ background: 'var(--surface-warm)', fontStyle: 'italic', fontSize: 13, color: 'var(--text-muted)' }}>
                             HO note: {r.review_notes}
