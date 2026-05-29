@@ -489,15 +489,18 @@ function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField
 
   function resolveSheet(wb, sv) {
     const s = (sv || '1').trim()
-    // Search wb.Sheets directly (not via SheetNames) to avoid any key mismatch.
-    const entries = Object.entries(wb.Sheets)
-    if (/^\d+$/.test(s)) {
-      const idx = Math.max(0, parseInt(s, 10) - 1)
-      return entries[idx]?.[1] ?? null
+    // For numeric index use SheetNames (authoritative order), then find the
+    // actual key in Sheets with flexible matching to handle encoding quirks.
+    const findInSheets = (name) => {
+      const norm = name.trim().toLowerCase()
+      const hit = Object.entries(wb.Sheets).find(([k]) => k.trim().toLowerCase() === norm)
+      return hit?.[1] ?? null
     }
-    const norm = s.toLowerCase()
-    const found = entries.find(([k]) => k.trim().toLowerCase() === norm)
-    return found?.[1] ?? null
+    if (/^\d+$/.test(s)) {
+      const name = wb.SheetNames[Math.max(0, parseInt(s, 10) - 1)]
+      return name != null ? findInSheets(name) : null
+    }
+    return findInSheets(s)
   }
 
   function parseWorkbook(wb, sv) {
