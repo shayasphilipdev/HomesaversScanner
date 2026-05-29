@@ -90,6 +90,11 @@ export const lookupProduct = (productCode) =>
 export const lookupAltBarcode = (barcode) =>
   request(`/alt-barcodes/lookup?barcode=${encodeURIComponent(barcode)}`)
 
+// Look up a price row by EAN barcode.
+// Returns { ean_barcode, item_group, item_subgrp_id, product_type, sale_rate } or null.
+export const lookupPrice = (ean) =>
+  request(`/prices/lookup?ean=${encodeURIComponent(ean)}`)
+
 // ── Photos ──────────────────────────────────────────────────────────────────
 // Note: photo upload uses multipart/form-data so we bypass the JSON `request`.
 

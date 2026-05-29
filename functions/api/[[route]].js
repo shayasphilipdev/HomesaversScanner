@@ -527,6 +527,79 @@ export async function onRequest(context) {
       return json({ written: written.length, skipped })
     }
 
+    // ── Prices (ItemMaster) sync ──────────────────────────────────────────
+    // Config for the prices PowerShell job (folder/pattern/sheet).
+    if (path === '/prices/sync-config' && method === 'GET') {
+      if (!env.PRODUCT_SYNC_SECRET) return err('PRODUCT_SYNC_SECRET not configured', 500)
+      if ((request.headers.get('X-Sync-Secret') || '') !== env.PRODUCT_SYNC_SECRET) return err('Forbidden', 403)
+      const wanted = ['prices_sync_folder','prices_sync_pattern','prices_sync_name_prefix','prices_sync_sheet','prices_sync_schedule','prices_sync_time']
+      const rows = await db.select('app_settings', { select: 'key,value', key: `in.(${wanted.join(',')})` })
+      const cfg = Object.fromEntries(rows.map(r => [r.key, r.value]))
+      return json({
+        folder:       cfg.prices_sync_folder      || '',
+        file_pattern: cfg.prices_sync_pattern     || '*.xlsx',
+        name_prefix:  cfg.prices_sync_name_prefix || 'ItemMaster',
+        sheet:        cfg.prices_sync_sheet       || 'ItemMaster',
+        schedule:     cfg.prices_sync_schedule    || 'daily',
+        time:         cfg.prices_sync_time        || '07:00'
+      })
+    }
+
+    // Bulk upsert of prices rows from ItemMaster (chunked by the PowerShell job).
+    // Key = ean_barcode. Rows without a valid EAN are dropped.
+    if (path === '/prices/sync' && method === 'POST') {
+      if (!env.PRODUCT_SYNC_SECRET) return err('PRODUCT_SYNC_SECRET not configured', 500)
+      if ((request.headers.get('X-Sync-Secret') || '') !== env.PRODUCT_SYNC_SECRET) return err('Forbidden', 403)
+      const rows = await request.json()
+      if (!Array.isArray(rows) || !rows.length) return err('Empty payload', 400)
+      const now = new Date().toISOString()
+
+      const byKey = new Map()
+      let skipped = 0
+      for (const r of rows) {
+        const ean = r?.ean_barcode == null ? '' : String(r.ean_barcode).trim()
+        if (!ean || ean === '0') { skipped++; continue }
+        const saleRate = r.sale_rate != null ? Number(String(r.sale_rate).replace(/[^0-9.-]/g, '')) : null
+        byKey.set(ean, {
+          ean_barcode:    ean,
+          item_group:     r.item_group     ? String(r.item_group).trim()     : null,
+          item_subgrp_id: r.item_subgrp_id ? String(r.item_subgrp_id).trim() : null,
+          product_type:   r.product_type   ? String(r.product_type).trim()   : null,
+          sale_rate:      isNaN(saleRate) ? null : saleRate,
+          updated_at:     now
+        })
+      }
+      const clean = Array.from(byKey.values())
+      if (!clean.length) return json({ written: 0, skipped })
+
+      const upRes = await fetch(`${env.SUPABASE_URL}/rest/v1/prices?on_conflict=ean_barcode`, {
+        method: 'POST',
+        headers: {
+          'apikey':        env.SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`,
+          'Content-Type':  'application/json',
+          'Prefer':        'return=representation,resolution=merge-duplicates'
+        },
+        body: JSON.stringify(clean)
+      })
+      if (!upRes.ok) return err(`Prices upsert failed: ${(await upRes.text()).slice(0, 400)}`, 400)
+      const written = await upRes.json()
+      return json({ written: written.length, skipped })
+    }
+
+    // GET /prices/lookup?ean=  — look up a price row by EAN barcode.
+    // Used by the Price Check and Department Check task forms.
+    if (path === '/prices/lookup' && method === 'GET') {
+      const ean = url.searchParams.get('ean')
+      if (!ean) return json(null)
+      const rows = await db.select('prices', {
+        select: 'ean_barcode,item_group,item_subgrp_id,product_type,sale_rate',
+        ean_barcode: `eq.${String(ean).trim()}`,
+        limit: '1'
+      })
+      return json(rows[0] || null)
+    }
+
     // Record a completed sync run (called once by the PowerShell job at the end).
     if (path === '/sync-runs' && method === 'POST') {
       if (!env.PRODUCT_SYNC_SECRET) return err('PRODUCT_SYNC_SECRET not configured', 500)
