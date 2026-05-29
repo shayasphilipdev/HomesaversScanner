@@ -1,15 +1,37 @@
-import { createTaskRecord } from '../../lib/api.js'
+import { useState } from 'react'
+import { createTaskRecord, lookupPrice } from '../../lib/api.js'
 import { useStore } from '../../App.jsx'
 import ScannerInput from './ScannerInput.jsx'
 import { useTaskForm, LookupBanner, altFields } from './useTaskForm.jsx'
 
-// Task J — Department Check. The simplest task: scan a barcode, save.
-// No supplier, no description, no extra fields.
-const EMPTY = { product_code: '' }
+// Task J — Department Check.
+// Scan a barcode → auto-fills Department (ItemGroup from the prices/ItemMaster
+// table, resolved via EAN barcode from the alt_barcodes lookup).
+const EMPTY = { product_code: '', item_group: '' }
 
 export default function TaskJForm({ onSaved, storeId }) {
   const { session } = useStore()
-  const t = useTaskForm({ initial: EMPTY })
+  const [priceInfo, setPriceInfo] = useState(null)
+
+  // After the alt-barcode row resolves, do a second lookup for the department.
+  const handleLookup = async ({ product, setForm }) => {
+    if (product.ean_barcode) {
+      try {
+        const price = await lookupPrice(product.ean_barcode)
+        setPriceInfo(price)
+        if (price?.item_group) {
+          setForm(f => ({ ...f, item_group: price.item_group }))
+        }
+      } catch { /* silent */ }
+    }
+  }
+
+  const t = useTaskForm({ initial: EMPTY, onLookup: handleLookup })
+
+  const handleReset = () => {
+    t.reset()
+    setPriceInfo(null)
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -22,9 +44,12 @@ export default function TaskJForm({ onSaved, storeId }) {
         store_id:     storeId || session.storeId || null,
         product_code: t.form.product_code.trim(),
         ...altFields(t.lookupInfo, t.form.product_code.trim()),
-        status:       'pending'
+        details: {
+          item_group: t.form.item_group || null
+        },
+        status: 'pending'
       })
-      t.reset()
+      handleReset()
       onSaved?.({ queued: !!res?.queued })
     } catch (err) {
       t.setError(err.message)
@@ -33,13 +58,14 @@ export default function TaskJForm({ onSaved, storeId }) {
     }
   }
 
+  const hasDept    = !!t.form.item_group
+  const deptMiss   = t.lookupInfo && priceInfo === null
+  const deptNotFound = t.lookupInfo && priceInfo !== null && !priceInfo?.item_group
+
   return (
     <div className="card" style={{ marginBottom: 24 }}>
-      {/* No card-header — the task name is already shown in the dropdown above. */}
       <div className="card-body">
         <form onSubmit={handleSubmit}>
-          {/* Save sits inline to the right of the barcode (and so ABOVE the
-              camera band), reachable without scrolling under the keyboard. */}
           <ScannerInput
             label="Barcode *"
             value={t.form.product_code}
@@ -57,8 +83,27 @@ export default function TaskJForm({ onSaved, storeId }) {
 
           <LookupBanner info={t.lookupInfo} />
 
+          {/* Department — auto-filled from ItemMaster, read-only */}
+          <div className="form-group full" style={{ marginTop: 4 }}>
+            <label>Department</label>
+            <input
+              type="text"
+              readOnly
+              value={t.form.item_group}
+              placeholder={
+                deptMiss ? 'Barcode not in price list' :
+                deptNotFound ? 'No department on record' :
+                'Auto-filled on scan'
+              }
+              style={{
+                background: 'var(--bg-soft)',
+                color:      hasDept ? 'inherit' : 'var(--text-muted)'
+              }}
+            />
+          </div>
+
           <div style={{ marginTop: 8 }}>
-            <button type="button" className="btn btn-sm btn-outline" onClick={t.reset}>
+            <button type="button" className="btn btn-sm btn-outline" onClick={handleReset}>
               ✕ Clear
             </button>
           </div>
