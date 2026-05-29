@@ -1186,6 +1186,41 @@ export async function onRequest(context) {
       return json({ count: total })
     }
 
+    // ── Back-office admin: prices master ────────────────────────────────
+
+    // Read-only view of the imported prices table. Supports ?q= search on
+    // ean_barcode and ?limit= (default 200, max 1000).
+    if (path === '/admin/prices' && method === 'GET') {
+      if (!isAdminRole(session)) return err('Forbidden', 403)
+      const limit = Math.min(Number(url.searchParams.get('limit') || '200'), 1000)
+      const q     = url.searchParams.get('q')
+      const params = {
+        select: 'id,ean_barcode,item_group,item_subgrp_id,product_type,sale_rate,updated_at',
+        order:  'ean_barcode.asc',
+        limit:  String(limit)
+      }
+      if (q) params['or'] = `(ean_barcode.ilike.*${q}*,item_group.ilike.*${q}*,product_type.ilike.*${q}*)`
+      const rows = await db.select('prices', params)
+      return json(rows)
+    }
+
+    if (path === '/admin/prices/count' && method === 'GET') {
+      if (!isAdminRole(session)) return err('Forbidden', 403)
+      const headRes = await fetch(`${env.SUPABASE_URL}/rest/v1/prices?select=id`, {
+        method: 'HEAD',
+        headers: {
+          'apikey':         env.SUPABASE_ANON_KEY,
+          'Authorization':  `Bearer ${env.SUPABASE_ANON_KEY}`,
+          'Prefer':         'count=exact',
+          'Range-Unit':     'items',
+          'Range':          '0-0'
+        }
+      })
+      const cr = headRes.headers.get('content-range') || ''
+      const total = Number(cr.split('/')[1]) || 0
+      return json({ count: total })
+    }
+
     // ── Back-office admin: settings ──────────────────────────────────────
 
     // GET /admin/sync-runs — recent alt-barcode sync history for the

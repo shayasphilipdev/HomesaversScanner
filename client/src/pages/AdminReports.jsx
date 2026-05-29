@@ -5,7 +5,8 @@ import {
   adminListStores, adminListAreas, adminListUsers,
   adminListLookups, adminListTemplates,
   adminListActivity, getTaskRecords,
-  adminListAltBarcodes, adminAltBarcodesCount
+  adminListAltBarcodes, adminAltBarcodesCount,
+  adminListPrices, adminPricesCount
 } from '../lib/api.js'
 import AdminNav from '../components/AdminNav.jsx'
 import { useToast } from '../components/Toast.jsx'
@@ -23,7 +24,8 @@ const TABS = [
   { key: 'areas',     label: 'Areas' },
   { key: 'templates', label: 'Task templates' },
   { key: 'lookups',   label: 'Lookups' },
-  { key: 'products',  label: 'Products' }
+  { key: 'products',  label: 'Products' },
+  { key: 'prices',    label: 'Prices' }
 ]
 
 export default function AdminReports() {
@@ -62,6 +64,7 @@ export default function AdminReports() {
       {tab === 'templates' && <TemplatesReport />}
       {tab === 'lookups'   && <LookupsReport />}
       {tab === 'products'  && <ProductsReport />}
+      {tab === 'prices'    && <PricesReport />}
     </div>
   )
 }
@@ -470,6 +473,68 @@ function ProductsReport() {
             onChange={e => setDraftQ(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleSearch()}
             placeholder="Barcode, EAN or description…"
+          />
+        </div>
+        <div className="filter-field">
+          <label>&nbsp;</label>
+          <button className="btn btn-sm btn-primary" onClick={handleSearch} disabled={loading}>Search</button>
+        </div>
+      </>}
+    />
+  )
+}
+
+// ── Prices (ItemMaster) ───────────────────────────────────────────────
+function PricesReport() {
+  const [data, setData]       = useState([])
+  const [total, setTotal]     = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError]     = useState('')
+  const [q, setQ]             = useState('')
+  const [draftQ, setDraftQ]   = useState('')
+
+  const load = async (search = '') => {
+    setLoading(true); setError('')
+    try {
+      const [rows, cnt] = await Promise.all([
+        adminListPrices({ limit: 500, q: search || undefined }),
+        adminPricesCount()
+      ])
+      setData(rows); setTotal(cnt?.count ?? null)
+    } catch (e) { setError(e.message) } finally { setLoading(false) }
+  }
+
+  useEffect(() => { load() }, [])
+
+  const handleSearch = () => { setQ(draftQ); load(draftQ) }
+
+  const columns = [
+    { key: 'ean_barcode',    label: 'EAN Barcode' },
+    { key: 'item_group',     label: 'Item Group' },
+    { key: 'item_subgrp_id', label: 'Sub-group' },
+    { key: 'product_type',   label: 'Product Type' },
+    { key: 'sale_rate',      label: 'Sale Rate' },
+    { key: 'updated_at',     label: 'Updated', get: r => (r.updated_at || '').slice(0, 10) }
+  ]
+
+  return (
+    <ReportShell
+      title="Prices (ItemMaster)"
+      csvName="prices"
+      loading={loading} error={error} rows={data} columns={columns}
+      stats={<>
+        <Stat label="Total in master" value={total ?? '…'} />
+        <Stat label="Shown" value={data.length} />
+      </>}
+      filters={<>
+        <div className="filter-field filter-field--wide">
+          <label>Search EAN / group / type</label>
+          <input
+            type="text"
+            value={draftQ}
+            onChange={e => setDraftQ(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSearch()}
+            placeholder="EAN, item group or product type…"
           />
         </div>
         <div className="filter-field">

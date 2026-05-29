@@ -497,14 +497,16 @@ function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField
 
   // Two-pass workbook read:
   //   Pass 1 – bookSheets:true → get all names with zero data parsing (fast).
-  //   Pass 2 – sheets:[name]   → parse ONLY the target sheet so SheetJS doesn't
-  //            choke on very large sheets elsewhere in the file (e.g. ItemMaster
-  //            in a 37 MB file where SheetNames lists it but Sheets omits it).
+  //   Pass 2 – sheets: N (0-based number) → parse ONLY the target sheet by
+  //            index so we never rely on SheetJS string-name matching (which
+  //            fails when the internal name has encoding quirks or trailing
+  //            whitespace different from what bookSheets reports).
   function readWorkbook(rawData, sv) {
     const meta = XLSX.read(rawData, { type: 'binary', bookSheets: true })
     const allNames = meta.SheetNames
     const targetName = resolveSheetName(allNames, sv)
-    const wb = XLSX.read(rawData, { type: 'binary', sheets: targetName != null ? [targetName] : undefined })
+    const targetIdx  = targetName != null ? allNames.indexOf(targetName) : 0
+    const wb = XLSX.read(rawData, { type: 'binary', sheets: targetIdx })
     wb.SheetNames = allNames   // restore full list for the sheet selector
     return wb
   }
@@ -525,7 +527,7 @@ function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField
 
   function parseWorkbook(wb, sv) {
     const sheet = resolveSheet(wb, sv)
-    if (!sheet) throw new Error(`Sheet "${sv}" not found. SheetNames: [${wb.SheetNames.join(', ')}] Sheets keys: [${Object.keys(wb.Sheets).join(', ')}]`)
+    if (!sheet) throw new Error(`Sheet "${sv}" not found. SheetNames: [${wb.SheetNames.join(', ')}] Sheets keys: [${Object.keys(wb.Sheets).filter(k => !k.startsWith('!')).join(', ') || '(empty)'}]`)
 
     const jsonRows = XLSX.utils.sheet_to_json(sheet, { defval: '' })
     if (!jsonRows.length) throw new Error('Sheet is empty.')

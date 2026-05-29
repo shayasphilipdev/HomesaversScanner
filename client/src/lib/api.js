@@ -186,6 +186,14 @@ export const adminUpdateLookup  = (id, updates) => request(`/admin/lookup-option
 export const adminDeleteLookup  = (id) => request(`/admin/lookup-options/${id}`, { method: 'DELETE' })
 
 // Products admin page now lists the imported Alternate Barcode table.
+export const adminListPrices = ({ limit, q } = {}) => {
+  const p = new URLSearchParams()
+  if (limit) p.set('limit', limit)
+  if (q)     p.set('q', q)
+  return request('/admin/prices' + (p.toString() ? `?${p}` : ''))
+}
+export const adminPricesCount = () => request('/admin/prices/count')
+
 export const adminListAltBarcodes = ({ limit, q } = {}) => {
   const p = new URLSearchParams()
   if (limit) p.set('limit', limit)
