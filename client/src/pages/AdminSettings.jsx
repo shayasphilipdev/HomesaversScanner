@@ -482,15 +482,35 @@ function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField
   const [result,   setResult]     = useState(null)   // { written, skipped }
   const [error,    setError]      = useState('')
   const wbRef       = useRef(null)
+  const rawDataRef  = useRef(null)   // raw binary string kept for re-parsing on sheet change
   const fileInputRef = useRef(null)
 
   // Keep sheetVal in sync when the settings value loads for the first time.
   useEffect(() => { setSheetVal(sheetDefault || '1') }, [sheetDefault])
 
+  // Resolve the sheet NAME string (not the data) from allSheetNames + sv.
+  function resolveSheetName(allSheetNames, sv) {
+    const s = (sv || '1').trim()
+    if (/^\d+$/.test(s)) return allSheetNames[Math.max(0, parseInt(s, 10) - 1)] ?? null
+    return allSheetNames.find(n => n.trim().toLowerCase() === s.toLowerCase()) ?? null
+  }
+
+  // Two-pass workbook read:
+  //   Pass 1 – bookSheets:true → get all names with zero data parsing (fast).
+  //   Pass 2 – sheets:[name]   → parse ONLY the target sheet so SheetJS doesn't
+  //            choke on very large sheets elsewhere in the file (e.g. ItemMaster
+  //            in a 37 MB file where SheetNames lists it but Sheets omits it).
+  function readWorkbook(rawData, sv) {
+    const meta = XLSX.read(rawData, { type: 'binary', bookSheets: true })
+    const allNames = meta.SheetNames
+    const targetName = resolveSheetName(allNames, sv)
+    const wb = XLSX.read(rawData, { type: 'binary', sheets: targetName != null ? [targetName] : undefined })
+    wb.SheetNames = allNames   // restore full list for the sheet selector
+    return wb
+  }
+
   function resolveSheet(wb, sv) {
     const s = (sv || '1').trim()
-    // For numeric index use SheetNames (authoritative order), then find the
-    // actual key in Sheets with flexible matching to handle encoding quirks.
     const findInSheets = (name) => {
       const norm = name.trim().toLowerCase()
       const hit = Object.entries(wb.Sheets).find(([k]) => k.trim().toLowerCase() === norm)
@@ -544,15 +564,16 @@ function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField
   const handleFile = (e) => {
     const f = e.target.files?.[0]
     if (!f) return
-    setResult(null); setError(''); setParsed(null); wbRef.current = null
+    setResult(null); setError(''); setParsed(null); wbRef.current = null; rawDataRef.current = null
     const reader = new FileReader()
     reader.onload = (ev) => {
       try {
-        const wb = XLSX.read(ev.target.result, { type: 'binary' })
+        rawDataRef.current = ev.target.result
+        const wb = readWorkbook(ev.target.result, sheetVal)
         wbRef.current = wb
         const p = parseWorkbook(wb, sheetVal)
         setParsed({ ...p, fileName: f.name })
-      } catch (err) { setError('Parse error: ' + err.message + ' | Sheets: ' + (wbRef.current?.SheetNames?.join(', ') ?? '?')) }
+      } catch (err) { setError('Parse error: ' + err.message) }
     }
     reader.onerror = () => setError('Could not read file.')
     reader.readAsBinaryString(f)
@@ -561,12 +582,14 @@ function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField
   const handleSheetChange = (e) => {
     const sv = e.target.value
     setSheetVal(sv)
-    if (!wbRef.current) return
+    if (!rawDataRef.current) return
     setResult(null); setError('')
     try {
-      const p = parseWorkbook(wbRef.current, sv)
+      const wb = readWorkbook(rawDataRef.current, sv)
+      wbRef.current = wb
+      const p = parseWorkbook(wb, sv)
       setParsed(prev => ({ ...p, fileName: prev?.fileName || '' }))
-    } catch (e) { setParsed(null); setError('Parse error: ' + e.message) }
+    } catch (err) { setParsed(null); setError('Parse error: ' + err.message) }
   }
 
   const handleUpload = async () => {
@@ -576,7 +599,7 @@ function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField
       const res = await importFn(parsed.rows)
       setResult(res)
       toast.success(`Import done — ${res.written} written, ${res.skipped} skipped.`)
-      setParsed(null); wbRef.current = null
+      setParsed(null); wbRef.current = null; rawDataRef.current = null
       if (fileInputRef.current) fileInputRef.current.value = ''
     } catch (e) { setError(e.message); toast.error(e.message) }
     finally { setUploading(false) }
