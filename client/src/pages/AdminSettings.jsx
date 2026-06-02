@@ -275,7 +275,7 @@ export default function AdminSettings() {
       >
         <ExcelImportCard
           title="Prices (ItemMaster)"
-          sheetDefault={values.prices_sync_sheet || 'ItemMaster'}
+          sheetDefault={values.prices_sync_sheet || '1'}
           importFn={adminImportPrices}
           aliases={PRICES_ALIASES}
           requiredField="ean_barcode"
