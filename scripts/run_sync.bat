@@ -7,6 +7,7 @@ setlocal
 ::   run_sync.bat prices       — import latest ItemMaster_*.xlsx → prices table
 ::   run_sync.bat alt-barcodes — import latest ALT Barcode Master_*.xlsx
 ::   run_sync.bat all          — run both in sequence
+::   run_sync.bat server       — start local upload server (http://localhost:8765)
 ::
 :: Uses the PriceTracker virtual environment (pandas + openpyxl already installed).
 :: ============================================================
@@ -30,8 +31,9 @@ echo [%DATE% %TIME%] Starting sync: %JOB%
 if /i "%JOB%"=="prices"       goto run_prices
 if /i "%JOB%"=="alt-barcodes" goto run_alt_barcodes
 if /i "%JOB%"=="all"          goto run_all
+if /i "%JOB%"=="server"       goto run_server
 
-echo Unknown job: %JOB%. Use prices, alt-barcodes, or all.
+echo Unknown job: %JOB%. Use prices, alt-barcodes, all, or server.
 exit /b 1
 
 
@@ -48,6 +50,12 @@ goto end
 :run_all
 call "%~f0" prices
 call "%~f0" alt-barcodes
+goto end
+
+
+:run_server
+echo [%DATE% %TIME%] Starting local upload server on http://localhost:8765 ...
+"%VENV_PYTHON%" "%SCRIPTS_DIR%local_upload_server.py"
 goto end
 
 

@@ -212,18 +212,28 @@ export const adminImportAltBarcodes    = (rows) => request('/alt-barcodes/import
 export const adminImportPrices         = (rows) => request('/prices/import',        { method: 'POST', body: rows })
 
 // Server-side Excel upload — browser sends raw .xlsx, server parses with SheetJS
+// Upload via local Python server (http://localhost:8765).
+// Python parses with pandas/openpyxl — the only approach that handles
+// large VRS Excel files. Modern browsers allow HTTPS→localhost HTTP calls.
 export async function adminUploadExcel(endpoint, file, sheet) {
-  const token = getToken()
   const s = encodeURIComponent(sheet || '1')
-  const res = await fetch(`/api${endpoint}?sheet=${s}`, {
-    method:  'POST',
-    headers: {
-      'Content-Type': 'application/octet-stream',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    },
-    body: file
-  })
-  if (res.status === 401) { clearToken(); if (typeof window !== 'undefined') window.location.reload(); throw new Error('Session expired') }
+  // Map Cloudflare endpoint path → local server path
+  const localPath = endpoint.replace('/upload-excel', '')
+    .replace('/prices', '/upload-prices')
+    .replace('/alt-barcodes', '/upload-alt-barcodes')
+  let res
+  try {
+    res = await fetch(`http://localhost:8765${localPath}?sheet=${s}`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body:    file
+    })
+  } catch {
+    throw new Error(
+      'Local upload server is not running. ' +
+      'Start it with: C:\\Scraping\\homesavers-scanner\\scripts\\run_sync.bat server'
+    )
+  }
   const data = await res.json()
   if (!res.ok) throw new Error(data.error || `Upload failed (${res.status})`)
   return data
