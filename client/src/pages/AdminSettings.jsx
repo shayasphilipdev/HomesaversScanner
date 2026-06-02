@@ -495,16 +495,10 @@ function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField
     return allNames.find(n => n.trim().toLowerCase() === s.toLowerCase()) ?? null
   }
 
-  // Two-pass read: pass 1 gets names only (bookSheets), pass 2 parses ONLY
-  // the target sheet by 0-based index using type:'array' + Uint8Array.
-  function readWorkbook(data, sv) {
-    const meta = XLSX.read(data, { type: 'array', bookSheets: true })
-    const allNames = meta.SheetNames
-    const targetName = resolveSheetName(allNames, sv)
-    const targetIdx  = targetName != null ? allNames.indexOf(targetName) : 0
-    const wb = XLSX.read(data, { type: 'array', sheets: targetIdx })
-    wb.SheetNames = allNames
-    return wb
+  // Parse the workbook — let SheetJS v0.20.3 read all sheets without any
+  // filtering options, which previously caused ItemMaster to be skipped.
+  function readWorkbook(data) {
+    return XLSX.read(data, { type: 'array' })
   }
 
   function resolveSheet(wb, sv) {
@@ -568,7 +562,7 @@ function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField
       try {
         const data = new Uint8Array(ev.target.result)
         rawDataRef.current = data
-        const wb = readWorkbook(data, sheetVal)
+        const wb = readWorkbook(data)
         wbRef.current = wb
         const p = parseWorkbook(wb, sheetVal)
         setParsed({ ...p, fileName: f.name })
@@ -584,7 +578,7 @@ function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField
     if (!rawDataRef.current) return
     setResult(null); setError('')
     try {
-      const wb = readWorkbook(rawDataRef.current, sv)
+      const wb = readWorkbook(rawDataRef.current)
       wbRef.current = wb
       const p = parseWorkbook(wb, sv)
       setParsed(prev => ({ ...p, fileName: prev?.fileName || '' }))
