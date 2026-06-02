@@ -399,6 +399,52 @@ async function runAutoCleanup(db, env) {
   }
 }
 
+// ── Server-side Excel parsing helpers (mirrors pandas dtype=str approach) ──────
+// Safe string: empty string for null/undefined/NaN-like values.
+function safeStr(v) {
+  if (v === null || v === undefined) return ''
+  const s = String(v).trim()
+  return (s === 'NaN' || s === 'undefined' || s === 'null') ? '' : s
+}
+
+// Parse an xlsx ArrayBuffer server-side using SheetJS.
+// Returns { headers, rows } where rows are plain objects with string values.
+async function parseExcelServerSide(arrayBuffer, sheetArg) {
+  const XLSX = await import('xlsx')
+  const data = new Uint8Array(arrayBuffer)
+  const wb   = XLSX.read(data, { type: 'array' })
+
+  // Resolve sheet by name or 1-based index
+  let ws
+  const s = String(sheetArg || '1').trim()
+  if (/^\d+$/.test(s)) {
+    const name = wb.SheetNames[parseInt(s, 10) - 1]
+    ws = name != null ? wb.Sheets[name] : null
+  } else {
+    const name = wb.SheetNames.find(n => n.trim().toLowerCase() === s.toLowerCase())
+    ws = name != null ? wb.Sheets[name] : null
+  }
+
+  if (!ws) return { error: `Sheet "${sheetArg}" not found. Available: ${wb.SheetNames.join(', ')}` }
+
+  // sheet_to_json with defval:'' gives every cell as a value (like pandas dtype=str)
+  const jsonRows = XLSX.utils.sheet_to_json(ws, { defval: '' })
+  if (!jsonRows.length) return { error: 'Sheet is empty.' }
+
+  // Strip whitespace from all headers (pandas: df.columns.str.strip())
+  const rawHeaders = Object.keys(jsonRows[0])
+  const headers    = rawHeaders.map(h => h.trim())
+
+  // Normalise rows: strip header whitespace, convert all values to clean strings
+  const rows = jsonRows.map(r => {
+    const out = {}
+    rawHeaders.forEach((raw, i) => { out[headers[i]] = safeStr(r[raw]) })
+    return out
+  })
+
+  return { headers, rows }
+}
+
 export async function onRequest(context) {
   const { request, env } = context
   const url    = new URL(request.url)
@@ -837,6 +883,117 @@ export async function onRequest(context) {
         body: JSON.stringify(clean)
       })
       if (!upRes.ok) return err(`Prices upsert failed: ${(await upRes.text()).slice(0, 400)}`, 400)
+      const written = await upRes.json()
+      return json({ written: written.length, skipped })
+    }
+
+    // ── Server-side Excel upload (replaces browser SheetJS parsing) ─────────
+    // Browser posts raw .xlsx as multipart/form-data file field "file".
+    // Server parses with SheetJS (same approach as pandas dtype=str), maps
+    // columns, and upserts directly. No client-side parsing needed.
+
+    if (path === '/prices/upload-excel' && method === 'POST') {
+      if (!isAdminRole(session)) return err('Forbidden', 403)
+      const fd      = await request.formData()
+      const file    = fd.get('file')
+      const sheetArg = fd.get('sheet') || '1'
+      if (!file) return err('No file uploaded', 400)
+
+      const parsed = await parseExcelServerSide(await file.arrayBuffer(), sheetArg)
+      if (parsed.error) return err(parsed.error, 400)
+
+      // Column aliases — same as PowerShell sync script
+      const ALIASES = {
+        ean_barcode:    ['EAN_Barcode','ean_barcode','ean','EAN'],
+        item_group:     ['ItemGroup','item_group','Item_Group'],
+        item_subgrp_id: ['ItemSubGrp_Id','item_subgrp_id','ItemSubGrpId'],
+        product_type:   ['ProductType','product_type','Product_Type'],
+        sale_rate:      ['SaleRate','sale_rate','Sale_Rate'],
+      }
+      const headerSet = new Set(parsed.headers)
+      const fieldMap  = {}
+      for (const [field, aliases] of Object.entries(ALIASES)) {
+        const hit = aliases.find(a => headerSet.has(a))
+        if (hit) fieldMap[field] = hit
+      }
+      if (!fieldMap.ean_barcode) return err(`EAN_Barcode column not found. Columns: ${parsed.headers.slice(0,12).join(', ')}`, 400)
+
+      const now = new Date().toISOString()
+      const byKey = new Map()
+      let skipped = 0
+      for (const row of parsed.rows) {
+        const ean = (row[fieldMap.ean_barcode] || '').trim()
+        if (!ean || ean === '0') { skipped++; continue }
+        const saleRaw = fieldMap.sale_rate ? row[fieldMap.sale_rate] : ''
+        const saleRate = saleRaw ? Number(saleRaw.replace(/[^0-9.-]/g, '')) : null
+        byKey.set(ean, {
+          ean_barcode:    ean,
+          item_group:     fieldMap.item_group     ? (row[fieldMap.item_group]     || null) : null,
+          item_subgrp_id: fieldMap.item_subgrp_id ? (row[fieldMap.item_subgrp_id] || null) : null,
+          product_type:   fieldMap.product_type   ? (row[fieldMap.product_type]   || null) : null,
+          sale_rate:      saleRate && !isNaN(saleRate) ? saleRate : null,
+          updated_at:     now
+        })
+      }
+      const clean = Array.from(byKey.values())
+      if (!clean.length) return json({ written: 0, skipped })
+      const upRes = await fetch(`${env.SUPABASE_URL}/rest/v1/prices?on_conflict=ean_barcode`, {
+        method: 'POST',
+        headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation,resolution=merge-duplicates' },
+        body: JSON.stringify(clean)
+      })
+      if (!upRes.ok) return err(`Upsert failed: ${(await upRes.text()).slice(0,400)}`, 400)
+      const written = await upRes.json()
+      return json({ written: written.length, skipped })
+    }
+
+    if (path === '/alt-barcodes/upload-excel' && method === 'POST') {
+      if (!isAdminRole(session)) return err('Forbidden', 403)
+      const fd      = await request.formData()
+      const file    = fd.get('file')
+      const sheetArg = fd.get('sheet') || '1'
+      if (!file) return err('No file uploaded', 400)
+
+      const parsed = await parseExcelServerSide(await file.arrayBuffer(), sheetArg)
+      if (parsed.error) return err(parsed.error, 400)
+
+      const ALIASES = {
+        barcode_no:     ['Barcode_No','barcode_no','BarcodeNo'],
+        ean_barcode:    ['EAN_Barcode','ean_barcode','EAN'],
+        item_name:      ['Item_Name','item_name','ItemName'],
+        supl_id:        ['Supl_Id','supl_id','SuplId'],
+        supplier_code:  ['Supplier_Code','supplier_code'],
+        item_status:    ['Item_Status','item_status'],
+        barcode_status: ['Barcode_Status','barcode_status'],
+      }
+      const headerSet = new Set(parsed.headers)
+      const fieldMap  = {}
+      for (const [field, aliases] of Object.entries(ALIASES)) {
+        const hit = aliases.find(a => headerSet.has(a))
+        if (hit) fieldMap[field] = hit
+      }
+      if (!fieldMap.barcode_no) return err(`Barcode_No column not found. Columns: ${parsed.headers.slice(0,12).join(', ')}`, 400)
+
+      const now = new Date().toISOString()
+      const byKey = new Map()
+      let skipped = 0
+      for (const row of parsed.rows) {
+        const bc = (row[fieldMap.barcode_no] || '').trim()
+        if (!bc || bc === '0') { skipped++; continue }
+        const record = { barcode_no: bc, updated_at: now }
+        for (const f of ['ean_barcode','item_name','supl_id','supplier_code','item_status','barcode_status']) {
+          if (fieldMap[f]) { const v = (row[fieldMap[f]] || '').trim(); if (v) record[f] = v }
+        }
+        byKey.set(bc, record)
+      }
+      const clean = Array.from(byKey.values())
+      if (!clean.length) return json({ written: 0, skipped })
+      const upRes = await fetch(`${env.SUPABASE_URL}/rest/v1/alt_barcodes?on_conflict=barcode_no`, {
+        method: 'POST',
+        headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation,resolution=merge-duplicates' },
+        body: JSON.stringify(clean)
+      })
+      if (!upRes.ok) return err(`Upsert failed: ${(await upRes.text()).slice(0,400)}`, 400)
       const written = await upRes.json()
       return json({ written: written.length, skipped })
     }

@@ -211,6 +211,23 @@ export const adminListSyncRuns         = () => request('/admin/sync-runs')
 export const adminImportAltBarcodes    = (rows) => request('/alt-barcodes/import', { method: 'POST', body: rows })
 export const adminImportPrices         = (rows) => request('/prices/import',        { method: 'POST', body: rows })
 
+// Server-side Excel upload — browser sends raw .xlsx, server parses with SheetJS
+export async function adminUploadExcel(endpoint, file, sheet) {
+  const fd = new FormData()
+  fd.append('file', file)
+  fd.append('sheet', sheet || '1')
+  const token = getToken()
+  const res = await fetch(`/api${endpoint}`, {
+    method:  'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body:    fd
+  })
+  if (res.status === 401) { clearToken(); if (typeof window !== 'undefined') window.location.reload(); throw new Error('Session expired') }
+  const data = await res.json()
+  if (!res.ok) throw new Error(data.error || `Upload failed (${res.status})`)
+  return data
+}
+
 // Append-only audit ledger for one task_records row.
 export const getTaskRecordEvents      = (id) => request(`/task-records/${id}/events`)
 

@@ -3,9 +3,8 @@ import { useStore } from '../App.jsx'
 import {
   adminGetSettings, adminUpdateSettings,
   adminCleanupPhotos, adminCleanupTaskRecords, adminGetCapacity, adminListSyncRuns,
-  adminImportAltBarcodes, adminImportPrices
+  adminUploadExcel
 } from '../lib/api.js'
-import * as XLSX from 'xlsx'
 import AdminNav from '../components/AdminNav.jsx'
 import { useToast } from '../components/Toast.jsx'
 
@@ -259,9 +258,7 @@ export default function AdminSettings() {
         <ExcelImportCard
           title="Alt-barcode"
           sheetDefault={values.alt_barcode_sync_sheet || '1'}
-          importFn={adminImportAltBarcodes}
-          aliases={ALT_BARCODE_ALIASES}
-          requiredField="barcode_no"
+          endpoint="/alt-barcodes/upload-excel"
           toast={toast}
         />
       </SyncRunsCard>
@@ -276,9 +273,7 @@ export default function AdminSettings() {
         <ExcelImportCard
           title="Prices (ItemMaster)"
           sheetDefault={values.prices_sync_sheet || '1'}
-          importFn={adminImportPrices}
-          aliases={PRICES_ALIASES}
-          requiredField="ean_barcode"
+          endpoint="/prices/upload-excel"
           toast={toast}
         />
       </SyncRunsCard>
@@ -472,127 +467,26 @@ const PRICES_ALIASES = {
   sale_rate:      ['salerate','sale_rate','sellingprice','selling_price','price','retail_price'],
 }
 
-// Manual Excel upload card. Parses an .xlsx in-browser (SheetJS) using the
-// same column aliases as the PowerShell sync scripts, then POSTs rows to the
-// matching /import endpoint. Shown inside each SyncRunsCard.
-function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField, toast }) {
-  const [sheetVal, setSheetVal]   = useState(sheetDefault || '1')
-  const [parsed,   setParsed]     = useState(null)   // { rows, totalRows, validRows, fieldToSource, fileName }
+// Manual Excel upload card — sends raw .xlsx to the server, server parses
+// with SheetJS (same approach as pandas dtype=str). No browser-side parsing.
+function ExcelImportCard({ title, sheetDefault, endpoint, toast }) {
+  const [sheetVal,  setSheetVal]  = useState(sheetDefault || '1')
+  const [file,      setFile]      = useState(null)
   const [uploading, setUploading] = useState(false)
-  const [result,   setResult]     = useState(null)   // { written, skipped }
-  const [error,    setError]      = useState('')
-  const wbRef       = useRef(null)
-  const rawDataRef  = useRef(null)
+  const [result,    setResult]    = useState(null)
+  const [error,     setError]     = useState('')
   const fileInputRef = useRef(null)
 
-  // Keep sheetVal in sync when the settings value loads for the first time.
   useEffect(() => { setSheetVal(sheetDefault || '1') }, [sheetDefault])
 
-  // Resolve target sheet name from the full SheetNames list.
-  function resolveSheetName(allNames, sv) {
-    const s = (sv || '1').trim()
-    if (/^\d+$/.test(s)) return allNames[Math.max(0, parseInt(s, 10) - 1)] ?? null
-    return allNames.find(n => n.trim().toLowerCase() === s.toLowerCase()) ?? null
-  }
-
-  // Parse the workbook — let SheetJS v0.20.3 read all sheets without any
-  // filtering options, which previously caused ItemMaster to be skipped.
-  function readWorkbook(data) {
-    return XLSX.read(data, { type: 'array' })
-  }
-
-  function resolveSheet(wb, sv) {
-    const s = (sv || '1').trim()
-    const findInSheets = (name) => {
-      const norm = name.trim().toLowerCase()
-      const hit = Object.entries(wb.Sheets).find(([k]) => k.trim().toLowerCase() === norm)
-      return hit?.[1] ?? null
-    }
-    if (/^\d+$/.test(s)) {
-      const name = wb.SheetNames[Math.max(0, parseInt(s, 10) - 1)]
-      return name != null ? findInSheets(name) : null
-    }
-    return findInSheets(s)
-  }
-
-  function parseWorkbook(wb, sv) {
-    const sheet = resolveSheet(wb, sv)
-    if (!sheet) throw new Error(`Sheet "${sv}" not found. Available: [${wb.SheetNames.join(', ')}]`)
-
-    const jsonRows = XLSX.utils.sheet_to_json(sheet, { defval: '' })
-    if (!jsonRows.length) throw new Error('Sheet is empty.')
-
-    // Normalise headers: lowercase, alphanumeric only, for alias matching.
-    const headerByNorm = {}
-    for (const h of Object.keys(jsonRows[0])) headerByNorm[h.trim().toLowerCase().replace(/[^a-z0-9]/g, '')] = h
-
-    const fieldToSource = {}
-    for (const [field, aliasList] of Object.entries(aliases)) {
-      for (const alias of aliasList) {
-        const src = headerByNorm[alias.toLowerCase().replace(/[^a-z0-9]/g, '')]
-        if (src) { fieldToSource[field] = src; break }
-      }
-    }
-
-    if (!fieldToSource[requiredField]) {
-      throw new Error(
-        `Required column "${requiredField}" not found. ` +
-        `Columns in sheet: ${Object.keys(jsonRows[0]).slice(0, 12).join(', ')}${Object.keys(jsonRows[0]).length > 12 ? '…' : ''}`
-      )
-    }
-
-    const rows = []
-    for (const r of jsonRows) {
-      const row = {}
-      for (const [field, src] of Object.entries(fieldToSource)) {
-        const v = r[src]
-        if (v != null && String(v).trim() !== '') row[field] = String(v).trim()
-      }
-      if (row[requiredField] && row[requiredField] !== '0') rows.push(row)
-    }
-    return { rows, totalRows: jsonRows.length, validRows: rows.length, fieldToSource }
-  }
-
-  const handleFile = (e) => {
-    const f = e.target.files?.[0]
-    if (!f) return
-    setResult(null); setError(''); setParsed(null); wbRef.current = null; rawDataRef.current = null
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      try {
-        const data = new Uint8Array(ev.target.result)
-        rawDataRef.current = data
-        const wb = readWorkbook(data)
-        wbRef.current = wb
-        const p = parseWorkbook(wb, sheetVal)
-        setParsed({ ...p, fileName: f.name })
-      } catch (err) { setError('Parse error: ' + err.message) }
-    }
-    reader.onerror = () => setError('Could not read file.')
-    reader.readAsArrayBuffer(f)
-  }
-
-  const handleSheetChange = (e) => {
-    const sv = e.target.value
-    setSheetVal(sv)
-    if (!rawDataRef.current) return
-    setResult(null); setError('')
-    try {
-      const wb = readWorkbook(rawDataRef.current)
-      wbRef.current = wb
-      const p = parseWorkbook(wb, sv)
-      setParsed(prev => ({ ...p, fileName: prev?.fileName || '' }))
-    } catch (e) { setParsed(null); setError('Parse error: ' + e.message) }
-  }
-
   const handleUpload = async () => {
-    if (!parsed?.rows?.length || uploading) return
+    if (!file || uploading) return
     setUploading(true); setError(''); setResult(null)
     try {
-      const res = await importFn(parsed.rows)
+      const res = await adminUploadExcel(endpoint, file, sheetVal)
       setResult(res)
       toast.success(`Import done — ${res.written} written, ${res.skipped} skipped.`)
-      setParsed(null); wbRef.current = null; rawDataRef.current = null
+      setFile(null)
       if (fileInputRef.current) fileInputRef.current.value = ''
     } catch (e) { setError(e.message); toast.error(e.message) }
     finally { setUploading(false) }
@@ -602,52 +496,30 @@ function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField
     <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
       <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Manual upload — {title}</div>
       <p className="note" style={{ marginTop: 0, fontSize: 12 }}>
-        Upload directly from your computer. Useful for first-run or when the automatic sync is not yet working.
+        Upload directly from your computer. The file is parsed on the server.
       </p>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: '6px 14px', marginBottom: 8 }}>
         <div>
           <label style={{ fontSize: 12, display: 'block', marginBottom: 2 }}>Sheet (name or number)</label>
-          <input
-            type="text"
-            value={sheetVal}
-            onChange={handleSheetChange}
-            style={{ width: 140, fontSize: 13 }}
-            placeholder="1 or sheet name"
-          />
+          <input type="text" value={sheetVal} onChange={e => setSheetVal(e.target.value)}
+            style={{ width: 140, fontSize: 13 }} placeholder="1 or sheet name" />
         </div>
         <div>
           <label style={{ fontSize: 12, display: 'block', marginBottom: 2 }}>Excel file (.xlsx)</label>
-          <input ref={fileInputRef} type="file" accept=".xlsx" onChange={handleFile} style={{ fontSize: 13 }} />
+          <input ref={fileInputRef} type="file" accept=".xlsx"
+            onChange={e => { setFile(e.target.files?.[0] || null); setError(''); setResult(null) }}
+            style={{ fontSize: 13 }} />
         </div>
       </div>
 
-      {error && <div className="login-error" style={{ marginTop: 4, marginBottom: 6 }}>{error}</div>}
+      {error  && <div className="login-error" style={{ marginTop: 4, marginBottom: 6 }}>{error}</div>}
+      {result && <div className="note" style={{ fontSize: 12, marginBottom: 8, color: '#3E9F4B' }}>
+        ✓ Import complete — <strong>{result.written}</strong> written, <strong>{result.skipped}</strong> skipped.
+      </div>}
 
-      {parsed && !error && (
-        <div className="note" style={{ fontSize: 12, marginBottom: 8 }}>
-          <strong>{parsed.fileName}</strong> — <strong>{parsed.totalRows.toLocaleString('en-IE')}</strong> rows parsed,{' '}
-          <strong>{parsed.validRows.toLocaleString('en-IE')}</strong> ready to import.
-          {' '}<span style={{ opacity: 0.65 }}>({Object.entries(parsed.fieldToSource).map(([f, s]) => `${f}←${s}`).join(', ')})</span>
-        </div>
-      )}
-
-      {result && (
-        <div className="note" style={{ fontSize: 12, marginBottom: 8, color: '#3E9F4B' }}>
-          ✓ Import complete — <strong>{result.written}</strong> written, <strong>{result.skipped}</strong> skipped.
-        </div>
-      )}
-
-      <button
-        className="btn btn-primary btn-sm"
-        onClick={handleUpload}
-        disabled={!parsed?.validRows || uploading}
-      >
-        {uploading
-          ? <><span className="spinner" /> Uploading…</>
-          : parsed?.validRows
-            ? `Upload ${parsed.validRows.toLocaleString('en-IE')} rows`
-            : 'Upload'}
+      <button className="btn btn-primary btn-sm" onClick={handleUpload} disabled={!file || uploading}>
+        {uploading ? <><span className="spinner" /> Uploading…</> : 'Upload'}
       </button>
     </div>
   )
