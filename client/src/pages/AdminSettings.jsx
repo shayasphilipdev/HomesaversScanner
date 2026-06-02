@@ -482,15 +482,33 @@ function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField
   const [result,   setResult]     = useState(null)   // { written, skipped }
   const [error,    setError]      = useState('')
   const wbRef       = useRef(null)
+  const rawDataRef  = useRef(null)
   const fileInputRef = useRef(null)
 
   // Keep sheetVal in sync when the settings value loads for the first time.
   useEffect(() => { setSheetVal(sheetDefault || '1') }, [sheetDefault])
 
+  // Resolve target sheet name from the full SheetNames list.
+  function resolveSheetName(allNames, sv) {
+    const s = (sv || '1').trim()
+    if (/^\d+$/.test(s)) return allNames[Math.max(0, parseInt(s, 10) - 1)] ?? null
+    return allNames.find(n => n.trim().toLowerCase() === s.toLowerCase()) ?? null
+  }
+
+  // Two-pass read: pass 1 gets names only (bookSheets), pass 2 parses ONLY
+  // the target sheet by 0-based index using type:'array' + Uint8Array.
+  function readWorkbook(data, sv) {
+    const meta = XLSX.read(data, { type: 'array', bookSheets: true })
+    const allNames = meta.SheetNames
+    const targetName = resolveSheetName(allNames, sv)
+    const targetIdx  = targetName != null ? allNames.indexOf(targetName) : 0
+    const wb = XLSX.read(data, { type: 'array', sheets: targetIdx })
+    wb.SheetNames = allNames
+    return wb
+  }
+
   function resolveSheet(wb, sv) {
     const s = (sv || '1').trim()
-    // For numeric index use SheetNames (authoritative order), then find the
-    // actual key in Sheets with flexible matching to handle encoding quirks.
     const findInSheets = (name) => {
       const norm = name.trim().toLowerCase()
       const hit = Object.entries(wb.Sheets).find(([k]) => k.trim().toLowerCase() === norm)
@@ -505,7 +523,7 @@ function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField
 
   function parseWorkbook(wb, sv) {
     const sheet = resolveSheet(wb, sv)
-    if (!sheet) throw new Error(`Sheet "${sv}" not found. SheetNames: [${wb.SheetNames.join(', ')}] Sheets keys: [${Object.keys(wb.Sheets).join(', ')}]`)
+    if (!sheet) throw new Error(`Sheet "${sv}" not found. Available: [${wb.SheetNames.join(', ')}]`)
 
     const jsonRows = XLSX.utils.sheet_to_json(sheet, { defval: '' })
     if (!jsonRows.length) throw new Error('Sheet is empty.')
@@ -544,27 +562,31 @@ function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField
   const handleFile = (e) => {
     const f = e.target.files?.[0]
     if (!f) return
-    setResult(null); setError(''); setParsed(null); wbRef.current = null
+    setResult(null); setError(''); setParsed(null); wbRef.current = null; rawDataRef.current = null
     const reader = new FileReader()
     reader.onload = (ev) => {
       try {
-        const wb = XLSX.read(ev.target.result, { type: 'binary' })
+        const data = new Uint8Array(ev.target.result)
+        rawDataRef.current = data
+        const wb = readWorkbook(data, sheetVal)
         wbRef.current = wb
         const p = parseWorkbook(wb, sheetVal)
         setParsed({ ...p, fileName: f.name })
-      } catch (err) { setError('Parse error: ' + err.message + ' | Sheets: ' + (wbRef.current?.SheetNames?.join(', ') ?? '?')) }
+      } catch (err) { setError('Parse error: ' + err.message) }
     }
     reader.onerror = () => setError('Could not read file.')
-    reader.readAsBinaryString(f)
+    reader.readAsArrayBuffer(f)
   }
 
   const handleSheetChange = (e) => {
     const sv = e.target.value
     setSheetVal(sv)
-    if (!wbRef.current) return
+    if (!rawDataRef.current) return
     setResult(null); setError('')
     try {
-      const p = parseWorkbook(wbRef.current, sv)
+      const wb = readWorkbook(rawDataRef.current, sv)
+      wbRef.current = wb
+      const p = parseWorkbook(wb, sv)
       setParsed(prev => ({ ...p, fileName: prev?.fileName || '' }))
     } catch (e) { setParsed(null); setError('Parse error: ' + e.message) }
   }
@@ -576,7 +598,7 @@ function ExcelImportCard({ title, sheetDefault, importFn, aliases, requiredField
       const res = await importFn(parsed.rows)
       setResult(res)
       toast.success(`Import done — ${res.written} written, ${res.skipped} skipped.`)
-      setParsed(null); wbRef.current = null
+      setParsed(null); wbRef.current = null; rawDataRef.current = null
       if (fileInputRef.current) fileInputRef.current.value = ''
     } catch (e) { setError(e.message); toast.error(e.message) }
     finally { setUploading(false) }
