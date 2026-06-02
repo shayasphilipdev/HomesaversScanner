@@ -111,9 +111,10 @@ def _build_alt_barcode_rows(df: pd.DataFrame) -> tuple[list, int]:
 class Handler(BaseHTTPRequestHandler):
 
     def _cors(self):
-        self.send_header("Access-Control-Allow-Origin",  ALLOWED_ORIGIN)
-        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Sheet")
+        self.send_header("Access-Control-Allow-Origin",          ALLOWED_ORIGIN)
+        self.send_header("Access-Control-Allow-Methods",         "POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers",         "Content-Type, Authorization, X-Sheet")
+        self.send_header("Access-Control-Allow-Private-Network", "true")  # Chrome Private Network Access
 
     def do_OPTIONS(self):
         self.send_response(200)
