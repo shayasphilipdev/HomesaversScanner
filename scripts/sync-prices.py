@@ -57,7 +57,31 @@ def _safe_float(val):
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+def record_run(headers, *, file_name, file_size, imported, skipped, status, message, started_at):
+    """Post the run result to /api/sync-runs so it shows in Settings -> Data Sync."""
+    try:
+        requests.post(
+            f"{BASE_URL}/api/sync-runs",
+            headers=headers,
+            json={
+                "kind":             "prices",
+                "file_name":        file_name,
+                "file_size_bytes":  file_size,
+                "records_imported": imported,
+                "records_skipped":  skipped,
+                "status":           status,
+                "message":          message,
+                "started_at":       started_at,
+            },
+            timeout=30,
+        )
+    except Exception as e:
+        log(f"Could not record run to dashboard: {e}", "WARN")
+
+
 def main():
+    started_at = datetime.datetime.utcnow().isoformat() + "Z"
+    file_name, file_size = None, None
     log("=== Prices (ItemMaster) sync starting ===")
 
     # Read secret
@@ -66,11 +90,17 @@ def main():
     secret = open(SECRET_FILE, encoding="utf-8").read().strip()
     headers = {"X-Sync-Secret": secret, "Content-Type": "application/json"}
 
+    def fail(msg):
+        log(f"FAILED: {msg}", "ERROR")
+        record_run(headers, file_name=file_name, file_size=file_size,
+                   imported=0, skipped=0, status="error", message=msg, started_at=started_at)
+        sys.exit(1)
+
     # Fetch config from app
     try:
         cfg = requests.get(f"{BASE_URL}/api/prices/sync-config", headers=headers, timeout=30).json()
     except Exception as e:
-        log(f"Could not fetch config: {e}", "ERROR"); sys.exit(1)
+        fail(f"Could not fetch config: {e}")
 
     folder  = cfg.get("folder", "")
     pattern = cfg.get("file_pattern", "*.xlsx") or "*.xlsx"
@@ -78,23 +108,25 @@ def main():
     sheet   = cfg.get("sheet", "ItemMaster") or "ItemMaster"
 
     if not folder:
-        log("No folder configured in Admin → Settings", "ERROR"); sys.exit(1)
+        fail("No folder configured in Admin -> Settings")
 
     log(f"Config: folder='{folder}' pattern='{pattern}' prefix='{prefix}' sheet='{sheet}'")
 
     # Find latest file
     folder_path = pathlib.Path(folder)
     if not folder_path.exists():
-        log(f"Folder not accessible: {folder}", "ERROR"); sys.exit(1)
+        fail(f"Folder not accessible: {folder}")
 
     candidates = list(folder_path.glob(pattern))
     if prefix:
         candidates = [p for p in candidates if p.name.startswith(prefix)]
     if not candidates:
-        log(f"No files matching '{pattern}' in {folder}", "ERROR"); sys.exit(1)
+        fail(f"No files matching '{pattern}' in {folder}")
 
     latest = max(candidates, key=lambda p: p.stat().st_mtime)
-    size_mb = round(latest.stat().st_size / 1_048_576, 1)
+    file_name = latest.name
+    file_size = latest.stat().st_size
+    size_mb = round(file_size / 1_048_576, 1)
     log(f"File: {latest.name} ({size_mb} MB)")
 
     # Read Excel — dtype=str keeps EAN barcodes as strings (no leading-zero loss)
@@ -106,15 +138,14 @@ def main():
         except Exception:
             df = pd.read_excel(latest, sheet_name=0, dtype=str, engine="openpyxl")
     except Exception as e:
-        log(f"Failed to read Excel: {e}", "ERROR"); sys.exit(1)
+        fail(f"Failed to read Excel: {e}")
 
     df.columns = df.columns.str.strip()
     log(f"Parsed {len(df)} rows. Columns: {list(df.columns[:8])}")
 
     # Check required column exists
     if REQUIRED_COL not in df.columns:
-        log(f"Required column '{REQUIRED_COL}' not found. Available: {list(df.columns)}", "ERROR")
-        sys.exit(1)
+        fail(f"Required column '{REQUIRED_COL}' not found. Available: {list(df.columns)}")
 
     # Build payload — only mapped columns, skip rows with no EAN
     payload = []
@@ -134,7 +165,7 @@ def main():
 
     log(f"Prepared {len(payload)} rows, skipped {skipped} (no EAN)")
     if not payload:
-        log("Nothing to upload.", "ERROR"); sys.exit(1)
+        fail("Nothing to upload.")
 
     # Post in chunks
     imported = 0
@@ -153,9 +184,12 @@ def main():
             imported += int(result.get("written", 0))
             log(f"Chunk {chunk_num}: written={result.get('written')} skipped={result.get('skipped')}")
         except Exception as e:
-            log(f"Chunk {chunk_num} failed: {e}", "ERROR"); sys.exit(1)
+            fail(f"Chunk {chunk_num} failed: {e}")
 
     log(f"Totals: imported={imported} skipped={skipped}")
+    record_run(headers, file_name=file_name, file_size=file_size,
+               imported=imported, skipped=skipped, status="ok",
+               message=f"Imported {imported}, skipped {skipped}", started_at=started_at)
     log("=== Prices sync finished OK ===")
 
 

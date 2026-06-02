@@ -1,4 +1,4 @@
-"""
+r"""
 Homesavers Scanner — local upload server
 Listens on http://localhost:8765 and accepts Excel file uploads from the
 browser admin page. Parses with pandas/openpyxl (same approach as the
@@ -48,6 +48,24 @@ def _safe_float(val):
         return float(s.replace(",", "").replace("€", "").strip())
     except ValueError:
         return None
+
+
+def _record_run(kind: str, file_name: str, imported: int, skipped: int, status: str, secret: str):
+    """Record this run to /api/sync-runs so it shows in Settings -> Data Sync."""
+    try:
+        req = urllib.request.Request(
+            f"{BASE_URL}/api/sync-runs",
+            data=json.dumps({
+                "kind": kind, "file_name": file_name,
+                "records_imported": imported, "records_skipped": skipped,
+                "status": status,
+            }).encode("utf-8"),
+            headers={"Content-Type": "application/json", "X-Sync-Secret": secret},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=30).read()
+    except Exception as e:
+        print(f"[upload-server] could not record run: {e}", flush=True)
 
 
 def _post_chunks(api_path: str, rows: list, secret: str) -> dict:
@@ -151,9 +169,11 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/upload-prices":
                 rows, skipped = _build_prices_rows(df)
                 api_path = "/prices/sync"
+                kind     = "prices"
             else:
                 rows, skipped = _build_alt_barcode_rows(df)
                 api_path = "/alt-barcodes/sync"
+                kind     = "alt_barcodes"
 
             if not rows:
                 self._json(400, {"error": "No valid rows found in file."})
@@ -162,6 +182,7 @@ class Handler(BaseHTTPRequestHandler):
             result = _post_chunks(api_path, rows, secret)
             result["total_rows"] = len(df)
             result["skipped"]    = result.get("skipped", 0) + skipped
+            _record_run(kind, "Manual upload", result["written"], result["skipped"], "ok", secret)
             self._json(200, result)
 
         except Exception as exc:
