@@ -5,7 +5,7 @@ browser admin page. Parses with pandas/openpyxl (same approach as the
 daily sync) and posts rows to the Homesavers Scanner API.
 
 Start automatically via Task Scheduler or run manually:
-  C:\Scraping\PriceTracker\.venv\Scripts\python.exe local_upload_server.py
+  C:\Scraping\homesavers-scanner\.venv\Scripts\python.exe local_upload_server.py
 """
 from __future__ import annotations
 

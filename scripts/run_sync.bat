@@ -9,14 +9,15 @@ setlocal
 ::   run_sync.bat all          — run both in sequence
 ::   run_sync.bat server       — start local upload server (http://localhost:8765)
 ::
-:: Uses the PriceTracker virtual environment (pandas + openpyxl already installed).
+:: Requires Python venv at C:\Scraping\homesavers-scanner\.venv
+:: First-time setup: run setup_venv.bat once to create it.
 :: ============================================================
 
-set VENV_PYTHON=C:\Scraping\PriceTracker\.venv\Scripts\python.exe
+set VENV_PYTHON=C:\Scraping\homesavers-scanner\.venv\Scripts\python.exe
 set SCRIPTS_DIR=%~dp0
 
 if not exist "%VENV_PYTHON%" (
-    echo ERROR: PriceTracker venv not found at %VENV_PYTHON%
+    echo ERROR: venv not found. Run setup_venv.bat first.
     exit /b 1
 )
 
