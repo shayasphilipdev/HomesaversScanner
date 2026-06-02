@@ -1352,7 +1352,7 @@ export async function onRequest(context) {
       const limit = Math.min(Number(url.searchParams.get('limit') || '200'), 1000)
       const q     = url.searchParams.get('q')
       const params = {
-        select: 'id,ean_barcode,item_group,item_subgrp_id,product_type,sale_rate,updated_at',
+        select: 'ean_barcode,item_group,item_subgrp_id,product_type,sale_rate,updated_at',
         order:  'ean_barcode.asc',
         limit:  String(limit)
       }
@@ -1363,7 +1363,7 @@ export async function onRequest(context) {
 
     if (path === '/admin/prices/count' && method === 'GET') {
       if (!isAdminRole(session)) return err('Forbidden', 403)
-      const headRes = await fetch(`${env.SUPABASE_URL}/rest/v1/prices?select=id`, {
+      const headRes = await fetch(`${env.SUPABASE_URL}/rest/v1/prices?select=ean_barcode`, {
         method: 'HEAD',
         headers: {
           'apikey':         env.SUPABASE_ANON_KEY,
