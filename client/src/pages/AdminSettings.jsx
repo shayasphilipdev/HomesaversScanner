@@ -248,35 +248,12 @@ export default function AdminSettings() {
 
       {error && <div className="login-error mt-12">{error}</div>}
 
-      {/* Alt-barcode sync status */}
-      <SyncRunsCard
-        title="Alt-barcode sync"
-        runs={syncRuns.filter(r => r.kind === 'alt_barcodes' || !r.kind)}
+      <SyncDashboard
+        syncRuns={syncRuns}
         onRefresh={loadSyncRuns}
-        syncNowCmd="powershell -ExecutionPolicy Bypass -File C:\Scraping\homesavers-scanner\scripts\sync-alt-barcodes.ps1"
-      >
-        <ExcelImportCard
-          title="Alt-barcode"
-          sheetDefault={values.alt_barcode_sync_sheet || '1'}
-          endpoint="/alt-barcodes/upload-excel"
-          toast={toast}
-        />
-      </SyncRunsCard>
-
-      {/* Prices (ItemMaster) sync status */}
-      <SyncRunsCard
-        title="Prices sync"
-        runs={syncRuns.filter(r => r.kind === 'prices')}
-        onRefresh={loadSyncRuns}
-        syncNowCmd="powershell -ExecutionPolicy Bypass -File C:\Scraping\homesavers-scanner\scripts\sync-prices.ps1"
-      >
-        <ExcelImportCard
-          title="Prices (ItemMaster)"
-          sheetDefault={values.prices_sync_sheet || '1'}
-          endpoint="/prices/upload-excel"
-          toast={toast}
-        />
-      </SyncRunsCard>
+        values={values}
+        toast={toast}
+      />
 
       {isOnlyAdmin && capacity && (
         <div className="card" style={{ marginBottom: 16 }}>
@@ -400,6 +377,135 @@ export default function AdminSettings() {
   )
 }
 
+// ── Sync Dashboard ────────────────────────────────────────────────────────────
+function SyncDashboard({ syncRuns, onRefresh, values, toast }) {
+  const altRuns    = syncRuns.filter(r => r.kind === 'alt_barcodes' || !r.kind).slice(0, 3)
+  const pricesRuns = syncRuns.filter(r => r.kind === 'prices').slice(0, 3)
+
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
+        <div style={{ fontWeight: 700, fontSize: 15 }}>Data Sync</div>
+        <button className="btn btn-sm btn-outline" style={{ marginLeft: 'auto' }} onClick={onRefresh}>↻ Refresh</button>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16 }}>
+        <SyncCard
+          title="Alt Barcode Master"
+          icon="🔖"
+          runs={altRuns}
+          sheetDefault={values.alt_barcode_sync_sheet || '1'}
+          endpoint="/alt-barcodes/upload-excel"
+          syncCmd="run_sync.bat alt-barcodes"
+          toast={toast}
+        />
+        <SyncCard
+          title="ItemMaster (Prices)"
+          icon="💰"
+          runs={pricesRuns}
+          sheetDefault={values.prices_sync_sheet || '1'}
+          endpoint="/prices/upload-excel"
+          syncCmd="run_sync.bat prices"
+          toast={toast}
+        />
+      </div>
+    </div>
+  )
+}
+
+function SyncCard({ title, icon, runs, sheetDefault, endpoint, syncCmd, toast }) {
+  const last = runs[0]
+
+  const statusColor = !last ? '#888'
+    : last.status === 'ok'    ? '#3E9F4B'
+    : '#c0392b'
+
+  const statusLabel = !last ? 'Never synced'
+    : last.status === 'ok' ? 'Last sync OK'
+    : 'Last sync failed'
+
+  const lastTime = last?.finished_at
+    ? new Date(last.finished_at).toLocaleString('en-IE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+    : null
+
+  return (
+    <div style={{
+      background: 'var(--card-bg, #fff)',
+      border: '1px solid var(--border)',
+      borderRadius: 10,
+      overflow: 'hidden',
+      boxShadow: '0 1px 4px rgba(0,0,0,.06)'
+    }}>
+      {/* Card header */}
+      <div style={{
+        padding: '14px 16px 12px',
+        borderBottom: '1px solid var(--border)',
+        display: 'flex', alignItems: 'center', gap: 10
+      }}>
+        <span style={{ fontSize: 20 }}>{icon}</span>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 14 }}>{title}</div>
+          <div style={{ fontSize: 12, color: statusColor, marginTop: 1 }}>
+            {statusLabel}{lastTime ? ` · ${lastTime}` : ''}
+          </div>
+        </div>
+        {last && (
+          <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
+            <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)' }}>
+              {last.records_imported != null ? last.records_imported.toLocaleString('en-IE') : '—'}
+            </div>
+            <div style={{ fontSize: 11, color: '#888' }}>rows imported</div>
+          </div>
+        )}
+      </div>
+
+      {/* Recent runs */}
+      <div style={{ padding: '10px 16px' }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 }}>
+          Recent syncs
+        </div>
+        {!runs.length ? (
+          <p className="note" style={{ margin: '4px 0', fontSize: 12 }}>No syncs recorded yet.</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {runs.map(r => (
+              <div key={r.id} style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                fontSize: 12, padding: '4px 0',
+                borderBottom: '1px solid var(--border)'
+              }}>
+                <span style={{
+                  width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+                  background: r.status === 'ok' ? '#3E9F4B' : '#c0392b'
+                }} />
+                <span style={{ color: '#888', minWidth: 90 }}>
+                  {r.finished_at ? new Date(r.finished_at).toLocaleString('en-IE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
+                </span>
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#555' }}>
+                  {r.file_name || '—'}
+                </span>
+                <span style={{ fontWeight: 600, color: r.status === 'ok' ? '#3E9F4B' : '#c0392b' }}>
+                  {r.records_imported != null ? `+${r.records_imported.toLocaleString('en-IE')}` : r.status}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Manual upload */}
+      <div style={{ padding: '10px 16px 14px', borderTop: '1px solid var(--border)' }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>
+          Manual upload
+        </div>
+        <ExcelImportCard sheetDefault={sheetDefault} endpoint={endpoint} toast={toast} />
+        <p className="note" style={{ fontSize: 11, marginTop: 8, marginBottom: 0 }}>
+          Or run from CMD: <code style={{ fontSize: 11 }}>scripts\{syncCmd}</code>
+        </p>
+      </div>
+    </div>
+  )
+}
+
 // Reusable sync-run history card. Renders a table of recent runs for a given
 // sync kind. Used for both Alt-barcode sync and Prices sync sections.
 function SyncRunsCard({ title, runs, onRefresh, syncNowCmd, children }) {
@@ -469,7 +575,7 @@ const PRICES_ALIASES = {
 
 // Manual Excel upload card — sends raw .xlsx to the server, server parses
 // with SheetJS (same approach as pandas dtype=str). No browser-side parsing.
-function ExcelImportCard({ title, sheetDefault, endpoint, toast }) {
+function ExcelImportCard({ sheetDefault, endpoint, toast }) {
   const [sheetVal,  setSheetVal]  = useState(sheetDefault || '1')
   const [file,      setFile]      = useState(null)
   const [uploading, setUploading] = useState(false)
@@ -493,34 +599,27 @@ function ExcelImportCard({ title, sheetDefault, endpoint, toast }) {
   }
 
   return (
-    <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
-      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Manual upload — {title}</div>
-      <p className="note" style={{ marginTop: 0, fontSize: 12 }}>
-        Upload directly from your computer. The file is parsed on the server.
-      </p>
-
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: '6px 14px', marginBottom: 8 }}>
+    <div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: '6px 10px', marginBottom: 6 }}>
         <div>
-          <label style={{ fontSize: 12, display: 'block', marginBottom: 2 }}>Sheet (name or number)</label>
+          <label style={{ fontSize: 11, display: 'block', marginBottom: 2, color: '#888' }}>Sheet</label>
           <input type="text" value={sheetVal} onChange={e => setSheetVal(e.target.value)}
-            style={{ width: 140, fontSize: 13 }} placeholder="1 or sheet name" />
+            style={{ width: 80, fontSize: 12 }} placeholder="1" />
         </div>
-        <div>
-          <label style={{ fontSize: 12, display: 'block', marginBottom: 2 }}>Excel file (.xlsx)</label>
+        <div style={{ flex: 1 }}>
+          <label style={{ fontSize: 11, display: 'block', marginBottom: 2, color: '#888' }}>Excel file (.xlsx)</label>
           <input ref={fileInputRef} type="file" accept=".xlsx"
             onChange={e => { setFile(e.target.files?.[0] || null); setError(''); setResult(null) }}
-            style={{ fontSize: 13 }} />
+            style={{ fontSize: 12, width: '100%' }} />
         </div>
+        <button className="btn btn-primary btn-sm" onClick={handleUpload} disabled={!file || uploading}>
+          {uploading ? <><span className="spinner" /> Uploading…</> : 'Upload'}
+        </button>
       </div>
-
-      {error  && <div className="login-error" style={{ marginTop: 4, marginBottom: 6 }}>{error}</div>}
-      {result && <div className="note" style={{ fontSize: 12, marginBottom: 8, color: '#3E9F4B' }}>
-        ✓ Import complete — <strong>{result.written}</strong> written, <strong>{result.skipped}</strong> skipped.
+      {error  && <div className="login-error" style={{ marginTop: 4, fontSize: 12 }}>{error}</div>}
+      {result && <div style={{ fontSize: 12, color: '#3E9F4B', marginTop: 4 }}>
+        ✓ <strong>{result.written.toLocaleString('en-IE')}</strong> written, <strong>{result.skipped}</strong> skipped.
       </div>}
-
-      <button className="btn btn-primary btn-sm" onClick={handleUpload} disabled={!file || uploading}>
-        {uploading ? <><span className="spinner" /> Uploading…</> : 'Upload'}
-      </button>
     </div>
   )
 }
