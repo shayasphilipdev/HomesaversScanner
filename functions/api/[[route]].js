@@ -894,12 +894,11 @@ export async function onRequest(context) {
 
     if (path === '/prices/upload-excel' && method === 'POST') {
       if (!isAdminRole(session)) return err('Forbidden', 403)
-      const fd      = await request.formData()
-      const file    = fd.get('file')
-      const sheetArg = fd.get('sheet') || '1'
-      if (!file) return err('No file uploaded', 400)
+      const sheetArg = url.searchParams.get('sheet') || '1'
+      const arrayBuffer = await request.arrayBuffer()
+      if (!arrayBuffer || arrayBuffer.byteLength === 0) return err('Empty file', 400)
 
-      const parsed = await parseExcelServerSide(await file.arrayBuffer(), sheetArg)
+      const parsed = await parseExcelServerSide(arrayBuffer, sheetArg)
       if (parsed.error) return err(parsed.error, 400)
 
       // Column aliases — same as PowerShell sync script
@@ -949,12 +948,11 @@ export async function onRequest(context) {
 
     if (path === '/alt-barcodes/upload-excel' && method === 'POST') {
       if (!isAdminRole(session)) return err('Forbidden', 403)
-      const fd      = await request.formData()
-      const file    = fd.get('file')
-      const sheetArg = fd.get('sheet') || '1'
-      if (!file) return err('No file uploaded', 400)
+      const sheetArg = url.searchParams.get('sheet') || '1'
+      const arrayBuffer = await request.arrayBuffer()
+      if (!arrayBuffer || arrayBuffer.byteLength === 0) return err('Empty file', 400)
 
-      const parsed = await parseExcelServerSide(await file.arrayBuffer(), sheetArg)
+      const parsed = await parseExcelServerSide(arrayBuffer, sheetArg)
       if (parsed.error) return err(parsed.error, 400)
 
       const ALIASES = {

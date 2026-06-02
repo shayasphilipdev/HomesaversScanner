@@ -213,14 +213,15 @@ export const adminImportPrices         = (rows) => request('/prices/import',    
 
 // Server-side Excel upload — browser sends raw .xlsx, server parses with SheetJS
 export async function adminUploadExcel(endpoint, file, sheet) {
-  const fd = new FormData()
-  fd.append('file', file)
-  fd.append('sheet', sheet || '1')
   const token = getToken()
-  const res = await fetch(`/api${endpoint}`, {
+  const s = encodeURIComponent(sheet || '1')
+  const res = await fetch(`/api${endpoint}?sheet=${s}`, {
     method:  'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body:    fd
+    headers: {
+      'Content-Type': 'application/octet-stream',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
+    body: file
   })
   if (res.status === 401) { clearToken(); if (typeof window !== 'undefined') window.location.reload(); throw new Error('Session expired') }
   const data = await res.json()
