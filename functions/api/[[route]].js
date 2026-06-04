@@ -1619,6 +1619,20 @@ export async function onRequest(context) {
         order: 'sort_order.asc,title.asc',
         limit: '1000'
       })
+      // Store managers (and other store roles) see only templates that apply to
+      // their own store — not the whole chain's templates.
+      if (STORE_ROLES.includes(session.role)) {
+        const scope   = await scopedStoreIds(db, session)
+        const storeId = (scope && scope[0]) || null
+        if (!storeId) return json([])
+        const [store] = await db.select('stores', { select: 'id,area_id', id: `eq.${storeId}` })
+        const areaId  = store?.area_id || null
+        const applies = (t) =>
+          t.applies_to === 'all'  ? true
+          : t.applies_to === 'area' ? (Array.isArray(t.area_ids)  && t.area_ids.includes(areaId))
+          : (Array.isArray(t.store_ids) && t.store_ids.includes(storeId))
+        return json(rows.filter(applies))
+      }
       return json(rows)
     }
 
@@ -1631,6 +1645,18 @@ export async function onRequest(context) {
       if (!['all','area','stores','one'].includes(b.applies_to || 'all'))
         return err('Invalid applies_to', 400)
 
+      // Store managers can only create templates for their own store — force
+      // the scope server-side regardless of what the client sends.
+      let appliesTo = b.applies_to || 'all'
+      let areaIds   = Array.isArray(b.area_ids)  ? b.area_ids.filter(x => /^[a-f0-9-]{36}$/.test(x))  : []
+      let storeIds  = Array.isArray(b.store_ids) ? b.store_ids.filter(x => /^[a-f0-9-]{36}$/.test(x)) : []
+      if (STORE_ROLES.includes(session.role)) {
+        const scope = await scopedStoreIds(db, session)
+        const sid   = scope && scope[0]
+        if (!sid) return err('No store assigned to this account', 403)
+        appliesTo = 'one'; storeIds = [sid]; areaIds = []
+      }
+
       const inserted = await db.insert('store_task_templates', {
         title:                b.title.trim(),
         description:          b.description || null,
@@ -1640,9 +1666,9 @@ export async function onRequest(context) {
         due_window:           b.due_window || null,
         requires_photo:       !!b.requires_photo,
         requires_notes:       !!b.requires_notes,
-        applies_to:           b.applies_to || 'all',
-        area_ids:             Array.isArray(b.area_ids)  ? b.area_ids.filter(x => /^[a-f0-9-]{36}$/.test(x))  : [],
-        store_ids:            Array.isArray(b.store_ids) ? b.store_ids.filter(x => /^[a-f0-9-]{36}$/.test(x)) : [],
+        applies_to:           appliesTo,
+        area_ids:             areaIds,
+        store_ids:            storeIds,
         assigned_to_role:     b.assigned_to_role || 'all',
         assigned_to_roles:    Array.isArray(b.assigned_to_roles)    ? b.assigned_to_roles    : [],
         assigned_to_user_ids: Array.isArray(b.assigned_to_user_ids) ? b.assigned_to_user_ids.filter(x => /^[a-f0-9-]{36}$/.test(x)) : [],
