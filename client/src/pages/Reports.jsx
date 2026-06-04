@@ -4,7 +4,7 @@ import {
   getStores, getTaskTypes, getToken, getTaskRecords,
   updateTaskRecord, bulkReviewTaskRecords,
   adminListTemplates, getStoreTaskReportRows,
-  getTaskRecordEvents, clearToken, getProductMaster
+  getTaskRecordEvents, clearToken, getProductMaster, getProductMasterFilters
 } from '../lib/api.js'
 import { TASK_FORMS } from '../lib/taskTypes.js'
 import { downloadExcel } from '../lib/excel.js'
@@ -85,26 +85,38 @@ const PM_COLUMNS = [
   { key: 'supplier',            label: 'Supplier' }
 ]
 
+const EMPTY_FILTERS = { category: '', subcategory: '', product_type: '', supplier: '', product_status: '' }
+
 function ProductMasterReport() {
   const [draftQ, setDraftQ] = useState('')
   const [q, setQ]           = useState('')
   const [page, setPage]     = useState(1)
+  const [filters, setFilters] = useState(EMPTY_FILTERS)
+  const [options, setOptions] = useState(null)
   const [data, setData]     = useState({ rows: [], total: 0, pages: 1, limit: 100 })
   const [loading, setLoading] = useState(true)
   const [error, setError]   = useState('')
 
+  // Dropdown option lists — loaded once.
+  useEffect(() => { getProductMasterFilters().then(setOptions).catch(() => setOptions({})) }, [])
+
+  const filterKey = JSON.stringify(filters)
   useEffect(() => {
     let alive = true
     setLoading(true); setError('')
-    getProductMaster({ q, page })
+    getProductMaster({ q, page, filters })
       .then(d => { if (alive) setData(d) })
       .catch(e => { if (alive) { setError(e.message); setData({ rows: [], total: 0, pages: 1, limit: 100 }) } })
       .finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
-  }, [q, page])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, page, filterKey])
 
-  const runSearch   = () => { setQ(draftQ.trim()); setPage(1) }
-  const clearSearch = () => { setDraftQ(''); setQ(''); setPage(1) }
+  const runSearch    = () => { setQ(draftQ.trim()); setPage(1) }
+  const clearSearch  = () => { setDraftQ(''); setQ(''); setPage(1) }
+  const setFilter    = (k, v) => { setFilters(f => ({ ...f, [k]: v })); setPage(1) }
+  const clearFilters = () => { setFilters(EMPTY_FILTERS); setPage(1) }
+  const anyFilter    = Object.values(filters).some(Boolean)
 
   const { rows, total, pages, limit } = data
   const fromRow = total === 0 ? 0 : (page - 1) * limit + 1
@@ -127,6 +139,17 @@ function ProductMasterReport() {
           </button>
           {q && <button className="btn btn-sm btn-outline" onClick={clearSearch} disabled={loading}>✕ Clear</button>}
         </div>
+
+        {options && (
+          <div className="flex-row" style={{ gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+            <FilterSelect label="Category"       value={filters.category}       opts={options.categories}       onChange={v => setFilter('category', v)} />
+            <FilterSelect label="Subcategory"    value={filters.subcategory}    opts={options.subcategories}    onChange={v => setFilter('subcategory', v)} />
+            <FilterSelect label="Product Type"   value={filters.product_type}   opts={options.product_types}    onChange={v => setFilter('product_type', v)} />
+            <FilterSelect label="Supplier"       value={filters.supplier}       opts={options.suppliers}        onChange={v => setFilter('supplier', v)} />
+            <FilterSelect label="Product Status" value={filters.product_status} opts={options.product_statuses} onChange={v => setFilter('product_status', v)} />
+            {anyFilter && <button className="btn btn-sm btn-outline" onClick={clearFilters} disabled={loading}>✕ Clear filters</button>}
+          </div>
+        )}
 
         {error && <div className="login-error" style={{ marginBottom: 8 }}>{error}</div>}
 
@@ -154,6 +177,16 @@ function ProductMasterReport() {
         {pages > 1 && <Pager page={page} pages={pages} disabled={loading} onGo={setPage} />}
       </div>
     </div>
+  )
+}
+
+// One dropdown filter. Empty value = "All".
+function FilterSelect({ label, value, opts, onChange }) {
+  return (
+    <select value={value} onChange={e => onChange(e.target.value)} style={{ fontSize: 13, minWidth: 130, maxWidth: 220 }}>
+      <option value="">{label}: All</option>
+      {(opts || []).map(o => <option key={o} value={o}>{o}</option>)}
+    </select>
   )
 }
 

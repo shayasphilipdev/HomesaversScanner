@@ -80,14 +80,18 @@ export const getDashboardStats = ({ from, to, storeId, storeIds } = {}) => {
 }
 
 // Product Master — paginated lookup for all users (alt_barcodes + prices).
-// Browse by page, or search (q >= 2 chars). Returns { rows, total, page,
-// limit, pages }. 100 rows per page. View-only.
-export const getProductMaster = ({ q = '', page = 1 } = {}) => {
+// Browse by page, search (q >= 2 chars), and/or exact-match dropdown filters.
+// Returns { rows, total, page, limit, pages }. 100 rows per page. View-only.
+export const getProductMaster = ({ q = '', page = 1, filters = {} } = {}) => {
   const p = new URLSearchParams()
   if (q) p.set('q', q)
   if (page > 1) p.set('page', String(page))
+  for (const [k, v] of Object.entries(filters)) if (v) p.set(k, v)
   return request('/product-master' + (p.toString() ? `?${p}` : ''))
 }
+
+// Distinct values for the Product Master dropdown filters.
+export const getProductMasterFilters = () => request('/product-master/filters')
 
 // ── Products master lookup ──────────────────────────────────────────────────
 

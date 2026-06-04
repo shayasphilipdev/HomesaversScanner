@@ -2403,10 +2403,16 @@ export async function onRequest(context) {
       return json(rows[0] || null)
     }
 
-    // GET /product-master?q=&page=  — paginated Product Master for ALL users.
-    // Backed by the product_master materialized view (alt_barcodes + prices).
-    // Browse all rows by page, or search across code/barcode/description/
-    // category/subcategory. 100 rows/page. View-only — no export, no writes.
+    // GET /product-master/filters — distinct values for the dropdown filters.
+    if (path === '/product-master/filters' && method === 'GET') {
+      const opts = await db.rpc('product_master_filters', {})
+      return json(opts || {})
+    }
+
+    // GET /product-master?q=&page=&category=&subcategory=&product_type=&supplier=
+    //   &product_status=  — paginated Product Master for ALL users.
+    // Plain join view over alt_barcodes + prices (no stored copy). Search across
+    // description/barcode/code + exact-match dropdown filters. 100 rows/page.
     if (path === '/product-master' && method === 'GET') {
       const q     = (url.searchParams.get('q') || '').trim()
       const limit = 100
@@ -2418,13 +2424,14 @@ export async function onRequest(context) {
         offset: String((page - 1) * limit)
       }
       if (q.length >= 2) {
-        // Search the indexed main-table columns only so the query stays fast
-        // without a duplicate table: description = "contains" (trigram index),
-        // barcode / code = exact match (btree). Category/subcategory are shown
-        // but not searched (they live in prices; searching them would force a
-        // slow cross-table scan).
+        // description = "contains" (trigram index); barcode / code = exact (btree).
         const safe = q.replace(/[%,()*]/g, ' ').trim()
         params['or'] = `(product_description.ilike.*${safe}*,product_barcode.eq.${safe},product_code.eq.${safe})`
+      }
+      // Exact-match dropdown filters (AND-combined).
+      for (const f of ['category', 'subcategory', 'product_type', 'supplier', 'product_status']) {
+        const v = (url.searchParams.get(f) || '').trim()
+        if (v) params[f] = `eq.${v}`
       }
       const { rows, total } = await db.selectPage('product_master', params)
       return json({ rows, total, page, limit, pages: Math.max(1, Math.ceil(total / limit)) })
