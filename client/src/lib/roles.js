@@ -73,6 +73,10 @@ export const roleScope = (key) => ROLES[key]?.scope || 'unknown'
 
 // Convenience predicates — mirror the server-side guards.
 export const canAccessAdmin       = (session) => !!session && ADMIN_ROLES.includes(session.role)
+// Settings is admin-only (stricter than the rest of the admin area).
+export const canAccessSettings    = (session) => !!session && session.role === 'admin'
+// Master Reports (the master data tables) — every back-office (HQ) role.
+export const canAccessMasterReports = (session) => !!session && HQ_ROLE_KEYS.includes(session.role)
 export const canAccessTemplates   = (session) => !!session && TASK_CREATOR_ROLES.includes(session.role)
 export const canReviewHQRecords   = (session) => !!session && TASK_REVIEWER_ROLES.includes(session.role)
 export const canSeeAnyAdminLink   = (session) => canAccessAdmin(session) || canAccessTemplates(session)

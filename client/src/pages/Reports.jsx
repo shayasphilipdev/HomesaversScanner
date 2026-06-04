@@ -4,12 +4,14 @@ import {
   getStores, getTaskTypes, getToken, getTaskRecords,
   updateTaskRecord, bulkReviewTaskRecords,
   adminListTemplates, getStoreTaskReportRows,
-  getTaskRecordEvents, clearToken
+  getTaskRecordEvents, clearToken, getProductMaster
 } from '../lib/api.js'
 import { TASK_FORMS } from '../lib/taskTypes.js'
 import { downloadExcel } from '../lib/excel.js'
 import { useToast } from '../components/Toast.jsx'
 import MultiSelectDropdown from '../components/forms/MultiSelectDropdown.jsx'
+import AdminReports from './AdminReports.jsx'
+import { canAccessMasterReports } from '../lib/roles.js'
 
 function toLocalInput(d) {
   const pad = n => String(n).padStart(2, '0')
@@ -31,21 +33,117 @@ const STATUS_LABEL = {
   cleared:          { label: 'Clear',            cls: 'badge-store-done' }
 }
 
+const SUBTITLES = {
+  hq:      'HO task records — error reports from stores',
+  store:   'Store tasks — operational checklist completions',
+  product: 'Product Master — look up any product',
+  master:  'Master reports — back-office data tables'
+}
+
 export default function Reports() {
+  const { session } = useStore()
   const [tab, setTab] = useState('hq')
+  const showMaster = canAccessMasterReports(session)
+
   return (
     <div>
       <div className="page-header">
         <div>
           <div className="page-title">Reports</div>
-          <div className="page-subtitle">{tab === 'hq' ? 'HO task records — error reports from stores' : 'Store tasks — operational checklist completions'}</div>
+          <div className="page-subtitle">{SUBTITLES[tab] || ''}</div>
         </div>
-        <div className="flex-row" style={{ gap: 6 }}>
+        <div className="flex-row" style={{ gap: 6, flexWrap: 'wrap' }}>
           <button className={`btn btn-sm ${tab === 'hq' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('hq')}>HO records</button>
           <button className={`btn btn-sm ${tab === 'store' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('store')}>Store tasks</button>
+          <button className={`btn btn-sm ${tab === 'product' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('product')}>Product Master</button>
+          {showMaster && (
+            <button className={`btn btn-sm ${tab === 'master' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('master')}>Master Reports</button>
+          )}
         </div>
       </div>
-      {tab === 'hq' ? <HQReports /> : <StoreTaskReports />}
+      {tab === 'hq'      && <HQReports />}
+      {tab === 'store'   && <StoreTaskReports />}
+      {tab === 'product' && <ProductMasterReport />}
+      {tab === 'master'  && showMaster && <AdminReports embedded />}
+    </div>
+  )
+}
+
+// Product Master — searchable product lookup for every user. Backed by the
+// product_master materialized view (alt_barcodes + prices). View-only: search
+// by code / barcode / description / category / subcategory. No export.
+const PM_COLUMNS = [
+  { key: 'product_code',        label: 'Product Code' },
+  { key: 'product_description', label: 'Product Description' },
+  { key: 'selling_price',       label: 'Selling Price', get: r => r.selling_price != null && r.selling_price !== '' ? `€${Number(r.selling_price).toFixed(2)}` : '' },
+  { key: 'category',            label: 'Category' },
+  { key: 'subcategory',         label: 'Subcategory' },
+  { key: 'product_barcode',     label: 'Product Barcode' },
+  { key: 'product_status',      label: 'Product Status' },
+  { key: 'barcode_status',      label: 'Barcode Status' },
+  { key: 'product_type',        label: 'Product Type' },
+  { key: 'supplier',            label: 'Supplier' }
+]
+
+function ProductMasterReport() {
+  const [draftQ, setDraftQ] = useState('')
+  const [rows, setRows]     = useState([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError]   = useState('')
+  const [searched, setSearched] = useState(false)
+
+  const run = async () => {
+    const q = draftQ.trim()
+    if (q.length < 2) { setError('Type at least 2 characters to search.'); return }
+    setLoading(true); setError(''); setSearched(true)
+    try { setRows(await getProductMaster(q)) }
+    catch (e) { setError(e.message); setRows([]) }
+    finally { setLoading(false) }
+  }
+
+  return (
+    <div className="card">
+      <div className="card-body">
+        <div className="flex-row" style={{ gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+          <input
+            type="text"
+            value={draftQ}
+            onChange={e => setDraftQ(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && run()}
+            placeholder="Search by code, barcode, description, category or subcategory…"
+            style={{ flex: 1, minWidth: 240 }}
+          />
+          <button className="btn btn-sm btn-primary" onClick={run} disabled={loading}>
+            {loading ? <span className="spinner" /> : 'Search'}
+          </button>
+        </div>
+
+        {error && <div className="login-error" style={{ marginBottom: 8 }}>{error}</div>}
+
+        {loading ? null : searched && !rows.length && !error ? (
+          <p className="note" style={{ margin: 0 }}>No products match “{draftQ.trim()}”.</p>
+        ) : rows.length ? (
+          <>
+            <p className="note" style={{ fontSize: 12, marginTop: 0 }}>
+              Showing {rows.length}{rows.length === 100 ? '+ (refine your search)' : ''} result{rows.length === 1 ? '' : 's'}.
+            </p>
+            <div className="table-wrap">
+              <table style={{ fontSize: 13 }}>
+                <thead><tr>{PM_COLUMNS.map(c => <th key={c.key}>{c.label}</th>)}</tr></thead>
+                <tbody>
+                  {rows.map((r, i) => (
+                    <tr key={i}>
+                      {PM_COLUMNS.map(c => <td key={c.key}>{c.get ? c.get(r) : (r[c.key] ?? '')}</td>)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : (
+          <p className="note" style={{ margin: 0 }}>Search for a product to see its details.</p>
+        )}
+      </div>
     </div>
   )
 }

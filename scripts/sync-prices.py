@@ -200,6 +200,11 @@ def main():
     record_run(headers, file_name=file_name, file_size=file_size,
                imported=imported, skipped=skipped, status="ok",
                message=f"Imported {imported}, skipped {skipped}", started_at=started_at)
+    try:
+        requests.post(f"{BASE_URL}/api/product-master/refresh", headers=headers, timeout=120)
+        log("Product Master lookup refreshed.")
+    except Exception as e:
+        log(f"Could not refresh Product Master: {e}", "WARN")
     log("=== Prices sync finished OK ===")
 
 

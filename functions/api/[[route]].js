@@ -665,6 +665,15 @@ export async function onRequest(context) {
       return json(inserted[0] ?? inserted, 201)
     }
 
+    // Refresh the Product Master materialized view — called by the sync jobs at
+    // the end of each import so the store lookup reflects the latest data.
+    if (path === '/product-master/refresh' && method === 'POST') {
+      if (!env.PRODUCT_SYNC_SECRET) return err('PRODUCT_SYNC_SECRET not configured', 500)
+      if ((request.headers.get('X-Sync-Secret') || '') !== env.PRODUCT_SYNC_SECRET) return err('Forbidden', 403)
+      await db.rpc('refresh_product_master', {})
+      return json({ ok: true })
+    }
+
     // Service-account bulk product sync — used by the scheduled
     // PowerShell job to push the daily product master Excel.
     // Auth: shared secret in the X-Sync-Secret header (set as a Cloudflare
@@ -2304,6 +2313,23 @@ export async function onRequest(context) {
         limit: '1'
       })
       return json(rows[0] || null)
+    }
+
+    // GET /product-master?q=&limit=  — searchable Product Master for ALL users.
+    // Backed by the product_master view (alt_barcodes + prices). Search across
+    // product code, barcode, description, category, subcategory. View-only — no
+    // export, no writes. Requires a query of >= 2 chars to avoid full scans.
+    if (path === '/product-master' && method === 'GET') {
+      const q = (url.searchParams.get('q') || '').trim()
+      const limit = Math.min(Math.max(1, Number(url.searchParams.get('limit')) || 100), 500)
+      if (q.length < 2) return json([])  // force a real search
+      const safe = q.replace(/[%,()*]/g, ' ').trim()
+      const rows = await db.select('product_master', {
+        select: 'product_code,product_description,selling_price,category,subcategory,product_barcode,product_status,barcode_status,product_type,supplier',
+        or: `(product_code.ilike.*${safe}*,product_barcode.ilike.*${safe}*,product_description.ilike.*${safe}*,category.ilike.*${safe}*,subcategory.ilike.*${safe}*)`,
+        limit: String(limit)
+      })
+      return json(rows)
     }
 
     // ── Task records ──────────────────────────────────────────────────────

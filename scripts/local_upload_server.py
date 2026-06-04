@@ -183,6 +183,13 @@ class Handler(BaseHTTPRequestHandler):
             result["total_rows"] = len(df)
             result["skipped"]    = result.get("skipped", 0) + skipped
             _record_run(kind, "Manual upload", result["written"], result["skipped"], "ok", secret)
+            try:
+                urllib.request.urlopen(urllib.request.Request(
+                    f"{BASE_URL}/api/product-master/refresh", data=b"{}",
+                    headers={"Content-Type": "application/json", "X-Sync-Secret": secret},
+                    method="POST"), timeout=120).read()
+            except Exception as e:
+                print(f"[upload-server] product-master refresh failed: {e}", flush=True)
             self._json(200, result)
 
         except Exception as exc:

@@ -11,7 +11,7 @@ import {
 import AdminNav from '../components/AdminNav.jsx'
 import { useToast } from '../components/Toast.jsx'
 import MultiSelectDropdown from '../components/forms/MultiSelectDropdown.jsx'
-import { canAccessAdmin } from '../lib/roles.js'
+import { canAccessMasterReports } from '../lib/roles.js'
 
 // One page · 8 sub-tabs · same shape per tab:
 //   filters → table → "↓ Excel" → optional stats tile.
@@ -28,24 +28,29 @@ const TABS = [
   { key: 'prices',    label: 'Prices' }
 ]
 
-export default function AdminReports() {
+// `embedded` renders just the tabs + tables (no page header / AdminNav), so it
+// can live inside the Reports page as the "Master Reports" view.
+export default function AdminReports({ embedded = false }) {
   const { session } = useStore()
   const [tab, setTab] = useState('employees')
 
-  if (!canAccessAdmin(session)) {
-    return <div className="card"><div className="empty-state"><p>Admin-only page.</p></div></div>
+  if (!canAccessMasterReports(session)) {
+    return <div className="card"><div className="empty-state"><p>Back-office access only.</p></div></div>
   }
 
   return (
     <div>
-      <div className="page-header">
-        <div>
-          <div className="page-title">Admin Reports</div>
-          <div className="page-subtitle">Full visibility into the master tables behind every admin page.</div>
-        </div>
-      </div>
-
-      <AdminNav />
+      {!embedded && (
+        <>
+          <div className="page-header">
+            <div>
+              <div className="page-title">Admin Reports</div>
+              <div className="page-subtitle">Full visibility into the master tables behind every admin page.</div>
+            </div>
+          </div>
+          <AdminNav />
+        </>
+      )}
 
       <div className="flex-row" style={{ gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
         {TABS.map(t => (

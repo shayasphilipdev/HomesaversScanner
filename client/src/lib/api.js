@@ -79,6 +79,11 @@ export const getDashboardStats = ({ from, to, storeId, storeIds } = {}) => {
   return request('/dashboard/stats' + (q.toString() ? `?${q}` : ''))
 }
 
+// Product Master — searchable lookup for all users (alt_barcodes + prices).
+// Requires a query of >= 2 chars; returns up to 100 rows. View-only.
+export const getProductMaster = (q) =>
+  request('/product-master' + (q ? `?q=${encodeURIComponent(q)}` : ''))
+
 // ── Products master lookup ──────────────────────────────────────────────────
 
 export const lookupProduct = (productCode) =>

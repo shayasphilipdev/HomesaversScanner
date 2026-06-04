@@ -128,8 +128,9 @@ function Shell() {
             <Route path="/admin/employees"  element={<AdminGuard><AdminEmployees /></AdminGuard>} />
             <Route path="/admin/lookups"    element={<AdminGuard><AdminLookups /></AdminGuard>} />
             <Route path="/admin/products"   element={<AdminGuard><AdminProducts /></AdminGuard>} />
-            <Route path="/admin/settings"   element={<AdminGuard><AdminSettings /></AdminGuard>} />
-            <Route path="/admin/reports"    element={<AdminGuard><AdminReports /></AdminGuard>} />
+            <Route path="/admin/settings"   element={<AdminGuard mode="settings"><AdminSettings /></AdminGuard>} />
+            {/* Master Reports moved into the Reports page; keep the old URL working. */}
+            <Route path="/admin/reports"    element={<Navigate to="/reports" replace />} />
           <Route path="*"                 element={<Navigate to={home} replace />} />
         </Routes>
         </main>
