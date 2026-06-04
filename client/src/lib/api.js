@@ -79,10 +79,15 @@ export const getDashboardStats = ({ from, to, storeId, storeIds } = {}) => {
   return request('/dashboard/stats' + (q.toString() ? `?${q}` : ''))
 }
 
-// Product Master — searchable lookup for all users (alt_barcodes + prices).
-// Requires a query of >= 2 chars; returns up to 100 rows. View-only.
-export const getProductMaster = (q) =>
-  request('/product-master' + (q ? `?q=${encodeURIComponent(q)}` : ''))
+// Product Master — paginated lookup for all users (alt_barcodes + prices).
+// Browse by page, or search (q >= 2 chars). Returns { rows, total, page,
+// limit, pages }. 100 rows per page. View-only.
+export const getProductMaster = ({ q = '', page = 1 } = {}) => {
+  const p = new URLSearchParams()
+  if (q) p.set('q', q)
+  if (page > 1) p.set('page', String(page))
+  return request('/product-master' + (p.toString() ? `?${p}` : ''))
+}
 
 // ── Products master lookup ──────────────────────────────────────────────────
 

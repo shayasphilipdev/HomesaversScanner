@@ -87,19 +87,28 @@ const PM_COLUMNS = [
 
 function ProductMasterReport() {
   const [draftQ, setDraftQ] = useState('')
-  const [rows, setRows]     = useState([])
-  const [loading, setLoading] = useState(false)
+  const [q, setQ]           = useState('')
+  const [page, setPage]     = useState(1)
+  const [data, setData]     = useState({ rows: [], total: 0, pages: 1, limit: 100 })
+  const [loading, setLoading] = useState(true)
   const [error, setError]   = useState('')
-  const [searched, setSearched] = useState(false)
 
-  const run = async () => {
-    const q = draftQ.trim()
-    if (q.length < 2) { setError('Type at least 2 characters to search.'); return }
-    setLoading(true); setError(''); setSearched(true)
-    try { setRows(await getProductMaster(q)) }
-    catch (e) { setError(e.message); setRows([]) }
-    finally { setLoading(false) }
-  }
+  useEffect(() => {
+    let alive = true
+    setLoading(true); setError('')
+    getProductMaster({ q, page })
+      .then(d => { if (alive) setData(d) })
+      .catch(e => { if (alive) { setError(e.message); setData({ rows: [], total: 0, pages: 1, limit: 100 }) } })
+      .finally(() => { if (alive) setLoading(false) })
+    return () => { alive = false }
+  }, [q, page])
+
+  const runSearch   = () => { setQ(draftQ.trim()); setPage(1) }
+  const clearSearch = () => { setDraftQ(''); setQ(''); setPage(1) }
+
+  const { rows, total, pages, limit } = data
+  const fromRow = total === 0 ? 0 : (page - 1) * limit + 1
+  const toRow   = Math.min(page * limit, total)
 
   return (
     <div className="card">
@@ -109,41 +118,86 @@ function ProductMasterReport() {
             type="text"
             value={draftQ}
             onChange={e => setDraftQ(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && run()}
+            onKeyDown={e => e.key === 'Enter' && runSearch()}
             placeholder="Search by code, barcode, description, category or subcategory…"
             style={{ flex: 1, minWidth: 240 }}
           />
-          <button className="btn btn-sm btn-primary" onClick={run} disabled={loading}>
+          <button className="btn btn-sm btn-primary" onClick={runSearch} disabled={loading}>
             {loading ? <span className="spinner" /> : 'Search'}
           </button>
+          {q && <button className="btn btn-sm btn-outline" onClick={clearSearch} disabled={loading}>✕ Clear</button>}
         </div>
 
         {error && <div className="login-error" style={{ marginBottom: 8 }}>{error}</div>}
 
-        {loading ? null : searched && !rows.length && !error ? (
-          <p className="note" style={{ margin: 0 }}>No products match “{draftQ.trim()}”.</p>
-        ) : rows.length ? (
-          <>
-            <p className="note" style={{ fontSize: 12, marginTop: 0 }}>
-              Showing {rows.length}{rows.length === 100 ? '+ (refine your search)' : ''} result{rows.length === 1 ? '' : 's'}.
-            </p>
-            <div className="table-wrap">
-              <table style={{ fontSize: 13 }}>
-                <thead><tr>{PM_COLUMNS.map(c => <th key={c.key}>{c.label}</th>)}</tr></thead>
-                <tbody>
-                  {rows.map((r, i) => (
-                    <tr key={i}>
-                      {PM_COLUMNS.map(c => <td key={c.key}>{c.get ? c.get(r) : (r[c.key] ?? '')}</td>)}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        ) : (
-          <p className="note" style={{ margin: 0 }}>Search for a product to see its details.</p>
+        <p className="note" style={{ fontSize: 12, marginTop: 0 }}>
+          {total > 0
+            ? `Showing ${fromRow.toLocaleString('en-IE')}–${toRow.toLocaleString('en-IE')} of ${total.toLocaleString('en-IE')}${q ? ` for “${q}”` : ''}`
+            : (loading ? 'Loading…' : (q ? `No products match “${q}”.` : 'No products.'))}
+        </p>
+
+        {!!rows.length && (
+          <div className="table-wrap">
+            <table style={{ fontSize: 13 }}>
+              <thead><tr>{PM_COLUMNS.map(c => <th key={c.key}>{c.label}</th>)}</tr></thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={i}>
+                    {PM_COLUMNS.map(c => <td key={c.key}>{c.get ? c.get(r) : (r[c.key] ?? '')}</td>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
+
+        {pages > 1 && <Pager page={page} pages={pages} disabled={loading} onGo={setPage} />}
       </div>
+    </div>
+  )
+}
+
+// Compact pager: First/Prev, a window of page numbers around the current page,
+// Next/Last, plus a "go to page" box — so any of the pages can be opened.
+function Pager({ page, pages, onGo, disabled }) {
+  const [jump, setJump] = useState('')
+  const go = (p) => { if (p >= 1 && p <= pages && p !== page) onGo(p) }
+
+  const win = []
+  const add = n => { if (n >= 1 && n <= pages && !win.includes(n)) win.push(n) }
+  add(1); add(2)
+  for (let p = page - 2; p <= page + 2; p++) add(p)
+  add(pages - 1); add(pages)
+  win.sort((a, b) => a - b)
+
+  const items = []
+  let prev = 0
+  for (const n of win) {
+    if (n - prev > 1) items.push(<span key={'e' + n} style={{ padding: '0 2px', color: 'var(--text-muted)' }}>…</span>)
+    items.push(
+      <button key={n} className={`btn btn-sm ${n === page ? 'btn-primary' : 'btn-outline'}`} onClick={() => go(n)} disabled={disabled}>{n}</button>
+    )
+    prev = n
+  }
+
+  const doJump = () => {
+    const n = parseInt(jump, 10)
+    if (n >= 1 && n <= pages) { onGo(n); setJump('') }
+  }
+
+  return (
+    <div className="flex-row" style={{ gap: 6, marginTop: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+      <button className="btn btn-sm btn-outline" onClick={() => go(page - 1)} disabled={disabled || page <= 1}>‹ Prev</button>
+      {items}
+      <button className="btn btn-sm btn-outline" onClick={() => go(page + 1)} disabled={disabled || page >= pages}>Next ›</button>
+      <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 6 }}>Page {page} of {pages}</span>
+      <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center', marginLeft: 6 }}>
+        <input type="number" min="1" max={pages} value={jump}
+          onChange={e => setJump(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && doJump()}
+          placeholder="Go to" style={{ width: 72, fontSize: 13 }} />
+        <button className="btn btn-sm btn-outline" onClick={doJump} disabled={disabled}>Go</button>
+      </span>
     </div>
   )
 }

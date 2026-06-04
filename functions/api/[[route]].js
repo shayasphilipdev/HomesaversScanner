@@ -2349,21 +2349,26 @@ export async function onRequest(context) {
       return json(rows[0] || null)
     }
 
-    // GET /product-master?q=&limit=  — searchable Product Master for ALL users.
-    // Backed by the product_master view (alt_barcodes + prices). Search across
-    // product code, barcode, description, category, subcategory. View-only — no
-    // export, no writes. Requires a query of >= 2 chars to avoid full scans.
+    // GET /product-master?q=&page=  — paginated Product Master for ALL users.
+    // Backed by the product_master materialized view (alt_barcodes + prices).
+    // Browse all rows by page, or search across code/barcode/description/
+    // category/subcategory. 100 rows/page. View-only — no export, no writes.
     if (path === '/product-master' && method === 'GET') {
-      const q = (url.searchParams.get('q') || '').trim()
-      const limit = Math.min(Math.max(1, Number(url.searchParams.get('limit')) || 100), 500)
-      if (q.length < 2) return json([])  // force a real search
-      const safe = q.replace(/[%,()*]/g, ' ').trim()
-      const rows = await db.select('product_master', {
+      const q     = (url.searchParams.get('q') || '').trim()
+      const limit = 100
+      const page  = Math.max(1, Number(url.searchParams.get('page')) || 1)
+      const params = {
         select: 'product_code,product_description,selling_price,category,subcategory,product_barcode,product_status,barcode_status,product_type,supplier',
-        or: `(product_code.ilike.*${safe}*,product_barcode.ilike.*${safe}*,product_description.ilike.*${safe}*,category.ilike.*${safe}*,subcategory.ilike.*${safe}*)`,
-        limit: String(limit)
-      })
-      return json(rows)
+        order:  'product_description.asc',
+        limit:  String(limit),
+        offset: String((page - 1) * limit)
+      }
+      if (q.length >= 2) {
+        const safe = q.replace(/[%,()*]/g, ' ').trim()
+        params['or'] = `(product_code.ilike.*${safe}*,product_barcode.ilike.*${safe}*,product_description.ilike.*${safe}*,category.ilike.*${safe}*,subcategory.ilike.*${safe}*)`
+      }
+      const { rows, total } = await db.selectPage('product_master', params)
+      return json({ rows, total, page, limit, pages: Math.max(1, Math.ceil(total / limit)) })
     }
 
     // ── Task records ──────────────────────────────────────────────────────
