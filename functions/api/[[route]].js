@@ -708,6 +708,34 @@ export async function onRequest(context) {
       return json({ ok: true })
     }
 
+    // Server clock — the sync captures this BEFORE importing so it can later
+    // flush rows older than the run start (skew-free, no client clock used).
+    if (path === '/sync/server-time' && method === 'GET') {
+      if (!env.PRODUCT_SYNC_SECRET) return err('PRODUCT_SYNC_SECRET not configured', 500)
+      if ((request.headers.get('X-Sync-Secret') || '') !== env.PRODUCT_SYNC_SECRET) return err('Forbidden', 403)
+      return json({ now: new Date().toISOString() })
+    }
+
+    // Flush stale rows after a successful full import: delete anything whose
+    // updated_at is older than the run's start (i.e. not in the latest file).
+    if (path === '/alt-barcodes/flush-stale' && method === 'POST') {
+      if (!env.PRODUCT_SYNC_SECRET) return err('PRODUCT_SYNC_SECRET not configured', 500)
+      if ((request.headers.get('X-Sync-Secret') || '') !== env.PRODUCT_SYNC_SECRET) return err('Forbidden', 403)
+      const b = await request.json()
+      if (!b.before) return err('before timestamp required', 400)
+      const deleted = await db.rpc('flush_stale_alt_barcodes', { p_before: b.before })
+      return json({ deleted: typeof deleted === 'number' ? deleted : 0 })
+    }
+
+    if (path === '/prices/flush-stale' && method === 'POST') {
+      if (!env.PRODUCT_SYNC_SECRET) return err('PRODUCT_SYNC_SECRET not configured', 500)
+      if ((request.headers.get('X-Sync-Secret') || '') !== env.PRODUCT_SYNC_SECRET) return err('Forbidden', 403)
+      const b = await request.json()
+      if (!b.before) return err('before timestamp required', 400)
+      const deleted = await db.rpc('flush_stale_prices', { p_before: b.before })
+      return json({ deleted: typeof deleted === 'number' ? deleted : 0 })
+    }
+
     // Service-account bulk product sync — used by the scheduled
     // PowerShell job to push the daily product master Excel.
     // Auth: shared secret in the X-Sync-Secret header (set as a Cloudflare

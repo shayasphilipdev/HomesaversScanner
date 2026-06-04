@@ -83,6 +83,14 @@ def main():
                    imported=0, skipped=0, status="error", message=msg, started_at=started_at)
         sys.exit(1)
 
+    # Capture the SERVER clock now (skew-free) so we can flush rows older than
+    # this run after a successful import — i.e. drop products no longer in the file.
+    flush_cutoff = None
+    try:
+        flush_cutoff = requests.get(f"{BASE_URL}/api/sync/server-time", headers=headers, timeout=30).json().get("now")
+    except Exception as e:
+        log(f"Could not get server time (stale flush will be skipped): {e}", "WARN")
+
     # Fetch config from app
     try:
         cfg = requests.get(f"{BASE_URL}/api/alt-barcodes/sync-config", headers=headers, timeout=30).json()
@@ -185,6 +193,20 @@ def main():
     record_run(headers, file_name=file_name, file_size=file_size,
                imported=imported, skipped=skipped, status="ok",
                message=f"Imported {imported}, skipped {skipped}", started_at=started_at)
+
+    # Flush stale rows (full-replace) — only after a healthy import, to protect
+    # against a partial/corrupt file wiping the table.
+    FLUSH_MIN = 1000
+    if flush_cutoff and imported >= FLUSH_MIN:
+        try:
+            d = requests.post(f"{BASE_URL}/api/alt-barcodes/flush-stale",
+                              headers=headers, json={"before": flush_cutoff}, timeout=180).json()
+            log(f"Flushed {d.get('deleted', 0)} stale alt-barcode row(s).")
+        except Exception as e:
+            log(f"Could not flush stale rows: {e}", "WARN")
+    elif imported < FLUSH_MIN:
+        log(f"Skipped stale flush — only {imported} rows imported (< {FLUSH_MIN}).", "WARN")
+
     try:
         requests.post(f"{BASE_URL}/api/product-master/refresh", headers=headers, timeout=120)
         log("Product Master lookup refreshed.")
