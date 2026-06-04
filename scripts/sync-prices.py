@@ -141,26 +141,36 @@ def main():
         fail(f"Failed to read Excel: {e}")
 
     df.columns = df.columns.str.strip()
-    log(f"Parsed {len(df)} rows. Columns: {list(df.columns[:8])}")
+    log(f"Parsed {len(df)} rows. Columns: {list(df.columns)}")
 
-    # Check required column exists
-    if REQUIRED_COL not in df.columns:
-        fail(f"Required column '{REQUIRED_COL}' not found. Available: {list(df.columns)}")
+    # Resolve mapped columns case/format-insensitively (Excel headers vary in
+    # case and punctuation), matching on a normalised key rather than exact text.
+    def _norm(s):
+        return "".join(ch for ch in str(s).lower() if ch.isalnum())
+    norm_to_actual = {_norm(c): c for c in df.columns}
+    resolved = {}  # db_field -> actual Excel column name
+    for excel_col, db_field in COLUMN_MAP.items():
+        actual = norm_to_actual.get(_norm(excel_col))
+        if actual:
+            resolved[db_field] = actual
+    log(f"Resolved columns: {resolved}")
+
+    if "ean_barcode" not in resolved:
+        fail(f"Required column 'EAN_Barcode' not found. Available: {list(df.columns)}")
 
     # Build payload — only mapped columns, skip rows with no EAN
     payload = []
     skipped = 0
     for _, row in df.iterrows():
-        ean = _safe_str(row.get(REQUIRED_COL, ""))
+        ean = _safe_str(row[resolved["ean_barcode"]])
         if not ean or ean == "0":
             skipped += 1
             continue
         record = {}
-        for excel_col, db_field in COLUMN_MAP.items():
-            if excel_col in row.index:
-                val = _safe_str(row[excel_col])
-                if val:
-                    record[db_field] = val
+        for db_field, actual in resolved.items():
+            val = _safe_str(row[actual])
+            if val:
+                record[db_field] = val
         payload.append(record)
 
     log(f"Prepared {len(payload)} rows, skipped {skipped} (no EAN)")
