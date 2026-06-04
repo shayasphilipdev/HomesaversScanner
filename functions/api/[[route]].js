@@ -220,6 +220,20 @@ const json = (data, status = 200) =>
 
 const err = (msg, status = 400) => json({ error: msg }, status)
 
+// Format an ISO timestamp as DD/MM/YYYY HH:MM:SS in Irish local time, for reports.
+function fmtReportDate(iso) {
+  if (!iso) return ''
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Europe/Dublin',
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+    }).formatToParts(new Date(iso))
+    const g = t => parts.find(p => p.type === t)?.value || ''
+    return `${g('day')}/${g('month')}/${g('year')} ${g('hour')}:${g('minute')}:${g('second')}`
+  } catch { return iso }
+}
+
 // ── Store task period helpers (Phase 9E) ─────────────────────────────────
 // period_key formats: '2026-05-17' daily · '2026-W21' weekly ·
 // '2026-05' monthly · '2026' yearly · 'once_<template_id>' once-off.
@@ -2701,30 +2715,23 @@ export async function onRequest(context) {
       const ttCsv = csv2(taskType)
       if (ttCsv.length) params['task_type'] = ttCsv.length === 1 ? `eq.${ttCsv[0]}` : `in.(${ttCsv.join(',')})`
 
-      const [records, stores] = await Promise.all([
+      const [records, stores, taskTypes] = await Promise.all([
         db.select('task_records', params),
         db.select('stores', { select: 'id,store_name' }),
+        db.select('task_types', { select: 'code,name' }),
       ])
-      // suppliers table is optional — ignore if it doesn't exist
-      let suppliers = []
-      try { suppliers = await db.select('suppliers', { select: 'supplier_code,supplier_name' }) } catch (_) {}
+      const taskTypeName = Object.fromEntries(taskTypes.map(t => [t.code, t.name]))
       const storeName    = Object.fromEntries(stores.map(s => [s.id, s.store_name]))
-      // supl_id in task_records = supplier_code in the suppliers table
-      const supplierName = Object.fromEntries(
-        suppliers.filter(s => s.supplier_code).map(s => [s.supplier_code.trim().toLowerCase(), s.supplier_name])
-      )
 
       const flat = records.map(r => ({
         barcode_no:        r.barcode_no || r.product_code || '',
         product_barcode:   r.product_barcode || '',
         item_name:         r.item_name || r.description || r.product_name_label || '',
-        task_type:         r.task_type,
+        task_type:         taskTypeName[r.task_type] || r.task_type,
         store_name:        storeName[r.store_id] || '',
         uom:               r.uom || '',
         quantity:          r.quantity ?? '',
         supl_id:           r.supl_id || '',
-        supplier_name:     supplierName[(r.supl_id || '').trim().toLowerCase()] || r.supplier_name_text || '',
-        supplier_code:     r.supplier_code || '',
         item_status:       r.item_status || '',
         barcode_status:    r.barcode_status || '',
         notes:             r.notes || '',
@@ -2733,11 +2740,11 @@ export async function onRequest(context) {
         photo_product_url: r.photo_product_url || '',
         photo_barcode_url: r.photo_barcode_url || '',
         details:           JSON.stringify(r.details || {}),
-        created_at:        r.created_at
+        created_at:        fmtReportDate(r.created_at)
       }))
 
-      const cols    = ['barcode_no','product_barcode','item_name','task_type','store_name','uom','quantity','supl_id','supplier_name','supplier_code','item_status','barcode_status','notes','status','review_notes','photo_product_url','photo_barcode_url','details','created_at']
-      const headers = ['Product Barcode','Product Code','Product Description','Task','Store','UOM','Quantity','Supplier ID','Supplier Name','Supplier Code','Product Status','Barcode Status','Notes','Status','HO Notes','Product Photo','Barcode Photo','Details','Date']
+      const cols    = ['barcode_no','product_barcode','item_name','task_type','store_name','uom','quantity','supl_id','item_status','barcode_status','notes','status','review_notes','photo_product_url','photo_barcode_url','details','created_at']
+      const headers = ['Product Barcode','Product Code','Product Description','Task','Store','UOM','Quantity','Supplier','Product Status','Barcode Status','Notes','Status','HO Notes','Product Photo','Barcode Photo','Details','Date']
 
       // ?format=json returns the raw flat rows for client-side Excel generation
       if (p.get('format') === 'json') {

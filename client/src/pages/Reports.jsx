@@ -276,9 +276,11 @@ function HQReports() {
       if (statusIds.includes('cleared')) params.set('includeCleared', '1')
       const res = await authedFetch(`/api/reports/task-records?${params}`)
       const { cols, headers, rows } = await res.json()
-      const stamp = `${from.slice(0,10)}-to-${to.slice(0,10)}`
+      const n = new Date()
+      const p = x => String(x).padStart(2, '0')
+      const stamp = `${p(n.getDate())}${p(n.getMonth() + 1)}${n.getFullYear()}${p(n.getHours())}${p(n.getMinutes())}${p(n.getSeconds())}`
       await downloadExcel(
-        `task-records-${stamp}.xlsx`, rows, cols, headers,
+        `Task Reports - ${stamp}.xlsx`, rows, cols, headers,
         new Set(['photo_product_url', 'photo_barcode_url'])
       )
     } catch (e) {
