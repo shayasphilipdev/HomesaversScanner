@@ -25,8 +25,28 @@ function TemplatesButton() {
 
 export default function StoreTasks() {
   const { session } = useStore()
-  const isStoreRole = STORE_ROLE_KEYS.includes(session.role)
-  return isStoreRole ? <StoreTodayView /> : <ManagerView />
+  const isStoreRole    = STORE_ROLE_KEYS.includes(session.role)
+  const isStoreManager = session.role === 'store_manager'
+  const [view, setView] = useState('today')
+
+  // Area managers and above: store-wide compliance overview.
+  if (!isStoreRole) return <ManagerView />
+
+  // Store managers: their store's daily tasks (default) + a performance view.
+  if (isStoreManager) {
+    return (
+      <div>
+        <div className="flex-row" style={{ gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
+          <button className={`btn btn-sm ${view === 'today' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setView('today')}>Today's tasks</button>
+          <button className={`btn btn-sm ${view === 'perf'  ? 'btn-primary' : 'btn-outline'}`} onClick={() => setView('perf')}>Store performance</button>
+        </div>
+        {view === 'today' ? <StoreTodayView /> : <ManagerView />}
+      </div>
+    )
+  }
+
+  // Other store staff: just the daily checklist.
+  return <StoreTodayView />
 }
 
 // ── Store view ───────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { useStore } from '../App.jsx'
-import { canSeeAnyAdminLink, canAccessAdmin, canDoHQTasks, canDoStoreTasks, canSeeManagerDashboard } from '../lib/roles.js'
+import { canAccessAdmin, canDoHQTasks, canDoStoreTasks, canSeeManagerDashboard } from '../lib/roles.js'
 
 // Visible only on phones (CSS handles the breakpoint).
 // Thumb-reach navigation pinned to the bottom edge, with safe-area
@@ -16,8 +16,8 @@ export default function BottomNav() {
   items.push({ to: '/product-query', icon: '💬', label: 'Query' })
   if (canDoHQTasks(session))    items.push({ to: '/tasks',       icon: '✚', label: 'HO' })
   items.push({ to: '/reports', icon: '▤', label: 'Reports' })
-  if (canSeeAnyAdminLink(session)) {
-    items.push({ to: canAccessAdmin(session) ? '/admin/stores' : '/admin/task-templates', icon: '⚙', label: 'Admin' })
+  if (canAccessAdmin(session)) {
+    items.push({ to: '/admin/stores', icon: '⚙', label: 'Admin' })
   }
 
   return (
