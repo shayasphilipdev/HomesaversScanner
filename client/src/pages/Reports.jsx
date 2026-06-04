@@ -265,7 +265,10 @@ function HQReports() {
   // All three filters are now arrays of selected ids. Empty array == "all".
   const [storeIds, setStoreIds]       = useState(isBO ? [] : (session.storeId ? [session.storeId] : []))
   const [taskTypeIds, setTaskTypeIds] = useState([])
-  const [statusIds, setStatusIds]     = useState([])
+  // Back-office logins default to the "live" statuses only — Completed by HO and
+  // Clear are hidden unless the user deliberately selects them. Store users keep
+  // the default (everything except Clear) so they can see + clear HO-completed items.
+  const [statusIds, setStatusIds]     = useState(isBO ? ['pending', 'no_change_needed', 'store_completed'] : [])
   const [stores, setStores]           = useState([])
   const [taskTypes, setTaskTypes]     = useState([])
 
