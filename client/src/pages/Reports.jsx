@@ -119,7 +119,7 @@ function ProductMasterReport() {
             value={draftQ}
             onChange={e => setDraftQ(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && runSearch()}
-            placeholder="Search by code, barcode, description, category or subcategory…"
+            placeholder="Search by description, or exact barcode / product code…"
             style={{ flex: 1, minWidth: 240 }}
           />
           <button className="btn btn-sm btn-primary" onClick={runSearch} disabled={loading}>

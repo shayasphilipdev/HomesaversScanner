@@ -699,13 +699,13 @@ export async function onRequest(context) {
       return json(inserted[0] ?? inserted, 201)
     }
 
-    // Refresh the Product Master materialized view — called by the sync jobs at
-    // the end of each import so the store lookup reflects the latest data.
+    // Product Master is now a live join view (no materialized copy), so there
+    // is nothing to refresh. Kept as a no-op so the sync jobs that still call
+    // it succeed without change.
     if (path === '/product-master/refresh' && method === 'POST') {
       if (!env.PRODUCT_SYNC_SECRET) return err('PRODUCT_SYNC_SECRET not configured', 500)
       if ((request.headers.get('X-Sync-Secret') || '') !== env.PRODUCT_SYNC_SECRET) return err('Forbidden', 403)
-      await db.rpc('refresh_product_master', {})
-      return json({ ok: true })
+      return json({ ok: true, note: 'live view — no refresh needed' })
     }
 
     // Server clock — the sync captures this BEFORE importing so it can later
@@ -2418,8 +2418,13 @@ export async function onRequest(context) {
         offset: String((page - 1) * limit)
       }
       if (q.length >= 2) {
+        // Search the indexed main-table columns only so the query stays fast
+        // without a duplicate table: description = "contains" (trigram index),
+        // barcode / code = exact match (btree). Category/subcategory are shown
+        // but not searched (they live in prices; searching them would force a
+        // slow cross-table scan).
         const safe = q.replace(/[%,()*]/g, ' ').trim()
-        params['or'] = `(product_code.ilike.*${safe}*,product_barcode.ilike.*${safe}*,product_description.ilike.*${safe}*,category.ilike.*${safe}*,subcategory.ilike.*${safe}*)`
+        params['or'] = `(product_description.ilike.*${safe}*,product_barcode.eq.${safe},product_code.eq.${safe})`
       }
       const { rows, total } = await db.selectPage('product_master', params)
       return json({ rows, total, page, limit, pages: Math.max(1, Math.ceil(total / limit)) })
