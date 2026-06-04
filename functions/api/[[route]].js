@@ -141,7 +141,7 @@ const ADMIN_ROLES    = ['admin', 'buying_manager']
 // plus store_manager + assistant_store_manager so an in-store manager can
 // see their own store's rollup on their phone.
 const MANAGER_ROLES  = ['store_manager', 'assistant_store_manager', ...BO_ROLES]
-const TASK_CREATORS  = ['buying_manager', 'area_manager', 'buying_head', 'admin']
+const TASK_CREATORS  = ['store_manager', 'buying_manager', 'area_manager', 'buying_head', 'admin']
 
 // Single role per user. The legacy `roles text[]` column on users is
 // no longer read or written; it stays in the schema until a cleanup

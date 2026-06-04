@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useStore } from '../App.jsx'
 import { getStoreTasksToday, completeStoreTask, getStoreTaskStats, uploadPhoto } from '../lib/api.js'
 import { compressImage, newPhotoNamespace } from '../lib/photos.js'
@@ -6,7 +7,16 @@ import { useCurrentStore } from '../lib/currentStore.jsx'
 import { useToast } from '../components/Toast.jsx'
 import BlockRenderer from '../components/forms/BlockRenderer.jsx'
 import CurrentStorePicker from '../components/CurrentStorePicker.jsx'
-import { STORE_ROLE_KEYS } from '../lib/roles.js'
+import { STORE_ROLE_KEYS, canAccessTemplates } from '../lib/roles.js'
+
+// Quick link to the Task Templates editor — shown to template-capable roles
+// (store managers, area managers, buying roles, admin) so they can reach it
+// without the admin nav.
+function TemplatesButton() {
+  const { session } = useStore()
+  if (!canAccessTemplates(session)) return null
+  return <Link to="/admin/task-templates" className="btn btn-outline btn-sm">📋 Task Templates</Link>
+}
 
 // Store tasks (Phase 9E). Two views by role:
 // - Store roles (sales_assistant, supervisor, assistant_store_manager, store_manager):
@@ -50,6 +60,7 @@ function StoreTodayView() {
             {done.length} of {items.length} complete
           </div>
         </div>
+        <TemplatesButton />
       </div>
 
       <CurrentStorePicker subject="store task" />
@@ -224,7 +235,8 @@ function ManagerView() {
             {stats?.overall.total ?? '—'} instances · {stats?.overall.completion_pct ?? 0}% complete
           </div>
         </div>
-        <div className="flex-row" style={{ gap: 8 }}>
+        <div className="flex-row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <TemplatesButton />
           <input type="date" value={from} onChange={e => setFrom(e.target.value)} />
           <input type="date" value={to}   onChange={e => setTo(e.target.value)} />
           <button className="btn btn-outline btn-sm" onClick={load}>Refresh</button>

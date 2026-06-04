@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom'
 import { useState } from 'react'
 import { useStore } from '../App.jsx'
 import { resolvedTheme, setTheme } from '../lib/theme.js'
-import { canSeeAnyAdminLink, canAccessAdmin, canDoHQTasks, canDoStoreTasks, STORE_ROLE_KEYS, roleLabel } from '../lib/roles.js'
+import { canAccessAdmin, canDoHQTasks, canDoStoreTasks, STORE_ROLE_KEYS, roleLabel } from '../lib/roles.js'
 import { useCurrentStore } from '../lib/currentStore.jsx'
 import OfflineIndicator from './OfflineIndicator.jsx'
 import CapacityAlert from './CapacityAlert.jsx'
@@ -30,9 +30,9 @@ export default function Nav() {
       {canDoStoreTasks(session) && <NavLink to="/store-tasks" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Store Tasks</NavLink>}
       <NavLink to="/reports"    className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Reports</NavLink>
 
-      {canSeeAnyAdminLink(session) && (
+      {canAccessAdmin(session) && (
         <NavLink
-          to={canAccessAdmin(session) ? '/admin/stores' : '/admin/task-templates'}
+          to="/admin/stores"
           className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
         >Admin</NavLink>
       )}
