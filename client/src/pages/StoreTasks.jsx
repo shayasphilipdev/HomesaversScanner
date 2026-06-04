@@ -235,7 +235,7 @@ function ManagerView() {
             {stats?.overall.total ?? '—'} instances · {stats?.overall.completion_pct ?? 0}% complete
           </div>
         </div>
-        <div className="flex-row" style={{ gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div className="flex-row" style={{ gap: 8, alignItems: 'center' }}>
           <TemplatesButton />
           <input type="date" value={from} onChange={e => setFrom(e.target.value)} />
           <input type="date" value={to}   onChange={e => setTo(e.target.value)} />

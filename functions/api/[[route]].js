@@ -234,6 +234,26 @@ function fmtReportDate(iso) {
   } catch { return iso }
 }
 
+// Turn a task_records.details JSON blob into a readable "Label: value" string
+// for the report. Empty / missing → blank (not "{}").
+const DETAILS_LABELS = {
+  reason_code: 'Reason', current_price: 'Current price', shelf_price: 'Shelf price',
+  till_price: 'Till price', printed_price: 'Printed price', sale_rate: 'Selling price',
+  item_group: 'Category', promotion_price: 'Promo price', promotion_desc: 'Promotion',
+  correct_uom: 'Correct UOM', correct_description: 'Correct description',
+  bottle_size: 'Bottle size', units_per_pack: 'Units per pack', deposit: 'Deposit'
+}
+function fmtDetails(d) {
+  if (!d || typeof d !== 'object') return ''
+  const parts = []
+  for (const [k, v] of Object.entries(d)) {
+    if (v === null || v === undefined || v === '') continue
+    const label = DETAILS_LABELS[k] || k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+    parts.push(`${label}: ${v}`)
+  }
+  return parts.join('; ')
+}
+
 // ── Store task period helpers (Phase 9E) ─────────────────────────────────
 // period_key formats: '2026-05-17' daily · '2026-W21' weekly ·
 // '2026-05' monthly · '2026' yearly · 'once_<template_id>' once-off.
@@ -2739,7 +2759,7 @@ export async function onRequest(context) {
         review_notes:      r.review_notes || '',
         photo_product_url: r.photo_product_url || '',
         photo_barcode_url: r.photo_barcode_url || '',
-        details:           JSON.stringify(r.details || {}),
+        details:           fmtDetails(r.details),
         created_at:        fmtReportDate(r.created_at)
       }))
 
