@@ -708,6 +708,16 @@ export async function onRequest(context) {
       return json({ ok: true, note: 'live view — no refresh needed' })
     }
 
+    // Empty a sync table before a full reimport. The daily job calls this so the
+    // table is REPLACED (not upserted into) — which keeps it from bloating over
+    // time. TRUNCATE instantly reclaims heap + index space.
+    if ((path === '/alt-barcodes/sync/reset' || path === '/prices/sync/reset') && method === 'POST') {
+      if (!env.PRODUCT_SYNC_SECRET) return err('PRODUCT_SYNC_SECRET not configured', 500)
+      if ((request.headers.get('X-Sync-Secret') || '') !== env.PRODUCT_SYNC_SECRET) return err('Forbidden', 403)
+      await db.rpc(path === '/prices/sync/reset' ? 'truncate_prices' : 'truncate_alt_barcodes', {})
+      return json({ ok: true })
+    }
+
     // Server clock — the sync captures this BEFORE importing so it can later
     // flush rows older than the run start (skew-free, no client clock used).
     if (path === '/sync/server-time' && method === 'GET') {

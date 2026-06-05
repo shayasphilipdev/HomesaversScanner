@@ -185,6 +185,17 @@ def main():
     if not payload:
         fail("Nothing to upload.")
 
+    # Full replace: empty the table before reimporting so it never bloats over
+    # time. Guard with a row floor so a truncated/corrupt file can't wipe it.
+    if len(payload) < 1000:
+        fail(f"Only {len(payload)} rows parsed - too few to safely replace the table. Aborting.")
+    try:
+        r = requests.post(f"{BASE_URL}/api/prices/sync/reset", headers=headers, timeout=120)
+        r.raise_for_status()
+        log("Cleared old prices data (full replace).")
+    except Exception as e:
+        fail(f"Could not reset table before import: {e}")
+
     # Post in chunks
     imported = 0
     for i in range(0, len(payload), CHUNK_SIZE):
