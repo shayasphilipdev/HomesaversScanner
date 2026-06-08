@@ -121,6 +121,15 @@ def _build_alt_barcode_rows(df: pd.DataFrame) -> tuple[list, int]:
             "item_status":    _safe_str(row.get("Item_Status", ""))    or None,
             "barcode_status": _safe_str(row.get("Barcode_Status", "")) or None,
         })
+    # Flag one row per product (lowest barcode_no per ean_barcode) as primary,
+    # matching the scheduled sync so Product Master lists each product once.
+    rows.sort(key=lambda r: (r.get("ean_barcode") or "", r.get("barcode_no") or ""))
+    seen = set()
+    for r in rows:
+        ean = r.get("ean_barcode") or ""
+        r["is_primary"] = (not ean) or (ean not in seen)
+        if ean:
+            seen.add(ean)
     return rows, skipped
 
 

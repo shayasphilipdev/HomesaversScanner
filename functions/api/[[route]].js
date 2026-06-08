@@ -586,6 +586,8 @@ export async function onRequest(context) {
           supplier_code:  r.supplier_code  ? String(r.supplier_code).trim()  : null,
           item_status:    normStatus(r.item_status),
           barcode_status: bcStatus,
+          // One row per product flagged for the Product Master view.
+          is_primary:     r.is_primary === true,
           updated_at:     now
         })
       }
@@ -919,6 +921,8 @@ export async function onRequest(context) {
           supplier_code:  r.supplier_code  ? String(r.supplier_code).trim()  : null,
           item_status:    normStatus(r.item_status),
           barcode_status: bcStatus,
+          // One row per product flagged for the Product Master view.
+          is_primary:     r.is_primary === true,
           updated_at:     now
         })
       }
@@ -2434,9 +2438,21 @@ export async function onRequest(context) {
         offset: String((page - 1) * limit)
       }
       if (q.length >= 2) {
-        // description = "contains" (trigram index); barcode / code = exact (btree).
         const safe = q.replace(/[%,()*]/g, ' ').trim()
-        params['or'] = `(product_description.ilike.*${safe}*,product_barcode.eq.${safe},product_code.eq.${safe})`
+        // The view shows one barcode per product, so an exact barcode search
+        // could miss a product's other barcodes. Resolve the typed value
+        // against ALL barcodes/codes first, then match the product(s) it maps to.
+        const ors = [`product_description.ilike.*${safe}*`]
+        try {
+          const hits = await db.select('alt_barcodes', {
+            select: 'ean_barcode',
+            or:     `(barcode_no.eq.${safe},ean_barcode.eq.${safe})`,
+            limit:  '50'
+          })
+          const eans = [...new Set(hits.map(h => h.ean_barcode).filter(Boolean))]
+          if (eans.length) ors.push(`product_code.in.(${eans.join(',')})`)
+        } catch (_) { /* fall back to description-only search */ }
+        params['or'] = `(${ors.join(',')})`
       }
       // Exact-match dropdown filters (AND-combined).
       for (const f of ['category', 'subcategory', 'product_type', 'supplier', 'product_status']) {

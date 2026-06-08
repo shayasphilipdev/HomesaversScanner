@@ -170,6 +170,16 @@ def main():
     if not payload:
         fail("Nothing to upload.")
 
+    # Flag one row per product (lowest barcode_no per ean_barcode) as primary.
+    # Product Master shows only primary rows, so each product appears once.
+    payload.sort(key=lambda r: (r.get("ean_barcode") or "", r.get("barcode_no") or ""))
+    seen = set()
+    for r in payload:
+        ean = r.get("ean_barcode") or ""
+        r["is_primary"] = (not ean) or (ean not in seen)
+        if ean:
+            seen.add(ean)
+
     # Full replace: empty the table before reimporting so it never bloats over
     # time. Guard with a row floor so a truncated/corrupt file can't wipe it.
     if len(payload) < 1000:
