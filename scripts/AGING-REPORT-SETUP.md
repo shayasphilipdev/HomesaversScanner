@@ -54,14 +54,14 @@ extra storage.
 ## 2. Test it (no email sent)
 
 ```
-C:\Scraping\homesavers-scanner\.venv\Scripts\python.exe scripts\aging-report.py --dry-run
+C:\Users\shayas\AppData\Local\Programs\Python\Python313\python.exe scripts\aging-report.py --dry-run
 ```
 Opens nothing, but writes `scripts\aging-report-preview.html` - open it in a
 browser to see exactly what managers will get.
 
 Send a real test to yourself only:
 ```
-C:\Scraping\homesavers-scanner\.venv\Scripts\python.exe scripts\aging-report.py --to you@homesavers.ie
+C:\Users\shayas\AppData\Local\Programs\Python\Python313\python.exe scripts\aging-report.py --to you@homesavers.ie
 ```
 
 ## 3. Schedule it (Windows Task Scheduler)
@@ -69,7 +69,7 @@ C:\Scraping\homesavers-scanner\.venv\Scripts\python.exe scripts\aging-report.py 
 Daily at 07:30 (run as your user, whether logged in or not):
 ```
 schtasks /Create /TN "Homesavers Aging Report" /SC DAILY /ST 07:30 ^
-  /TR "\"C:\Scraping\homesavers-scanner\.venv\Scripts\python.exe\" \"C:\Scraping\homesavers-scanner\scripts\aging-report.py\"" ^
+  /TR "\"C:\Users\shayas\AppData\Local\Programs\Python\Python313\python.exe\" \"C:\Scraping\homesavers-scanner\scripts\aging-report.py\"" ^
   /RL LIMITED /F
 ```
 Weekly instead (Mondays 07:30): replace `/SC DAILY` with `/SC WEEKLY /D MON`.

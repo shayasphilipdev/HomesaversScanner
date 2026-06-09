@@ -9,17 +9,14 @@ setlocal
 ::   run_sync.bat all          — run both in sequence
 ::   run_sync.bat server       — start local upload server (http://localhost:8765)
 ::
-:: Requires Python venv at C:\Scraping\homesavers-scanner\.venv
-:: First-time setup: run setup_venv.bat once to create it.
+:: Uses the base Python install. The .venv copy in this (untrusted) folder was
+:: quarantined/zeroed by antivirus after it made network calls; the base
+:: install has requests + pandas + openpyxl and is AV-safe.
 :: ============================================================
 
-set VENV_PYTHON=C:\Scraping\homesavers-scanner\.venv\Scripts\python.exe
+set PYEXE=C:\Users\shayas\AppData\Local\Programs\Python\Python313\python.exe
+if not exist "%PYEXE%" set PYEXE=py
 set SCRIPTS_DIR=%~dp0
-
-if not exist "%VENV_PYTHON%" (
-    echo ERROR: venv not found. Run setup_venv.bat first.
-    exit /b 1
-)
 
 set JOB=%1
 if "%JOB%"=="" (
@@ -39,12 +36,12 @@ exit /b 1
 
 
 :run_prices
-"%VENV_PYTHON%" "%SCRIPTS_DIR%sync-prices.py"
+"%PYEXE%" "%SCRIPTS_DIR%sync-prices.py"
 goto end
 
 
 :run_alt_barcodes
-"%VENV_PYTHON%" "%SCRIPTS_DIR%sync-alt-barcodes.py"
+"%PYEXE%" "%SCRIPTS_DIR%sync-alt-barcodes.py"
 goto end
 
 
@@ -56,7 +53,7 @@ goto end
 
 :run_server
 echo [%DATE% %TIME%] Starting local upload server on http://localhost:8765 ...
-"%VENV_PYTHON%" "%SCRIPTS_DIR%local_upload_server.py"
+"%PYEXE%" "%SCRIPTS_DIR%local_upload_server.py"
 goto end
 
 
