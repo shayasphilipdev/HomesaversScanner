@@ -305,7 +305,12 @@ function HQReports() {
   }
 
   useEffect(() => {
-    getTaskTypes().then(setTaskTypes).catch(() => setTaskTypes([]))
+    getTaskTypes().then(tt => {
+      setTaskTypes(tt)
+      // Back office defaults to all task types EXCEPT Department Check (J) and
+      // Price Check (K) — the user can add those manually.
+      if (isBO) setTaskTypeIds(tt.map(t => t.code).filter(c => c !== 'J' && c !== 'K'))
+    }).catch(() => setTaskTypes([]))
     // Always load stores so the Store column can show names for all users (N12).
     // The store filter UI is only shown for back-office users below.
     getStores().then(rows => {
@@ -614,7 +619,14 @@ function HQReports() {
                             {!r.photo_product_url && !r.photo_barcode_url && <span className="td-muted">—</span>}
                           </div>
                         </td>
-                        <td><span className={`badge ${status.cls}`}>{status.label}</span></td>
+                        <td>
+                          <span className={`badge ${status.cls}`}>{status.label}</span>
+                          {r.status === 'no_change_needed' && r.review_notes && (
+                            <div style={{ color: 'var(--red, #c0392b)', fontSize: 11.5, marginTop: 4, fontWeight: 600 }}>
+                              HO: {r.review_notes}
+                            </div>
+                          )}
+                        </td>
                         <td className="td-muted">{formatDT(r.created_at)}</td>
                         {isBO && (
                           <td>
