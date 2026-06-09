@@ -106,14 +106,15 @@ export default function ScannerInput({
     // Refs keep the latest callbacks; the listener attaches once.
   }, [])
 
-  // On desktop (scanner-gun users — devices with a precise pointer), focus the
-  // barcode field as soon as it appears so the gun types straight into it.
-  // Skipped on touch devices so a phone's on-screen keyboard doesn't pop up.
+  // Keep the barcode field focused so the scanner's "Keyboard input" mode lands
+  // the decoded barcode in it. On these Android scanner PDAs the barcode is
+  // delivered to whichever field is focused — with nothing focused it goes
+  // nowhere (the "it won't scan" symptom). Blur while the camera is open so a
+  // phone's on-screen keyboard doesn't cover the viewfinder.
   useEffect(() => {
-    if (window.matchMedia?.('(pointer: fine)')?.matches) {
-      inputRef.current?.focus()
-    }
-  }, [])
+    if (cameraOn) inputRef.current?.blur()
+    else          inputRef.current?.focus()
+  }, [cameraOn])
 
   // Camera scanner — lazy-loaded
   useEffect(() => {
