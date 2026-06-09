@@ -2535,6 +2535,50 @@ export async function onRequest(context) {
       })
     }
 
+    // GET /reports/aging — read-only feed for the scheduled aging-report email
+    // job. Returns every PENDING Non-Scans (B) / Wrong Prices (C) / Wrong
+    // Description (D) record with its store + created_at, so the local Python
+    // job can age them (today - created_at) and email management a dashboard.
+    // Authed by the same sync secret the data-sync scripts use (the PC job has
+    // no user session). Reads existing tables only — adds no storage.
+    if (path === '/reports/aging' && method === 'GET') {
+      if (!env.PRODUCT_SYNC_SECRET) return err('PRODUCT_SYNC_SECRET not configured', 500)
+      if ((request.headers.get('X-Sync-Secret') || '') !== env.PRODUCT_SYNC_SECRET) return err('Forbidden', 403)
+
+      const TYPES = ['B', 'C', 'D']
+      const PAGE  = 1000
+      const recs  = []
+      // Page past PostgREST's row cap so a large backlog is never truncated.
+      for (let offset = 0; offset < 50000; offset += PAGE) {
+        const page = await db.select('task_records', {
+          select:              'task_type,store_id,product_code,product_barcode,product_name_label,description,quantity,created_at',
+          status:              'eq.pending',
+          task_type:           `in.(${TYPES.join(',')})`,
+          marked_for_deletion: 'neq.true',
+          order:               'created_at.asc',
+          limit:               String(PAGE),
+          offset:              String(offset)
+        })
+        recs.push(...page)
+        if (page.length < PAGE) break
+      }
+
+      const stores = await db.select('stores', { select: 'id,store_code,store_name' })
+      const sMap = Object.fromEntries(stores.map(s => [s.id, s]))
+
+      const records = recs.map(r => ({
+        task_type:    r.task_type,
+        store_code:   sMap[r.store_id]?.store_code || '',
+        store_name:   sMap[r.store_id]?.store_name || '(unknown store)',
+        product_code: r.product_code || r.product_barcode || '',
+        description:  r.product_name_label || r.description || '',
+        quantity:     r.quantity ?? '',
+        created_at:   r.created_at
+      }))
+
+      return json({ now: new Date().toISOString(), total: records.length, records })
+    }
+
     // Bulk review (back office) — mark many records as completed or
     // no_change_needed, with an optional shared review note.
     if (path === '/task-records/bulk-review' && method === 'POST') {

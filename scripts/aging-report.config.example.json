@@ -1,0 +1,30 @@
+{
+  "_comment": "Copy this file to aging-report.config.json (same folder) and fill in the values. Do NOT commit the real file - it holds the SMTP password.",
+
+  "base_url": "https://homesaversscanner.pages.dev",
+
+  "recipients": [
+    "manager1@homesavers.ie",
+    "manager2@homesavers.ie"
+  ],
+
+  "smtp": {
+    "host": "smtp.office365.com",
+    "port": 587,
+    "security": "starttls",
+    "username": "reports@homesavers.ie",
+    "password": "PUT-PASSWORD-HERE",
+    "from": "Homesavers Scanner <reports@homesavers.ie>"
+  },
+
+  "overdue_days": 3,
+  "subject_prefix": "Homesavers Aging Report",
+
+  "aging_buckets": [
+    { "label": "0-1 days",  "min": 0,  "max": 1 },
+    { "label": "2-3 days",  "min": 2,  "max": 3 },
+    { "label": "4-7 days",  "min": 4,  "max": 7 },
+    { "label": "8-14 days", "min": 8,  "max": 14 },
+    { "label": "15+ days",  "min": 15, "max": null }
+  ]
+}

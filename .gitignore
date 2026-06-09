@@ -7,3 +7,8 @@ dist/
 *.log
 .DS_Store
 Thumbs.db
+
+# Local report job config (holds SMTP password) + generated previews
+scripts/aging-report.config.json
+scripts/aging-report-preview.html
+scripts/__pycache__/
