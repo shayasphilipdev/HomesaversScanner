@@ -44,17 +44,33 @@ export default function ScannerInput({
   // the time, so the camera button is hidden unless an admin turns it on.
   const cameraEnabled = localStorage.getItem('hs_camera_enabled') === '1'
 
-  // Scanner gun keystroke buffer — global
+  // Scanner gun keystroke buffer — global.
+  // Runs in the CAPTURE phase so it sees the scan before any focused element
+  // (button, link, dropdown) can act on it, and preventDefault keeps the
+  // scan's characters + Enter from leaking to the page (which was opening a
+  // new browser window / navigating). Some Android/Bluetooth scanners report
+  // e.key as 'Unidentified' but still set keyCode, so we fall back to keyCode.
   useEffect(() => {
     let buffer = '', timer = null
+
+    const charFromEvent = (e) => {
+      if (e.key && e.key.length === 1) return e.key
+      const kc = e.keyCode || e.which || 0
+      if (kc >= 48 && kc <= 57)  return String(kc - 48)          // 0–9 (top row)
+      if (kc >= 96 && kc <= 105) return String(kc - 96)          // 0–9 (numpad)
+      if (kc >= 65 && kc <= 90)  return String.fromCharCode(kc)  // A–Z
+      return null
+    }
+    const isEnter = (e) => e.key === 'Enter' || e.keyCode === 13 || e.keyCode === 10
+
     const onKey = (e) => {
       const tag = document.activeElement?.tagName
+      // If the user is genuinely typing in a field, leave them alone — the
+      // field (incl. our barcode input) handles its own Enter.
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return
-      if (e.key === 'Enter') {
+
+      if (isEnter(e)) {
         if (buffer.length >= 4) {
-          // Consume the scan's Enter so it can't activate whatever element
-          // happens to be focused (a button/link/dropdown) — that was making
-          // the gun's Enter trigger browser actions instead of confirming.
           e.preventDefault()
           onChangeRef.current(buffer)
           onConfirmRef.current?.(buffer)
@@ -62,14 +78,21 @@ export default function ScannerInput({
         }
         buffer = ''
         clearTimeout(timer)
-      } else if (e.key.length === 1) {
-        buffer += e.key
+        return
+      }
+
+      const ch = charFromEvent(e)
+      if (ch) {
+        // Swallow the scan character so it can't activate a focused link/button
+        // or trigger a browser shortcut.
+        e.preventDefault()
+        buffer += ch
         clearTimeout(timer)
         timer = setTimeout(() => { buffer = '' }, 300)
       }
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    window.addEventListener('keydown', onKey, true)   // capture phase
+    return () => window.removeEventListener('keydown', onKey, true)
     // Refs keep the latest callbacks; the listener attaches once.
   }, [])
 

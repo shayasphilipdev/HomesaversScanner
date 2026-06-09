@@ -108,23 +108,37 @@ try {
   $fileSize = $fi.Length
   Write-Log "File: $ExcelPath ($([Math]::Round($fileSize/1MB,1)) MB, modified $($fi.LastWriteTime))"
 
-  # Copy to local temp before Import-Excel -- reading large files directly
-  # over a network share causes Import-Excel to hang or crash.
-  $localCopy = Join-Path $env:TEMP $fi.Name
-  Write-Log "Copying to local temp: $localCopy"
-  Copy-Item -Path $ExcelPath -Destination $localCopy -Force
-  Write-Log "Copy complete."
-
-  if (-not (Get-Module -ListAvailable -Name ImportExcel)) {
-    throw "ImportExcel not installed. Run once: Install-Module ImportExcel -Scope CurrentUser"
+  # Use Excel COM to export the target sheet to CSV, then read with Import-Csv.
+  $csvPath = Join-Path $env:TEMP ([System.IO.Path]::GetFileNameWithoutExtension($fi.Name) + '_export.csv')
+  Write-Log "Opening with Excel COM..."
+  $xl = New-Object -ComObject Excel.Application
+  $xl.Visible = $false
+  $xl.DisplayAlerts = $false
+  try {
+    $wb = $xl.Workbooks.Open($ExcelPath, 0, $true)
+    $ws = $null
+    if ($Sheet -match '^\d+$') {
+      $ws = $wb.Worksheets([int]$Sheet)
+    } else {
+      foreach ($s in $wb.Worksheets) {
+        if ($s.Name.Trim().ToLower() -eq $Sheet.Trim().ToLower()) { $ws = $s; break }
+      }
+    }
+    if (-not $ws) {
+      $names = @($wb.Worksheets | ForEach-Object { $_.Name }) -join ', '
+      throw "Sheet '$Sheet' not found. Available: $names"
+    }
+    $ws.Activate()
+    $wb.SaveAs($csvPath, 6)
+    $wb.Close($false)
+    Write-Log "Excel COM export complete."
+  } finally {
+    $xl.Quit()
+    [System.Runtime.InteropServices.Marshal]::ReleaseComObject($xl) | Out-Null
   }
-  Import-Module ImportExcel
-  $importArgs = @{ Path = $localCopy; ErrorAction = "Stop" }
-  if ($Sheet -match '^\d+$') { $importArgs["WorksheetName"] = (Get-ExcelSheetInfo -Path $localCopy)[[int]$Sheet - 1].Name }
-  else                       { $importArgs["WorksheetName"] = $Sheet }
-  $excelRows = Import-Excel @importArgs
-  Write-Log "Parsed $($excelRows.Count) row(s) from sheet '$($importArgs.WorksheetName)'"
-  Remove-Item $localCopy -Force -ErrorAction SilentlyContinue
+  $excelRows = Import-Csv $csvPath -ErrorAction Stop
+  Write-Log "Parsed $($excelRows.Count) row(s) from sheet '$Sheet'"
+  Remove-Item $csvPath -Force -ErrorAction SilentlyContinue
 
   # Build the field -> source-column map once (case-insensitive, with aliases).
   $aliases = @{
