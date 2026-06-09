@@ -7,7 +7,6 @@ import TaskForm from '../components/TaskForm.jsx'
 import TaskRecordList from '../components/TaskRecordList.jsx'
 import CurrentStorePicker from '../components/CurrentStorePicker.jsx'
 import HoTasksHelp from '../components/HoTasksHelp.jsx'
-import ScanDebug from '../components/ScanDebug.jsx'
 import { useToast } from '../components/Toast.jsx'
 import { failedCount } from '../lib/outbox.js'
 
@@ -75,7 +74,6 @@ export default function Tasks() {
 
   return (
     <div>
-      <ScanDebug />
       {/* M14: failed outbox warning — visible until the user goes to Sync and resolves them */}
       {outboxFailed > 0 && (
         <div style={{
