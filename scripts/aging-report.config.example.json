@@ -9,12 +9,12 @@
   ],
 
   "smtp": {
-    "host": "smtp.office365.com",
+    "host": "smtp-relay.brevo.com",
     "port": 587,
     "security": "starttls",
-    "username": "reports@homesavers.ie",
-    "password": "PUT-PASSWORD-HERE",
-    "from": "Homesavers Scanner <reports@homesavers.ie>"
+    "username": "PUT-YOUR-BREVO-LOGIN-EMAIL-HERE",
+    "password": "PUT-YOUR-BREVO-SMTP-KEY-HERE",
+    "from": "Homesavers Scanner <orders.homesavers@outlook.com>"
   },
 
   "overdue_days": 3,

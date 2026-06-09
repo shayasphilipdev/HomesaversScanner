@@ -15,12 +15,34 @@ extra storage.
    ```
    Edit `scripts\aging-report.config.json`:
    - `recipients` - the manager email addresses.
-   - `smtp` - your mail server (host/port/security/username/**password**/from).
-     - Office 365: `smtp.office365.com`, port `587`, security `starttls`.
-       (If the account has MFA, create an **app password** and use that. SMTP
-       AUTH must be enabled for the mailbox.)
-     - Gmail/Workspace: `smtp.gmail.com`, port `587`, `starttls`, app password.
-     - SSL servers: port `465`, security `ssl`.
+   - `smtp` - the mail relay (host/port/security/username/**password**/from).
+     **Recommended: Brevo** (free 300 emails/day). Microsoft has disabled
+     password SMTP for `@outlook.com`, so we relay through Brevo but keep the
+     Outlook From-address. See "Brevo setup" below for the exact values.
+     - Other options if ever needed:
+       - Gmail/Workspace: `smtp.gmail.com`, port `587`, `starttls`, app password.
+       - SSL servers: port `465`, security `ssl`.
+
+   ### Brevo setup (recommended relay)
+   1. Sign up free at <https://www.brevo.com> (complete the profile so the
+      account is activated for sending).
+   2. **Senders, Domains & IPs -> Senders -> Add a sender:**
+      name `Homesavers Scanner`, email `orders.homesavers@outlook.com`.
+      Brevo emails a confirmation link to that inbox - open it and click to
+      verify. (You need access to the orders.homesavers@outlook.com mailbox.)
+   3. **SMTP & API -> SMTP tab:** note the server `smtp-relay.brevo.com`,
+      port `587`, your **login** (account email), and click **Generate a new
+      SMTP key** - copy it.
+   4. Put these in `aging-report.config.json` -> `smtp`:
+      - `host`: `smtp-relay.brevo.com`
+      - `port`: `587`  (use `2525` if your network blocks 587)
+      - `security`: `starttls`
+      - `username`: your Brevo **login email**
+      - `password`: the **SMTP key** from step 3
+      - `from`: `Homesavers Scanner <orders.homesavers@outlook.com>`
+   > First email may land in Junk (the From is an @outlook.com address sent via
+   > Brevo). Mark it "Not junk" / add to safe senders. For permanent best
+   > deliverability, verify a real Homesavers domain in Brevo later.
    - `overdue_days` - records older than this are flagged red (default 3).
    - `aging_buckets` - change the age groupings if you like.
    > The real `aging-report.config.json` holds the password and is git-ignored.
