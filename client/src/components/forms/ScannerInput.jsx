@@ -64,6 +64,16 @@ export default function ScannerInput({
     const isEnter = (e) => e.key === 'Enter' || e.keyCode === 13 || e.keyCode === 10
 
     const onKey = (e) => {
+      // Some Android scanner devices emit a function key (e.g. F1) from the
+      // hardware trigger when their scanner service isn't sending barcodes to
+      // the browser. Chrome turns F1 into "open Help" → a blank new window.
+      // Swallow function keys everywhere (even while an input is focused) so
+      // that stray trigger key can't hijack the browser.
+      if (/^F\d{1,2}$/.test(e.key || '') || (e.keyCode >= 112 && e.keyCode <= 123)) {
+        e.preventDefault()
+        return
+      }
+
       const tag = document.activeElement?.tagName
       // If the user is genuinely typing in a field, leave them alone — the
       // field (incl. our barcode input) handles its own Enter.
