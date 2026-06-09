@@ -52,6 +52,10 @@ export default function ScannerInput({
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return
       if (e.key === 'Enter') {
         if (buffer.length >= 4) {
+          // Consume the scan's Enter so it can't activate whatever element
+          // happens to be focused (a button/link/dropdown) — that was making
+          // the gun's Enter trigger browser actions instead of confirming.
+          e.preventDefault()
           onChangeRef.current(buffer)
           onConfirmRef.current?.(buffer)
           inputRef.current?.focus()
@@ -67,6 +71,15 @@ export default function ScannerInput({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
     // Refs keep the latest callbacks; the listener attaches once.
+  }, [])
+
+  // On desktop (scanner-gun users — devices with a precise pointer), focus the
+  // barcode field as soon as it appears so the gun types straight into it.
+  // Skipped on touch devices so a phone's on-screen keyboard doesn't pop up.
+  useEffect(() => {
+    if (window.matchMedia?.('(pointer: fine)')?.matches) {
+      inputRef.current?.focus()
+    }
   }, [])
 
   // Camera scanner — lazy-loaded
