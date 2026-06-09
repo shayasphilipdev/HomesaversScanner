@@ -2,7 +2,7 @@
 
 Emails management a dashboard of how long store records have sat in **Pending**
 (today - submitted date), split into **Non-Scans / Wrong Prices / Wrong
-Description**. Dashboard in the email body; detailed CSV per category attached.
+Description**. Dashboard in the email body; detailed Excel (.xlsx) per category attached.
 
 It only **reads** existing data (via `/api/reports/aging`) - no new tables, no
 extra storage.

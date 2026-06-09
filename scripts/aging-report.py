@@ -9,7 +9,7 @@ be tracked. Three categories are reported separately:
 
 - Dashboard (counts per age bucket, per category, worst stores) goes in the
   EMAIL BODY.
-- A detailed CSV per category is ATTACHED.
+- A detailed Excel file (.xlsx) per category is ATTACHED.
 
 Reads pending records from the app's read-only endpoint:
     GET /api/reports/aging   (auth: X-Sync-Secret, same secret as the sync jobs)
@@ -25,7 +25,6 @@ Schedule it with Windows Task Scheduler (see README).
 from __future__ import annotations
 
 import argparse
-import csv
 import datetime as dt
 import io
 import json
@@ -35,6 +34,9 @@ import sys
 from email.message import EmailMessage
 
 import requests
+from openpyxl import Workbook
+from openpyxl.styles import Font
+from openpyxl.utils import get_column_letter
 
 # Resolve config + secret next to the script unless overridden.
 HERE        = os.path.dirname(os.path.abspath(__file__))
@@ -208,23 +210,34 @@ def build_html(by_cat, cfg, now):
                         f'<td class="n">{od}</td><td class="n">{s["oldest"]}</td></tr>')
         html.append("</table>")
 
-    html.append('<div class="muted" style="margin-top:14px">Detailed line-by-line records are attached as CSV files, one per category.</div>')
+    html.append('<div class="muted" style="margin-top:14px">Detailed line-by-line records are attached as Excel files, one per category.</div>')
     html.append("</body></html>")
     return "\n".join(html)
 
 
-def build_csv(rows):
-    buf = io.StringIO()
-    w = csv.writer(buf)
-    w.writerow(["Store Code", "Store Name", "Product Code", "Description",
-                "Quantity", "Submitted (DD/MM/YYYY HH:MM)", "Age (days)"])
+def build_xlsx(rows):
+    """Build an .xlsx workbook (as bytes) of the detailed pending rows."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Pending"
+    ws.append(["Store Code", "Store Name", "Product Code", "Description",
+               "Quantity", "Submitted (DD/MM/YYYY HH:MM)", "Age (days)"])
     for x in sorted(rows, key=lambda r: -r["age_days"]):
         submitted = x["created_dt"].astimezone().strftime("%d/%m/%Y %H:%M")
-        # Excel-safe product code so leading zeros survive.
-        code = f'="{x["product_code"]}"' if x["product_code"] else ""
-        w.writerow([x["store_code"], x["store_name"], code, x["description"],
-                    x["quantity"], submitted, x["age_days"]])
-    return buf.getvalue().encode("utf-8-sig")
+        ws.append([x["store_code"], x["store_name"],
+                   str(x["product_code"]),          # text keeps leading zeros
+                   x["description"], x["quantity"], submitted, x["age_days"]])
+    for cell in ws[1]:                              # bold header row
+        cell.font = Font(bold=True)
+    for row in ws.iter_rows(min_row=2, min_col=3, max_col=3):  # product code = text
+        for cell in row:
+            cell.number_format = "@"
+    ws.freeze_panes = "A2"
+    for i, w in enumerate([12, 26, 16, 44, 10, 22, 10], start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
 
 
 def send_email(cfg, html, attachments, recipients):
@@ -238,7 +251,12 @@ def send_email(cfg, html, attachments, recipients):
     msg.add_alternative(html, subtype="html")
 
     for filename, blob in attachments:
-        msg.add_attachment(blob, maintype="text", subtype="csv", filename=filename)
+        msg.add_attachment(
+            blob,
+            maintype="application",
+            subtype="vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            filename=filename,
+        )
 
     host, port = smtp["host"], int(smtp.get("port", 587))
     security = (smtp.get("security") or "starttls").lower()
@@ -284,8 +302,8 @@ def main():
     for code, name in CATEGORIES:
         rows = by_cat.get(code, [])
         if rows:
-            fname = f"{name.replace(' ', '-')}-{dt.date.today():%Y%m%d}.csv"
-            attachments.append((fname, build_csv(rows)))
+            fname = f"{name.replace(' ', '-')}-{dt.date.today():%Y%m%d}.xlsx"
+            attachments.append((fname, build_xlsx(rows)))
 
     if args.dry_run:
         out = os.path.join(HERE, "aging-report-preview.html")
