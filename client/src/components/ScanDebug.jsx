@@ -14,9 +14,15 @@ export default function ScanDebug() {
       const el  = document.activeElement
       const tag = el?.tagName || 'BODY'
       const id  = el?.id ? `#${el.id}` : ''
+      const mods = [
+        e.ctrlKey  ? 'CTRL'  : '',
+        e.altKey   ? 'ALT'   : '',
+        e.shiftKey ? 'SHIFT' : '',
+        e.metaKey  ? 'META'  : '',
+      ].filter(Boolean).join('+') || 'none'
       setLog(l => [
         ...l.slice(-30),
-        `key="${e.key}" kc=${e.keyCode} code="${e.code}" focus=${tag}${id}`
+        `key="${e.key}" kc=${e.keyCode} code="${e.code}" mods=${mods} focus=${tag}${id}`
       ])
     }
     // Capture phase so we see every event, even if something else stops it.
