@@ -40,6 +40,11 @@ OUTPUT_DIR     = r"Y:\Supply Chain\012 - Manifest\2026"
 PREVIEW_DIR    = r"C:\Homesavers\manifest-preview"
 LOG_FILE       = r"C:\Homesavers\logs\manifest-generator.log"
 
+# Run reporting — same pipeline as the Alt-Barcode / Prices syncs, so manifest
+# runs show up in Admin -> Settings -> Data Sync.
+BASE_URL       = "https://homesaversscanner.pages.dev"
+SECRET_FILE    = r"C:\Homesavers\.sync-secret"
+
 # ── Styling (matches the sample workbook) ───────────────────────────────────
 FONT_TITLE  = Font(name="Calibri", size=16, bold=True)
 FONT_HEAD   = Font(name="Calibri", size=10, bold=True, color="FF000000")
@@ -69,6 +74,33 @@ def log(msg, level="INFO"):
             f.write(line + "\n")
     except Exception:
         pass
+
+
+def record_run(*, file_name, file_size, imported, skipped, status, message, started_at):
+    """Report a run to /api/sync-runs (kind 'manifest') so it shows in
+    Settings -> Data Sync. Best-effort: a network problem must never stop
+    manifest generation, so every failure here is a warning only."""
+    try:
+        import requests
+        with open(SECRET_FILE, encoding="utf-8") as f:
+            secret = f.read().strip()
+        requests.post(
+            f"{BASE_URL}/api/sync-runs",
+            headers={"X-Sync-Secret": secret, "Content-Type": "application/json"},
+            json={
+                "kind":             "manifest",
+                "file_name":        file_name,
+                "file_size_bytes":  file_size,
+                "records_imported": imported,
+                "records_skipped":  skipped,
+                "status":           status,
+                "message":          message,
+                "started_at":       started_at,
+            },
+            timeout=20,
+        )
+    except Exception as e:
+        log(f"Could not record run to dashboard: {e}", "WARN")
 
 
 def read_text(path):
@@ -400,10 +432,15 @@ def output_name(load_no, trailer):
     return f"Manifest- {load_no} - {trailer}.xlsx"
 
 
-def process_file(path, lookup, out_dir):
+def process_file(path, lookup, out_dir, report=False):
+    started_at = dt.datetime.now(dt.timezone.utc).isoformat()
     header, items = parse_hsvman(path)
     if not items:
         log(f"SKIP (no ITM rows): {os.path.basename(path)}", "WARN")
+        if report:
+            record_run(file_name=os.path.basename(path), file_size=None,
+                       imported=0, skipped=0, status="error",
+                       message="No ITM rows found in the HSVMAN file", started_at=started_at)
         return None
     rows = enrich(items, lookup)
     wb, load_no, trailer = build_workbook(header, rows)
@@ -415,9 +452,18 @@ def process_file(path, lookup, out_dir):
     stores = len({r["store_name"] for r in rows})
     log(f"WROTE {os.path.basename(out_path)} | rows={len(rows)} stores={stores} match={rate:.1f}%")
     rejects = [r for r in rows if not r["matched"]]
+    n_rej = 0
     if rejects:
-        rej_path, n = write_rejections(rejects, load_no, trailer, out_dir)
-        log(f"WROTE {os.path.basename(rej_path)} | {n} short code(s) not in the VRS Item Master", "WARN")
+        rej_path, n_rej = write_rejections(rejects, load_no, trailer, out_dir)
+        log(f"WROTE {os.path.basename(rej_path)} | {n_rej} short code(s) not in the VRS Item Master", "WARN")
+    if report:
+        msg = f"{stores} store(s), {rate:.1f}% matched, source {os.path.basename(path)}"
+        if n_rej:
+            msg += f" - {n_rej} short code(s) not in Item Master (see Rejections file)"
+        record_run(file_name=os.path.basename(out_path),
+                   file_size=os.path.getsize(out_path),
+                   imported=len(rows), skipped=len(rejects),
+                   status="ok", message=msg, started_at=started_at)
     return out_path
 
 
@@ -444,9 +490,10 @@ def main():
         return lk
 
     out_dir = PREVIEW_DIR if args.dry_run else OUTPUT_DIR
+    report  = not args.dry_run          # only live runs show in Settings -> Data Sync
 
     if args.file:
-        process_file(args.file, get_lookup(), out_dir)
+        process_file(args.file, get_lookup(), out_dir, report=report)
         log("=== Manifest generator finished ==="); return
 
     files = glob.glob(os.path.join(INPUT_DIR, "HSVMAN*.csv")) + glob.glob(os.path.join(INPUT_DIR, "HSVMAN*.CSV"))
@@ -468,10 +515,14 @@ def main():
     done = 0
     for f in todo:
         try:
-            if process_file(f, lookup, out_dir):
+            if process_file(f, lookup, out_dir, report=report):
                 done += 1
         except Exception as e:
             log(f"FAILED {os.path.basename(f)}: {e}", "ERROR")
+            if report:
+                record_run(file_name=os.path.basename(f), file_size=None,
+                           imported=0, skipped=0, status="error",
+                           message=str(e)[:300], started_at=None)
     log(f"Processed {done} manifest(s).")
     log("=== Manifest generator finished ===")
 

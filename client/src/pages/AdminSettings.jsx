@@ -379,8 +379,9 @@ export default function AdminSettings() {
 
 // ── Sync Dashboard ────────────────────────────────────────────────────────────
 function SyncDashboard({ syncRuns, onRefresh, values, toast }) {
-  const altRuns    = syncRuns.filter(r => r.kind === 'alt_barcodes' || !r.kind).slice(0, 3)
-  const pricesRuns = syncRuns.filter(r => r.kind === 'prices').slice(0, 3)
+  const altRuns      = syncRuns.filter(r => r.kind === 'alt_barcodes' || !r.kind).slice(0, 3)
+  const pricesRuns   = syncRuns.filter(r => r.kind === 'prices').slice(0, 3)
+  const manifestRuns = syncRuns.filter(r => r.kind === 'manifest').slice(0, 5)
 
   return (
     <div style={{ marginBottom: 20 }}>
@@ -407,12 +408,21 @@ function SyncDashboard({ syncRuns, onRefresh, values, toast }) {
           syncCmd="run_sync.bat prices"
           toast={toast}
         />
+        <SyncCard
+          title="Delivery Manifests"
+          icon="🚚"
+          runs={manifestRuns}
+          rowsLabel="rows in manifest"
+          footnote="Generated automatically every 30 minutes from new HSVMAN files (Task Scheduler job 'Homesavers Manifest'). One entry per manifest; red = a load failed to generate."
+          syncCmd="manifest-generator.py"
+          toast={toast}
+        />
       </div>
     </div>
   )
 }
 
-function SyncCard({ title, icon, runs, sheetDefault, endpoint, syncCmd, toast }) {
+function SyncCard({ title, icon, runs, sheetDefault, endpoint, syncCmd, toast, rowsLabel = 'rows imported', footnote }) {
   const last = runs[0]
 
   const statusColor = !last ? '#888'
@@ -453,7 +463,7 @@ function SyncCard({ title, icon, runs, sheetDefault, endpoint, syncCmd, toast })
             <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)' }}>
               {last.records_imported != null ? last.records_imported.toLocaleString('en-IE') : '—'}
             </div>
-            <div style={{ fontSize: 11, color: '#888' }}>rows imported</div>
+            <div style={{ fontSize: 11, color: '#888' }}>{rowsLabel}</div>
           </div>
         )}
       </div>
@@ -492,15 +502,23 @@ function SyncCard({ title, icon, runs, sheetDefault, endpoint, syncCmd, toast })
         )}
       </div>
 
-      {/* Manual upload */}
+      {/* Manual upload (sync cards) or how-it-runs note (generated kinds) */}
       <div style={{ padding: '10px 16px 14px', borderTop: '1px solid var(--border)' }}>
-        <div style={{ fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>
-          Manual upload
-        </div>
-        <ExcelImportCard sheetDefault={sheetDefault} endpoint={endpoint} toast={toast} />
-        <p className="note" style={{ fontSize: 11, marginTop: 8, marginBottom: 0 }}>
-          Or run from CMD: <code style={{ fontSize: 11 }}>scripts\{syncCmd}</code>
-        </p>
+        {endpoint ? (
+          <>
+            <div style={{ fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>
+              Manual upload
+            </div>
+            <ExcelImportCard sheetDefault={sheetDefault} endpoint={endpoint} toast={toast} />
+            <p className="note" style={{ fontSize: 11, marginTop: 8, marginBottom: 0 }}>
+              Or run from CMD: <code style={{ fontSize: 11 }}>scripts\{syncCmd}</code>
+            </p>
+          </>
+        ) : (
+          <p className="note" style={{ fontSize: 11, margin: 0 }}>
+            {footnote} Run now from CMD: <code style={{ fontSize: 11 }}>py scripts\{syncCmd}</code>
+          </p>
+        )}
       </div>
     </div>
   )

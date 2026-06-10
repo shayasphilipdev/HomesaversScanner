@@ -1505,14 +1505,15 @@ export async function onRequest(context) {
 
     // ── Back-office admin: settings ──────────────────────────────────────
 
-    // GET /admin/sync-runs — recent alt-barcode sync history for the
-    // status panel in Admin → Settings.
+    // GET /admin/sync-runs — recent sync/generation history for the status
+    // panel in Admin → Settings (alt_barcodes, prices and manifest kinds
+    // share the list, so the window is wide enough for all three).
     if (path === '/admin/sync-runs' && method === 'GET') {
       if (!isAdminRole(session)) return err('Forbidden', 403)
       const rows = await db.select('sync_runs', {
         select: 'id,kind,file_name,file_size_bytes,records_imported,records_skipped,status,message,started_at,finished_at',
         order:  'finished_at.desc',
-        limit:  '20'
+        limit:  '40'
       })
       return json(rows)
     }
