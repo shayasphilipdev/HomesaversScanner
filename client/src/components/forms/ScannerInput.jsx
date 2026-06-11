@@ -106,14 +106,10 @@ export default function ScannerInput({
     // Refs keep the latest callbacks; the listener attaches once.
   }, [])
 
-  // On desktop (USB scanner-gun users — devices with a precise pointer), focus
-  // the barcode field so the gun types into it. Touch devices are left alone so
-  // the on-screen keyboard doesn't pop up; their scans are captured by the
-  // global listener above (or by tapping the field).
+  // Focus the barcode field on mount so the scanner gun types into it
+  // immediately without the user needing to tap first.
   useEffect(() => {
-    if (window.matchMedia?.('(pointer: fine)')?.matches) {
-      inputRef.current?.focus()
-    }
+    inputRef.current?.focus()
   }, [])
 
   // Camera scanner — lazy-loaded

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { createTaskRecord, lookupPrice } from '../../lib/api.js'
 import { useStore } from '../../App.jsx'
 import ScannerInput from './ScannerInput.jsx'
@@ -12,6 +12,7 @@ const EMPTY = { product_code: '', item_group: '' }
 export default function TaskJForm({ onSaved, storeId }) {
   const { session } = useStore()
   const [priceInfo, setPriceInfo] = useState(null)
+  const [scanKey, setScanKey] = useState(0)
 
   // After the alt-barcode row resolves, do a second lookup for the department.
   const handleLookup = async ({ product, setForm }) => {
@@ -31,6 +32,7 @@ export default function TaskJForm({ onSaved, storeId }) {
   const handleReset = () => {
     t.reset()
     setPriceInfo(null)
+    setScanKey(k => k + 1)
   }
 
   const handleSubmit = async (e) => {
@@ -67,6 +69,7 @@ export default function TaskJForm({ onSaved, storeId }) {
       <div className="card-body">
         <form onSubmit={handleSubmit}>
           <ScannerInput
+            key={scanKey}
             label="Barcode *"
             value={t.form.product_code}
             onChange={t.update('product_code')}

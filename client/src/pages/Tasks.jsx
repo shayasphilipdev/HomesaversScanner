@@ -35,8 +35,11 @@ export default function Tasks() {
     getTaskTypes()
       .then(rows => {
         setTaskTypes(rows)
-        // Default selection: first daily, first available type
-        const first = rows.find(t => t.frequency === 'daily') || rows[0]
+        // Store users default to Department Check (J); back office defaults to
+        // the first daily task type, then whatever is first.
+        const first = !isBO
+          ? (rows.find(t => t.code === 'J') || rows.find(t => t.frequency === 'daily') || rows[0])
+          : (rows.find(t => t.frequency === 'daily') || rows[0])
         if (first && !selectedType) setSelectedType(first.code)
       })
       .catch(() => setTaskTypes([]))
