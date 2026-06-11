@@ -10,7 +10,7 @@
 // Drain sequence is best-effort, in arrival order. Failures stay in the
 // queue and are retried next time the app comes online.
 
-import { getToken } from './api.js'
+import { getToken, lookupAltBarcode, lookupPrice } from './api.js'
 
 const DB_NAME = 'hs_outbox'
 const STORE   = 'requests'
@@ -194,7 +194,33 @@ export async function drain() {
           const b = await uploadPhotoRaw(barcode, 'barcode', item.id, token)
           await postRecord({ ...item.body, photo_product_url: p.url, photo_barcode_url: b.url }, token)
         } else {
-          await postRecord(item.body, token)
+          // If the record was saved offline (lookup failed), the product details
+          // will be null. Now that we're online, attempt to fill them in before
+          // posting so the server record has complete data.
+          let body = item.body
+          if (!body.product_barcode && body.product_code) {
+            try {
+              const alt = await lookupAltBarcode(body.product_code)
+              if (alt) {
+                body = {
+                  ...body,
+                  product_barcode: alt.ean_barcode   || null,
+                  item_name:       alt.item_name     || null,
+                  supl_id:         alt.supl_id       || null,
+                  supplier_code:   alt.supplier_code || null,
+                  item_status:     alt.item_status   || null,
+                  barcode_status:  alt.barcode_status|| null,
+                }
+                if (alt.ean_barcode) {
+                  const price = await lookupPrice(alt.ean_barcode)
+                  if (price?.item_group) {
+                    body = { ...body, details: { ...(body.details || {}), item_group: price.item_group } }
+                  }
+                }
+              }
+            } catch { /* best effort — post whatever we have */ }
+          }
+          await postRecord(body, token)
         }
         await remove(item.id)
         synced++
