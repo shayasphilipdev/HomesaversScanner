@@ -7,7 +7,7 @@ import { useTaskForm, LookupBanner, altFields } from './useTaskForm.jsx'
 // Task J — Department Check.
 // Scan a barcode → auto-fills Department (ItemGroup from the prices/ItemMaster
 // table, resolved via EAN barcode from the alt_barcodes lookup).
-const EMPTY = { product_code: '', item_group: '' }
+const EMPTY = { product_code: '' }
 
 export default function TaskJForm({ onSaved, storeId }) {
   const { session } = useStore()
@@ -15,22 +15,29 @@ export default function TaskJForm({ onSaved, storeId }) {
   const [scanKey, setScanKey] = useState(0)
 
   // After the alt-barcode row resolves, do a second lookup for the department.
-  const handleLookup = async ({ product, setForm }) => {
-    if (product.ean_barcode) {
-      try {
-        const price = await lookupPrice(product.ean_barcode)
-        setPriceInfo(price)
-        if (price?.item_group) {
-          setForm(f => ({ ...f, item_group: price.item_group }))
-        }
-      } catch { /* silent */ }
-    }
+  // Uses the gen/genRef forwarded from useTaskForm so a stale prices lookup
+  // (from a scan that was superseded by reset or a newer scan) never writes
+  // to priceInfo — preventing stale item_group from bleeding into the next record.
+  const handleLookup = async ({ product, gen, genRef }) => {
+    if (!product.ean_barcode) return
+    try {
+      const price = await lookupPrice(product.ean_barcode)
+      if (gen !== genRef.current) return   // superseded
+      setPriceInfo(price)
+    } catch { /* silent */ }
   }
 
   const t = useTaskForm({ initial: EMPTY, onLookup: handleLookup })
 
+  // Wrap triggerLookup so that starting a new scan also wipes the stale
+  // priceInfo immediately (avoids the old department showing between scans).
+  const handleConfirm = (code) => {
+    setPriceInfo(null)
+    t.triggerLookup(code)
+  }
+
   const handleReset = () => {
-    t.reset()
+    t.reset()         // also increments genRef, invalidating in-flight lookups
     setPriceInfo(null)
     setScanKey(k => k + 1)
   }
@@ -47,7 +54,7 @@ export default function TaskJForm({ onSaved, storeId }) {
         product_code: t.form.product_code.trim(),
         ...altFields(t.lookupInfo, t.form.product_code.trim()),
         details: {
-          item_group: t.form.item_group || null
+          item_group: priceInfo?.item_group || null
         },
         status: 'pending'
       })
@@ -60,9 +67,10 @@ export default function TaskJForm({ onSaved, storeId }) {
     }
   }
 
-  const hasDept    = !!t.form.item_group
-  const deptMiss   = t.lookupInfo && priceInfo === null
-  const deptNotFound = t.lookupInfo && priceInfo !== null && !priceInfo?.item_group
+  const dept         = priceInfo?.item_group || ''
+  const hasDept      = !!dept
+  const deptMiss     = t.lookupInfo && priceInfo === null && !t.lookupLoading
+  const deptNotFound = t.lookupInfo && priceInfo !== null && !dept
 
   return (
     <div className="card" style={{ marginBottom: 24 }}>
@@ -73,12 +81,12 @@ export default function TaskJForm({ onSaved, storeId }) {
             label="Barcode *"
             value={t.form.product_code}
             onChange={t.update('product_code')}
-            onConfirm={t.triggerLookup}
+            onConfirm={handleConfirm}
             lookupLoading={t.lookupLoading}
             readerId="reader-j"
             placeholder="Scan or type the barcode"
             inlineAction={
-              <button type="submit" className="btn btn-primary" disabled={t.saving} style={{ whiteSpace: 'nowrap' }}>
+              <button type="submit" className="btn btn-primary" disabled={t.saving || t.lookupLoading} style={{ whiteSpace: 'nowrap' }}>
                 {t.saving ? <span className="spinner" /> : 'Save'}
               </button>
             }
@@ -92,11 +100,11 @@ export default function TaskJForm({ onSaved, storeId }) {
             <input
               type="text"
               readOnly
-              value={t.form.item_group}
+              value={dept}
               placeholder={
-                deptMiss ? 'Barcode not in price list' :
-                deptNotFound ? 'No department on record' :
-                'Auto-filled on scan'
+                deptMiss      ? 'Barcode not in price list' :
+                deptNotFound  ? 'No department on record' :
+                                'Auto-filled on scan'
               }
               style={{
                 background: 'var(--bg-soft)',

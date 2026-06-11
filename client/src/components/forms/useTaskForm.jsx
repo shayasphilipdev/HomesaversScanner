@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { lookupAltBarcode } from '../../lib/api.js'
 
 // Shared state + behaviour for the HO Task forms (A–J).
@@ -24,6 +24,10 @@ export function useTaskForm({ initial, onLookup } = {}) {
   const [error, setError]         = useState('')
   const [lookupLoading, setLookupLoading] = useState(false)
   const [lookupInfo, setLookupInfo]       = useState(null)
+  // Generation counter — incremented on every new lookup and on reset.
+  // Stale async completions check their captured gen against the current value
+  // and bail out silently, preventing old results from overwriting new state.
+  const genRef = useRef(0)
 
   // Quick curried setter for any field: <input onChange={t.update('uom')} />
   const update = (key) => (v) => {
@@ -35,25 +39,37 @@ export function useTaskForm({ initial, onLookup } = {}) {
   const patch = (next) => setForm(f => ({ ...f, ...next }))
 
   // Reset to the initial shape and wipe transient state.
-  const reset = () => { setForm(initial || {}); setLookupInfo(null); setError('') }
+  // Incrementing genRef invalidates any in-flight lookup so its result can
+  // never land on the clean form that belongs to the next record.
+  const reset = () => {
+    genRef.current++
+    setForm(initial || {})
+    setLookupInfo(null)
+    setError('')
+  }
 
   // Scan -> resolve the Alternate Barcode row by Barcode_No -> stash the
   // result for the banner and the form-specific onLookup hook.
   const triggerLookup = async (code) => {
     if (!code || code.length < 4) { setLookupInfo(null); return }
+    // Clear immediately so the UI never shows stale data from a previous scan
+    // while the new lookup is in flight.
+    setLookupInfo(null)
     setLookupLoading(true)
+    const gen = ++genRef.current
     try {
       const p = await lookupAltBarcode(code)
+      if (gen !== genRef.current) return   // superseded by reset or newer scan
       if (p) {
         setLookupInfo(p)
-        if (typeof onLookup === 'function') onLookup({ product: p, setForm })
+        if (typeof onLookup === 'function') onLookup({ product: p, setForm, gen, genRef })
       } else {
         setLookupInfo(null)
       }
     } catch {
       // Silent on lookup miss -- the user can still save the raw barcode.
     } finally {
-      setLookupLoading(false)
+      if (gen === genRef.current) setLookupLoading(false)
     }
   }
 
@@ -63,7 +79,8 @@ export function useTaskForm({ initial, onLookup } = {}) {
     error,  setError,
     lookupLoading,
     lookupInfo, setLookupInfo,
-    triggerLookup
+    triggerLookup,
+    genRef
   }
 }
 
