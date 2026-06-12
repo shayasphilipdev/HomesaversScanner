@@ -102,7 +102,7 @@ export default function RecordMessages({ recordId, onUnreadChange }) {
                   }}>
                     {msg.body}
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, textAlign: mine ? 'right' : 'left' }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2, textAlign: mine ? 'right' : 'left' }}>
                     {msg.author_name} · {formatTime(msg.created_at)}
                   </div>
                 </div>

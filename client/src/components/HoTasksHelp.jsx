@@ -91,7 +91,7 @@ export default function HoTasksHelp() {
                     <td>
                       <strong>{t.name}</strong>
                       {t.once && (
-                        <span className="note" style={{ display: 'block', fontSize: 11, marginTop: 2 }}>once-off</span>
+                        <span className="note" style={{ display: 'block', fontSize: 12, marginTop: 2 }}>once-off</span>
                       )}
                     </td>
                     <td>{t.use}</td>

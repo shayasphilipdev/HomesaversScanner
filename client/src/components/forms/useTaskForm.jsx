@@ -134,15 +134,15 @@ export function LookupBanner({ info }) {
     }}>
       {info.item_name && (
         <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 2 }}>
-          <span className="note" style={{ fontSize: 11, fontWeight: 400 }}>Product Description: </span>
+          <span className="note" style={{ fontSize: 12, fontWeight: 400 }}>Product Description: </span>
           {info.item_name}
         </div>
       )}
       {info.ean_barcode && (
-        <div className="note" style={{ fontSize: 12.5 }}>Product Code: <strong>{info.ean_barcode}</strong></div>
+        <div className="note" style={{ fontSize: 13 }}>Product Code: <strong>{info.ean_barcode}</strong></div>
       )}
       {supplier && (
-        <div className="note" style={{ fontSize: 12.5 }}>Supplier: <strong>{supplier}</strong></div>
+        <div className="note" style={{ fontSize: 13 }}>Supplier: <strong>{supplier}</strong></div>
       )}
       <div className="flex-row" style={{ gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
         <StatusPill label="Product" value={info.item_status} />

@@ -123,7 +123,7 @@ export default function TaskKForm({ onSaved, storeId }) {
               }}
             />
             {priceMiss && (
-              <span className="note" style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+              <span className="note" style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
                 This barcode was not found in the ItemMaster price list.
               </span>
             )}

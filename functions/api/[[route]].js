@@ -2702,10 +2702,11 @@ export async function onRequest(context) {
       if (scope !== null) {
         if (!scope.length) return json({ cleared: 0 })
         filter['store_id'] = `in.(${scope.join(',')})`
-        // Store users can only clear J/K records from pending.
+        // Store users (and area managers) may clear the same records they can
+        // clear individually: J/K still pending, plus anything HO has already
+        // reviewed (completed / no_change_needed).
         if (!isBO) {
-          filter['task_type'] = 'in.(J,K)'
-          filter['status']    = 'eq.pending'
+          filter['or'] = '(and(task_type.in.(J,K),status.eq.pending),status.in.(completed,no_change_needed))'
         }
       }
 

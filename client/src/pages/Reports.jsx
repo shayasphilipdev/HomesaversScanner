@@ -2,7 +2,7 @@ import { Fragment, useState, useEffect, useMemo } from 'react'
 import { useStore } from '../App.jsx'
 import {
   getStores, getTaskTypes, getToken, getTaskRecords,
-  updateTaskRecord, bulkReviewTaskRecords,
+  updateTaskRecord, bulkReviewTaskRecords, bulkClearTaskRecords,
   adminListTemplates, getStoreTaskReportRows,
   getTaskRecordEvents, clearToken, getProductMaster, getProductMasterFilters
 } from '../lib/api.js'
@@ -383,13 +383,24 @@ function HQReports() {
     }
   }
 
-  // Selection — only allow selecting pending records (only those need review).
+  // Selection.
+  //  · Back office: select pending records to review.
+  //  · Store users: select records they're allowed to clear — J/K still pending,
+  //    plus anything HO has already reviewed (completed / no_change_needed).
   const pendingIds = useMemo(() => records.filter(r => r.status === 'pending').map(r => r.id), [records])
-  const allPendingSelected = pendingIds.length > 0 && pendingIds.every(id => selected.has(id))
+  const storeClearableIds = useMemo(() => records.filter(r =>
+    r.status === 'completed' || r.status === 'no_change_needed' ||
+    ((r.task_type === 'J' || r.task_type === 'K') && r.status === 'pending')
+  ).map(r => r.id), [records])
 
-  const toggleAllPending = () => {
-    if (allPendingSelected) setSelected(new Set())
-    else setSelected(new Set(pendingIds))
+  const selectableIds  = isBO ? pendingIds : storeClearableIds
+  const selectableSet  = useMemo(() => new Set(selectableIds), [selectableIds])
+  const showCheckCol   = isBO || storeClearableIds.length > 0
+  const allSelectableSelected = selectableIds.length > 0 && selectableIds.every(id => selected.has(id))
+
+  const toggleAllSelectable = () => {
+    if (allSelectableSelected) setSelected(new Set())
+    else setSelected(new Set(selectableIds))
   }
 
   const toggleOne = (id) => {
@@ -455,6 +466,30 @@ function HQReports() {
     } catch (e) {
       revertOptimistic(snapshot)
       setError(e.message); toast.error(`Reverted — ${e.message}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Store-side bulk clear — mark every selected (clearable) record as Clear.
+  // Cleared records drop out of the default report view, so remove them
+  // optimistically; on failure re-run the report to restore the true state.
+  const bulkClear = async () => {
+    if (!selected.size) return
+    const ids = [...selected]
+    const n   = ids.length
+
+    setRecords(rs => rs.filter(r => !selected.has(r.id)))
+    setTotal(t => Math.max(0, t - n))
+    setSelected(new Set())
+    toast.success(`${n} record${n === 1 ? '' : 's'} cleared.`)
+
+    setBusy(true); setError('')
+    try {
+      await bulkClearTaskRecords(ids)
+    } catch (e) {
+      setError(e.message); toast.error(`Reverted — ${e.message}`)
+      runReport()
     } finally {
       setBusy(false)
     }
@@ -530,6 +565,9 @@ function HQReports() {
             {pendingIds.length > 0 && isBO && (
               <span className="note" style={{ fontSize: 12 }}>· {pendingIds.length} pending</span>
             )}
+            {!isBO && storeClearableIds.length > 0 && (
+              <span className="note" style={{ fontSize: 12 }}>· {storeClearableIds.length} clearable</span>
+            )}
             {hasMore && (
               <button className="btn btn-sm btn-outline" style={{ marginLeft: 'auto' }} onClick={loadMore} disabled={loading}>
                 {loading ? <><span className="spinner" /> Loading…</> : `Load more (${(total - records.length).toLocaleString('en-IE')} left)`}
@@ -537,7 +575,7 @@ function HQReports() {
             )}
           </div>
 
-          {/* Bulk action bar — back office only */}
+          {/* Bulk action bar — back office reviews, store users clear */}
           {isBO && selected.size > 0 && (
             <div className="flex-row" style={{ padding: '12px 18px', background: 'var(--surface-warm)', borderBottom: '1px solid var(--border)', gap: 8, flexWrap: 'wrap' }}>
               <strong>{selected.size} selected</strong>
@@ -553,19 +591,31 @@ function HQReports() {
               </button>
             </div>
           )}
+          {!isBO && selected.size > 0 && (
+            <div className="flex-row" style={{ padding: '12px 18px', background: 'var(--surface-warm)', borderBottom: '1px solid var(--border)', gap: 8, flexWrap: 'wrap' }}>
+              <strong>{selected.size} selected</strong>
+              <span style={{ marginLeft: 'auto' }} />
+              <button className="btn btn-sm btn-primary" disabled={busy} onClick={bulkClear}>
+                {busy ? <><span className="spinner" /> Clearing…</> : `✓ Clear selected (${selected.size})`}
+              </button>
+              <button className="btn btn-sm btn-outline" disabled={busy} onClick={() => setSelected(new Set())}>
+                Clear selection
+              </button>
+            </div>
+          )}
 
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
-                  {isBO && (
+                  {showCheckCol && (
                     <th style={{ width: 40 }}>
                       <input
                         type="checkbox"
-                        checked={allPendingSelected}
-                        disabled={!pendingIds.length}
-                        onChange={toggleAllPending}
-                        title={pendingIds.length ? 'Select all pending' : 'No pending records to select'}
+                        checked={allSelectableSelected}
+                        disabled={!selectableIds.length}
+                        onChange={toggleAllSelectable}
+                        title={selectableIds.length ? (isBO ? 'Select all pending' : 'Select all clearable') : 'Nothing to select'}
                       />
                     </th>
                   )}
@@ -585,13 +635,14 @@ function HQReports() {
                 {records.map(r => {
                   const status   = STATUS_LABEL[r.status] || STATUS_LABEL.pending
                   const isPending = r.status === 'pending'
+                  const isSelectable = selectableSet.has(r.id)
                   const desc = r.item_name || r.description || r.product_name_label || ''
                   return (
                     <Fragment key={r.id}>
                       <tr>
-                        {isBO && (
+                        {showCheckCol && (
                           <td>
-                            {isPending && (
+                            {isSelectable && (
                               <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleOne(r.id)} />
                             )}
                           </td>
@@ -612,7 +663,7 @@ function HQReports() {
                         <td>
                           <span className={`badge ${status.cls}`}>{status.label}</span>
                           {r.status === 'no_change_needed' && r.review_notes && (
-                            <div style={{ color: 'var(--red, #c0392b)', fontSize: 11.5, marginTop: 4, fontWeight: 600 }}>
+                            <div style={{ color: 'var(--red, #c0392b)', fontSize: 12.5, marginTop: 4, fontWeight: 600 }}>
                               HO: {r.review_notes}
                             </div>
                           )}

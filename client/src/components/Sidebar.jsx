@@ -45,7 +45,7 @@ export default function Sidebar() {
       </nav>
 
       <div className="sidebar-footer">
-        <span className="note" style={{ fontSize: 11.5 }}>
+        <span className="note" style={{ fontSize: 12.5 }}>
           {session.mode === 'backoffice' ? 'Back Office' : 'Store'}
         </span>
       </div>

@@ -20,11 +20,11 @@
   --surface:        #FEFCFA;
   --surface-warm:   #FAF6EE;
 
-  /* Glass — semi-transparent + blurred */
-  --glass:          rgba(255, 255, 255, .55);
-  --glass-strong:   rgba(255, 255, 255, .72);
-  --glass-border:   rgba(255, 255, 255, .85);
-  --glass-blur:     blur(22px) saturate(150%);
+  /* Glass — gradient sheen, semi-transparent + blurred for a fluid look */
+  --glass:          linear-gradient(155deg, rgba(255,255,255,.66), rgba(255,250,245,.44));
+  --glass-strong:   linear-gradient(155deg, rgba(255,255,255,.86), rgba(255,248,241,.66));
+  --glass-border:   rgba(255, 255, 255, .9);
+  --glass-blur:     blur(26px) saturate(170%);
   --use-glass:      1;  /* turn glass utilities on */
 
   --text:           #1F1F1F;
@@ -45,54 +45,64 @@
   --shadow-md:      0 8px 22px rgba(31, 31, 31, .07);
   --shadow-lg:      0 16px 38px rgba(31, 31, 31, .10);
 
-  /* Body backdrop — warm radial accents so glass shows through */
+  /* Body backdrop — layered fluid blobs (warm coral + peach + a cool accent)
+     so the glass cards pick up subtle multi-tone colour as they blur. */
   --body-bg:
-    radial-gradient(52vw 44vh at 98%  -8%,  rgba(201, 100, 66, .22), transparent 58%),
-    radial-gradient(64vw 54vh at -8%  112%, rgba(201, 100, 66, .15), transparent 58%),
-    radial-gradient(40vw 36vh at 50%  108%, rgba(217, 130, 80,  .10), transparent 56%),
+    radial-gradient(58vw 50vh at 98%  -10%, rgba(201, 100, 66, .26), transparent 60%),
+    radial-gradient(50vw 46vh at  4%   2%,  rgba(122, 154, 208, .12), transparent 60%),
+    radial-gradient(64vw 56vh at -10% 110%, rgba(201, 100, 66, .16), transparent 60%),
+    radial-gradient(46vw 42vh at 56%  112%, rgba(224, 160, 110, .14), transparent 58%),
+    radial-gradient(38vw 38vh at 80%  90%,  rgba(150, 120, 190, .08), transparent 58%),
     #F7F3EE;
 }
 
-/* ── Theme: Dark (high-contrast, for bright stores) ─────────────────── */
+/* ── Theme: Dark (elegant multi-colour night mode) ──────────────────────
+   Deep blue-ink base with coral / indigo / teal / violet ambient glow.
+   Cards use subtle translucent glass so the colour washes show through,
+   while text stays near-white for store-lighting legibility.            */
 [data-theme="dark"] {
-  --primary:        #FF8E5C;   /* brighter coral pops on dark */
+  --primary:        #FF9A6C;   /* warm coral, lifted for dark glass */
   --primary-dark:   #E07346;
-  --primary-soft:   #3A201A;
-  --primary-tint:   #271811;
+  --primary-soft:   #3A2018;
+  --primary-tint:   #2A1A12;
 
-  --bg:             #0F1419;
-  --bg-soft:        #161C24;
-  --surface:        #1A222C;
-  --surface-warm:   #1F2832;
+  --bg:             #0C0F17;
+  --bg-soft:        #141926;
+  --surface:        #161D2C;
+  --surface-warm:   #1C2438;
 
-  /* No glass in dark mode — solid surfaces keep contrast high. */
-  --glass:          var(--surface);
-  --glass-strong:   var(--surface);
-  --glass-border:   var(--border);
-  --glass-blur:     none;
-  --use-glass:      0;
+  /* Dark glass — translucent so the ambient backdrop tints each card. */
+  --glass:          linear-gradient(155deg, rgba(30,38,60,.62), rgba(22,29,44,.50));
+  --glass-strong:   linear-gradient(155deg, rgba(30,39,62,.78), rgba(20,26,40,.68));
+  --glass-border:   rgba(132, 156, 214, .20);
+  --glass-blur:     blur(26px) saturate(150%);
+  --use-glass:      1;
 
-  --text:           #F4F6F8;
-  --text-muted:     #B7BEC7;
-  --text-soft:      #8A929C;
+  --text:           #EEF1F7;
+  --text-muted:     #B0B9CA;
+  --text-soft:      #828DA2;
 
-  --border:         #2A323D;
-  --border-strong:  #3D4854;
-  --border-soft:    #232A33;
+  --border:         #2B3650;
+  --border-strong:  #41506E;
+  --border-soft:    #222b40;
 
-  --green:          #4ADE80;  --green-soft:  #102A1D;
-  --red:            #FB7185;  --red-soft:    #2C0F13;
-  --amber:          #FACC15;  --amber-soft:  #2A1F08;
-  --blue:           #60A5FA;  --blue-soft:   #0E1F36;
+  --green:          #4ADE80;  --green-soft:  #11301F;
+  --red:            #FB7185;  --red-soft:    #311016;
+  --amber:          #FBC02D;  --amber-soft:  #2E2208;
+  --blue:           #7FB0FF;  --blue-soft:   #142440;
 
-  --shadow-sm:      0 1px 1px rgba(0, 0, 0, .35);
-  --shadow:         0 4px 14px rgba(0, 0, 0, .45);
-  --shadow-md:      0 10px 28px rgba(0, 0, 0, .5);
-  --shadow-lg:      0 20px 50px rgba(0, 0, 0, .55);
+  --shadow-sm:      0 1px 1px rgba(0, 0, 0, .4);
+  --shadow:         0 4px 16px rgba(0, 0, 0, .5);
+  --shadow-md:      0 12px 30px rgba(0, 0, 0, .55);
+  --shadow-lg:      0 22px 54px rgba(0, 0, 0, .6);
 
+  /* Multi-colour ambient wash — coral, indigo, teal, violet over deep ink. */
   --body-bg:
-    radial-gradient(50vw 40vh at 95% 0%,   rgba(255, 142, 92, .12), transparent 60%),
-    #0F1419;
+    radial-gradient(52vw 46vh at 98%  -8%,  rgba(255, 142, 92,  .18), transparent 60%),
+    radial-gradient(56vw 50vh at -8%   6%,  rgba(99, 102, 241,  .20), transparent 60%),
+    radial-gradient(50vw 48vh at 50%  112%, rgba(45, 212, 191,  .12), transparent 60%),
+    radial-gradient(44vw 42vh at 104% 100%, rgba(168, 85, 247,  .14), transparent 60%),
+    #0C0F17;
 }
 
 html, body { height: 100%; }
@@ -193,7 +203,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: 13px;
   background: var(--primary-tint);
   color: var(--primary-dark);
   border: 1px solid var(--primary-soft);
@@ -214,7 +224,7 @@ body {
 @media (max-width: 720px) { .nav-context-chip { display: none; } }
 
 .nav-store-badge {
-  font-size: 12px;
+  font-size: 13px;
   background: var(--bg-soft);
   border: 1px solid var(--border);
   color: var(--text-muted);
@@ -226,7 +236,7 @@ body {
 
 .offline-pill {
   font-family: inherit;
-  font-size: 12px;
+  font-size: 13px;
   padding: 5px 12px;
   border-radius: 99px;
   border: 1px solid transparent;
@@ -304,9 +314,9 @@ body {
   background: var(--glass-strong);
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--border);
+  border: 1px solid var(--glass-border);
   border-radius: 16px;
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow);
   overflow: hidden;
 }
 
@@ -323,7 +333,7 @@ body {
   gap: 10px;
 }
 
-.note { font-size: 13.5px; color: var(--text-muted); line-height: 1.55; }
+.note { font-size: 14px; color: var(--text-muted); line-height: 1.55; }
 
 /* ── Form ── */
 .form-grid {
@@ -340,7 +350,7 @@ body {
 
 /* Settings section sub-heading — groups related fields (sync, retention…). */
 .section-subhead {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -376,7 +386,7 @@ body {
 }
 .filter-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 0 1 auto; }
 .filter-field label {
-  font-size: 11.5px; font-weight: 500; color: var(--text-muted);
+  font-size: 12.5px; font-weight: 500; color: var(--text-muted);
   text-transform: uppercase; letter-spacing: .2px;
 }
 .filter-field input, .filter-field select {
@@ -393,7 +403,7 @@ body {
 .capacity-alert {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 4px 10px; border-radius: 999px;
-  font-size: 12px; font-weight: 600;
+  font-size: 13px; font-weight: 600;
   color: #8a5a14; background: #FFF7E0; border: 1px solid #E0A03A;
   text-decoration: none;
 }
@@ -412,7 +422,7 @@ body {
 .filter-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
 
 label {
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-muted);
 }
@@ -515,7 +525,7 @@ input.scan-input {
   align-items: center;
   padding: 3px 10px;
   border-radius: 99px;
-  font-size: 11.5px;
+  font-size: 12.5px;
   font-weight: 500;
   border: 1px solid transparent;
 }
@@ -553,7 +563,7 @@ table {
 thead th {
   text-align: left;
   padding: 12px 18px;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-soft);
   background: var(--surface-warm);
@@ -575,7 +585,7 @@ tbody tr:hover { background: var(--bg-soft); }
   font-weight: 500;
   color: var(--text);
 }
-.td-muted  { color: var(--text-muted); font-size: 13px; }
+.td-muted  { color: var(--text-muted); font-size: 13.5px; }
 .td-right  { text-align: right; }
 
 /* ── Empty state ── */
@@ -731,7 +741,7 @@ a.kpi-card { transition: transform 80ms ease, box-shadow 120ms ease; }
 a.kpi-card:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
 
 .kpi-label {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-muted);
 }
@@ -742,7 +752,7 @@ a.kpi-card:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
   line-height: 1.05;
 }
 .kpi-sub {
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--text-muted);
   margin-top: 6px;
 }
@@ -790,7 +800,7 @@ a.kpi-card:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
   border-radius: 99px;
   background: var(--bg-soft);
   border: 1px solid var(--border);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-muted);
 }
@@ -867,7 +877,7 @@ a.kpi-card:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
 }
 .store-pick-bar[data-locked] { background: var(--surface-warm); border-color: var(--border); }
 .store-pick-label {
-  font-size: 12px; font-weight: 600; color: var(--text-muted);
+  font-size: 13px; font-weight: 600; color: var(--text-muted);
   text-transform: uppercase; letter-spacing: .3px;
 }
 .store-pick-name { font-size: 15px; }
@@ -961,7 +971,7 @@ a.kpi-card:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
   padding: 8px 4px;
   text-decoration: none;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 500;
   min-height: 56px;
 }
