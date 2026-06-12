@@ -282,8 +282,6 @@ function HQReports() {
   const [downloading, setDownloading] = useState(false)
   const [busy, setBusy]               = useState(false)
   const [error, setError]             = useState('')
-  const [reviewRowId, setReviewRowId] = useState(null)
-  const [reviewNote, setReviewNote]   = useState('')
   // Per-row audit-history state: { [recordId]: { loading, events, err } }
   const [history, setHistory]         = useState({})
 
@@ -331,7 +329,7 @@ function HQReports() {
   }
 
   const runReport = async () => {
-    setLoading(true); setError(''); setSelected(new Set()); setReviewRowId(null)
+    setLoading(true); setError(''); setSelected(new Set())
     try {
       const data = await fetchPage(0)
       // Tolerate bare-array (legacy) and paginated ({records,total,has_more}).
@@ -404,12 +402,12 @@ function HQReports() {
   // Apply a status change locally and remember how to undo it.
   // Returns a snapshot of the previous record state for the affected ids
   // so the caller can revert on server failure.
-  const applyOptimisticReview = (ids, status, note) => {
+  const applyOptimisticReview = (ids, status) => {
     const idSet = new Set(ids)
     const now   = new Date().toISOString()
-    const prev  = records.map(r => idSet.has(r.id) ? { id: r.id, status: r.status, review_notes: r.review_notes, reviewed_at: r.reviewed_at } : null).filter(Boolean)
+    const prev  = records.map(r => idSet.has(r.id) ? { id: r.id, status: r.status, reviewed_at: r.reviewed_at } : null).filter(Boolean)
     setRecords(rs => rs.map(r => idSet.has(r.id)
-      ? { ...r, status, review_notes: note ?? r.review_notes, reviewed_at: now, ...(status === 'completed' ? { completed_at: now } : {}) }
+      ? { ...r, status, reviewed_at: now, ...(status === 'completed' ? { completed_at: now } : {}) }
       : r
     ))
     return prev
@@ -423,24 +421,19 @@ function HQReports() {
 
   const bulkReview = async (status) => {
     if (!selected.size) return
-    let note = null
-    if (status === 'no_change_needed') {
-      note = window.prompt(`Optional note for ${selected.size} record(s) (shown to store):`, '')
-      if (note === null) return  // cancel
-    }
     const ids = [...selected]
     const n   = ids.length
     const label = status === 'completed' ? 'completed' : 'marked “no change needed”'
 
     // Update the table instantly, clear selection, show feedback.
-    const snapshot = applyOptimisticReview(ids, status, note?.trim() || null)
+    const snapshot = applyOptimisticReview(ids, status)
     setSelected(new Set())
-    toast.success(`${n} record${n === 1 ? '' : 's'} ${label}.`)
+    toast.success(`${n} record${n === 1 ? '' : 's'} ${label}. Use 💬 to send a message to the store.`)
 
     // Then sync to server in the background.
     setBusy(true); setError('')
     try {
-      await bulkReviewTaskRecords({ ids, status, review_notes: note || null })
+      await bulkReviewTaskRecords({ ids, status })
     } catch (e) {
       revertOptimistic(snapshot)
       setError(e.message); toast.error(`Reverted — ${e.message}`)
@@ -450,16 +443,13 @@ function HQReports() {
   }
 
   const reviewOne = async (id, status) => {
-    const note = reviewRowId === id && reviewNote.trim() ? reviewNote.trim() : null
-    const snapshot = applyOptimisticReview([id], status, note)
-    setReviewRowId(null); setReviewNote('')
+    const snapshot = applyOptimisticReview([id], status)
     toast.success(status === 'completed' ? 'Marked complete.' : 'Marked “no change needed”.')
 
     setBusy(true); setError('')
     try {
       await updateTaskRecord(id, {
         status,
-        review_notes: note,
         ...(status === 'completed' ? { completed_at: new Date().toISOString() } : {})
       })
     } catch (e) {
@@ -636,7 +626,7 @@ function HQReports() {
                                   <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => reviewOne(r.id, 'completed')}>
                                     Complete
                                   </button>
-                                  <button className="btn btn-sm btn-outline" disabled={busy} onClick={() => { setReviewRowId(r.id); setReviewNote('') }}>
+                                  <button className="btn btn-sm btn-outline" disabled={busy} onClick={() => reviewOne(r.id, 'no_change_needed')}>
                                     No change
                                   </button>
                                 </>
@@ -653,27 +643,6 @@ function HQReports() {
                         <tr>
                           <td colSpan={isBO ? 11 : 10} style={{ background: 'var(--surface-warm)' }}>
                             <HistoryPanel state={history[r.id]} />
-                          </td>
-                        </tr>
-                      )}
-                      {/* Inline note input for per-row "No change needed" */}
-                      {isBO && reviewRowId === r.id && (
-                        <tr>
-                          <td colSpan={isBO ? 11 : 10} style={{ background: 'var(--surface-warm)' }}>
-                            <div className="flex-row" style={{ gap: 6, padding: '6px 0' }}>
-                              <input
-                                type="text"
-                                value={reviewNote}
-                                onChange={e => setReviewNote(e.target.value)}
-                                placeholder="Note for the store (optional)"
-                                style={{ flex: 1 }}
-                                autoFocus
-                              />
-                              <button className="btn btn-sm btn-outline" onClick={() => { setReviewRowId(null); setReviewNote('') }} disabled={busy}>Cancel</button>
-                              <button className="btn btn-sm btn-primary" onClick={() => reviewOne(r.id, 'no_change_needed')} disabled={busy}>
-                                Save as "No change needed"
-                              </button>
-                            </div>
                           </td>
                         </tr>
                       )}

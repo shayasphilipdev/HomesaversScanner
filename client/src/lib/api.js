@@ -192,7 +192,9 @@ export const adminUpdateStore   = (id, updates) => request(`/admin/stores/${id}`
 export const adminListSuppliers  = () => request('/admin/suppliers')
 export const adminCreateSupplier = (supplier) => request('/admin/suppliers', { method: 'POST', body: supplier })
 export const adminUpdateSupplier = (id, updates) => request(`/admin/suppliers/${id}`, { method: 'PATCH', body: updates })
+export const adminDeleteSupplier = (id) => request(`/admin/suppliers/${id}`, { method: 'DELETE' })
 export const adminBulkSuppliers  = (rows) => request('/admin/suppliers/bulk', { method: 'POST', body: rows })
+export const adminSeedSuppliers  = () => request('/admin/suppliers/seed', { method: 'POST' })
 
 export const adminListLookups   = (kind) => request('/admin/lookup-options' + (kind ? `?kind=${kind}` : ''))
 export const adminCreateLookup  = (opt) => request('/admin/lookup-options', { method: 'POST', body: opt })
@@ -255,6 +257,12 @@ export async function adminUploadExcel(endpoint, file, sheet) {
 
 // Append-only audit ledger for one task_records row.
 export const getTaskRecordEvents      = (id) => request(`/task-records/${id}/events`)
+
+// ── Per-record message threads ──────────────────────────────────────────────
+export const getRecordMessages      = (id) => request(`/task-records/${id}/messages`)
+export const postRecordMessage      = (id, body) => request(`/task-records/${id}/messages`, { method: 'POST', body: { body } })
+export const getUnreadMessageCount  = () => request('/task-messages/unread-count')
+export const markRecordMessagesRead = (id) => request(`/task-records/${id}/messages/mark-read`, { method: 'POST' })
 
 // Manager mobile dashboard rollup (today + 7-day heatmap, scope-aware).
 export const getManagerOverview       = () => request('/manager/overview')

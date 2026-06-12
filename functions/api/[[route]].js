@@ -220,6 +220,10 @@ const json = (data, status = 200) =>
 
 const err = (msg, status = 400) => json({ error: msg }, status)
 
+// Capitalise each word: "SMITH BAKERIES LTD" → "Smith Bakeries Ltd"
+const properCase = (s) =>
+  s ? s.replace(/\b\w+/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()) : s
+
 // Format an ISO timestamp as DD/MM/YYYY HH:MM:SS in Irish local time, for reports.
 function fmtReportDate(iso) {
   if (!iso) return ''
@@ -1226,6 +1230,42 @@ export async function onRequest(context) {
       const updated = await db.update('suppliers', { id: `eq.${id}` }, updates)
       if (!updated.length) return err('Supplier not found', 404)
       return json(updated[0])
+    }
+
+    if (adminSupplierMatch && method === 'DELETE') {
+      if (!isAdminRole(session)) return err('Forbidden', 403)
+      const id = adminSupplierMatch[1]
+      const removed = await db.remove('suppliers', { id: `eq.${id}` })
+      if (!removed.length) return err('Supplier not found', 404)
+      return json({ ok: true })
+    }
+
+    // Seed suppliers from distinct supplier_codes in the alt_barcodes table.
+    // Skips codes that already exist; applies Proper Case to new names.
+    if (path === '/admin/suppliers/seed' && method === 'POST') {
+      if (!isAdminRole(session)) return err('Forbidden', 403)
+      const altRows = await db.select('alt_barcodes', {
+        select:          'supplier_code',
+        supplier_code:   'not.is.null',
+        order:           'supplier_code.asc',
+        limit:           '5000'
+      })
+      const seen = new Set()
+      const unique = []
+      for (const r of altRows) {
+        const code = (r.supplier_code || '').trim()
+        if (!code || seen.has(code.toLowerCase())) continue
+        seen.add(code.toLowerCase())
+        unique.push(code)
+      }
+      const existing = await db.select('suppliers', { select: 'supplier_code' })
+      const existingSet = new Set(existing.map(s => (s.supplier_code || '').trim().toLowerCase()))
+      const toInsert = unique
+        .filter(code => !existingSet.has(code.toLowerCase()))
+        .map(code => ({ supplier_code: code, supplier_name: properCase(code), is_active: true }))
+      if (!toInsert.length) return json({ inserted: 0, skipped: unique.length })
+      const inserted = await db.insert('suppliers', toInsert)
+      return json({ inserted: inserted.length, skipped: unique.length - toInsert.length })
     }
 
     // ── Areas (read-only for any logged-in user — used in store forms) ───
@@ -2497,7 +2537,33 @@ export async function onRequest(context) {
         } catch (_) { /* fall back to description-only search */ }
         params['or'] = `(${ors.join(',')})`
       }
-      // Exact-match dropdown filters (AND-combined).
+      // Default filter: only show products whose supplier is in the active
+      // suppliers table. The product_master view exposes supl_id as 'supplier',
+      // so we resolve active supplier_codes → supl_ids via alt_barcodes.
+      // If the suppliers table is empty, skip the filter (show all).
+      const activeSupps = await db.select('suppliers', {
+        select:        'supplier_code',
+        is_active:     'eq.true',
+        supplier_code: 'not.is.null'
+      })
+      if (activeSupps.length) {
+        const codes = activeSupps.map(s => s.supplier_code).filter(Boolean)
+        if (codes.length) {
+          // Map supplier_codes → supl_ids (the view column).
+          const altRows = await db.select('alt_barcodes', {
+            select:        'supl_id',
+            supplier_code: `in.(${codes.join(',')})`,
+            supl_id:       'not.is.null'
+          })
+          const suplIds = [...new Set(altRows.map(r => r.supl_id).filter(Boolean))]
+          if (suplIds.length) {
+            // Quote each value so commas inside names don't break the in.() syntax.
+            params['supplier'] = `in.(${suplIds.map(s => `"${s.replace(/"/g, '')}"` ).join(',')})`
+          }
+        }
+      }
+      // Exact-match dropdown filters (AND-combined). A specific supplier selection
+      // overrides the active-suppliers default set above.
       for (const f of ['category', 'subcategory', 'product_type', 'supplier', 'product_status']) {
         const v = (url.searchParams.get(f) || '').trim()
         if (v) params[f] = `eq.${v}`
@@ -2676,6 +2742,92 @@ export async function onRequest(context) {
         order: 'at.asc'
       })
       return json(rows)
+    }
+
+    // ── Per-record message threads ─────────────────────────────────────────
+    // Both store and back-office users can read/write threads. Unread flags
+    // are separate per side so each side knows what they haven't seen yet.
+
+    // GET /task-messages/unread-count — number of records that have at least
+    // one message the current user hasn't read yet. Used for nav badge.
+    if (path === '/task-messages/unread-count' && method === 'GET') {
+      if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled for this account', 403)
+      const unreadField = isBO ? 'is_read_by_bo' : 'is_read_by_store'
+      // Fetch record_ids with unread messages, scoped to accessible stores.
+      const scope = await scopedStoreIds(db, session)
+      const msgParams = {
+        select:    'record_id',
+        [unreadField]: 'eq.false'
+      }
+      const unreadMsgs = await db.select('task_record_messages', msgParams)
+      if (!unreadMsgs.length) return json({ count: 0 })
+      const uniqRecordIds = [...new Set(unreadMsgs.map(m => m.record_id))]
+      // Filter to records within the user's store scope.
+      if (scope !== null) {
+        if (!scope.length) return json({ count: 0 })
+        const recs = await db.select('task_records', {
+          select:   'id',
+          id:       `in.(${uniqRecordIds.join(',')})`,
+          store_id: `in.(${scope.join(',')})`
+        })
+        return json({ count: recs.length })
+      }
+      return json({ count: uniqRecordIds.length })
+    }
+
+    const recMsgMarkReadMatch = path.match(/^\/task-records\/([a-f0-9-]+)\/messages\/mark-read$/)
+    if (recMsgMarkReadMatch && method === 'POST') {
+      if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled for this account', 403)
+      const recId = recMsgMarkReadMatch[1]
+      const unreadField = isBO ? 'is_read_by_bo' : 'is_read_by_store'
+      // Scope check: user must be able to access this record.
+      const scope = await scopedStoreIds(db, session)
+      if (scope !== null) {
+        const [own] = await db.select('task_records', { select: 'store_id', id: `eq.${recId}`, limit: '1' })
+        if (!own || !scope.includes(own.store_id)) return err('Record not found or not allowed', 404)
+      }
+      await db.update('task_record_messages', { record_id: `eq.${recId}`, [unreadField]: 'eq.false' }, { [unreadField]: true })
+      return json({ ok: true })
+    }
+
+    const recMsgMatch = path.match(/^\/task-records\/([a-f0-9-]+)\/messages$/)
+    if (recMsgMatch && method === 'GET') {
+      if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled for this account', 403)
+      const recId = recMsgMatch[1]
+      const scope = await scopedStoreIds(db, session)
+      if (scope !== null) {
+        const [own] = await db.select('task_records', { select: 'store_id', id: `eq.${recId}`, limit: '1' })
+        if (!own || !scope.includes(own.store_id)) return err('Record not found or not allowed', 404)
+      }
+      const msgs = await db.select('task_record_messages', {
+        select:    'id,record_id,author_id,author_name,author_role,body,is_read_by_store,is_read_by_bo,created_at',
+        record_id: `eq.${recId}`,
+        order:     'created_at.asc'
+      })
+      return json(msgs)
+    }
+
+    if (recMsgMatch && method === 'POST') {
+      if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled for this account', 403)
+      const recId = recMsgMatch[1]
+      const scope = await scopedStoreIds(db, session)
+      if (scope !== null) {
+        const [own] = await db.select('task_records', { select: 'store_id', id: `eq.${recId}`, limit: '1' })
+        if (!own || !scope.includes(own.store_id)) return err('Record not found or not allowed', 404)
+      }
+      const body = await request.json()
+      if (!body.body || !String(body.body).trim()) return err('Message body required', 400)
+      const inserted = await db.insert('task_record_messages', {
+        record_id:         recId,
+        author_id:         session.user_id || null,
+        author_name:       session.display_name || session.username || 'Unknown',
+        author_role:       session.role || 'unknown',
+        body:              String(body.body).trim(),
+        // The sender's side is immediately read; the other side starts unread.
+        is_read_by_store:  !isBO,
+        is_read_by_bo:     isBO
+      })
+      return json(inserted[0] ?? inserted, 201)
     }
 
     if (path === '/task-records' && method === 'POST') {

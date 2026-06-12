@@ -1,7 +1,8 @@
-import { Fragment, useState } from 'react'
+import { Fragment, useState, useCallback } from 'react'
 import { updateTaskRecord, deleteTaskRecord, bulkClearTaskRecords } from '../lib/api.js'
 import { useStore } from '../App.jsx'
 import { useToast } from './Toast.jsx'
+import RecordMessages from './RecordMessages.jsx'
 
 const STATUS_LABEL = {
   pending:          { label: 'Pending',          cls: 'badge-pending' },
@@ -21,14 +22,24 @@ function formatDT(iso) {
     + ' ' + d.toLocaleTimeString('en-IE', { hour: '2-digit', minute: '2-digit' })
 }
 
-export default function TaskRecordList({ records, loading, onRefresh, onOptimisticRemove }) {
+export default function TaskRecordList({ records, loading, onRefresh, onOptimisticRemove, onUnreadChange }) {
   const { session } = useStore()
   const toast = useToast()
-  const isBO = session.mode === 'backoffice'
+  // Area managers get store-side clear UI (J/K bulk-clear) despite being in backoffice mode.
+  const isBO = session.mode === 'backoffice' && session.role !== 'area_manager'
 
-  // ── Bulk-select state (store users, J/K pending rows only) ────────────────
+  // ── Bulk-select state (store users + area managers, J/K pending rows only) ─
   const [selected, setSelected] = useState(new Set())
   const [bulkClearing, setBulkClearing] = useState(false)
+
+  // ── Message thread expand state ───────────────────────────────────────────
+  const [expandedMessages, setExpandedMessages] = useState(new Set())
+  const toggleMessages = (id) => setExpandedMessages(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+  const handleUnreadChange = useCallback(() => { onUnreadChange?.() }, [onUnreadChange])
 
   // Rows eligible for store-side bulk clear.
   const clearableRows = isBO ? [] : records.filter(r =>
@@ -236,16 +247,21 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
                             ✓ Clear
                           </button>
                         )}
+                        <button
+                          className={`btn btn-sm btn-icon ${expandedMessages.has(r.id) ? 'btn-primary' : 'btn-outline'}`}
+                          title="Messages"
+                          onClick={() => toggleMessages(r.id)}
+                        >💬</button>
                         {(isBO || r.status === 'store_completed') && (
                           <button className="btn btn-sm btn-icon btn-outline" title="Delete" onClick={() => handleDelete(r.id)}>🗑</button>
                         )}
                       </div>
                     </td>
                   </tr>
-                  {r.review_notes && (
+                  {expandedMessages.has(r.id) && (
                     <tr>
-                      <td colSpan={showCheckCol ? 12 : 11} style={{ background: 'var(--surface-warm)', fontStyle: 'italic', fontSize: 13, color: 'var(--text-muted)', borderTop: 'none' }}>
-                        💬 HO note: {r.review_notes}
+                      <td colSpan={showCheckCol ? 12 : 11} style={{ padding: 0, borderTop: 'none' }}>
+                        <RecordMessages recordId={r.id} onUnreadChange={handleUnreadChange} />
                       </td>
                     </tr>
                   )}

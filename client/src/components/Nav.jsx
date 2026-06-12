@@ -1,9 +1,10 @@
 import { NavLink } from 'react-router-dom'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useStore } from '../App.jsx'
 import { resolvedTheme, setTheme } from '../lib/theme.js'
 import { canAccessAdmin, canDoHQTasks, canDoStoreTasks, STORE_ROLE_KEYS, roleLabel } from '../lib/roles.js'
 import { useCurrentStore } from '../lib/currentStore.jsx'
+import { getUnreadMessageCount } from '../lib/api.js'
 import OfflineIndicator from './OfflineIndicator.jsx'
 import CapacityAlert from './CapacityAlert.jsx'
 
@@ -11,6 +12,21 @@ export default function Nav() {
   const { session, logout } = useStore()
   const { currentStoreId, scopedStores } = useCurrentStore()
   const [theme, setLocalTheme] = useState(resolvedTheme())
+  const [unreadMsgs, setUnreadMsgs] = useState(0)
+
+  useEffect(() => {
+    if (!session) return
+    const refresh = () => {
+      getUnreadMessageCount().then(d => setUnreadMsgs(d?.count || 0)).catch(() => {})
+    }
+    refresh()
+    const t = setInterval(refresh, 60000)
+    window.addEventListener('hs:messages-read', refresh)
+    return () => {
+      clearInterval(t)
+      window.removeEventListener('hs:messages-read', refresh)
+    }
+  }, [session])
 
   const toggleTheme = () => {
     const next = theme === 'light' ? 'dark' : 'light'
@@ -37,6 +53,21 @@ export default function Nav() {
         >Admin</NavLink>
       )}
 
+      {unreadMsgs > 0 && (
+        <span
+          className="nav-link"
+          title={`${unreadMsgs} record${unreadMsgs === 1 ? '' : 's'} with unread messages`}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'default' }}
+        >
+          💬
+          <span style={{
+            background: '#e53e3e', color: '#fff', borderRadius: 999,
+            fontSize: 11, fontWeight: 700, padding: '1px 6px', lineHeight: 1.4
+          }}>
+            {unreadMsgs}
+          </span>
+        </span>
+      )}
       <OfflineIndicator />
       <CapacityAlert />
 

@@ -23,6 +23,7 @@ import AdminLookups from './pages/AdminLookups.jsx'
 import AdminProducts from './pages/AdminProducts.jsx'
 import AdminSettings from './pages/AdminSettings.jsx'
 import AdminReports from './pages/AdminReports.jsx'
+import AdminSuppliers from './pages/AdminSuppliers.jsx'
 import { setToken, clearToken, getAppConfig } from './lib/api.js'
 import { canDoHQTasks, STORE_ROLE_KEYS } from './lib/roles.js'
 
@@ -128,6 +129,7 @@ function Shell() {
             <Route path="/admin/employees"  element={<AdminGuard><AdminEmployees /></AdminGuard>} />
             <Route path="/admin/lookups"    element={<AdminGuard><AdminLookups /></AdminGuard>} />
             <Route path="/admin/products"   element={<AdminGuard><AdminProducts /></AdminGuard>} />
+            <Route path="/admin/suppliers"  element={<AdminGuard><AdminSuppliers /></AdminGuard>} />
             <Route path="/admin/settings"   element={<AdminGuard mode="settings"><AdminSettings /></AdminGuard>} />
             {/* Master Reports moved into the Reports page; keep the old URL working. */}
             <Route path="/admin/reports"    element={<Navigate to="/reports" replace />} />

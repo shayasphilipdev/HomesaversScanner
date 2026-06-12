@@ -13,7 +13,8 @@ const ADMIN_TABS = [
   { to: '/admin/employees',       label: 'Employees' },
   { to: '/admin/users',           label: 'User accounts' },
   { to: '/admin/lookups',         label: 'Reason / Size lookups' },
-  { to: '/admin/products',        label: 'Products' }
+  { to: '/admin/products',        label: 'Products' },
+  { to: '/admin/suppliers',       label: 'Suppliers' }
 ]
 const SETTINGS_TAB = { to: '/admin/settings', label: 'Settings' }
 const TEMPLATE_TAB = { to: '/admin/task-templates', label: 'Task templates' }
