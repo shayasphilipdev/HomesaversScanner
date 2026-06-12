@@ -1003,6 +1003,53 @@ a.kpi-card:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
   100% { background-position: -200% 0; }
 }
 
+/* ── Space Plan ── */
+/* Compact headers + grid so the count area gets more screen. */
+.sp-page .page-header { margin-bottom: 12px; }
+.sp-page .page-title  { font-size: 22px; }
+.sp-page .card-header { padding: 10px 14px; font-size: 13.5px; }
+
+.sp-grid th, .sp-grid td { padding: 7px 9px; }
+.sp-grid thead th { font-size: 12px; }
+.sp-cell {
+  width: 52px; text-align: right; padding: 6px 7px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); font-size: 13px;
+}
+.sp-cell:focus { outline: none; border-color: var(--primary); }
+
+.sp-status { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.sp-status.dirty  { color: var(--text-muted); }
+.sp-status.saving { color: var(--amber); }
+.sp-status.saved  { color: var(--green); }
+.sp-status.error  { color: var(--red); }
+
+/* Mobile stacked layout — one collapsible card per equipment */
+.sp-eq-card { border: 1px solid var(--border); border-radius: 12px; margin-bottom: 8px; overflow: hidden; background: var(--surface); box-shadow: var(--shadow-sm); }
+.sp-eq-head {
+  width: 100%; display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px; background: var(--surface-warm);
+  border: 0; cursor: pointer; text-align: left; color: var(--text);
+}
+.sp-eq-name { font-weight: 600; flex: 1; font-size: 14px; }
+.sp-eq-meta { font-size: 12.5px; color: var(--text-muted); white-space: nowrap; }
+.sp-eq-body { padding: 4px 14px 10px; }
+.sp-cat-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border-soft); }
+.sp-cat-row:last-child { border-bottom: none; }
+.sp-cat-row > span { font-size: 13.5px; }
+.sp-cat-row input {
+  width: 92px; text-align: right; padding: 9px 11px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); font-size: 15px;
+}
+.sp-cat-row input:focus { outline: none; border-color: var(--primary); }
+
+/* On phones, drop the page subtitle entirely to claw back vertical space. */
+@media (max-width: 720px) {
+  .sp-page .page-subtitle { display: none; }
+  .sp-page .page-header { margin-bottom: 8px; }
+}
+
 /* ── Responsive ── */
 @media (max-width: 480px) {
   .main-content { padding-left: 14px; padding-right: 14px; padding-top: 18px; }

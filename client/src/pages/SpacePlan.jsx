@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../App.jsx'
 import { useCurrentStore } from '../lib/currentStore.jsx'
 import { getSpacePlanGrid, saveSpacePlanCounts, getSpacePlanReport } from '../lib/api.js'
@@ -8,7 +8,6 @@ import { useToast } from '../components/Toast.jsx'
 
 const cellKey = (eqId, catId) => `${eqId}|${catId}`
 
-// Sum the audited cells for one equipment across all categories.
 function equipmentTotal(cells, eqId, categories) {
   let t = 0
   for (const c of categories) {
@@ -20,22 +19,42 @@ function equipmentTotal(cells, eqId, categories) {
 
 function varianceTone(v) {
   if (v === 0) return { color: 'var(--text-muted)' }
-  if (v > 0)   return { color: 'var(--green)', fontWeight: 700 }   // over plan
-  return { color: 'var(--red)', fontWeight: 700 }                  // under plan
+  if (v > 0)   return { color: 'var(--green)', fontWeight: 700 }
+  return { color: 'var(--red)', fontWeight: 700 }
+}
+const fmtVar = v => (v > 0 ? `+${v}` : String(v))
+
+// Switch to the stacked layout on phones.
+function useIsMobile() {
+  const [m, setM] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 720px)').matches)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 720px)')
+    const fn = e => setM(e.matches)
+    mq.addEventListener('change', fn)
+    return () => mq.removeEventListener('change', fn)
+  }, [])
+  return m
 }
 
 export default function SpacePlan() {
   const { session } = useStore()
   const toast = useToast()
+  const isMobile = useIsMobile()
   const { currentStoreId, scopedStores, ready } = useCurrentStore()
 
-  const [data, setData]       = useState(null)   // { equipment, categories, planned, counts }
-  const [cells, setCells]     = useState({})     // `${eq}|${cat}` -> string
-  const [dirty, setDirty]     = useState(new Set())
+  const [data, setData]       = useState(null)
+  const [cells, setCells]     = useState({})
   const [loading, setLoading] = useState(false)
-  const [saving, setSaving]   = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [error, setError]     = useState('')
+  const [status, setStatus]   = useState('idle')   // idle | dirty | saving | saved | error
+  const [expanded, setExpanded] = useState(() => new Set())
+
+  // Pending auto-save buffer (keyed cell → payload), tagged with the store it
+  // belongs to so switching stores never writes to the wrong one.
+  const pendingRef = useRef({ storeId: null, cells: new Map() })
+  const timerRef   = useRef(null)
+  const flushRef   = useRef(() => {})
 
   const plannedByEq = useMemo(() => {
     const m = {}
@@ -54,7 +73,8 @@ export default function SpacePlan() {
         if (c.audited_count != null) init[cellKey(c.equipment_id, c.category_id)] = String(c.audited_count)
       }
       setCells(init)
-      setDirty(new Set())
+      pendingRef.current = { storeId: null, cells: new Map() }
+      setStatus('idle')
     } catch (e) {
       setError(e.message)
     } finally {
@@ -64,34 +84,50 @@ export default function SpacePlan() {
 
   useEffect(() => { load() /* eslint-disable-next-line */ }, [currentStoreId])
 
+  // ── Auto-save ────────────────────────────────────────────────────────────
+  const flush = async () => {
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
+    const p = pendingRef.current
+    if (!p.cells.size || !p.storeId) return
+    const storeId = p.storeId
+    const batch = [...p.cells.values()]
+    pendingRef.current = { storeId: null, cells: new Map() }
+    setStatus('saving')
+    try {
+      await saveSpacePlanCounts(storeId, batch)
+      // Only show "saved" if nothing new queued while we were saving.
+      setStatus(pendingRef.current.cells.size ? 'dirty' : 'saved')
+    } catch (e) {
+      // Re-queue so the next flush retries.
+      const cur = pendingRef.current
+      cur.storeId = storeId
+      for (const c of batch) cur.cells.set(cellKey(c.equipment_id, c.category_id), c)
+      setStatus('error'); setError(e.message)
+    }
+  }
+  flushRef.current = flush
+
+  // Flush any pending edits when leaving the page.
+  useEffect(() => () => { flushRef.current() }, [])
+
+  const scheduleFlush = () => {
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => flushRef.current(), 1000)
+  }
+
   const setCell = (eqId, catId, value) => {
-    // Allow only non-negative integers (or blank).
     if (value !== '' && !/^\d+$/.test(value)) return
     const k = cellKey(eqId, catId)
     setCells(prev => ({ ...prev, [k]: value }))
-    setDirty(prev => new Set(prev).add(k))
-  }
-
-  const save = async () => {
-    if (!dirty.size) return
-    setSaving(true); setError('')
-    const changed = [...dirty].map(k => {
-      const [equipment_id, category_id] = k.split('|')
-      const v = cells[k]
-      return { equipment_id, category_id, audited_count: v === '' || v == null ? null : Number(v) }
-    })
-    try {
-      await saveSpacePlanCounts(currentStoreId, changed)
-      setDirty(new Set())
-      toast.success(`Saved ${changed.length} count${changed.length === 1 ? '' : 's'}.`)
-    } catch (e) {
-      setError(e.message); toast.error('Save failed — ' + (e?.message || 'try again'))
-    } finally {
-      setSaving(false)
-    }
+    const p = pendingRef.current
+    p.storeId = currentStoreId
+    p.cells.set(k, { equipment_id: eqId, category_id: catId, audited_count: value === '' ? null : Number(value) })
+    setStatus('dirty')
+    scheduleFlush()
   }
 
   const exportExcel = async () => {
+    await flush()
     setDownloading(true); setError('')
     try {
       const { cols, headers, rows } = await getSpacePlanReport(currentStoreId)
@@ -106,24 +142,35 @@ export default function SpacePlan() {
     }
   }
 
+  const toggleEq = (id) => setExpanded(prev => {
+    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n
+  })
+
   const equipment  = data?.equipment  || []
   const categories = data?.categories || []
   const stickyCol = { position: 'sticky', left: 0, background: 'var(--surface)', zIndex: 1 }
 
+  const statusLabel = {
+    idle:   '',
+    dirty:  '● Unsaved…',
+    saving: 'Saving…',
+    saved:  '✓ All changes saved',
+    error:  '⚠ Save failed — retrying'
+  }[status]
+  const statusCls = `sp-status ${status}`
+
   return (
-    <div>
+    <div className="sp-page">
       <div className="page-header">
         <div>
           <div className="page-title">Space Plan</div>
-          <div className="page-subtitle">Count store equipment by department and compare with the plan</div>
+          <div className="page-subtitle">Count equipment by department · saves automatically</div>
         </div>
         {currentStoreId && equipment.length > 0 && (
-          <div className="flex-row" style={{ gap: 8 }}>
+          <div className="flex-row" style={{ gap: 10, alignItems: 'center' }}>
+            {statusLabel && <span className={statusCls}>{statusLabel}</span>}
             <button className="btn btn-sm btn-outline" onClick={exportExcel} disabled={downloading}>
-              {downloading ? <><span className="spinner spinner-dark" /> Preparing…</> : '↓ Excel'}
-            </button>
-            <button className="btn btn-sm btn-primary" onClick={save} disabled={saving || !dirty.size}>
-              {saving ? <><span className="spinner" /> Saving…</> : dirty.size ? `Save (${dirty.size})` : 'Saved'}
+              {downloading ? <><span className="spinner spinner-dark" /> …</> : '↓ Excel'}
             </button>
           </div>
         )}
@@ -131,7 +178,7 @@ export default function SpacePlan() {
 
       <CurrentStorePicker subject="count" />
 
-      {error && <div className="login-error mb-12">{error}</div>}
+      {error && status !== 'error' && <div className="login-error mb-12">{error}</div>}
 
       {!ready ? null
         : !currentStoreId ? (
@@ -146,16 +193,16 @@ export default function SpacePlan() {
           </div></div>
         ) : (
           <>
-            {/* Equipment Variance summary — top of page */}
+            {/* Equipment Variance summary */}
             <div className="card mb-12">
               <div className="card-header">Equipment Variance</div>
               <div className="table-wrap">
-                <table>
+                <table className="sp-grid">
                   <thead>
                     <tr>
                       <th>Equipment</th>
                       <th className="td-right">Planned</th>
-                      <th className="td-right">Audited total</th>
+                      <th className="td-right">Audited</th>
                       <th className="td-right">Variance</th>
                     </tr>
                   </thead>
@@ -169,9 +216,7 @@ export default function SpacePlan() {
                           <td><strong>{e.name}</strong></td>
                           <td className="td-right">{planned}</td>
                           <td className="td-right">{total}</td>
-                          <td className="td-right" style={varianceTone(variance)}>
-                            {variance > 0 ? `+${variance}` : variance}
-                          </td>
+                          <td className="td-right" style={varianceTone(variance)}>{fmtVar(variance)}</td>
                         </tr>
                       )
                     })}
@@ -180,61 +225,98 @@ export default function SpacePlan() {
               </div>
             </div>
 
-            {/* Entry grid — equipment rows x category columns */}
-            <div className="card">
-              <div className="card-header">
-                Count grid
-                <span className="note" style={{ marginLeft: 'auto', fontSize: 12.5 }}>
-                  Enter how many of each equipment serve each department.
-                </span>
-              </div>
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th style={{ ...stickyCol, minWidth: 180 }}>Equipment</th>
-                      <th className="td-right">Planned</th>
-                      <th className="td-right">Total</th>
-                      <th className="td-right">Var.</th>
-                      {categories.map(c => <th key={c.id} className="td-right" style={{ whiteSpace: 'nowrap' }}>{c.name}</th>)}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {equipment.map(e => {
-                      const planned = plannedByEq[e.id] ?? 0
-                      const total   = equipmentTotal(cells, e.id, categories)
-                      const variance = total - planned
-                      return (
-                        <tr key={e.id}>
-                          <td style={{ ...stickyCol }}><strong>{e.name}</strong></td>
-                          <td className="td-right td-muted">{planned}</td>
-                          <td className="td-right"><strong>{total}</strong></td>
-                          <td className="td-right" style={varianceTone(variance)}>{variance > 0 ? `+${variance}` : variance}</td>
+            {/* Entry — stacked cards on phones, wide grid on larger screens */}
+            {isMobile ? (
+              <div>
+                {equipment.map(e => {
+                  const planned = plannedByEq[e.id] ?? 0
+                  const total   = equipmentTotal(cells, e.id, categories)
+                  const variance = total - planned
+                  const open = expanded.has(e.id)
+                  return (
+                    <div className="sp-eq-card" key={e.id}>
+                      <button type="button" className="sp-eq-head" onClick={() => toggleEq(e.id)} aria-expanded={open}>
+                        <span className="sp-eq-name">{e.name}</span>
+                        <span className="sp-eq-meta">
+                          {total}/{planned} <span style={varianceTone(variance)}>({fmtVar(variance)})</span>
+                        </span>
+                        <span aria-hidden style={{ fontSize: 14 }}>{open ? '▾' : '▸'}</span>
+                      </button>
+                      {open && (
+                        <div className="sp-eq-body">
                           {categories.map(c => {
                             const k = cellKey(e.id, c.id)
                             return (
-                              <td key={c.id} style={{ padding: 4 }}>
+                              <label className="sp-cat-row" key={c.id}>
+                                <span>{c.name}</span>
                                 <input
-                                  type="text"
-                                  inputMode="numeric"
+                                  type="text" inputMode="numeric"
                                   value={cells[k] ?? ''}
                                   onChange={ev => setCell(e.id, c.id, ev.target.value)}
-                                  style={{
-                                    width: 56, textAlign: 'right', padding: '6px 8px',
-                                    border: dirty.has(k) ? '1px solid var(--primary)' : '1px solid var(--border)',
-                                    borderRadius: 6, background: 'var(--surface)'
-                                  }}
+                                  onBlur={() => flush()}
+                                  placeholder="0"
                                 />
-                              </td>
+                              </label>
                             )
                           })}
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
-            </div>
+            ) : (
+              <div className="card">
+                <div className="card-header">
+                  Count grid
+                  <span className="note sp-hint" style={{ marginLeft: 'auto', fontSize: 12.5 }}>
+                    Enter how many of each equipment serve each department.
+                  </span>
+                </div>
+                <div className="table-wrap">
+                  <table className="sp-grid">
+                    <thead>
+                      <tr>
+                        <th style={{ ...stickyCol, minWidth: 170 }}>Equipment</th>
+                        <th className="td-right">Plan</th>
+                        <th className="td-right">Total</th>
+                        <th className="td-right">Var.</th>
+                        {categories.map(c => <th key={c.id} className="td-right" style={{ whiteSpace: 'nowrap' }}>{c.name}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {equipment.map(e => {
+                        const planned = plannedByEq[e.id] ?? 0
+                        const total   = equipmentTotal(cells, e.id, categories)
+                        const variance = total - planned
+                        return (
+                          <tr key={e.id}>
+                            <td style={{ ...stickyCol }}><strong>{e.name}</strong></td>
+                            <td className="td-right td-muted">{planned}</td>
+                            <td className="td-right"><strong>{total}</strong></td>
+                            <td className="td-right" style={varianceTone(variance)}>{fmtVar(variance)}</td>
+                            {categories.map(c => {
+                              const k = cellKey(e.id, c.id)
+                              return (
+                                <td key={c.id} style={{ padding: 3 }}>
+                                  <input
+                                    type="text" inputMode="numeric"
+                                    value={cells[k] ?? ''}
+                                    onChange={ev => setCell(e.id, c.id, ev.target.value)}
+                                    onBlur={() => flush()}
+                                    className="sp-cell"
+                                  />
+                                </td>
+                              )
+                            })}
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </>
         )}
     </div>
