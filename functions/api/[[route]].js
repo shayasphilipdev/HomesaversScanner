@@ -220,10 +220,6 @@ const json = (data, status = 200) =>
 
 const err = (msg, status = 400) => json({ error: msg }, status)
 
-// Capitalise each word: "SMITH BAKERIES LTD" → "Smith Bakeries Ltd"
-const properCase = (s) =>
-  s ? s.replace(/\b\w+/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()) : s
-
 // Format an ISO timestamp as DD/MM/YYYY HH:MM:SS in Irish local time, for reports.
 function fmtReportDate(iso) {
   if (!iso) return ''
@@ -1238,34 +1234,6 @@ export async function onRequest(context) {
       const removed = await db.remove('suppliers', { id: `eq.${id}` })
       if (!removed.length) return err('Supplier not found', 404)
       return json({ ok: true })
-    }
-
-    // Seed suppliers from distinct supplier_codes in the alt_barcodes table.
-    // Skips codes that already exist; applies Proper Case to new names.
-    if (path === '/admin/suppliers/seed' && method === 'POST') {
-      if (!isAdminRole(session)) return err('Forbidden', 403)
-      const altRows = await db.select('alt_barcodes', {
-        select:          'supplier_code',
-        supplier_code:   'not.is.null',
-        order:           'supplier_code.asc',
-        limit:           '5000'
-      })
-      const seen = new Set()
-      const unique = []
-      for (const r of altRows) {
-        const code = (r.supplier_code || '').trim()
-        if (!code || seen.has(code.toLowerCase())) continue
-        seen.add(code.toLowerCase())
-        unique.push(code)
-      }
-      const existing = await db.select('suppliers', { select: 'supplier_code' })
-      const existingSet = new Set(existing.map(s => (s.supplier_code || '').trim().toLowerCase()))
-      const toInsert = unique
-        .filter(code => !existingSet.has(code.toLowerCase()))
-        .map(code => ({ supplier_code: code, supplier_name: properCase(code), is_active: true }))
-      if (!toInsert.length) return json({ inserted: 0, skipped: unique.length })
-      const inserted = await db.insert('suppliers', toInsert)
-      return json({ inserted: inserted.length, skipped: unique.length - toInsert.length })
     }
 
     // ── Areas (read-only for any logged-in user — used in store forms) ───

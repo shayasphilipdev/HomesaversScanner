@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useStore } from '../App.jsx'
 import {
   adminListSuppliers, adminCreateSupplier, adminUpdateSupplier,
-  adminDeleteSupplier, adminSeedSuppliers
+  adminDeleteSupplier
 } from '../lib/api.js'
 import AdminNav from '../components/AdminNav.jsx'
 
@@ -15,8 +15,6 @@ export default function AdminSuppliers() {
   const [suppliers, setSuppliers] = useState([])
   const [loading, setLoading]     = useState(true)
   const [error, setError]         = useState('')
-  const [seeding, setSeeding]     = useState(false)
-  const [seedResult, setSeedResult] = useState(null)
 
   // Modal state
   const [modal, setModal]     = useState(null)  // null | 'add' | 'edit'
@@ -73,17 +71,6 @@ export default function AdminSuppliers() {
     } catch (e) { alert('Delete failed: ' + e.message) }
   }
 
-  const handleSeed = async () => {
-    if (!confirm('This will add new suppliers from the Alt Barcodes table (no existing entries will be changed). Continue?')) return
-    setSeeding(true); setSeedResult(null); setError('')
-    try {
-      const result = await adminSeedSuppliers()
-      setSeedResult(result)
-      await load()
-    } catch (e) { setError(e.message) }
-    finally { setSeeding(false) }
-  }
-
   const filtered = suppliers.filter(s => {
     if (!search.trim()) return true
     const q = search.toLowerCase()
@@ -102,21 +89,11 @@ export default function AdminSuppliers() {
           <div className="page-subtitle">Manage supplier list · {suppliers.length} total</div>
         </div>
         <div className="flex-row" style={{ gap: 8 }}>
-          <button className="btn btn-sm btn-outline" onClick={handleSeed} disabled={seeding}>
-            {seeding ? <><span className="spinner" /> Seeding…</> : '↓ Seed from Alt Barcodes'}
-          </button>
           <button className="btn btn-sm btn-primary" onClick={openAdd}>+ Add supplier</button>
         </div>
       </div>
 
       <AdminNav />
-
-      {seedResult && (
-        <div className="warning-box mb-12" style={{ background: '#E6F4EA', borderColor: '#3E9F4B' }}>
-          <span>✓</span>
-          <div>Seeded {seedResult.inserted} new suppliers ({seedResult.skipped} already existed).</div>
-        </div>
-      )}
 
       {error && <div className="login-error mb-12">{error}</div>}
 
@@ -147,7 +124,7 @@ export default function AdminSuppliers() {
               <tbody>
                 {filtered.length === 0 && (
                   <tr><td colSpan={4} style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>
-                    {search ? 'No suppliers match your search.' : 'No suppliers yet. Use "Seed from Alt Barcodes" to populate.'}
+                    {search ? 'No suppliers match your search.' : 'No suppliers yet. Use "+ Add supplier" to create one.'}
                   </td></tr>
                 )}
                 {filtered.map(s => (

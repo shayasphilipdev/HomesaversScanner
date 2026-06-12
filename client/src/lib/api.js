@@ -194,7 +194,6 @@ export const adminCreateSupplier = (supplier) => request('/admin/suppliers', { m
 export const adminUpdateSupplier = (id, updates) => request(`/admin/suppliers/${id}`, { method: 'PATCH', body: updates })
 export const adminDeleteSupplier = (id) => request(`/admin/suppliers/${id}`, { method: 'DELETE' })
 export const adminBulkSuppliers  = (rows) => request('/admin/suppliers/bulk', { method: 'POST', body: rows })
-export const adminSeedSuppliers  = () => request('/admin/suppliers/seed', { method: 'POST' })
 
 export const adminListLookups   = (kind) => request('/admin/lookup-options' + (kind ? `?kind=${kind}` : ''))
 export const adminCreateLookup  = (opt) => request('/admin/lookup-options', { method: 'POST', body: opt })
