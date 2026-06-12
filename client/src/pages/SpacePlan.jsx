@@ -149,13 +149,15 @@ export default function SpacePlan() {
   const equipment  = data?.equipment  || []
   const categories = data?.categories || []
   const stickyCol = { position: 'sticky', left: 0, background: 'var(--surface)', zIndex: 1 }
+  // Always resolve planned to a number so the cell never renders blank.
+  const plannedOf = (id) => { const v = Number(plannedByEq[id]); return Number.isFinite(v) ? v : 0 }
 
   const statusLabel = {
     idle:   '',
-    dirty:  '● Unsaved…',
+    dirty:  '● Unsaved',
     saving: 'Saving…',
-    saved:  '✓ All changes saved',
-    error:  '⚠ Save failed — retrying'
+    saved:  '✓ Saved',
+    error:  '⚠ Retry'
   }[status]
   const statusCls = `sp-status ${status}`
 
@@ -208,7 +210,7 @@ export default function SpacePlan() {
                   </thead>
                   <tbody>
                     {equipment.map(e => {
-                      const planned = plannedByEq[e.id] ?? 0
+                      const planned = plannedOf(e.id)
                       const total   = equipmentTotal(cells, e.id, categories)
                       const variance = total - planned
                       return (
@@ -229,7 +231,7 @@ export default function SpacePlan() {
             {isMobile ? (
               <div>
                 {equipment.map(e => {
-                  const planned = plannedByEq[e.id] ?? 0
+                  const planned = plannedOf(e.id)
                   const total   = equipmentTotal(cells, e.id, categories)
                   const variance = total - planned
                   const open = expanded.has(e.id)
@@ -286,7 +288,7 @@ export default function SpacePlan() {
                     </thead>
                     <tbody>
                       {equipment.map(e => {
-                        const planned = plannedByEq[e.id] ?? 0
+                        const planned = plannedOf(e.id)
                         const total   = equipmentTotal(cells, e.id, categories)
                         const variance = total - planned
                         return (
