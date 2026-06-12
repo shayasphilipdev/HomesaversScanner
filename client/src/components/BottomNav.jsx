@@ -13,6 +13,7 @@ export default function BottomNav() {
   ]
   if (canSeeManagerDashboard(session)) items.push({ to: '/manager', icon: '◑', label: 'Manager' })
   if (canDoStoreTasks(session)) items.push({ to: '/store-tasks', icon: '☑', label: 'Tasks' })
+  items.push({ to: '/space-plan', icon: '▦', label: 'Space' })
   items.push({ to: '/product-query', icon: '💬', label: 'Query' })
   if (canDoHQTasks(session))    items.push({ to: '/tasks',       icon: '✚', label: 'HO' })
   items.push({ to: '/reports', icon: '▤', label: 'Reports' })

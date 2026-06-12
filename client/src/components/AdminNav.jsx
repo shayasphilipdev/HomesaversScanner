@@ -14,7 +14,8 @@ const ADMIN_TABS = [
   { to: '/admin/users',           label: 'User accounts' },
   { to: '/admin/lookups',         label: 'Reason / Size lookups' },
   { to: '/admin/products',        label: 'Products' },
-  { to: '/admin/suppliers',       label: 'Suppliers' }
+  { to: '/admin/suppliers',       label: 'Suppliers' },
+  { to: '/admin/space-plan',      label: 'Space Plan' }
 ]
 const SETTINGS_TAB = { to: '/admin/settings', label: 'Settings' }
 const TEMPLATE_TAB = { to: '/admin/task-templates', label: 'Task templates' }

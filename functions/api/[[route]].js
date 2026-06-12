@@ -56,6 +56,17 @@ function sb(env) {
       if (!res.ok) throw new Error(await res.text())
       return res.json()
     },
+    // Upsert: insert rows, merging duplicates on the given conflict columns
+    // (comma-separated, matching a unique constraint/index on the table).
+    async upsert(table, body, onConflict) {
+      const res = await fetch(`${url}/rest/v1/${table}?on_conflict=${onConflict}`, {
+        method: 'POST',
+        headers: { ...headers, Prefer: 'return=representation,resolution=merge-duplicates' },
+        body: JSON.stringify(body)
+      })
+      if (!res.ok) throw new Error(await res.text())
+      return res.json()
+    },
     async update(table, filterParams, body) {
       const res = await fetch(`${url}/rest/v1/${table}?${buildQuery(filterParams)}`, {
         method: 'PATCH', headers, body: JSON.stringify(body)
@@ -1234,6 +1245,154 @@ export async function onRequest(context) {
       const removed = await db.remove('suppliers', { id: `eq.${id}` })
       if (!removed.length) return err('Supplier not found', 404)
       return json({ ok: true })
+    }
+
+    // ── Space Plan ───────────────────────────────────────────────────────
+    // Store equipment-count collection. Equipment is hidden by default; the
+    // grid + report only surface is_active equipment. Planned counts live per
+    // (store, equipment) (the de-duplicated Column C); audited counts per
+    // (store, equipment, category), latest value only.
+
+    // Resolve the single target store for a Space Plan request, honouring the
+    // session's store scope. Returns { storeId } or { error: Response }.
+    const resolveSpaceStore = async (requested) => {
+      const scope = await scopedStoreIds(db, session)
+      if (requested) {
+        if (scope !== null && !scope.includes(requested)) return { error: err('Store not in your scope', 403) }
+        return { storeId: requested }
+      }
+      if (scope !== null && scope.length === 1) return { storeId: scope[0] }
+      return { storeId: null }  // back office / multi-store user hasn't picked one yet
+    }
+
+    if (path === '/space-plan/grid' && method === 'GET') {
+      const r = await resolveSpaceStore(url.searchParams.get('storeId'))
+      if (r.error) return r.error
+      const equipment  = await db.select('space_plan_equipment',  { select: 'id,name,sort_order', is_active: 'eq.true', order: 'sort_order.asc' })
+      const categories = await db.select('space_plan_categories', { select: 'id,name,sort_order', is_active: 'eq.true', order: 'sort_order.asc' })
+      let planned = [], counts = []
+      if (r.storeId) {
+        planned = await db.select('space_plan_planned', { select: 'equipment_id,planned_count', store_id: `eq.${r.storeId}` })
+        counts  = await db.select('space_plan_counts',  { select: 'equipment_id,category_id,audited_count', store_id: `eq.${r.storeId}` })
+      }
+      return json({ store_id: r.storeId, equipment, categories, planned, counts })
+    }
+
+    if (path === '/space-plan/counts' && method === 'POST') {
+      const body = await request.json()
+      const r = await resolveSpaceStore(body.store_id)
+      if (r.error) return r.error
+      if (!r.storeId) return err('store_id required', 400)
+      const cells = Array.isArray(body.cells) ? body.cells : []
+      const uuid = /^[a-f0-9-]{36}$/
+      const now  = new Date().toISOString()
+      const who  = session.display_name || session.username || 'unknown'
+      const rows = []
+      for (const c of cells) {
+        if (!uuid.test(c.equipment_id || '') || !uuid.test(c.category_id || '')) continue
+        let v = c.audited_count
+        if (v === '' || v === null || v === undefined) v = null
+        else { v = Number(v); if (!Number.isFinite(v) || v < 0) continue; v = Math.round(v) }
+        rows.push({ store_id: r.storeId, equipment_id: c.equipment_id, category_id: c.category_id, audited_count: v, updated_by_name: who, updated_at: now })
+      }
+      if (!rows.length) return json({ saved: 0 })
+      const saved = await db.upsert('space_plan_counts', rows, 'store_id,equipment_id,category_id')
+      return json({ saved: saved.length })
+    }
+
+    // Flat-row report for Excel export (client-side downloadExcel consumes {cols,headers,rows}).
+    if (path === '/space-plan/report' && method === 'GET') {
+      const SP_COLS    = ['store_code','store_name','equipment','planned_count','category','audited_count','equipment_audited_total','equipment_variance','last_count_date']
+      const SP_HEADERS = ['Store Code','Store Name','Equipment','Planned Equipment Count','Category','Audited Department Equipment Count','Equipment Audited Total','Equipment Variance','Latest Count Date']
+      const scope = await scopedStoreIds(db, session)
+      const wanted = (url.searchParams.get('storeId') || '').split(',').map(s => s.trim()).filter(s => s && s !== 'all')
+      let storeIds = null
+      if (wanted.length) storeIds = scope === null ? wanted : wanted.filter(id => scope.includes(id))
+      else               storeIds = scope                      // null = all, [...] = scoped, [] = none
+      if (Array.isArray(storeIds) && !storeIds.length) return json({ cols: SP_COLS, headers: SP_HEADERS, rows: [] })
+
+      const equipment  = await db.select('space_plan_equipment',  { select: 'id,name,sort_order', is_active: 'eq.true', order: 'sort_order.asc' })
+      const categories = await db.select('space_plan_categories', { select: 'id,name,sort_order', is_active: 'eq.true', order: 'sort_order.asc' })
+      const storeParams = { select: 'id,store_code,store_name', order: 'store_code.asc' }
+      if (Array.isArray(storeIds)) storeParams['id'] = `in.(${storeIds.join(',')})`
+      const stores = await db.select('stores', storeParams)
+      const idList = stores.map(s => s.id)
+      if (!idList.length || !equipment.length) return json({ cols: SP_COLS, headers: SP_HEADERS, rows: [] })
+
+      const inStores = `in.(${idList.join(',')})`
+      const planned = await db.select('space_plan_planned', { select: 'store_id,equipment_id,planned_count', store_id: inStores })
+      const counts  = await db.select('space_plan_counts',  { select: 'store_id,equipment_id,category_id,audited_count,updated_at', store_id: inStores })
+
+      const plannedMap = new Map(planned.map(p => [`${p.store_id}|${p.equipment_id}`, p.planned_count]))
+      const countMap = new Map()
+      const totalMap = new Map()
+      for (const c of counts) {
+        countMap.set(`${c.store_id}|${c.equipment_id}|${c.category_id}`, c)
+        if (c.audited_count != null) {
+          const k = `${c.store_id}|${c.equipment_id}`
+          totalMap.set(k, (totalMap.get(k) || 0) + c.audited_count)
+        }
+      }
+      const rows = []
+      for (const st of stores) {
+        for (const e of equipment) {
+          const pc  = plannedMap.has(`${st.id}|${e.id}`) ? plannedMap.get(`${st.id}|${e.id}`) : null
+          const tot = totalMap.get(`${st.id}|${e.id}`) || 0
+          for (const cat of categories) {
+            const cell = countMap.get(`${st.id}|${e.id}|${cat.id}`)
+            rows.push({
+              store_code: st.store_code, store_name: st.store_name,
+              equipment: e.name, planned_count: pc,
+              category: cat.name, audited_count: cell?.audited_count ?? '',
+              equipment_audited_total: tot,
+              equipment_variance: pc == null ? '' : (tot - pc),
+              last_count_date: cell?.updated_at ? fmtReportDate(cell.updated_at) : ''
+            })
+          }
+        }
+      }
+      return json({ cols: SP_COLS, headers: SP_HEADERS, rows })
+    }
+
+    // ── Admin: Space Plan equipment visibility + planned counts ──────────
+    if (path === '/admin/space-plan/equipment' && method === 'GET') {
+      if (!isAdminRole(session)) return err('Forbidden', 403)
+      const rows = await db.select('space_plan_equipment', { select: 'id,name,sort_order,is_active', order: 'sort_order.asc' })
+      return json(rows)
+    }
+    const adminSpEqMatch = path.match(/^\/admin\/space-plan\/equipment\/([a-f0-9-]+)$/)
+    if (adminSpEqMatch && method === 'PATCH') {
+      if (!isAdminRole(session)) return err('Forbidden', 403)
+      const b = await request.json()
+      const updates = {}
+      if (b.is_active  !== undefined) updates.is_active  = !!b.is_active
+      if (b.name       !== undefined) updates.name       = String(b.name).trim()
+      if (b.sort_order !== undefined) updates.sort_order = Number(b.sort_order) || 0
+      if (!Object.keys(updates).length) return err('No editable fields supplied', 400)
+      updates.updated_at = new Date().toISOString()
+      const upd = await db.update('space_plan_equipment', { id: `eq.${adminSpEqMatch[1]}` }, updates)
+      if (!upd.length) return err('Equipment not found', 404)
+      return json(upd[0])
+    }
+
+    if (path === '/admin/space-plan/planned' && method === 'GET') {
+      if (!isAdminRole(session)) return err('Forbidden', 403)
+      const storeId = url.searchParams.get('storeId')
+      if (!storeId) return err('storeId required', 400)
+      const equipment = await db.select('space_plan_equipment', { select: 'id,name,sort_order,is_active', order: 'sort_order.asc' })
+      const planned   = await db.select('space_plan_planned',   { select: 'equipment_id,planned_count', store_id: `eq.${storeId}` })
+      return json({ equipment, planned })
+    }
+    if (path === '/admin/space-plan/planned' && method === 'PATCH') {
+      if (!isAdminRole(session)) return err('Forbidden', 403)
+      const b = await request.json()
+      const uuid = /^[a-f0-9-]{36}$/
+      if (!uuid.test(b.store_id || '') || !uuid.test(b.equipment_id || '')) return err('store_id and equipment_id required', 400)
+      let v = Number(b.planned_count); if (!Number.isFinite(v) || v < 0) v = 0; v = Math.round(v)
+      const saved = await db.upsert('space_plan_planned',
+        [{ store_id: b.store_id, equipment_id: b.equipment_id, planned_count: v, updated_at: new Date().toISOString() }],
+        'store_id,equipment_id')
+      return json(saved[0] ?? saved)
     }
 
     // ── Areas (read-only for any logged-in user — used in store forms) ───

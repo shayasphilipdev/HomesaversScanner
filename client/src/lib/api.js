@@ -263,6 +263,16 @@ export const postRecordMessage      = (id, body) => request(`/task-records/${id}
 export const getUnreadMessageCount  = () => request('/task-messages/unread-count')
 export const markRecordMessagesRead = (id) => request(`/task-records/${id}/messages/mark-read`, { method: 'POST' })
 
+// ── Space Plan ──────────────────────────────────────────────────────────────
+export const getSpacePlanGrid   = (storeId) => request('/space-plan/grid' + (storeId ? `?storeId=${storeId}` : ''))
+export const saveSpacePlanCounts = (storeId, cells) => request('/space-plan/counts', { method: 'POST', body: { store_id: storeId, cells } })
+export const getSpacePlanReport = (storeId) => request('/space-plan/report' + (storeId ? `?storeId=${encodeURIComponent(storeId)}` : ''))
+// Admin
+export const adminListSpaceEquipment   = () => request('/admin/space-plan/equipment')
+export const adminUpdateSpaceEquipment = (id, updates) => request(`/admin/space-plan/equipment/${id}`, { method: 'PATCH', body: updates })
+export const adminGetSpacePlanned      = (storeId) => request(`/admin/space-plan/planned?storeId=${storeId}`)
+export const adminSetSpacePlanned      = (store_id, equipment_id, planned_count) => request('/admin/space-plan/planned', { method: 'PATCH', body: { store_id, equipment_id, planned_count } })
+
 // Manager mobile dashboard rollup (today + 7-day heatmap, scope-aware).
 export const getManagerOverview       = () => request('/manager/overview')
 

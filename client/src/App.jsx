@@ -24,6 +24,8 @@ import AdminProducts from './pages/AdminProducts.jsx'
 import AdminSettings from './pages/AdminSettings.jsx'
 import AdminReports from './pages/AdminReports.jsx'
 import AdminSuppliers from './pages/AdminSuppliers.jsx'
+import SpacePlan from './pages/SpacePlan.jsx'
+import AdminSpacePlan from './pages/AdminSpacePlan.jsx'
 import { setToken, clearToken, getAppConfig } from './lib/api.js'
 import { canDoHQTasks, STORE_ROLE_KEYS } from './lib/roles.js'
 
@@ -101,7 +103,7 @@ export default function App() {
 function Shell() {
   const { session } = useStore()
   const { pathname } = useLocation()
-  const wide = pathname.startsWith('/reports') || pathname.startsWith('/dashboard') || pathname.startsWith('/manager')
+  const wide = pathname.startsWith('/reports') || pathname.startsWith('/dashboard') || pathname.startsWith('/manager') || pathname.startsWith('/space-plan')
   // Store users (mode === 'store') always land on HO Tasks.
   // HQ / back-office users go by their per-account flag.
   const home = (session.mode === 'store' || canDoHQTasks(session)) ? '/tasks' : '/dashboard'
@@ -119,6 +121,7 @@ function Shell() {
             <Route path="/reports"       element={<Reports />} />
             <Route path="/sync"          element={<Sync />} />
             <Route path="/store-tasks"   element={<StoreTasks />} />
+            <Route path="/space-plan"    element={<SpacePlan />} />
             <Route path="/product-query" element={<ProductQuery />} />
             <Route path="/manager"       element={<ManagerDashboard />} />
             <Route path="/admin/task-templates" element={<AdminGuard mode="templates"><AdminTaskTemplates /></AdminGuard>} />
@@ -130,6 +133,7 @@ function Shell() {
             <Route path="/admin/lookups"    element={<AdminGuard><AdminLookups /></AdminGuard>} />
             <Route path="/admin/products"   element={<AdminGuard><AdminProducts /></AdminGuard>} />
             <Route path="/admin/suppliers"  element={<AdminGuard><AdminSuppliers /></AdminGuard>} />
+            <Route path="/admin/space-plan" element={<AdminGuard><AdminSpacePlan /></AdminGuard>} />
             <Route path="/admin/settings"   element={<AdminGuard mode="settings"><AdminSettings /></AdminGuard>} />
             {/* Master Reports moved into the Reports page; keep the old URL working. */}
             <Route path="/admin/reports"    element={<Navigate to="/reports" replace />} />

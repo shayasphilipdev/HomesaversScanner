@@ -15,6 +15,7 @@ export default function Sidebar() {
   if (canSeeManagerDashboard(session)) items.push({ to: '/manager', icon: '◑', label: 'Manager view' })
   if (canDoHQTasks(session))    items.push({ to: '/tasks',       icon: '✚', label: 'HO Tasks' })
   if (canDoStoreTasks(session)) items.push({ to: '/store-tasks', icon: '☑', label: 'Store Tasks' })
+  items.push({ to: '/space-plan', icon: '▦', label: 'Space Plan' })
   items.push({ to: '/product-query', icon: '💬', label: 'Product Query' })
   items.push({ to: '/reports', icon: '▤', label: 'Reports' })
   if (canSeeAnyAdminLink(session)) {

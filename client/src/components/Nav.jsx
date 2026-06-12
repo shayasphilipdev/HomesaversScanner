@@ -44,6 +44,7 @@ export default function Nav() {
 
       {canDoHQTasks(session)    && <NavLink to="/tasks"       className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>HO Tasks</NavLink>}
       {canDoStoreTasks(session) && <NavLink to="/store-tasks" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Store Tasks</NavLink>}
+      <NavLink to="/space-plan" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Space Plan</NavLink>
       <NavLink to="/reports"    className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Reports</NavLink>
 
       {canAccessAdmin(session) && (
