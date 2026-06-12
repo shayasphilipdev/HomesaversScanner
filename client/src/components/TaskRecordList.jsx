@@ -2,6 +2,7 @@ import { Fragment, useState, useCallback } from 'react'
 import { updateTaskRecord, deleteTaskRecord, bulkClearTaskRecords } from '../lib/api.js'
 import { useStore } from '../App.jsx'
 import { useToast } from './Toast.jsx'
+import { TASK_FORMS } from '../lib/taskTypes.js'
 import RecordMessages from './RecordMessages.jsx'
 
 const STATUS_LABEL = {
@@ -209,7 +210,7 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
                         )}
                       </td>
                     )}
-                    <td><strong>{r.task_type}</strong></td>
+                    <td><strong>{TASK_FORMS[r.task_type]?.name || r.task_type}</strong></td>
                     <td className="td-code">{barcodeNo}</td>
                     <td className="td-muted" style={{ fontSize: 12 }}>{r.product_barcode || '—'}</td>
                     <td>{description || <span className="td-muted">—</span>}</td>

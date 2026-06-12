@@ -66,7 +66,6 @@ export default function HoTasksHelp() {
             <table style={{ fontSize: 13 }}>
               <thead>
                 <tr>
-                  <th style={{ width: 60 }}>Code</th>
                   <th style={{ width: 170 }}>Task</th>
                   <th>Use it when…</th>
                   <th>What to fill</th>
@@ -75,8 +74,7 @@ export default function HoTasksHelp() {
               <tbody>
                 {DAILY_TASKS.map(t => (
                   <tr key={t.code}>
-                    <td><strong>{t.code}</strong></td>
-                    <td>{t.name}</td>
+                    <td><strong>{t.name}</strong></td>
                     <td>{t.use}</td>
                     <td className="td-muted" style={{ fontSize: 12.5 }}>{t.fields}</td>
                   </tr>

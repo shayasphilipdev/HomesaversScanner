@@ -56,7 +56,7 @@ export default function TaskForm({ taskType, storeId, onSaved }) {
       <>
         {reminder}
         <div className="card" style={{ marginBottom: 24 }}>
-          <div className="card-header">{taskType} — {meta.name}</div>
+          <div className="card-header">{meta.name}</div>
           <div className="card-body">
             {meta.warning && (
               <div className="warning-box mb-12">

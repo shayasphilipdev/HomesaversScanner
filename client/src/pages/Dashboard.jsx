@@ -1,6 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../App.jsx'
 import { getDashboardStats, getStores, getAreas } from '../lib/api.js'
+import { TASK_FORMS } from '../lib/taskTypes.js'
 import Skeleton from '../components/Skeleton.jsx'
 
 const STATUS_LABEL = {
@@ -228,7 +229,7 @@ function TaskTypeBars({ rows, loading }) {
         ) : (
           rows.map(r => (
             <div className="stat-row" key={r.code}>
-              <div className="stat-row-label"><strong>{r.code}</strong> · {r.name}</div>
+              <div className="stat-row-label"><strong>{r.name || r.code}</strong></div>
               <div className="stat-row-bar"><span style={{ width: `${(r.count / max) * 100}%` }} /></div>
               <div className="stat-row-val">{r.count}</div>
             </div>
@@ -275,7 +276,7 @@ function RecentList({ rows, loading, isBO }) {
         ) : (
           rows.map(r => (
             <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderBottom: '1px solid rgba(0,0,0,.04)' }}>
-              <div style={{ width: 34, height: 34, borderRadius: 10, background: 'var(--primary-tint)', color: 'var(--primary-dark)', fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{r.task_type}</div>
+              <div style={{ padding: '4px 10px', borderRadius: 8, background: 'var(--primary-tint)', color: 'var(--primary-dark)', fontWeight: 600, fontSize: 11.5, whiteSpace: 'nowrap', flexShrink: 0 }}>{TASK_FORMS[r.task_type]?.name || r.task_type}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {r.product || '—'} {isBO && r.store_name && <span style={{ fontWeight: 500, color: 'var(--text-muted)' }}>· {r.store_name}</span>}

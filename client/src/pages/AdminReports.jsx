@@ -12,6 +12,7 @@ import AdminNav from '../components/AdminNav.jsx'
 import { useToast } from '../components/Toast.jsx'
 import MultiSelectDropdown from '../components/forms/MultiSelectDropdown.jsx'
 import { canAccessMasterReports } from '../lib/roles.js'
+import { TASK_FORMS } from '../lib/taskTypes.js'
 
 // One page · 8 sub-tabs · same shape per tab:
 //   filters → table → "↓ Excel" → optional stats tile.
@@ -570,7 +571,7 @@ function LookupsReport() {
     { key: 'kind',       label: 'Kind' },
     { key: 'label',      label: 'Label' },
     { key: 'sort_order', label: 'Order', right: true },
-    { key: 'task_types', label: 'Task types', get: l => (l.task_types || []).join(', ') },
+    { key: 'task_types', label: 'Task types', get: l => (l.task_types || []).map(c => TASK_FORMS[c]?.name || c).join(', ') },
     { key: 'is_active',  label: 'Active', get: l => l.is_active ? 'yes' : 'no' }
   ]
 

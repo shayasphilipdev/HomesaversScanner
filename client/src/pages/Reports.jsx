@@ -485,7 +485,7 @@ function HQReports() {
               <MultiSelectDropdown
                 value={taskTypeIds}
                 onChange={setTaskTypeIds}
-                options={taskTypes.map(t => ({ id: t.code, label: `${t.code} — ${t.name}` }))}
+                options={taskTypes.map(t => ({ id: t.code, label: t.name }))}
                 placeholder="All task types"
               />
             </div>

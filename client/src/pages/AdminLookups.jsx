@@ -160,7 +160,7 @@ function AddLookup({ kind, taskTypes, onCreated }) {
                 className={`btn btn-sm ${selectedTypes.includes(t.code) ? 'btn-primary' : 'btn-outline'}`}
                 onClick={() => toggle(t.code)}
               >
-                {t.code}
+                {t.name}
               </button>
             ))}
           </div>
@@ -219,7 +219,7 @@ function LookupRow({ option, taskTypes, editing, onEdit, onCancel, onSaved }) {
             {taskTypes.map(t => (
               <button key={t.code} type="button"
                 className={`btn btn-sm ${selected.includes(t.code) ? 'btn-primary' : 'btn-outline'}`}
-                onClick={() => toggle(t.code)}>{t.code}</button>
+                onClick={() => toggle(t.code)}>{t.name}</button>
             ))}
           </div>
         </td>
@@ -241,7 +241,7 @@ function LookupRow({ option, taskTypes, editing, onEdit, onCancel, onSaved }) {
       <td>{option.label}</td>
       <td>
         <div className="flex-row" style={{ flexWrap: 'wrap', gap: 4 }}>
-          {(option.task_types || []).map(t => <span key={t} className="chip">{t}</span>)}
+          {(option.task_types || []).map(t => <span key={t} className="chip">{taskTypes.find(x => x.code === t)?.name || t}</span>)}
           {!(option.task_types || []).length && <span className="td-muted">— none —</span>}
         </div>
       </td>

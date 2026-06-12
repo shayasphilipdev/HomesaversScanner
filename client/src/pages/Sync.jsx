@@ -135,7 +135,7 @@ export default function Sync() {
                   const isFailed = it.status === 'failed'
                   return (
                     <tr key={it.id}>
-                      <td><strong>{it.body?.task_type || '?'}</strong> <span className="td-muted" style={{ fontSize: 12 }}>{meta.name || ''}</span></td>
+                      <td><strong>{meta.name || it.body?.task_type || '?'}</strong></td>
                       <td>{summary}</td>
                       <td className="td-muted">{when}</td>
                       <td>
