@@ -263,7 +263,16 @@ export default function ScannerInput({
             style={{ width: '100%' }}
             value={value} onChange={e => onChange(e.target.value)}
             onBlur={e => onConfirm?.(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onConfirm?.(e.target.value) } }}
+            onKeyDown={e => {
+              // Now that the field is reliably focused, the scan lands here and
+              // the global gun-listener yields — so this handler must recognise
+              // the scanner's terminating Enter even when e.key is 'Unidentified'
+              // (some Android/Bluetooth guns) by also checking the keyCode.
+              if (e.key === 'Enter' || e.keyCode === 13 || e.keyCode === 10) {
+                e.preventDefault()
+                onConfirm?.(e.target.value)
+              }
+            }}
             placeholder={placeholder}
           />
           {lookupLoading && (
