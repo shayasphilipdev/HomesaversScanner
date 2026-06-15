@@ -932,31 +932,27 @@ export async function onRequest(context) {
         created_at:   r.created_at
       }))
 
-      // Tasks generated yesterday (any status), per type — daily inflow, not aging.
-      // Dublin local calendar day; small 3-day window keeps the scan cheap.
-      const dub = (iso) => new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'Europe/Dublin', year: 'numeric', month: '2-digit', day: '2-digit'
-      }).format(new Date(iso))
-      const yStr     = dub(new Date(Date.now() - 86400000).toISOString())
-      const sinceIso = new Date(Date.now() - 3 * 86400000).toISOString()
-      const generated_yesterday = {}
+      // Tasks created in the last 7 days (any status), per type — recent
+      // activity, not aging. Includes the two check tasks (Department / Price)
+      // alongside the six query types. Rolling 7-day (168h) window.
+      const COUNT_TYPES = ['A', 'B', 'C', 'D', 'E', 'F', 'J', 'K']
+      const sinceIso = new Date(Date.now() - 7 * 86400000).toISOString()
+      const created_last7 = {}
       for (let offset = 0; offset < 50000; offset += PAGE) {
         const page = await db.select('task_records', {
           select:              'task_type,created_at',
-          task_type:           `in.(${TYPES.join(',')})`,
+          task_type:           `in.(${COUNT_TYPES.join(',')})`,
           created_at:          `gte.${sinceIso}`,
           marked_for_deletion: 'neq.true',
           order:               'created_at.asc',
           limit:               String(PAGE),
           offset:              String(offset)
         })
-        for (const r of page) {
-          if (dub(r.created_at) === yStr) generated_yesterday[r.task_type] = (generated_yesterday[r.task_type] || 0) + 1
-        }
+        for (const r of page) created_last7[r.task_type] = (created_last7[r.task_type] || 0) + 1
         if (page.length < PAGE) break
       }
 
-      return json({ now: new Date().toISOString(), total: records.length, records, generated_yesterday })
+      return json({ now: new Date().toISOString(), total: records.length, records, created_last7 })
     }
 
     const session = await authenticate(request, env)
