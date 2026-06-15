@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../App.jsx'
 import { useCurrentStore } from '../lib/currentStore.jsx'
 import { getSpacePlanGrid, saveSpacePlanCounts, getSpacePlanReport } from '../lib/api.js'
@@ -6,15 +6,27 @@ import { downloadExcel } from '../lib/excel.js'
 import CurrentStorePicker from '../components/CurrentStorePicker.jsx'
 import { useToast } from '../components/Toast.jsx'
 
-const cellKey = (eqId, catId) => `${eqId}|${catId}`
+// subId is '' when the equipment has no subcategory level.
+const cellKey = (eqId, subId, catId) => `${eqId}|${subId || ''}|${catId}`
 
-function equipmentTotal(cells, eqId, categories) {
+// Sum the cells for one (equipment, subcategory) across all categories.
+function subcatTotal(cells, eqId, subId, categories) {
   let t = 0
   for (const c of categories) {
-    const v = cells[cellKey(eqId, c.id)]
+    const v = cells[cellKey(eqId, subId, c.id)]
     if (v !== '' && v != null && !isNaN(Number(v))) t += Number(v)
   }
   return t
+}
+
+// Equipment total = sum across its subcategories, or the no-subcategory bucket.
+function equipmentTotal(cells, eqId, subs, categories) {
+  if (subs && subs.length) {
+    let t = 0
+    for (const s of subs) t += subcatTotal(cells, eqId, s.id, categories)
+    return t
+  }
+  return subcatTotal(cells, eqId, '', categories)
 }
 
 function varianceTone(v) {
@@ -62,6 +74,13 @@ export default function SpacePlan() {
     return m
   }, [data])
 
+  // Active subcategories grouped by their equipment.
+  const subsByEq = useMemo(() => {
+    const m = {}
+    for (const s of (data?.subcategories || [])) (m[s.equipment_id] ||= []).push(s)
+    return m
+  }, [data])
+
   const load = async () => {
     if (!currentStoreId) { setData(null); return }
     setLoading(true); setError('')
@@ -70,7 +89,7 @@ export default function SpacePlan() {
       setData(d)
       const init = {}
       for (const c of (d.counts || [])) {
-        if (c.audited_count != null) init[cellKey(c.equipment_id, c.category_id)] = String(c.audited_count)
+        if (c.audited_count != null) init[cellKey(c.equipment_id, c.subcategory_id, c.category_id)] = String(c.audited_count)
       }
       setCells(init)
       pendingRef.current = { storeId: null, cells: new Map() }
@@ -95,19 +114,16 @@ export default function SpacePlan() {
     setStatus('saving')
     try {
       await saveSpacePlanCounts(storeId, batch)
-      // Only show "saved" if nothing new queued while we were saving.
       setStatus(pendingRef.current.cells.size ? 'dirty' : 'saved')
     } catch (e) {
-      // Re-queue so the next flush retries.
       const cur = pendingRef.current
       cur.storeId = storeId
-      for (const c of batch) cur.cells.set(cellKey(c.equipment_id, c.category_id), c)
+      for (const c of batch) cur.cells.set(cellKey(c.equipment_id, c.subcategory_id, c.category_id), c)
       setStatus('error'); setError(e.message)
     }
   }
   flushRef.current = flush
 
-  // Flush any pending edits when leaving the page.
   useEffect(() => () => { flushRef.current() }, [])
 
   const scheduleFlush = () => {
@@ -115,13 +131,13 @@ export default function SpacePlan() {
     timerRef.current = setTimeout(() => flushRef.current(), 1000)
   }
 
-  const setCell = (eqId, catId, value) => {
+  const setCell = (eqId, subId, catId, value) => {
     if (value !== '' && !/^\d+$/.test(value)) return
-    const k = cellKey(eqId, catId)
+    const k = cellKey(eqId, subId, catId)
     setCells(prev => ({ ...prev, [k]: value }))
     const p = pendingRef.current
     p.storeId = currentStoreId
-    p.cells.set(k, { equipment_id: eqId, category_id: catId, audited_count: value === '' ? null : Number(value) })
+    p.cells.set(k, { equipment_id: eqId, subcategory_id: subId || null, category_id: catId, audited_count: value === '' ? null : Number(value) })
     setStatus('dirty')
     scheduleFlush()
   }
@@ -149,8 +165,8 @@ export default function SpacePlan() {
   const equipment  = data?.equipment  || []
   const categories = data?.categories || []
   const stickyCol = { position: 'sticky', left: 0, background: 'var(--surface)', zIndex: 1 }
-  // Always resolve planned to a number so the cell never renders blank.
   const plannedOf = (id) => { const v = Number(plannedByEq[id]); return Number.isFinite(v) ? v : 0 }
+  const subHeadStyle = { fontWeight: 600, fontSize: 13, color: 'var(--primary-dark)', margin: '12px 0 2px', paddingBottom: 3, borderBottom: '1px solid var(--border)' }
 
   const statusLabel = {
     idle:   '',
@@ -160,6 +176,21 @@ export default function SpacePlan() {
     error:  '⚠ Retry'
   }[status]
   const statusCls = `sp-status ${status}`
+
+  // One numeric input cell, wired to auto-save.
+  const inputCell = (eqId, subId, catId, cls) => {
+    const k = cellKey(eqId, subId, catId)
+    return (
+      <input
+        type="text" inputMode="numeric"
+        value={cells[k] ?? ''}
+        onChange={ev => setCell(eqId, subId, catId, ev.target.value)}
+        onBlur={() => flush()}
+        className={cls}
+        placeholder={cls ? undefined : '0'}
+      />
+    )
+  }
 
   return (
     <div className="sp-page">
@@ -195,7 +226,7 @@ export default function SpacePlan() {
           </div></div>
         ) : (
           <>
-            {/* Equipment Variance summary */}
+            {/* Equipment Variance summary — one row per equipment (total vs plan) */}
             <div className="card mb-12">
               <div className="card-header">Equipment Variance</div>
               <div className="table-wrap">
@@ -210,8 +241,9 @@ export default function SpacePlan() {
                   </thead>
                   <tbody>
                     {equipment.map(e => {
+                      const subs = subsByEq[e.id] || []
                       const planned = plannedOf(e.id)
-                      const total   = equipmentTotal(cells, e.id, categories)
+                      const total   = equipmentTotal(cells, e.id, subs, categories)
                       const variance = total - planned
                       return (
                         <tr key={e.id}>
@@ -231,8 +263,9 @@ export default function SpacePlan() {
             {isMobile ? (
               <div>
                 {equipment.map(e => {
+                  const subs = subsByEq[e.id] || []
                   const planned = plannedOf(e.id)
-                  const total   = equipmentTotal(cells, e.id, categories)
+                  const total   = equipmentTotal(cells, e.id, subs, categories)
                   const variance = total - planned
                   const open = expanded.has(e.id)
                   return (
@@ -246,21 +279,22 @@ export default function SpacePlan() {
                       </button>
                       {open && (
                         <div className="sp-eq-body">
-                          {categories.map(c => {
-                            const k = cellKey(e.id, c.id)
-                            return (
-                              <label className="sp-cat-row" key={c.id}>
-                                <span>{c.name}</span>
-                                <input
-                                  type="text" inputMode="numeric"
-                                  value={cells[k] ?? ''}
-                                  onChange={ev => setCell(e.id, c.id, ev.target.value)}
-                                  onBlur={() => flush()}
-                                  placeholder="0"
-                                />
-                              </label>
-                            )
-                          })}
+                          {subs.length ? subs.map(sub => (
+                            <div key={sub.id}>
+                              <div style={subHeadStyle}>{sub.name}</div>
+                              {categories.map(c => (
+                                <label className="sp-cat-row" key={c.id}>
+                                  <span>{c.name}</span>
+                                  {inputCell(e.id, sub.id, c.id)}
+                                </label>
+                              ))}
+                            </div>
+                          )) : categories.map(c => (
+                            <label className="sp-cat-row" key={c.id}>
+                              <span>{c.name}</span>
+                              {inputCell(e.id, '', c.id)}
+                            </label>
+                          ))}
                         </div>
                       )}
                     </div>
@@ -279,7 +313,7 @@ export default function SpacePlan() {
                   <table className="sp-grid">
                     <thead>
                       <tr>
-                        <th style={{ ...stickyCol, minWidth: 170 }}>Equipment</th>
+                        <th style={{ ...stickyCol, minWidth: 180 }}>Equipment</th>
                         <th className="td-right">Plan</th>
                         <th className="td-right">Total</th>
                         <th className="td-right">Var.</th>
@@ -288,30 +322,52 @@ export default function SpacePlan() {
                     </thead>
                     <tbody>
                       {equipment.map(e => {
+                        const subs = subsByEq[e.id] || []
                         const planned = plannedOf(e.id)
-                        const total   = equipmentTotal(cells, e.id, categories)
+                        const total   = equipmentTotal(cells, e.id, subs, categories)
                         const variance = total - planned
+
+                        // No subcategory level — a single input row.
+                        if (!subs.length) {
+                          return (
+                            <tr key={e.id}>
+                              <td style={{ ...stickyCol }}><strong>{e.name}</strong></td>
+                              <td className="td-right td-muted">{planned}</td>
+                              <td className="td-right"><strong>{total}</strong></td>
+                              <td className="td-right" style={varianceTone(variance)}>{fmtVar(variance)}</td>
+                              {categories.map(c => (
+                                <td key={c.id} style={{ padding: 3 }}>{inputCell(e.id, '', c.id, 'sp-cell')}</td>
+                              ))}
+                            </tr>
+                          )
+                        }
+
+                        // With subcategories — an equipment rollup row, then one
+                        // input row per subcategory (counts entered there).
                         return (
-                          <tr key={e.id}>
-                            <td style={{ ...stickyCol }}><strong>{e.name}</strong></td>
-                            <td className="td-right td-muted">{planned}</td>
-                            <td className="td-right"><strong>{total}</strong></td>
-                            <td className="td-right" style={varianceTone(variance)}>{fmtVar(variance)}</td>
-                            {categories.map(c => {
-                              const k = cellKey(e.id, c.id)
+                          <Fragment key={e.id}>
+                            <tr style={{ background: 'var(--surface-warm)' }}>
+                              <td style={{ ...stickyCol, background: 'var(--surface-warm)' }}><strong>{e.name}</strong></td>
+                              <td className="td-right td-muted">{planned}</td>
+                              <td className="td-right"><strong>{total}</strong></td>
+                              <td className="td-right" style={varianceTone(variance)}>{fmtVar(variance)}</td>
+                              <td colSpan={categories.length} className="td-muted" style={{ fontSize: 12 }}>Enter counts per subcategory below ↓</td>
+                            </tr>
+                            {subs.map(sub => {
+                              const stot = subcatTotal(cells, e.id, sub.id, categories)
                               return (
-                                <td key={c.id} style={{ padding: 3 }}>
-                                  <input
-                                    type="text" inputMode="numeric"
-                                    value={cells[k] ?? ''}
-                                    onChange={ev => setCell(e.id, c.id, ev.target.value)}
-                                    onBlur={() => flush()}
-                                    className="sp-cell"
-                                  />
-                                </td>
+                                <tr key={sub.id}>
+                                  <td style={{ ...stickyCol }}><span style={{ paddingLeft: 16 }}>{sub.name}</span></td>
+                                  <td className="td-right td-muted">—</td>
+                                  <td className="td-right">{stot}</td>
+                                  <td className="td-right td-muted">—</td>
+                                  {categories.map(c => (
+                                    <td key={c.id} style={{ padding: 3 }}>{inputCell(e.id, sub.id, c.id, 'sp-cell')}</td>
+                                  ))}
+                                </tr>
                               )
                             })}
-                          </tr>
+                          </Fragment>
                         )
                       })}
                     </tbody>

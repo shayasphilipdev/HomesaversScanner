@@ -1289,14 +1289,15 @@ export async function onRequest(context) {
     if (path === '/space-plan/grid' && method === 'GET') {
       const r = await resolveSpaceStore(url.searchParams.get('storeId'))
       if (r.error) return r.error
-      const equipment  = await db.select('space_plan_equipment',  { select: 'id,name,sort_order', is_active: 'eq.true', order: 'sort_order.asc' })
-      const categories = await db.select('space_plan_categories', { select: 'id,name,sort_order', is_active: 'eq.true', order: 'sort_order.asc' })
+      const equipment     = await db.select('space_plan_equipment',  { select: 'id,name,sort_order', is_active: 'eq.true', order: 'sort_order.asc' })
+      const categories    = await db.select('space_plan_categories', { select: 'id,name,sort_order', is_active: 'eq.true', order: 'sort_order.asc' })
+      const subcategories = await db.select('space_plan_equipment_subcategory', { select: 'id,equipment_id,name,sort_order', is_active: 'eq.true', order: 'sort_order.asc' })
       let planned = [], counts = []
       if (r.storeId) {
         planned = await db.select('space_plan_planned', { select: 'equipment_id,planned_count', store_id: `eq.${r.storeId}` })
-        counts  = await db.select('space_plan_counts',  { select: 'equipment_id,category_id,audited_count', store_id: `eq.${r.storeId}` })
+        counts  = await db.select('space_plan_counts',  { select: 'equipment_id,subcategory_id,category_id,audited_count', store_id: `eq.${r.storeId}` })
       }
-      return json({ store_id: r.storeId, equipment, categories, planned, counts })
+      return json({ store_id: r.storeId, equipment, categories, subcategories, planned, counts })
     }
 
     if (path === '/space-plan/counts' && method === 'POST') {
@@ -1311,20 +1312,21 @@ export async function onRequest(context) {
       const rows = []
       for (const c of cells) {
         if (!uuid.test(c.equipment_id || '') || !uuid.test(c.category_id || '')) continue
+        const subId = uuid.test(c.subcategory_id || '') ? c.subcategory_id : null
         let v = c.audited_count
         if (v === '' || v === null || v === undefined) v = null
         else { v = Number(v); if (!Number.isFinite(v) || v < 0) continue; v = Math.round(v) }
-        rows.push({ store_id: r.storeId, equipment_id: c.equipment_id, category_id: c.category_id, audited_count: v, updated_by_name: who, updated_at: now })
+        rows.push({ store_id: r.storeId, equipment_id: c.equipment_id, subcategory_id: subId, category_id: c.category_id, audited_count: v, updated_by_name: who, updated_at: now })
       }
       if (!rows.length) return json({ saved: 0 })
-      const saved = await db.upsert('space_plan_counts', rows, 'store_id,equipment_id,category_id')
+      const saved = await db.upsert('space_plan_counts', rows, 'store_id,equipment_id,subcategory_id,category_id')
       return json({ saved: saved.length })
     }
 
     // Flat-row report for Excel export (client-side downloadExcel consumes {cols,headers,rows}).
     if (path === '/space-plan/report' && method === 'GET') {
-      const SP_COLS    = ['store_code','store_name','equipment','planned_count','category','audited_count','equipment_audited_total','equipment_variance','last_count_date']
-      const SP_HEADERS = ['Store Code','Store Name','Equipment','Planned Equipment Count','Category','Audited Department Equipment Count','Equipment Audited Total','Equipment Variance','Latest Count Date']
+      const SP_COLS    = ['store_code','store_name','equipment','subcategory','planned_count','category','audited_count','equipment_audited_total','equipment_variance','last_count_date']
+      const SP_HEADERS = ['Store Code','Store Name','Equipment','Subcategory','Planned Equipment Count','Category','Audited Department Equipment Count','Equipment Audited Total','Equipment Variance','Latest Count Date']
       const scope = await scopedStoreIds(db, session)
       const wanted = (url.searchParams.get('storeId') || '').split(',').map(s => s.trim()).filter(s => s && s !== 'all')
       let storeIds = null
@@ -1332,23 +1334,31 @@ export async function onRequest(context) {
       else               storeIds = scope                      // null = all, [...] = scoped, [] = none
       if (Array.isArray(storeIds) && !storeIds.length) return json({ cols: SP_COLS, headers: SP_HEADERS, rows: [] })
 
-      const equipment  = await db.select('space_plan_equipment',  { select: 'id,name,sort_order', is_active: 'eq.true', order: 'sort_order.asc' })
-      const categories = await db.select('space_plan_categories', { select: 'id,name,sort_order', is_active: 'eq.true', order: 'sort_order.asc' })
+      const equipment     = await db.select('space_plan_equipment',  { select: 'id,name,sort_order', is_active: 'eq.true', order: 'sort_order.asc' })
+      const categories    = await db.select('space_plan_categories', { select: 'id,name,sort_order', is_active: 'eq.true', order: 'sort_order.asc' })
+      const subcategories = await db.select('space_plan_equipment_subcategory', { select: 'id,equipment_id,name,sort_order', is_active: 'eq.true', order: 'sort_order.asc' })
       const storeParams = { select: 'id,store_code,store_name', order: 'store_code.asc' }
       if (Array.isArray(storeIds)) storeParams['id'] = `in.(${storeIds.join(',')})`
       const stores = await db.select('stores', storeParams)
       const idList = stores.map(s => s.id)
       if (!idList.length || !equipment.length) return json({ cols: SP_COLS, headers: SP_HEADERS, rows: [] })
 
+      // Subcategories grouped by equipment (empty list = no subcategory level).
+      const subsByEq = new Map()
+      for (const s of subcategories) {
+        if (!subsByEq.has(s.equipment_id)) subsByEq.set(s.equipment_id, [])
+        subsByEq.get(s.equipment_id).push(s)
+      }
+
       const inStores = `in.(${idList.join(',')})`
       const planned = await db.select('space_plan_planned', { select: 'store_id,equipment_id,planned_count', store_id: inStores })
-      const counts  = await db.select('space_plan_counts',  { select: 'store_id,equipment_id,category_id,audited_count,updated_at', store_id: inStores })
+      const counts  = await db.select('space_plan_counts',  { select: 'store_id,equipment_id,subcategory_id,category_id,audited_count,updated_at', store_id: inStores })
 
       const plannedMap = new Map(planned.map(p => [`${p.store_id}|${p.equipment_id}`, p.planned_count]))
-      const countMap = new Map()
-      const totalMap = new Map()
+      const countMap = new Map()   // store|eq|sub|cat -> cell  (sub = '' when none)
+      const totalMap = new Map()   // store|eq -> sum of all audited (across subcategories)
       for (const c of counts) {
-        countMap.set(`${c.store_id}|${c.equipment_id}|${c.category_id}`, c)
+        countMap.set(`${c.store_id}|${c.equipment_id}|${c.subcategory_id || ''}|${c.category_id}`, c)
         if (c.audited_count != null) {
           const k = `${c.store_id}|${c.equipment_id}`
           totalMap.set(k, (totalMap.get(k) || 0) + c.audited_count)
@@ -1357,18 +1367,22 @@ export async function onRequest(context) {
       const rows = []
       for (const st of stores) {
         for (const e of equipment) {
-          const pc  = plannedMap.has(`${st.id}|${e.id}`) ? plannedMap.get(`${st.id}|${e.id}`) : null
-          const tot = totalMap.get(`${st.id}|${e.id}`) || 0
-          for (const cat of categories) {
-            const cell = countMap.get(`${st.id}|${e.id}|${cat.id}`)
-            rows.push({
-              store_code: st.store_code, store_name: st.store_name,
-              equipment: e.name, planned_count: pc,
-              category: cat.name, audited_count: cell?.audited_count ?? '',
-              equipment_audited_total: tot,
-              equipment_variance: pc == null ? '' : (tot - pc),
-              last_count_date: cell?.updated_at ? fmtReportDate(cell.updated_at) : ''
-            })
+          const pc   = plannedMap.has(`${st.id}|${e.id}`) ? plannedMap.get(`${st.id}|${e.id}`) : null
+          const tot  = totalMap.get(`${st.id}|${e.id}`) || 0
+          const subs = subsByEq.get(e.id) || [null]   // [null] = equipment with no subcategory level
+          for (const sub of subs) {
+            for (const cat of categories) {
+              const cell = countMap.get(`${st.id}|${e.id}|${sub ? sub.id : ''}|${cat.id}`)
+              rows.push({
+                store_code: st.store_code, store_name: st.store_name,
+                equipment: e.name, subcategory: sub ? sub.name : '',
+                planned_count: pc, category: cat.name,
+                audited_count: cell?.audited_count ?? '',
+                equipment_audited_total: tot,
+                equipment_variance: pc == null ? '' : (tot - pc),
+                last_count_date: cell?.updated_at ? fmtReportDate(cell.updated_at) : ''
+              })
+            }
           }
         }
       }
