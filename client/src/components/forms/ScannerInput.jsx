@@ -34,6 +34,17 @@ export default function ScannerInput({
   onChangeRef.current  = onChange
   onConfirmRef.current = onConfirm
 
+  // Every "a scan/entry is complete" path funnels through confirmRef so we can
+  // remember the last code we looked up. The auto-settle effect (below) uses
+  // that to avoid running a duplicate lookup that Enter / blur / the gun buffer
+  // already triggered.
+  const lastConfirmedRef = useRef('')
+  const confirmRef = useRef(() => {})
+  confirmRef.current = (code) => {
+    lastConfirmedRef.current = (code || '').trim()
+    onConfirmRef.current?.(code)
+  }
+
   const [cameraOn, setCameraOn]         = useState(false)
   const [cameraStatus, setCameraStatus] = useState('')
   const [zoom, setZoom]                 = useState(2)      // default 2× — barcodes are small
@@ -83,7 +94,7 @@ export default function ScannerInput({
         if (buffer.length >= 4) {
           e.preventDefault()
           onChangeRef.current(buffer)
-          onConfirmRef.current?.(buffer)
+          confirmRef.current(buffer)
           inputRef.current?.focus()
         }
         buffer = ''
@@ -117,10 +128,25 @@ export default function ScannerInput({
   // tap other fields (quantity, reason, notes) without focus jumping back.
   useEffect(() => {
     if (value !== '') return
+    lastConfirmedRef.current = ''   // a cleared field is ready for a fresh scan (even the same code)
     const id = requestAnimationFrame(() => {
       try { inputRef.current?.focus({ preventScroll: true }) } catch { inputRef.current?.focus() }
     })
     return () => cancelAnimationFrame(id)
+  }, [value])
+
+  // Auto-trigger the lookup once the scanned value stops changing. Scanner guns
+  // vary in how (or whether) they terminate a scan — Enter, Tab, a custom
+  // suffix, or nothing — so we don't depend on a terminator key. Enter / blur
+  // still fire the lookup instantly; the lastConfirmed guard prevents a
+  // duplicate. Manual typing simply looks up a beat after the user stops.
+  useEffect(() => {
+    const code = (value || '').trim()
+    if (code.length < 4 || code === lastConfirmedRef.current) return
+    const t = setTimeout(() => {
+      if ((value || '').trim() === code && code !== lastConfirmedRef.current) confirmRef.current(code)
+    }, 250)
+    return () => clearTimeout(t)
   }, [value])
 
   // Camera scanner — lazy-loaded
@@ -183,7 +209,7 @@ export default function ScannerInput({
               setCameraStatus(`Reading: ${code} (${candidateN}/${CAMERA_CONFIRM_COUNT})`)
               if (candidateN >= CAMERA_CONFIRM_COUNT) {
                 onChangeRef.current(code)
-                onConfirmRef.current?.(code)
+                confirmRef.current(code)
                 if (navigator.vibrate) navigator.vibrate(60)   // haptic confirm
                 setCameraStatus('Saved code — close camera or scan another.')
                 candidate = ''
@@ -262,15 +288,16 @@ export default function ScannerInput({
             type="text" className="scan-input" autoComplete="off" spellCheck={false}
             style={{ width: '100%' }}
             value={value} onChange={e => onChange(e.target.value)}
-            onBlur={e => onConfirm?.(e.target.value)}
+            onBlur={e => confirmRef.current(e.target.value)}
             onKeyDown={e => {
-              // Now that the field is reliably focused, the scan lands here and
-              // the global gun-listener yields — so this handler must recognise
-              // the scanner's terminating Enter even when e.key is 'Unidentified'
-              // (some Android/Bluetooth guns) by also checking the keyCode.
+              // The scan lands in this focused field, so recognise the
+              // terminating Enter even when e.key is 'Unidentified' (some
+              // Android/Bluetooth guns) by also checking the keyCode. The
+              // auto-settle effect is the backstop for guns that send no
+              // terminator at all.
               if (e.key === 'Enter' || e.keyCode === 13 || e.keyCode === 10) {
                 e.preventDefault()
-                onConfirm?.(e.target.value)
+                confirmRef.current(e.target.value)
               }
             }}
             placeholder={placeholder}
