@@ -106,11 +106,22 @@ export default function ScannerInput({
     // Refs keep the latest callbacks; the listener attaches once.
   }, [])
 
-  // Focus the barcode field on mount so the scanner gun types into it
-  // immediately without the user needing to tap first.
+  // Keep the scan field focused so a scan always lands here without the
+  // staff having to tap the field first. This fires:
+  //   • on mount  — the form was opened / a task was picked from the dropdown
+  //   • whenever the field is cleared back to empty — i.e. right after Save
+  //     or Clear (every task form resets the barcode to '' then).
+  // requestAnimationFrame defers the focus until the DOM has settled (e.g. a
+  // closing dropdown), which makes it reliable on tablets. We deliberately do
+  // NOT refocus while the field holds a scanned value, so the user can freely
+  // tap other fields (quantity, reason, notes) without focus jumping back.
   useEffect(() => {
-    inputRef.current?.focus()
-  }, [])
+    if (value !== '') return
+    const id = requestAnimationFrame(() => {
+      try { inputRef.current?.focus({ preventScroll: true }) } catch { inputRef.current?.focus() }
+    })
+    return () => cancelAnimationFrame(id)
+  }, [value])
 
   // Camera scanner — lazy-loaded
   useEffect(() => {
