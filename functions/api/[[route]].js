@@ -3190,8 +3190,16 @@ export async function onRequest(context) {
       const ttCsv = csv2(taskType)
       if (ttCsv.length) params['task_type'] = ttCsv.length === 1 ? `eq.${ttCsv[0]}` : `in.(${ttCsv.join(',')})`
 
-      const [records, stores, taskTypes] = await Promise.all([
-        db.select('task_records', params),
+      // Page past PostgREST's 1000-row cap so large stores export in full
+      // (a single select silently truncated at 1000 — e.g. store 1015 has 6000+).
+      const PAGE = 1000
+      const records = []
+      for (let offset = 0; offset < 500000; offset += PAGE) {
+        const pageRows = await db.select('task_records', { ...params, limit: String(PAGE), offset: String(offset) })
+        records.push(...pageRows)
+        if (pageRows.length < PAGE) break
+      }
+      const [stores, taskTypes] = await Promise.all([
         db.select('stores', { select: 'id,store_name' }),
         db.select('task_types', { select: 'code,name' }),
       ])
