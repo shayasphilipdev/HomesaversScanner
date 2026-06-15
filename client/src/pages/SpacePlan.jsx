@@ -317,7 +317,7 @@ export default function SpacePlan() {
                         <th className="td-right">Plan</th>
                         <th className="td-right">Total</th>
                         <th className="td-right">Var.</th>
-                        {categories.map(c => <th key={c.id} className="td-right" style={{ whiteSpace: 'nowrap' }}>{c.name}</th>)}
+                        {categories.map(c => <th key={c.id} className="sp-cat-head">{c.name}</th>)}
                       </tr>
                     </thead>
                     <tbody>
@@ -336,7 +336,7 @@ export default function SpacePlan() {
                               <td className="td-right"><strong>{total}</strong></td>
                               <td className="td-right" style={varianceTone(variance)}>{fmtVar(variance)}</td>
                               {categories.map(c => (
-                                <td key={c.id} style={{ padding: 3 }}>{inputCell(e.id, '', c.id, 'sp-cell')}</td>
+                                <td key={c.id} className="sp-cat-cell">{inputCell(e.id, '', c.id, 'sp-cell')}</td>
                               ))}
                             </tr>
                           )
@@ -362,7 +362,7 @@ export default function SpacePlan() {
                                   <td className="td-right">{stot}</td>
                                   <td className="td-right td-muted">—</td>
                                   {categories.map(c => (
-                                    <td key={c.id} style={{ padding: 3 }}>{inputCell(e.id, sub.id, c.id, 'sp-cell')}</td>
+                                    <td key={c.id} className="sp-cat-cell">{inputCell(e.id, sub.id, c.id, 'sp-cell')}</td>
                                   ))}
                                 </tr>
                               )
