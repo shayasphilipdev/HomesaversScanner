@@ -892,15 +892,16 @@ export async function onRequest(context) {
     }
 
     // ── Authenticated ─────────────────────────────────────────────────────
-    // GET /reports/aging — read-only feed for the scheduled aging-report email
-    // job (pending Non-Scans/Wrong Prices/Wrong Description + created_at, for
-    // aging). Secret-authed like the sync jobs, so it MUST sit before the
-    // session gate below. Reads existing tables only — adds no storage.
+    // GET /reports/aging — read-only feed for the scheduled status-report email
+    // job. Returns PENDING query records (UOM Errors, Non-Scans, Wrong Prices,
+    // Wrong Description, Price Marked, DRS) for the pending/days-pending tables,
+    // plus a count of ALL tasks (any status) those types generated yesterday.
+    // Secret-authed like the sync jobs, so it MUST sit before the session gate.
     if (path === '/reports/aging' && method === 'GET') {
       if (!env.PRODUCT_SYNC_SECRET) return err('PRODUCT_SYNC_SECRET not configured', 500)
       if ((request.headers.get('X-Sync-Secret') || '') !== env.PRODUCT_SYNC_SECRET) return err('Forbidden', 403)
 
-      const TYPES = ['B', 'C', 'D']
+      const TYPES = ['A', 'B', 'C', 'D', 'E', 'F']
       const PAGE  = 1000
       const recs  = []
       // Page past PostgREST's row cap so a large backlog is never truncated.
@@ -931,7 +932,31 @@ export async function onRequest(context) {
         created_at:   r.created_at
       }))
 
-      return json({ now: new Date().toISOString(), total: records.length, records })
+      // Tasks generated yesterday (any status), per type — daily inflow, not aging.
+      // Dublin local calendar day; small 3-day window keeps the scan cheap.
+      const dub = (iso) => new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Europe/Dublin', year: 'numeric', month: '2-digit', day: '2-digit'
+      }).format(new Date(iso))
+      const yStr     = dub(new Date(Date.now() - 86400000).toISOString())
+      const sinceIso = new Date(Date.now() - 3 * 86400000).toISOString()
+      const generated_yesterday = {}
+      for (let offset = 0; offset < 50000; offset += PAGE) {
+        const page = await db.select('task_records', {
+          select:              'task_type,created_at',
+          task_type:           `in.(${TYPES.join(',')})`,
+          created_at:          `gte.${sinceIso}`,
+          marked_for_deletion: 'neq.true',
+          order:               'created_at.asc',
+          limit:               String(PAGE),
+          offset:              String(offset)
+        })
+        for (const r of page) {
+          if (dub(r.created_at) === yStr) generated_yesterday[r.task_type] = (generated_yesterday[r.task_type] || 0) + 1
+        }
+        if (page.length < PAGE) break
+      }
+
+      return json({ now: new Date().toISOString(), total: records.length, records, generated_yesterday })
     }
 
     const session = await authenticate(request, env)

@@ -44,7 +44,17 @@ CONFIG_PATH = os.environ.get("AGING_REPORT_CONFIG", os.path.join(HERE, "aging-re
 SECRET_FILE = r"C:\Homesavers\.sync-secret"
 LOG_FILE    = r"C:\Homesavers\logs\aging-report.log"
 
-CATEGORIES = [("B", "Non-Scans"), ("C", "Wrong Prices"), ("D", "Wrong Description")]
+CATEGORIES = [
+    ("B", "Non-Scans"),
+    ("C", "Wrong Prices"),
+    ("D", "Wrong Description"),
+    ("A", "UOM Errors"),
+    ("E", "Price Marked Products"),
+    ("F", "DRS Errors"),
+]
+# Short labels for the compact "logged yesterday" boxes.
+SHORT = {"A": "UOM Errors", "B": "Non-Scans", "C": "Wrong Prices",
+         "D": "Wrong Desc.", "E": "Price Marked", "F": "DRS Errors"}
 
 DEFAULT_BUCKETS = [
     {"label": "0-1 days",  "min": 0,  "max": 1},
@@ -115,7 +125,8 @@ def fetch_records(cfg, secret):
     resp = requests.get(url, headers={"X-Sync-Secret": secret}, timeout=120)
     resp.raise_for_status()
     data = resp.json()
-    return data.get("records", []), parse_iso(data.get("now")) or dt.datetime.now(dt.timezone.utc)
+    now = parse_iso(data.get("now")) or dt.datetime.now(dt.timezone.utc)
+    return data.get("records", []), now, data.get("generated_yesterday", {}) or {}
 
 
 def enrich(records, now, buckets):
@@ -151,7 +162,7 @@ ALERT    = "#B42318"
 FONT     = "Segoe UI,Arial,Helvetica,sans-serif"
 
 
-def build_html(by_cat, cfg, now, registered_yesterday):
+def build_html(by_cat, cfg, now, generated_yesterday):
     buckets = cfg["aging_buckets"]
     overdue = int(cfg["overdue_days"])
     bucket_labels = [b["label"] for b in buckets]
@@ -160,18 +171,32 @@ def build_html(by_cat, cfg, now, registered_yesterday):
     overdue_all = sum(1 for v in by_cat.values() for x in v if x["age_days"] > overdue)
     oldest_all  = max((x["age_days"] for v in by_cat.values() for x in v), default=0)
     as_of       = now.astimezone().strftime("%d/%m/%Y %H:%M")
+    gen_total   = sum(int(generated_yesterday.get(code, 0)) for code, _ in CATEGORIES)
 
     # A KPI box: a rounded cell with a Homesavers-green gradient (solid bgcolor
     # fallback for Outlook desktop, which ignores CSS gradients).
     def box(label, value, g1, g2, value_color="#ffffff"):
         return (
-            f'<td width="50%" valign="top" style="padding:6px;">'
+            f'<td width="33%" valign="top" style="padding:6px;">'
             f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
             f'bgcolor="{g1}" style="background:{g1};'
             f'background-image:linear-gradient(135deg,{g1} 0%,{g2} 100%);border-radius:12px;">'
-            f'<tr><td style="padding:16px 18px;font-family:{FONT};">'
-            f'<div style="font-size:30px;font-weight:700;color:{value_color};line-height:1;">{value}</div>'
+            f'<tr><td style="padding:16px 16px;font-family:{FONT};">'
+            f'<div style="font-size:28px;font-weight:700;color:{value_color};line-height:1;">{value}</div>'
             f'<div style="font-size:13px;color:#E7F3EC;margin-top:5px;">{label}</div>'
+            f'</td></tr></table></td>'
+        )
+
+    # A small "logged yesterday" box — lighter green gradient, dark-green text.
+    def sbox(label, value):
+        return (
+            f'<td valign="top" style="padding:4px;">'
+            f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+            f'bgcolor="#D7EBDC" style="background:#D7EBDC;'
+            f'background-image:linear-gradient(135deg,#E6F3E9 0%,#C4E2CC 100%);border-radius:10px;">'
+            f'<tr><td align="center" style="padding:10px 4px;font-family:{FONT};">'
+            f'<div style="font-size:20px;font-weight:700;color:#0A5A2E;line-height:1;">{value}</div>'
+            f'<div style="font-size:12px;color:#2C6B42;margin-top:3px;line-height:1.25;">{label}</div>'
             f'</td></tr></table></td>'
         )
 
@@ -193,26 +218,35 @@ def build_html(by_cat, cfg, now, registered_yesterday):
              f'<div style="font-size:21px;font-weight:700;color:#ffffff;letter-spacing:.2px;">Store Query Status</div>'
              f'<div style="font-size:13px;color:#CDE8D6;margin-top:4px;">As of {as_of}</div></td></tr>')
 
-    # Intro — professional, no formula / aging jargon
+    # Intro — professional
     H.append(f'<tr><td style="padding:20px 24px 6px;font-family:{FONT};font-size:14px;color:{TEXT};line-height:1.55;">'
              'Good morning,<br><br>'
-             'Below is the current status of store queries awaiting action by Head Office &mdash; '
+             'Below is the current status of store queries awaiting action by Support Office &mdash; '
              'how many are still pending, how long they have been waiting, and how many were newly '
              'logged yesterday.</td></tr>')
 
-    # KPI boxes — 2 x 2, gradient stepping deeper across the grid
-    H.append('<tr><td style="padding:8px 18px 4px;"><table role="presentation" width="100%" '
+    # KPI boxes — pending summary, 3 across, gradient stepping deeper
+    H.append('<tr><td style="padding:8px 18px 2px;"><table role="presentation" width="100%" '
              'cellpadding="0" cellspacing="0" border="0"><tr>')
     H.append(box("Total pending", total_all, G_BRIGHT, G_MID))
-    H.append(box("Logged yesterday", registered_yesterday, G_RICH, G_MID))
-    H.append('</tr><tr>')
     H.append(box(f"Pending over {overdue} days", overdue_all, G_MID, G_DARK, overdue_color))
     H.append(box("Longest wait (days)", oldest_all, G_DARK, G_DEEP, longest_color))
     H.append('</tr></table></td></tr>')
 
-    # Helpers for the data tables
+    # Logged yesterday — daily inflow (all statuses), small boxes by type
+    H.append(f'<tr><td style="padding:14px 24px 0;font-family:{FONT};font-size:16px;'
+             f'font-weight:700;color:#1f2724;">Logged yesterday'
+             f'<span style="font-size:13px;font-weight:400;color:#5b665e;"> &mdash; {gen_total} new across all stores</span></td></tr>')
+    H.append('<tr><td style="padding:4px 20px 6px;"><table role="presentation" width="100%" '
+             'cellpadding="0" cellspacing="0" border="0"><tr>')
+    for code, _ in CATEGORIES:
+        H.append(sbox(SHORT.get(code, code), int(generated_yesterday.get(code, 0))))
+    H.append('</tr></table></td></tr>')
+
+    # Helpers for the data table — light-green gradient header (not as dark as above)
     def th(t, align="right"):
-        return (f'<th align="{align}" style="padding:8px 10px;background:{HEAD_BG};color:{HEAD_TX};'
+        return (f'<th align="{align}" style="padding:8px 10px;background:{HEAD_BG};'
+                f'background-image:linear-gradient(135deg,#EDF5EE 0%,#D4E8D8 100%);color:{HEAD_TX};'
                 f'font-family:{FONT};font-size:12px;font-weight:700;border:1px solid {BORDER};">{t}</th>')
     def td(v, align="right", bold=False, color=TEXT):
         w = "font-weight:700;" if bold else ""
@@ -235,29 +269,6 @@ def build_html(by_cat, cfg, now, registered_yesterday):
         cells = "".join(td(counts[l] or "") for l in bucket_labels)
         H.append('<tr>' + td(name, "left") + cells + td(len(rows), bold=True) + td(oldest) + '</tr>')
     H.append('</table></td></tr>')
-
-    # Stores needing attention
-    store_stats = {}
-    for code, name in CATEGORIES:
-        for x in by_cat.get(code, []):
-            k = (x["store_code"], x["store_name"])
-            s = store_stats.setdefault(k, {"total": 0, "overdue": 0, "oldest": 0})
-            s["total"] += 1
-            if x["age_days"] > overdue:
-                s["overdue"] += 1
-            s["oldest"] = max(s["oldest"], x["age_days"])
-    worst = sorted(store_stats.items(), key=lambda kv: (-kv[1]["overdue"], -kv[1]["oldest"]))[:15]
-    if worst:
-        H.append(f'<tr><td style="padding:18px 24px 2px;font-family:{FONT};font-size:16px;'
-                 f'font-weight:700;color:#1f2724;">Stores needing attention (top 15)</td></tr>')
-        H.append('<tr><td style="padding:4px 18px 6px;">'
-                 '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">')
-        H.append('<tr>' + th("Store", "left") + th("Pending") + th(f"Over {overdue} days") + th("Longest") + '</tr>')
-        for (code, nm), s in worst:
-            label = f"{code} - {nm}" if code else nm
-            od = td(s["overdue"], bold=True, color=ALERT) if s["overdue"] else td("0")
-            H.append('<tr>' + td(label, "left") + td(s["total"]) + od + td(s["oldest"]) + '</tr>')
-        H.append('</table></td></tr>')
 
     # Footer
     H.append(f'<tr><td style="padding:16px 24px 24px;font-family:{FONT};font-size:13px;'
@@ -344,23 +355,17 @@ def main():
     secret = read_secret()
 
     try:
-        records, now = fetch_records(cfg, secret)
+        records, now, generated_yesterday = fetch_records(cfg, secret)
     except Exception as e:
-        log(f"Could not fetch aging data: {e}", "ERROR")
+        log(f"Could not fetch report data: {e}", "ERROR")
         sys.exit(1)
-    log(f"Fetched {len(records)} pending B/C/D records.")
+    log(f"Fetched {len(records)} pending records; "
+        f"{sum(int(v) for v in generated_yesterday.values())} logged yesterday.")
 
     enriched = enrich(records, now, cfg["aging_buckets"])
     by_cat = {code: [x for x in enriched if x["task_type"] == code] for code, _ in CATEGORIES}
 
-    # How many pending queries were logged yesterday (local calendar day).
-    yesterday = now.astimezone().date() - dt.timedelta(days=1)
-    registered_yesterday = sum(
-        1 for v in by_cat.values() for x in v
-        if x["created_dt"].astimezone().date() == yesterday
-    )
-
-    html = build_html(by_cat, cfg, now, registered_yesterday)
+    html = build_html(by_cat, cfg, now, generated_yesterday)
 
     attachments = []
     for code, name in CATEGORIES:
