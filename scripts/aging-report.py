@@ -137,7 +137,21 @@ def enrich(records, now, buckets):
     return out
 
 
-def build_html(by_cat, cfg, now):
+# Homesavers brand greens (rich, dark) used across the email.
+G_DEEP   = "#05431F"   # deepest
+G_DARK   = "#075E2E"
+G_MID    = "#0A7339"
+G_RICH   = "#0E9A52"
+G_BRIGHT = "#12A156"
+HEAD_BG  = "#E8F1EA"
+HEAD_TX  = "#064E27"
+BORDER   = "#D7DDD5"
+TEXT     = "#27322b"
+ALERT    = "#B42318"
+FONT     = "Segoe UI,Arial,Helvetica,sans-serif"
+
+
+def build_html(by_cat, cfg, now, registered_yesterday):
     buckets = cfg["aging_buckets"]
     overdue = int(cfg["overdue_days"])
     bucket_labels = [b["label"] for b in buckets]
@@ -145,50 +159,84 @@ def build_html(by_cat, cfg, now):
     total_all   = sum(len(v) for v in by_cat.values())
     overdue_all = sum(1 for v in by_cat.values() for x in v if x["age_days"] > overdue)
     oldest_all  = max((x["age_days"] for v in by_cat.values() for x in v), default=0)
+    as_of       = now.astimezone().strftime("%d/%m/%Y %H:%M")
 
-    css = """
-      body{font-family:Segoe UI,Arial,sans-serif;color:#1f2328;font-size:14px}
-      h2{margin:18px 0 6px}
-      table{border-collapse:collapse;margin:6px 0 16px;font-size:13px}
-      th,td{border:1px solid #d0d7de;padding:6px 10px;text-align:left}
-      th{background:#f3f0ea}
-      td.n,th.n{text-align:right}
-      .kpi{display:inline-block;border:1px solid #d0d7de;border-radius:8px;padding:10px 16px;margin:4px 8px 8px 0}
-      .kpi b{display:block;font-size:22px}
-      .muted{color:#6b7280}
-      .bad{color:#b42318;font-weight:600}
-    """
+    # A KPI box: a rounded cell with a Homesavers-green gradient (solid bgcolor
+    # fallback for Outlook desktop, which ignores CSS gradients).
+    def box(label, value, g1, g2, value_color="#ffffff"):
+        return (
+            f'<td width="50%" valign="top" style="padding:6px;">'
+            f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+            f'bgcolor="{g1}" style="background:{g1};'
+            f'background-image:linear-gradient(135deg,{g1} 0%,{g2} 100%);border-radius:12px;">'
+            f'<tr><td style="padding:16px 18px;font-family:{FONT};">'
+            f'<div style="font-size:30px;font-weight:700;color:{value_color};line-height:1;">{value}</div>'
+            f'<div style="font-size:13px;color:#E7F3EC;margin-top:5px;">{label}</div>'
+            f'</td></tr></table></td>'
+        )
 
-    def kpi(label, value, bad=False):
-        cls = " bad" if bad else ""
-        return f'<div class="kpi"><b class="{cls.strip()}">{value}</b><span class="muted">{label}</span></div>'
+    overdue_color = "#FFD24D" if overdue_all > 0 else "#ffffff"
+    longest_color = "#FFD24D" if oldest_all > overdue else "#ffffff"
 
-    html = [f"<html><head><style>{css}</style></head><body>"]
-    html.append(f"<h2>Homesavers - Pending Records Aging</h2>")
-    html.append(f'<div class="muted">As of {now.astimezone().strftime("%d/%m/%Y %H:%M")} - aging = today minus the date the store submitted the record (status still Pending).</div>')
+    H = []
+    H.append('<!DOCTYPE html><html><head><meta charset="utf-8">'
+             '<meta name="viewport" content="width=device-width,initial-scale=1"></head>')
+    H.append('<body style="margin:0;padding:0;background:#f1f4f1;">')
+    H.append('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+             'style="background:#f1f4f1;"><tr><td align="center" style="padding:18px 12px;">')
+    H.append('<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" '
+             'style="width:600px;max-width:100%;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #e2e8e2;">')
 
-    html.append("<div style='margin-top:10px'>")
-    html.append(kpi("Total pending", total_all))
-    html.append(kpi(f"Overdue (&gt;{overdue} days)", overdue_all, bad=overdue_all > 0))
-    html.append(kpi("Oldest (days)", oldest_all, bad=oldest_all > overdue))
-    html.append("</div>")
+    # Header band — green gradient
+    H.append(f'<tr><td style="padding:22px 24px;background:{G_DARK};'
+             f'background-image:linear-gradient(135deg,{G_RICH} 0%,{G_DEEP} 100%);font-family:{FONT};">'
+             f'<div style="font-size:21px;font-weight:700;color:#ffffff;letter-spacing:.2px;">Store Query Status</div>'
+             f'<div style="font-size:13px;color:#CDE8D6;margin-top:4px;">As of {as_of}</div></td></tr>')
 
-    # Per-category bucket breakdown
-    html.append("<h2>By category &amp; age</h2>")
-    html.append("<table><tr><th>Category</th>" + "".join(f'<th class="n">{l}</th>' for l in bucket_labels) +
-                '<th class="n">Total</th><th class="n">Oldest</th></tr>')
+    # Intro — professional, no formula / aging jargon
+    H.append(f'<tr><td style="padding:20px 24px 6px;font-family:{FONT};font-size:14px;color:{TEXT};line-height:1.55;">'
+             'Good morning,<br><br>'
+             'Below is the current status of store queries awaiting action by Head Office &mdash; '
+             'how many are still pending, how long they have been waiting, and how many were newly '
+             'logged yesterday.</td></tr>')
+
+    # KPI boxes — 2 x 2, gradient stepping deeper across the grid
+    H.append('<tr><td style="padding:8px 18px 4px;"><table role="presentation" width="100%" '
+             'cellpadding="0" cellspacing="0" border="0"><tr>')
+    H.append(box("Total pending", total_all, G_BRIGHT, G_MID))
+    H.append(box("Logged yesterday", registered_yesterday, G_RICH, G_MID))
+    H.append('</tr><tr>')
+    H.append(box(f"Pending over {overdue} days", overdue_all, G_MID, G_DARK, overdue_color))
+    H.append(box("Longest wait (days)", oldest_all, G_DARK, G_DEEP, longest_color))
+    H.append('</tr></table></td></tr>')
+
+    # Helpers for the data tables
+    def th(t, align="right"):
+        return (f'<th align="{align}" style="padding:8px 10px;background:{HEAD_BG};color:{HEAD_TX};'
+                f'font-family:{FONT};font-size:12px;font-weight:700;border:1px solid {BORDER};">{t}</th>')
+    def td(v, align="right", bold=False, color=TEXT):
+        w = "font-weight:700;" if bold else ""
+        return (f'<td align="{align}" style="padding:7px 10px;border:1px solid {BORDER};'
+                f'font-family:{FONT};font-size:13px;color:{color};{w}">{v}</td>')
+
+    # Pending queries by type
+    H.append(f'<tr><td style="padding:16px 24px 2px;font-family:{FONT};font-size:16px;'
+             f'font-weight:700;color:#1f2724;">Pending queries by type</td></tr>')
+    H.append('<tr><td style="padding:4px 18px 6px;">'
+             '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">')
+    H.append('<tr>' + th("Type", "left") + "".join(th(l) for l in bucket_labels)
+             + th("Total") + th("Longest") + '</tr>')
     for code, name in CATEGORIES:
         rows = by_cat.get(code, [])
         counts = {l: 0 for l in bucket_labels}
         for x in rows:
             counts[x["bucket"]] = counts.get(x["bucket"], 0) + 1
         oldest = max((x["age_days"] for x in rows), default=0)
-        tds = "".join(f'<td class="n">{counts[l] or ""}</td>' for l in bucket_labels)
-        html.append(f'<tr><td>{name}</td>{tds}<td class="n"><b>{len(rows)}</b></td>'
-                    f'<td class="n">{oldest}</td></tr>')
-    html.append("</table>")
+        cells = "".join(td(counts[l] or "") for l in bucket_labels)
+        H.append('<tr>' + td(name, "left") + cells + td(len(rows), bold=True) + td(oldest) + '</tr>')
+    H.append('</table></td></tr>')
 
-    # Worst stores (by overdue count, then oldest)
+    # Stores needing attention
     store_stats = {}
     for code, name in CATEGORIES:
         for x in by_cat.get(code, []):
@@ -200,19 +248,26 @@ def build_html(by_cat, cfg, now):
             s["oldest"] = max(s["oldest"], x["age_days"])
     worst = sorted(store_stats.items(), key=lambda kv: (-kv[1]["overdue"], -kv[1]["oldest"]))[:15]
     if worst:
-        html.append("<h2>Stores needing attention (top 15)</h2>")
-        html.append('<table><tr><th>Store</th><th class="n">Pending</th>'
-                    f'<th class="n">Overdue &gt;{overdue}d</th><th class="n">Oldest</th></tr>')
+        H.append(f'<tr><td style="padding:18px 24px 2px;font-family:{FONT};font-size:16px;'
+                 f'font-weight:700;color:#1f2724;">Stores needing attention (top 15)</td></tr>')
+        H.append('<tr><td style="padding:4px 18px 6px;">'
+                 '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">')
+        H.append('<tr>' + th("Store", "left") + th("Pending") + th(f"Over {overdue} days") + th("Longest") + '</tr>')
         for (code, nm), s in worst:
             label = f"{code} - {nm}" if code else nm
-            od = f'<span class="bad">{s["overdue"]}</span>' if s["overdue"] else "0"
-            html.append(f'<tr><td>{label}</td><td class="n">{s["total"]}</td>'
-                        f'<td class="n">{od}</td><td class="n">{s["oldest"]}</td></tr>')
-        html.append("</table>")
+            od = td(s["overdue"], bold=True, color=ALERT) if s["overdue"] else td("0")
+            H.append('<tr>' + td(label, "left") + td(s["total"]) + od + td(s["oldest"]) + '</tr>')
+        H.append('</table></td></tr>')
 
-    html.append('<div class="muted" style="margin-top:14px">Detailed line-by-line records are attached as Excel files, one per category.</div>')
-    html.append("</body></html>")
-    return "\n".join(html)
+    # Footer
+    H.append(f'<tr><td style="padding:16px 24px 24px;font-family:{FONT};font-size:13px;'
+             f'color:#5b665e;line-height:1.6;border-top:1px solid #eef2ee;">'
+             'Detailed line-by-line records are attached as Excel files, one per query type. '
+             'Please action the pending queries at your earliest convenience.<br><br>'
+             f'Kind regards,<br><strong style="color:{HEAD_TX};">Homesavers Scanner</strong></td></tr>')
+
+    H.append('</table></td></tr></table></body></html>')
+    return "\n".join(H)
 
 
 def build_xlsx(rows):
@@ -240,13 +295,15 @@ def build_xlsx(rows):
     return buf.getvalue()
 
 
-def send_email(cfg, html, attachments, recipients):
+def send_email(cfg, html, attachments, recipients, cc=None):
     smtp = cfg["smtp"]
     msg = EmailMessage()
     today = dt.date.today().strftime("%d/%m/%Y")
     msg["Subject"] = f'{cfg["subject_prefix"]} - {today}'
     msg["From"]    = smtp["from"]
     msg["To"]      = ", ".join(recipients)
+    if cc:
+        msg["Cc"]  = ", ".join(cc)
     msg.set_content("This report needs an HTML-capable email client.")
     msg.add_alternative(html, subtype="html")
 
@@ -296,7 +353,14 @@ def main():
     enriched = enrich(records, now, cfg["aging_buckets"])
     by_cat = {code: [x for x in enriched if x["task_type"] == code] for code, _ in CATEGORIES}
 
-    html = build_html(by_cat, cfg, now)
+    # How many pending queries were logged yesterday (local calendar day).
+    yesterday = now.astimezone().date() - dt.timedelta(days=1)
+    registered_yesterday = sum(
+        1 for v in by_cat.values() for x in v
+        if x["created_dt"].astimezone().date() == yesterday
+    )
+
+    html = build_html(by_cat, cfg, now, registered_yesterday)
 
     attachments = []
     for code, name in CATEGORIES:
@@ -312,15 +376,18 @@ def main():
         log(f"DRY RUN - wrote preview to {out}; {len(attachments)} attachment(s) prepared. No email sent.")
         return
 
-    recipients = [args.to] if args.to else cfg.get("recipients", [])
-    recipients = [r for r in recipients if r]
+    # A --to test send goes to that one address only (no CC); otherwise use the
+    # configured To recipients + CC list.
+    recipients = [args.to] if args.to else [r for r in cfg.get("recipients", []) if r]
+    cc = [] if args.to else [c for c in cfg.get("cc", []) if c]
     if not recipients:
         log("No recipients configured (config.recipients) and no --to given.", "ERROR")
         sys.exit(1)
 
     try:
-        send_email(cfg, html, attachments, recipients)
-        log(f"Sent aging report to {len(recipients)} recipient(s): {', '.join(recipients)}")
+        send_email(cfg, html, attachments, recipients, cc)
+        log(f"Sent report to {len(recipients)} recipient(s): {', '.join(recipients)}"
+            + (f"; cc: {', '.join(cc)}" if cc else ""))
     except Exception as e:
         log(f"Failed to send email: {e}", "ERROR")
         sys.exit(1)

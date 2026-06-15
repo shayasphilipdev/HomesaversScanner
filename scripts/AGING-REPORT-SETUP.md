@@ -14,7 +14,8 @@ extra storage.
    copy scripts\aging-report.config.example.json scripts\aging-report.config.json
    ```
    Edit `scripts\aging-report.config.json`:
-   - `recipients` - the manager email addresses.
+   - `recipients` - the **To** email addresses.
+   - `cc` - the **Cc** email addresses (optional).
    - `smtp` - the mail relay (host/port/security/username/**password**/from).
      **Recommended: Brevo** (free 300 emails/day). Microsoft has disabled
      password SMTP for `@outlook.com`, so we relay through Brevo but keep the
@@ -66,16 +67,15 @@ C:\Users\shayas\AppData\Local\Programs\Python\Python313\python.exe scripts\aging
 
 ## 3. Schedule it (Windows Task Scheduler)
 
-Daily at 07:30 (run as your user, whether logged in or not):
+Every **Wednesday at 08:00** (run as your user, whether logged in or not):
 ```
-schtasks /Create /TN "Homesavers Aging Report" /SC DAILY /ST 07:30 ^
+schtasks /Create /TN "Homesavers Aging Report" /SC WEEKLY /D WED /ST 08:00 ^
   /TR "\"C:\Users\shayas\AppData\Local\Programs\Python\Python313\python.exe\" \"C:\Scraping\homesavers-scanner\scripts\aging-report.py\"" ^
   /RL LIMITED /F
 ```
-Weekly instead (Mondays 07:30): replace `/SC DAILY` with `/SC WEEKLY /D MON`.
-
+`/F` overwrites the existing task, so running this again re-points the schedule.
 Change the time/day later in **Task Scheduler** (the task is named
-"Homesavers Aging Report"), or re-run the command with a new `/ST`.
+"Homesavers Aging Report"), or re-run the command with a new `/D` / `/ST`.
 
 ## 4. Logs
 

@@ -8,6 +8,10 @@
     "manager2@homesavers.ie"
   ],
 
+  "cc": [
+    "supervisor@homesavers.ie"
+  ],
+
   "smtp": {
     "host": "smtp-relay.brevo.com",
     "port": 587,
