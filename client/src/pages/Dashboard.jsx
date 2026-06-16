@@ -142,8 +142,9 @@ export default function Dashboard() {
         <TaskTypeBars  rows={stats?.by_task_type || []} loading={loading} />
       </div>
 
-      <div className="dash-row">
-        <TaskDonut       rows={stats?.by_task_type || []} loading={loading} />
+      <div className="dash-row dash-row--thirds">
+        <TaskDonutOps    rows={stats?.by_task_type || []} loading={loading} />
+        <TaskDonutChecks rows={stats?.by_task_type || []} loading={loading} />
         <StatusBreakdown totals={totals} loading={loading} />
       </div>
 
@@ -245,31 +246,42 @@ function TaskTypeBars({ rows, loading }) {
   )
 }
 
-// Donut showing how HO task records are split across task types.
+// Donut charts — split into Ops tasks vs Check tasks.
 const DONUT_COLORS = ['#0E9A52', '#12A156', '#0A7339', '#3960A8', '#B47F1E', '#C96442', '#7E57C2', '#2D7A4E', '#E07346', '#5DCAA5', '#9A6B12']
-function TaskDonut({ rows, loading }) {
-  const data  = (rows || []).filter(r => r.count > 0)
+const CHECK_CODES  = new Set(['J', 'H', 'K'])
+
+function TaskDonutOps({ rows, loading }) {
+  const data = (rows || []).filter(r => r.count > 0 && !CHECK_CODES.has(r.code))
+  return <DonutCard title="Operations tasks" data={data} loading={loading} colorOffset={3} />
+}
+
+function TaskDonutChecks({ rows, loading }) {
+  const data = (rows || []).filter(r => r.count > 0 && CHECK_CODES.has(r.code))
+  return <DonutCard title="Check tasks" data={data} loading={loading} colorOffset={0} />
+}
+
+function DonutCard({ title, data, loading, colorOffset = 0 }) {
   const total = data.reduce((s, r) => s + r.count, 0)
-  const cx = 100, cy = 100, rMid = 58, sw = 26
+  const cx = 80, cy = 80, rMid = 50, sw = 20
   const circ = 2 * Math.PI * rMid
   let offset = 0
   const segs = data.map((d, i) => {
     const len = total ? (d.count / total) * circ : 0
-    const seg = { ...d, len, off: offset, color: DONUT_COLORS[i % DONUT_COLORS.length], pct: total ? Math.round((d.count / total) * 100) : 0 }
+    const seg = { ...d, len, off: offset, color: DONUT_COLORS[(colorOffset + i) % DONUT_COLORS.length], pct: total ? Math.round((d.count / total) * 100) : 0 }
     offset += len
     return seg
   })
   return (
     <div className="card">
-      <div className="card-header">HO task allocation</div>
+      <div className="card-header">{title}</div>
       <div className="card-body">
         {loading ? (
           <div style={{ textAlign: 'center', padding: 30 }}><span className="spinner spinner-dark" /></div>
         ) : total === 0 ? (
           <div className="empty-state" style={{ padding: 20 }}><p style={{ fontSize: 13 }}>No records in this range yet.</p></div>
         ) : (
-          <div style={{ display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
-            <svg viewBox="0 0 200 200" style={{ width: 168, height: 168, flexShrink: 0 }}>
+          <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+            <svg viewBox="0 0 160 160" style={{ width: 130, height: 130, flexShrink: 0 }}>
               <circle cx={cx} cy={cy} r={rMid} fill="none" stroke="var(--border-soft)" strokeWidth={sw} />
               {segs.map(s => (
                 <circle key={s.code} cx={cx} cy={cy} r={rMid} fill="none"
@@ -277,16 +289,16 @@ function TaskDonut({ rows, loading }) {
                   strokeDasharray={`${s.len} ${circ - s.len}`} strokeDashoffset={-s.off}
                   transform={`rotate(-90 ${cx} ${cy})`} />
               ))}
-              <text x={cx} y={cy - 2} textAnchor="middle" fontSize="26" fontWeight="700" fill="var(--text)">{total}</text>
-              <text x={cx} y={cy + 18} textAnchor="middle" fontSize="12" fill="var(--text-muted)">records</text>
+              <text x={cx} y={cy - 4} textAnchor="middle" fontSize="22" fontWeight="700" fill="var(--text)">{total.toLocaleString('en-IE')}</text>
+              <text x={cx} y={cy + 14} textAnchor="middle" fontSize="10" fill="var(--text-muted)">records</text>
             </svg>
-            <div style={{ flex: 1, minWidth: 170 }}>
+            <div style={{ flex: 1, minWidth: 110 }}>
               {segs.map(s => (
-                <div key={s.code} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0', fontSize: 13 }}>
-                  <span style={{ width: 11, height: 11, borderRadius: 3, background: s.color, flexShrink: 0 }} />
+                <div key={s.code} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '3px 0', fontSize: 12.5 }}>
+                  <span style={{ width: 10, height: 10, borderRadius: 3, background: s.color, flexShrink: 0 }} />
                   <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name || s.code}</span>
                   <span style={{ fontWeight: 600 }}>{s.count}</span>
-                  <span style={{ color: 'var(--text-muted)', width: 40, textAlign: 'right' }}>{s.pct}%</span>
+                  <span style={{ color: 'var(--text-muted)', width: 34, textAlign: 'right' }}>{s.pct}%</span>
                 </div>
               ))}
             </div>

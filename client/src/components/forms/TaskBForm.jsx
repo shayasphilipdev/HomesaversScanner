@@ -57,7 +57,7 @@ export default function TaskBForm({ onSaved, storeId }) {
       description:        form.description.trim(),
       notes:              form.notes.trim() || null,
       ...altFields(lookupInfo, form.product_barcode.trim()),
-      product_barcode:    form.product_barcode.trim(),  // keep what was scanned, override EAN from altFields
+      // barcode_no already set to the scanned value by altFields; product_barcode holds the EAN.
       status:             'pending'
     }
 
