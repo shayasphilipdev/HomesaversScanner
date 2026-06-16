@@ -142,6 +142,11 @@ export default function Dashboard() {
         <TaskTypeBars  rows={stats?.by_task_type || []} loading={loading} />
       </div>
 
+      <div className="dash-row">
+        <TaskDonut       rows={stats?.by_task_type || []} loading={loading} />
+        <StatusBreakdown totals={totals} loading={loading} />
+      </div>
+
       {isBO && (
         <div className="dash-row">
           <StoresBars rows={stats?.by_store || []} loading={loading} />
@@ -235,6 +240,90 @@ function TaskTypeBars({ rows, loading }) {
             </div>
           ))
         )}
+      </div>
+    </div>
+  )
+}
+
+// Donut showing how HO task records are split across task types.
+const DONUT_COLORS = ['#0E9A52', '#12A156', '#0A7339', '#3960A8', '#B47F1E', '#C96442', '#7E57C2', '#2D7A4E', '#E07346', '#5DCAA5', '#9A6B12']
+function TaskDonut({ rows, loading }) {
+  const data  = (rows || []).filter(r => r.count > 0)
+  const total = data.reduce((s, r) => s + r.count, 0)
+  const cx = 100, cy = 100, rMid = 58, sw = 26
+  const circ = 2 * Math.PI * rMid
+  let offset = 0
+  const segs = data.map((d, i) => {
+    const len = total ? (d.count / total) * circ : 0
+    const seg = { ...d, len, off: offset, color: DONUT_COLORS[i % DONUT_COLORS.length], pct: total ? Math.round((d.count / total) * 100) : 0 }
+    offset += len
+    return seg
+  })
+  return (
+    <div className="card">
+      <div className="card-header">HO task allocation</div>
+      <div className="card-body">
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: 30 }}><span className="spinner spinner-dark" /></div>
+        ) : total === 0 ? (
+          <div className="empty-state" style={{ padding: 20 }}><p style={{ fontSize: 13 }}>No records in this range yet.</p></div>
+        ) : (
+          <div style={{ display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
+            <svg viewBox="0 0 200 200" style={{ width: 168, height: 168, flexShrink: 0 }}>
+              <circle cx={cx} cy={cy} r={rMid} fill="none" stroke="var(--border-soft)" strokeWidth={sw} />
+              {segs.map(s => (
+                <circle key={s.code} cx={cx} cy={cy} r={rMid} fill="none"
+                  stroke={s.color} strokeWidth={sw}
+                  strokeDasharray={`${s.len} ${circ - s.len}`} strokeDashoffset={-s.off}
+                  transform={`rotate(-90 ${cx} ${cy})`} />
+              ))}
+              <text x={cx} y={cy - 2} textAnchor="middle" fontSize="26" fontWeight="700" fill="var(--text)">{total}</text>
+              <text x={cx} y={cy + 18} textAnchor="middle" fontSize="12" fill="var(--text-muted)">records</text>
+            </svg>
+            <div style={{ flex: 1, minWidth: 170 }}>
+              {segs.map(s => (
+                <div key={s.code} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0', fontSize: 13 }}>
+                  <span style={{ width: 11, height: 11, borderRadius: 3, background: s.color, flexShrink: 0 }} />
+                  <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name || s.code}</span>
+                  <span style={{ fontWeight: 600 }}>{s.count}</span>
+                  <span style={{ color: 'var(--text-muted)', width: 40, textAlign: 'right' }}>{s.pct}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Per-status breakdown with a "% reviewed" headline.
+function StatusBreakdown({ totals, loading }) {
+  const items = [
+    { label: 'Pending review',   value: totals.pending,          color: '#B47F1E' },
+    { label: 'HO completed',     value: totals.completed,        color: '#2D7A4E' },
+    { label: 'No change needed', value: totals.no_change_needed, color: '#3960A8' },
+    { label: 'Store confirmed',  value: totals.store_completed,  color: '#0E9A52' },
+  ]
+  const total    = Math.max(1, totals.all || items.reduce((s, i) => s + i.value, 0))
+  const reviewed = (totals.completed || 0) + (totals.no_change_needed || 0)
+  const reviewPct = totals.all ? Math.round((reviewed / totals.all) * 100) : 0
+  return (
+    <div className="card">
+      <div className="card-header">
+        Status breakdown
+        <span className="chip" style={{ marginLeft: 'auto' }}><span className="chip-dot" /> {reviewPct}% reviewed</span>
+      </div>
+      <div className="card-body">
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: 30 }}><span className="spinner spinner-dark" /></div>
+        ) : items.map(i => (
+          <div className="stat-row" key={i.label}>
+            <div className="stat-row-label">{i.label}</div>
+            <div className="stat-row-bar"><span style={{ width: `${Math.round((i.value / total) * 100)}%`, background: i.color }} /></div>
+            <div className="stat-row-val">{i.value}</div>
+          </div>
+        ))}
       </div>
     </div>
   )
