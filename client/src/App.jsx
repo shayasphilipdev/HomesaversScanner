@@ -103,10 +103,9 @@ export default function App() {
 function Shell() {
   const { session } = useStore()
   const { pathname } = useLocation()
-  // Space Plan uses the full screen width (its grid is very wide); other
-  // data-dense pages get the wider-but-capped container.
-  const full = pathname.startsWith('/space-plan')
-  const wide = !full && (pathname.startsWith('/reports') || pathname.startsWith('/dashboard') || pathname.startsWith('/manager'))
+  // Data-dense pages get a wider-but-capped, centred container (keeps aesthetic
+  // margins on big screens). Space Plan is included — its grid scrolls inside.
+  const wide = pathname.startsWith('/reports') || pathname.startsWith('/dashboard') || pathname.startsWith('/manager') || pathname.startsWith('/space-plan')
   // Store users (mode === 'store') always land on HO Tasks.
   // HQ / back-office users go by their per-account flag.
   const home = (session.mode === 'store' || canDoHQTasks(session)) ? '/tasks' : '/dashboard'
@@ -116,7 +115,7 @@ function Shell() {
       <Nav />
       <div className="app-body">
         <Sidebar />
-        <main className={`main-content${wide ? ' main-content--wide' : ''}${full ? ' main-content--full' : ''}`}>
+        <main className={`main-content${wide ? ' main-content--wide' : ''}`}>
           <Routes>
             <Route path="/"              element={<Navigate to={home} replace />} />
             <Route path="/dashboard"     element={<Dashboard />} />

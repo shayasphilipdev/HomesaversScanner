@@ -166,7 +166,6 @@ export default function SpacePlan() {
   const categories = data?.categories || []
   const stickyCol = { position: 'sticky', left: 0, background: 'var(--surface)', zIndex: 1 }
   const plannedOf = (id) => { const v = Number(plannedByEq[id]); return Number.isFinite(v) ? v : 0 }
-  const subHeadStyle = { fontWeight: 600, fontSize: 13, color: 'var(--primary-dark)', margin: '12px 0 2px', paddingBottom: 3, borderBottom: '1px solid var(--border)' }
 
   const statusLabel = {
     idle:   '',
@@ -279,17 +278,25 @@ export default function SpacePlan() {
                       </button>
                       {open && (
                         <div className="sp-eq-body">
-                          {subs.length ? subs.map(sub => (
-                            <div key={sub.id}>
-                              <div style={subHeadStyle}>{sub.name}</div>
-                              {categories.map(c => (
-                                <label className="sp-cat-row" key={c.id}>
-                                  <span>{c.name}</span>
-                                  {inputCell(e.id, sub.id, c.id)}
-                                </label>
-                              ))}
-                            </div>
-                          )) : categories.map(c => (
+                          {subs.length ? subs.map(sub => {
+                            const subOpen = expanded.has(sub.id)
+                            const stot = subcatTotal(cells, e.id, sub.id, categories)
+                            return (
+                              <div className="sp-sub-block" key={sub.id}>
+                                <button type="button" className="sp-sub-head-btn" onClick={() => toggleEq(sub.id)} aria-expanded={subOpen}>
+                                  <span className="sp-sub-name">{sub.name}</span>
+                                  <span className="sp-sub-meta">{stot}</span>
+                                  <span aria-hidden style={{ fontSize: 13 }}>{subOpen ? '▾' : '▸'}</span>
+                                </button>
+                                {subOpen && categories.map(c => (
+                                  <label className="sp-cat-row" key={c.id}>
+                                    <span>{c.name}</span>
+                                    {inputCell(e.id, sub.id, c.id)}
+                                  </label>
+                                ))}
+                              </div>
+                            )
+                          }) : categories.map(c => (
                             <label className="sp-cat-row" key={c.id}>
                               <span>{c.name}</span>
                               {inputCell(e.id, '', c.id)}
@@ -310,10 +317,10 @@ export default function SpacePlan() {
                   </span>
                 </div>
                 <div className="table-wrap">
-                  <table className="sp-grid">
+                  <table className="sp-grid sp-count-grid">
                     <thead>
                       <tr>
-                        <th style={{ ...stickyCol, minWidth: 180 }}>Equipment</th>
+                        <th style={{ ...stickyCol, minWidth: 170 }}>Equipment</th>
                         <th className="td-right">Plan</th>
                         <th className="td-right">Total</th>
                         <th className="td-right">Var.</th>

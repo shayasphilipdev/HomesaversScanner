@@ -45,6 +45,13 @@ export default function ScannerInput({
     onConfirmRef.current?.(code)
   }
 
+  // Soft-keyboard control. The field auto-focuses so a scanner gun (hardware
+  // keyboard) types straight in — but on a phone that also pops the on-screen
+  // keyboard, which staff don't want. inputMode="none" suppresses the virtual
+  // keyboard while still accepting the gun; a genuine tap flips it to "text"
+  // so manual entry still works. Reset to "none" whenever the field clears.
+  const [kbAllowed, setKbAllowed] = useState(false)
+
   const [cameraOn, setCameraOn]         = useState(false)
   const [cameraStatus, setCameraStatus] = useState('')
   const [zoom, setZoom]                 = useState(2)      // default 2× — barcodes are small
@@ -129,6 +136,7 @@ export default function ScannerInput({
   useEffect(() => {
     if (value !== '') return
     lastConfirmedRef.current = ''   // a cleared field is ready for a fresh scan (even the same code)
+    setKbAllowed(false)             // a fresh/auto-focused field must not pop the soft keyboard
     const id = requestAnimationFrame(() => {
       try { inputRef.current?.focus({ preventScroll: true }) } catch { inputRef.current?.focus() }
     })
@@ -286,8 +294,10 @@ export default function ScannerInput({
           <input
             ref={inputRef}
             type="text" className="scan-input" autoComplete="off" spellCheck={false}
+            inputMode={kbAllowed ? 'text' : 'none'}
             style={{ width: '100%' }}
             value={value} onChange={e => onChange(e.target.value)}
+            onPointerDown={() => setKbAllowed(true)}
             onBlur={e => confirmRef.current(e.target.value)}
             onKeyDown={e => {
               // The scan lands in this focused field, so recognise the

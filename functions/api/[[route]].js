@@ -259,6 +259,8 @@ function fmtDetails(d) {
   const parts = []
   for (const [k, v] of Object.entries(d)) {
     if (v === null || v === undefined || v === '') continue
+    // Category (item_group) is shown as the bare value, with no "Category:" label.
+    if (k === 'item_group') { parts.push(String(v)); continue }
     const label = DETAILS_LABELS[k] || k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
     parts.push(`${label}: ${v}`)
   }
@@ -3226,8 +3228,12 @@ export async function onRequest(context) {
         created_at:        fmtReportDate(r.created_at)
       }))
 
-      const cols    = ['barcode_no','product_barcode','item_name','task_type','store_name','uom','quantity','supl_id','item_status','barcode_status','notes','status','review_notes','photo_product_url','photo_barcode_url','details','created_at']
-      const headers = ['Product Barcode','Product Code','Product Description','Task','Store','UOM','Quantity','Supplier','Product Status','Barcode Status','Notes','Status','HO Notes','Product Photo','Barcode Photo','Details','Date']
+      // Column order matches the numbering requested on the report:
+      // Barcode, Code, Description, Task, Details, Supplier, Product Status,
+      // Barcode Status, Status, Date, Store, UOM, Quantity, Notes, HO Notes,
+      // Product Photo, Barcode Photo.
+      const cols    = ['barcode_no','product_barcode','item_name','task_type','details','supl_id','item_status','barcode_status','status','created_at','store_name','uom','quantity','notes','review_notes','photo_product_url','photo_barcode_url']
+      const headers = ['Product Barcode','Product Code','Product Description','Task','Details','Supplier','Product Status','Barcode Status','Status','Date','Store','UOM','Quantity','Notes','HO Notes','Product Photo','Barcode Photo']
 
       // ?format=json returns the raw flat rows for client-side Excel generation
       if (p.get('format') === 'json') {

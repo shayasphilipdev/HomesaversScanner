@@ -23,9 +23,15 @@
   /* Glass — gradient sheen, semi-transparent + blurred for a fluid look */
   --glass:          linear-gradient(155deg, rgba(255,255,255,.66), rgba(255,250,245,.44));
   --glass-strong:   linear-gradient(155deg, rgba(255,255,255,.86), rgba(255,248,241,.66));
-  --glass-border:   rgba(255, 255, 255, .9);
-  --glass-blur:     blur(26px) saturate(170%);
+  --glass-border:   rgba(255, 255, 255, .92);
+  --glass-blur:     blur(32px) saturate(175%);
   --use-glass:      1;  /* turn glass utilities on */
+
+  /* Homesavers greens (mirror the aging-report email) for header tints. */
+  --hs-green:       #0E9A52;
+  --hs-green-dark:  #064E27;
+  --hs-head-1:      #EFF6F1;
+  --hs-head-2:      #DCEDE0;
 
   --text:           #1F1F1F;
   --text-muted:     #6E6A60;
@@ -45,15 +51,14 @@
   --shadow-md:      0 8px 22px rgba(31, 31, 31, .07);
   --shadow-lg:      0 16px 38px rgba(31, 31, 31, .10);
 
-  /* Body backdrop — layered fluid blobs (warm coral + peach + a cool accent)
-     so the glass cards pick up subtle multi-tone colour as they blur. */
+  /* Body backdrop — Homesavers green leads, with a warm coral accent, so the
+     glass cards pick up a deeper green tint as they blur. */
   --body-bg:
-    radial-gradient(58vw 50vh at 98%  -10%, rgba(201, 100, 66, .26), transparent 60%),
-    radial-gradient(50vw 46vh at  4%   2%,  rgba(122, 154, 208, .12), transparent 60%),
-    radial-gradient(64vw 56vh at -10% 110%, rgba(201, 100, 66, .16), transparent 60%),
-    radial-gradient(46vw 42vh at 56%  112%, rgba(224, 160, 110, .14), transparent 58%),
-    radial-gradient(38vw 38vh at 80%  90%,  rgba(150, 120, 190, .08), transparent 58%),
-    #F7F3EE;
+    radial-gradient(58vw 52vh at 98%  -10%, rgba(14, 124, 62,  .22), transparent 60%),
+    radial-gradient(54vw 48vh at  2%   2%,  rgba(14, 154, 82,  .18), transparent 60%),
+    radial-gradient(64vw 56vh at -10% 110%, rgba(6,  78, 39,   .16), transparent 60%),
+    radial-gradient(46vw 42vh at 60%  112%, rgba(201, 100, 66, .12), transparent 58%),
+    #F4F5EF;
 }
 
 /* ── Theme: Dark (elegant multi-colour night mode) ──────────────────────
@@ -149,7 +154,6 @@ body {
 }
 
 .main-content--wide { max-width: 1760px; }
-.main-content--full { max-width: none; }
 
 @media (max-width: 600px) {
   .main-content { padding-left: 14px; padding-right: 14px; }
@@ -327,11 +331,17 @@ body {
   border-bottom: 1px solid var(--border-soft);
   font-weight: 600;
   font-size: 14px;
-  color: var(--text);
-  background: var(--surface-warm);
+  color: var(--hs-green-dark);
+  background: var(--hs-head-1);
+  background-image: linear-gradient(135deg, var(--hs-head-1) 0%, var(--hs-head-2) 100%);
   display: flex;
   align-items: center;
   gap: 10px;
+}
+[data-theme="dark"] .card-header {
+  color: #BFE6CD;
+  background: var(--surface-warm);
+  background-image: linear-gradient(135deg, rgba(20,48,31,.6) 0%, rgba(12,28,20,.5) 100%);
 }
 
 .note { font-size: 14px; color: var(--text-muted); line-height: 1.55; }
@@ -977,8 +987,21 @@ a.kpi-card:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
   min-height: 56px;
 }
 .bottom-nav-link.active { color: var(--primary); }
-.bottom-nav-icon { font-size: 20px; line-height: 1; }
+/* Center every glyph in a fixed box so differing unicode metrics all align. */
+.bottom-nav-icon {
+  font-size: 20px; line-height: 1; height: 22px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
 .bottom-nav-label { letter-spacing: .1px; }
+
+/* Space Plan: bold, green-gradient icon so it stands out and aligns cleanly. */
+.bottom-nav-link--accent .bottom-nav-label { font-weight: 700; }
+.bottom-nav-link--accent .bottom-nav-icon {
+  font-size: 22px; font-weight: 700;
+  background: linear-gradient(135deg, #12A156 0%, #064E27 100%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+}
 
 @media (max-width: 720px) {
   .bottom-nav { display: flex; }
@@ -1017,27 +1040,34 @@ a.kpi-card:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
 .sp-page .page-title  { font-size: 22px; }
 .sp-page .card-header { padding: 8px 14px; font-size: 13.5px; }
 
-/* ~40% shorter rows: trim vertical padding on cells and inputs. */
-.sp-grid thead th { padding: 4px 8px; font-size: 12px; vertical-align: middle; }
-.sp-grid tbody td { padding: 1px 8px; }
+.sp-grid thead th { padding: 5px 8px; font-size: 13px; vertical-align: middle; }
+.sp-grid tbody td { padding: 2px 8px; }
 
-/* Square category columns — the header and the input boxes below share the
-   same width, and the header is a matching square so its name wraps inside. */
+/* The count grid sizes to its content (not 100%) so the Equipment column never
+   over-stretches into a big empty gap — the squares fill from the left and the
+   grid scrolls inside the centred page container. */
+.sp-count-grid { width: max-content; }
+.sp-count-grid th:first-child, .sp-count-grid td:first-child { min-width: 170px; }
+
+/* Square category columns — header and the input boxes below share the same
+   width; the header is a matching square so the name wraps inside. */
 .sp-grid th.sp-cat-head {
-  width: 64px; min-width: 64px; max-width: 64px; height: 64px;
+  width: 66px; min-width: 66px; max-width: 66px; height: 66px;
   white-space: normal; overflow-wrap: break-word;
   text-align: center; vertical-align: middle;
-  font-size: 10.5px; line-height: 1.18; padding: 4px 3px;
+  font-size: 11px; line-height: 1.2; padding: 5px 3px;
+  border: 1px solid var(--border);
 }
 .sp-grid td.sp-cat-cell {
-  width: 64px; padding: 5px; text-align: center; vertical-align: middle;
+  width: 66px; padding: 5px; text-align: center; vertical-align: middle;
+  border: 1px solid var(--border-soft);
 }
 .sp-cell {
   width: 54px; height: 54px; text-align: center;
-  border: 1px solid var(--border); border-radius: 6px;
-  background: var(--surface); font-size: 14px; padding: 0;
+  border: 1.5px solid var(--border-strong); border-radius: 7px;
+  background: var(--surface); font-size: 15px; padding: 0;
 }
-.sp-cell:focus { outline: none; border-color: var(--primary); }
+.sp-cell:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-tint); }
 
 .sp-status { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
 .sp-status.dirty  { color: var(--text-muted); }
@@ -1064,6 +1094,17 @@ a.kpi-card:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
   background: var(--surface); font-size: 15px;
 }
 .sp-cat-row input:focus { outline: none; border-color: var(--primary); }
+
+/* Mobile: each PRIMARY BAYS subcategory is its own collapsible, bold section. */
+.sp-sub-block { border-top: 1px solid var(--border); }
+.sp-sub-block:first-child { border-top: none; }
+.sp-sub-head-btn {
+  width: 100%; display: flex; align-items: center; gap: 10px;
+  padding: 12px 2px; background: none; border: 0; cursor: pointer;
+  text-align: left; color: var(--text);
+}
+.sp-sub-name { flex: 1; font-weight: 700; font-size: 14.5px; color: var(--primary-dark); }
+.sp-sub-meta { font-size: 13px; color: var(--text-muted); font-weight: 600; }
 
 /* On phones, drop the page subtitle entirely to claw back vertical space. */
 @media (max-width: 720px) {

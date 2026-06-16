@@ -12,10 +12,11 @@ export default function BottomNav() {
     { to: '/dashboard', icon: '◧', label: 'Home' }
   ]
   if (canSeeManagerDashboard(session)) items.push({ to: '/manager', icon: '◑', label: 'Manager' })
-  if (canDoStoreTasks(session)) items.push({ to: '/store-tasks', icon: '☑', label: 'Tasks' })
-  items.push({ to: '/space-plan', icon: '▦', label: 'Space Plan' })
+  // HO Tasks comes before Store Tasks (swapped) — it's the primary store action.
+  if (canDoHQTasks(session))    items.push({ to: '/tasks', icon: '✚', label: 'HO' })
+  items.push({ to: '/space-plan', icon: '⊞', label: 'Space Plan', accent: true })
   items.push({ to: '/product-query', icon: '💬', label: 'Query' })
-  if (canDoHQTasks(session))    items.push({ to: '/tasks',       icon: '✚', label: 'HO' })
+  if (canDoStoreTasks(session)) items.push({ to: '/store-tasks', icon: '☑', label: 'Tasks' })
   items.push({ to: '/reports', icon: '▤', label: 'Reports' })
   if (canAccessAdmin(session)) {
     items.push({ to: '/admin/stores', icon: '⚙', label: 'Admin' })
@@ -24,7 +25,7 @@ export default function BottomNav() {
   return (
     <nav className="bottom-nav" aria-label="Primary">
       {items.map(i => (
-        <NavLink key={i.to} to={i.to} className={({ isActive }) => `bottom-nav-link${isActive ? ' active' : ''}`}>
+        <NavLink key={i.to} to={i.to} className={({ isActive }) => `bottom-nav-link${i.accent ? ' bottom-nav-link--accent' : ''}${isActive ? ' active' : ''}`}>
           <span className="bottom-nav-icon" aria-hidden>{i.icon}</span>
           <span className="bottom-nav-label">{i.label}</span>
         </NavLink>
