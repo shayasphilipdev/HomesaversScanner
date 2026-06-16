@@ -247,12 +247,12 @@ const CHECK_CODES  = new Set(['J', 'H', 'K'])
 
 function TaskDonutOps({ rows, loading }) {
   const data = (rows || []).filter(r => r.count > 0 && !CHECK_CODES.has(r.code))
-  return <DonutCard title="Operations tasks" data={data} loading={loading} colorOffset={3} />
+  return <DonutCard title="HO Tasks" data={data} loading={loading} colorOffset={3} />
 }
 
 function TaskDonutChecks({ rows, loading }) {
   const data = (rows || []).filter(r => r.count > 0 && CHECK_CODES.has(r.code))
-  return <DonutCard title="Check tasks" data={data} loading={loading} colorOffset={0} />
+  return <DonutCard title="Operations Task" data={data} loading={loading} colorOffset={0} />
 }
 
 function DonutCard({ title, data, loading, colorOffset = 0 }) {
@@ -357,8 +357,8 @@ function StoreDonutGrid({ rows, loading }) {
         ) : !rows.length ? (
           <div className="empty-state" style={{ padding: 20 }}><p style={{ fontSize: 13 }}>No records in this range yet.</p></div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(105px, 1fr))', gap: 10 }}>
-            {rows.map(r => <StoreMiniDonut key={r.id} store={r} />)}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(148px, 1fr))', gap: 10 }}>
+            {rows.map(r => <StoreDualDonut key={r.id} store={r} />)}
           </div>
         )}
       </div>
@@ -366,11 +366,41 @@ function StoreDonutGrid({ rows, loading }) {
   )
 }
 
-function StoreMiniDonut({ store }) {
-  const total = store.total || 0
-  const types = store.types || []
-  const cx = 44, cy = 44, rMid = 30, sw = 11
-  const circ = 2 * Math.PI * rMid
+function StoreDualDonut({ store }) {
+  const hoTypes  = (store.types || []).filter(t => !CHECK_CODES.has(t.code))
+  const opsTypes = (store.types || []).filter(t =>  CHECK_CODES.has(t.code))
+  const hoTotal  = hoTypes.reduce((s, t) => s + t.count, 0)
+  const opsTotal = opsTypes.reduce((s, t) => s + t.count, 0)
+  return (
+    <div style={{
+      borderRadius: 12,
+      background: 'var(--glass-strong)',
+      backdropFilter: 'var(--glass-blur)',
+      WebkitBackdropFilter: 'var(--glass-blur)',
+      border: '1px solid var(--glass-border)',
+      boxShadow: 'var(--shadow-sm)',
+      overflow: 'hidden',
+    }}>
+      <div style={{
+        padding: '5px 8px',
+        borderBottom: '1px solid var(--border-soft)',
+        background: 'linear-gradient(135deg, var(--hs-head-1) 0%, var(--hs-head-2) 100%)',
+        fontSize: 10.5, fontWeight: 600, color: 'var(--hs-green-dark)',
+        textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+      }}>
+        {store.store_name}
+      </div>
+      <div style={{ display: 'flex', gap: 4, justifyContent: 'center', padding: '8px 6px 8px' }}>
+        <MiniDonutSvg types={hoTypes}  total={hoTotal}  label="HO" />
+        <MiniDonutSvg types={opsTypes} total={opsTotal} label="Ops" />
+      </div>
+    </div>
+  )
+}
+
+function MiniDonutSvg({ types, total, label }) {
+  const cx = 32, cy = 32, r = 22, sw = 8
+  const circ = 2 * Math.PI * r
   let offset = 0
   const segs = types.map(t => {
     const len = total ? (t.count / total) * circ : 0
@@ -379,28 +409,20 @@ function StoreMiniDonut({ store }) {
     return seg
   })
   return (
-    <div style={{
-      display: 'flex', flexDirection: 'column', alignItems: 'center',
-      padding: '8px 6px 6px', borderRadius: 8,
-      background: 'var(--bg-card)', border: '1px solid var(--border-soft)',
-      gap: 5, cursor: 'default'
-    }}
-      title={types.map(t => `${t.name || t.code}: ${t.count}`).join('\n')}
-    >
-      <svg viewBox="0 0 88 88" style={{ width: 76, height: 76 }}>
-        <circle cx={cx} cy={cy} r={rMid} fill="none" stroke="var(--border-soft)" strokeWidth={sw} />
-        {segs.map((s, i) => (
-          <circle key={i} cx={cx} cy={cy} r={rMid} fill="none"
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}
+      title={types.map(t => `${t.name || t.code}: ${t.count}`).join('\n')}>
+      <svg viewBox="0 0 64 64" style={{ width: 54, height: 54 }}>
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--border-soft)" strokeWidth={sw} />
+        {total > 0 && segs.map((s, i) => (
+          <circle key={i} cx={cx} cy={cy} r={r} fill="none"
             stroke={s.color} strokeWidth={sw}
             strokeDasharray={`${s.len} ${circ - s.len}`}
             strokeDashoffset={-s.off}
             transform={`rotate(-90 ${cx} ${cy})`} />
         ))}
-        <text x={cx} y={cy + 5} textAnchor="middle" fontSize="13" fontWeight="700" fill="var(--text)">{total.toLocaleString('en-IE')}</text>
+        <text x={cx} y={cy + 4} textAnchor="middle" fontSize="10" fontWeight="700" fill="var(--text)">{total}</text>
       </svg>
-      <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--text)', textAlign: 'center', lineHeight: 1.25, width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingInline: 2 }}>
-        {store.store_name}
-      </div>
+      <span style={{ fontSize: 9.5, color: 'var(--text-muted)', fontWeight: 500 }}>{label}</span>
     </div>
   )
 }
