@@ -148,12 +148,7 @@ export default function Dashboard() {
         <StatusBreakdown totals={totals} loading={loading} />
       </div>
 
-      {isBO && (
-        <div className="dash-row">
-          <StoresBars rows={stats?.by_store || []} loading={loading} />
-          <RecentList rows={stats?.recent || []}   loading={loading} isBO={isBO} />
-        </div>
-      )}
+      {isBO && <StoreDonutGrid rows={stats?.by_store || []} loading={loading} />}
       {!isBO && <RecentList rows={stats?.recent || []} loading={loading} isBO={isBO} />}
     </div>
   )
@@ -341,25 +336,70 @@ function StatusBreakdown({ totals, loading }) {
   )
 }
 
-function StoresBars({ rows, loading }) {
-  const max = Math.max(1, ...rows.map(r => r.count))
+const TYPE_COLORS = {
+  A: '#0E9A52', B: '#12A156', C: '#3960A8', D: '#B47F1E',
+  E: '#C96442', F: '#7E57C2', G: '#2D7A4E', H: '#E07346',
+  I: '#9A6B12', J: '#0A7339', K: '#5DCAA5',
+}
+
+function StoreDonutGrid({ rows, loading }) {
   return (
-    <div className="card">
-      <div className="card-header">By store</div>
-      <div className="card-body">
+    <div className="card" style={{ marginBottom: 24 }}>
+      <div className="card-header">
+        By store
+        {!loading && rows.length > 0 && (
+          <span className="chip" style={{ marginLeft: 'auto' }}><span className="chip-dot" /> {rows.length} stores</span>
+        )}
+      </div>
+      <div className="card-body" style={{ padding: 16 }}>
         {loading ? (
           <div style={{ textAlign: 'center', padding: 24 }}><span className="spinner spinner-dark" /></div>
         ) : !rows.length ? (
           <div className="empty-state" style={{ padding: 20 }}><p style={{ fontSize: 13 }}>No records in this range yet.</p></div>
         ) : (
-          rows.slice(0, 8).map(r => (
-            <div className="stat-row" key={r.id}>
-              <div className="stat-row-label">{r.store_name || <span className="td-muted">—</span>}</div>
-              <div className="stat-row-bar"><span style={{ width: `${(r.count / max) * 100}%` }} /></div>
-              <div className="stat-row-val">{r.count}</div>
-            </div>
-          ))
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(105px, 1fr))', gap: 10 }}>
+            {rows.map(r => <StoreMiniDonut key={r.id} store={r} />)}
+          </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+function StoreMiniDonut({ store }) {
+  const total = store.total || 0
+  const types = store.types || []
+  const cx = 44, cy = 44, rMid = 30, sw = 11
+  const circ = 2 * Math.PI * rMid
+  let offset = 0
+  const segs = types.map(t => {
+    const len = total ? (t.count / total) * circ : 0
+    const seg = { ...t, len, off: offset, color: TYPE_COLORS[t.code] || '#8C8779' }
+    offset += len
+    return seg
+  })
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center',
+      padding: '8px 6px 6px', borderRadius: 8,
+      background: 'var(--bg-card)', border: '1px solid var(--border-soft)',
+      gap: 5, cursor: 'default'
+    }}
+      title={types.map(t => `${t.name || t.code}: ${t.count}`).join('\n')}
+    >
+      <svg viewBox="0 0 88 88" style={{ width: 76, height: 76 }}>
+        <circle cx={cx} cy={cy} r={rMid} fill="none" stroke="var(--border-soft)" strokeWidth={sw} />
+        {segs.map((s, i) => (
+          <circle key={i} cx={cx} cy={cy} r={rMid} fill="none"
+            stroke={s.color} strokeWidth={sw}
+            strokeDasharray={`${s.len} ${circ - s.len}`}
+            strokeDashoffset={-s.off}
+            transform={`rotate(-90 ${cx} ${cy})`} />
+        ))}
+        <text x={cx} y={cy + 5} textAnchor="middle" fontSize="13" fontWeight="700" fill="var(--text)">{total.toLocaleString('en-IE')}</text>
+      </svg>
+      <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--text)', textAlign: 'center', lineHeight: 1.25, width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingInline: 2 }}>
+        {store.store_name}
       </div>
     </div>
   )
