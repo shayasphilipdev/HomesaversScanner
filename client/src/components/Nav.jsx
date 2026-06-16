@@ -1,24 +1,30 @@
-import { NavLink } from 'react-router-dom'
-import { useState, useEffect } from 'react'
+import { NavLink, useNavigate } from 'react-router-dom'
+import { useState, useEffect, useRef } from 'react'
 import { useStore } from '../App.jsx'
 import { resolvedTheme, setTheme } from '../lib/theme.js'
 import { canAccessAdmin, canDoHQTasks, canDoStoreTasks, STORE_ROLE_KEYS, roleLabel } from '../lib/roles.js'
 import { useCurrentStore } from '../lib/currentStore.jsx'
-import { getUnreadMessageCount } from '../lib/api.js'
+import { getMessageThreads } from '../lib/api.js'
+import { TASK_FORMS } from '../lib/taskTypes.js'
 import OfflineIndicator from './OfflineIndicator.jsx'
 import CapacityAlert from './CapacityAlert.jsx'
 
 export default function Nav() {
   const { session, logout } = useStore()
+  const navigate = useNavigate()
   const { currentStoreId, scopedStores } = useCurrentStore()
   const [theme, setLocalTheme] = useState(resolvedTheme())
-  const [unreadMsgs, setUnreadMsgs] = useState(0)
+
+  const [threads, setThreads]   = useState([])
+  const [unread, setUnread]     = useState(0)
+  const [msgOpen, setMsgOpen]   = useState(false)
+  const msgRef = useRef(null)
 
   useEffect(() => {
     if (!session) return
-    const refresh = () => {
-      getUnreadMessageCount().then(d => setUnreadMsgs(d?.count || 0)).catch(() => {})
-    }
+    const refresh = () => getMessageThreads()
+      .then(d => { setThreads(d?.threads || []); setUnread(d?.unread_total || 0) })
+      .catch(() => {})
     refresh()
     const t = setInterval(refresh, 60000)
     window.addEventListener('hs:messages-read', refresh)
@@ -27,6 +33,20 @@ export default function Nav() {
       window.removeEventListener('hs:messages-read', refresh)
     }
   }, [session])
+
+  // Close the dropdown on an outside click.
+  useEffect(() => {
+    if (!msgOpen) return
+    const onDoc = (e) => { if (msgRef.current && !msgRef.current.contains(e.target)) setMsgOpen(false) }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [msgOpen])
+
+  const openThread = (t) => {
+    setMsgOpen(false)
+    // HO Tasks list opens this record's message thread (and marks it read).
+    navigate('/tasks', { state: { openRecordId: t.record_id, taskType: t.task_type } })
+  }
 
   const toggleTheme = () => {
     const next = theme === 'light' ? 'dark' : 'light'
@@ -48,27 +68,41 @@ export default function Nav() {
       <NavLink to="/reports"    className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Reports</NavLink>
 
       {canAccessAdmin(session) && (
-        <NavLink
-          to="/admin/stores"
-          className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-        >Admin</NavLink>
+        <NavLink to="/admin/stores" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Admin</NavLink>
       )}
 
-      {unreadMsgs > 0 && (
-        <span
-          className="nav-link"
-          title={`${unreadMsgs} record${unreadMsgs === 1 ? '' : 's'} with unread messages`}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'default' }}
+      {/* Messages — clickable dropdown, visible on every page incl. mobile */}
+      <div className="nav-msg" ref={msgRef}>
+        <button
+          type="button"
+          className={`nav-msg-btn${unread > 0 ? ' has-unread' : ''}`}
+          onClick={() => setMsgOpen(o => !o)}
+          aria-label={`Messages${unread ? `, ${unread} unread` : ''}`}
+          title="Messages"
         >
-          💬
-          <span style={{
-            background: '#e53e3e', color: '#fff', borderRadius: 999,
-            fontSize: 11, fontWeight: 700, padding: '1px 6px', lineHeight: 1.4
-          }}>
-            {unreadMsgs}
-          </span>
-        </span>
-      )}
+          <span className="nav-msg-ico" aria-hidden>✉</span>
+          {unread > 0 && <span className="nav-msg-badge">{unread}</span>}
+        </button>
+        {msgOpen && (
+          <div className="nav-msg-menu" role="menu">
+            <div className="nav-msg-head">
+              Messages{unread > 0 ? ` · ${unread} unread` : ''}
+            </div>
+            {threads.length === 0 ? (
+              <div className="nav-msg-empty">No messages waiting for a reply.</div>
+            ) : threads.map(t => (
+              <button key={t.record_id} type="button" className="nav-msg-item" onClick={() => openThread(t)}>
+                <div className="nav-msg-item-top">
+                  <span className="nav-msg-item-label">{(TASK_FORMS[t.task_type]?.name || t.task_type)} · {t.label}</span>
+                  {t.unread > 0 && <span className="nav-msg-item-count">{t.unread}</span>}
+                </div>
+                <div className="nav-msg-item-preview">{t.preview}</div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       <OfflineIndicator />
       <CapacityAlert />
 

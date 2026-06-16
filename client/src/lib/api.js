@@ -261,6 +261,7 @@ export const getTaskRecordEvents      = (id) => request(`/task-records/${id}/eve
 export const getRecordMessages      = (id) => request(`/task-records/${id}/messages`)
 export const postRecordMessage      = (id, body) => request(`/task-records/${id}/messages`, { method: 'POST', body: { body } })
 export const getUnreadMessageCount  = () => request('/task-messages/unread-count')
+export const getMessageThreads      = () => request('/task-messages/threads')
 export const markRecordMessagesRead = (id) => request(`/task-records/${id}/messages/mark-read`, { method: 'POST' })
 
 // ── Space Plan ──────────────────────────────────────────────────────────────

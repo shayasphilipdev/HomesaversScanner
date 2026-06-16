@@ -1,4 +1,5 @@
 ﻿import { useState, useEffect, useCallback } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useStore } from '../App.jsx'
 import { getTaskRecords, getTaskTypes } from '../lib/api.js'
 import { useCurrentStore } from '../lib/currentStore.jsx'
@@ -30,6 +31,21 @@ export default function Tasks() {
   const [filter, setFilter] = useState('all')
   const [records, setRecords] = useState([])
   const [loading, setLoading] = useState(true)
+  const [autoOpenId, setAutoOpenId] = useState(null)
+
+  // Opened from the header message dropdown — jump to that record's thread.
+  const location = useLocation()
+  const navigate = useNavigate()
+  useEffect(() => {
+    const st = location.state
+    if (st?.openRecordId) {
+      setAutoOpenId(st.openRecordId)
+      if (st.taskType) setSelectedType(st.taskType)
+      setFilter('all')
+      navigate('.', { replace: true, state: null })   // consume so it doesn't re-fire
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.key])
 
   useEffect(() => {
     getTaskTypes()
@@ -156,6 +172,7 @@ export default function Tasks() {
         records={records}
         loading={loading}
         onRefresh={load}
+        autoOpenId={autoOpenId}
         onOptimisticRemove={(id) => setRecords(rs => rs.filter(r => r.id !== id))}
       />
 

@@ -1,4 +1,4 @@
-import { Fragment, useState, useCallback } from 'react'
+import { Fragment, useState, useCallback, useEffect } from 'react'
 import { updateTaskRecord, deleteTaskRecord, bulkClearTaskRecords } from '../lib/api.js'
 import { useStore } from '../App.jsx'
 import { useToast } from './Toast.jsx'
@@ -23,7 +23,7 @@ function formatDT(iso) {
     + ' ' + d.toLocaleTimeString('en-IE', { hour: '2-digit', minute: '2-digit' })
 }
 
-export default function TaskRecordList({ records, loading, onRefresh, onOptimisticRemove, onUnreadChange }) {
+export default function TaskRecordList({ records, loading, onRefresh, onOptimisticRemove, onUnreadChange, autoOpenId }) {
   const { session } = useStore()
   const toast = useToast()
   // Area managers get store-side clear UI (J/K bulk-clear) despite being in backoffice mode.
@@ -41,6 +41,14 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
     return next
   })
   const handleUnreadChange = useCallback(() => { onUnreadChange?.() }, [onUnreadChange])
+
+  // When navigated here from the header message dropdown, open that record's
+  // thread (once it's present in the loaded list).
+  useEffect(() => {
+    if (autoOpenId && records.some(r => r.id === autoOpenId)) {
+      setExpandedMessages(prev => prev.has(autoOpenId) ? prev : new Set(prev).add(autoOpenId))
+    }
+  }, [autoOpenId, records])
 
   // Rows eligible for store-side bulk clear.
   const clearableRows = isBO ? [] : records.filter(r =>
