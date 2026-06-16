@@ -1,41 +1,32 @@
 # Homesavers Scanner App
 
-Retail barcode scanner and product data collection app.  
-**Stack:** React + Vite (frontend) · Cloudflare Pages Functions (backend API) · Supabase (PostgreSQL)
+Mobile-first retail task/query reporting + product-data app for Homesavers
+Ireland (~55 stores).
+**Stack:** React 18 + Vite (frontend) · Cloudflare Pages Functions (backend) · Supabase PostgreSQL.
+
+> 📋 **Full, current documentation is in [`Project_Status.MD`](Project_Status.MD)** —
+> architecture, data model, every module, recent changes, known issues, and ops.
+> Start there. This README is just a quick map.
 
 ---
 
-## Project structure
+## Project structure (key files)
 
 ```
 homesavers-scanner/
-├── client/                     React + Vite frontend
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── Nav.jsx
-│   │   │   ├── StoreSelector.jsx
-│   │   │   ├── ProductForm.jsx
-│   │   │   └── ProductList.jsx
-│   │   ├── pages/
-│   │   │   ├── ProductData.jsx
-│   │   │   └── Reports.jsx
-│   │   ├── lib/
-│   │   │   ├── api.js          All fetch calls (proxy to /api/*)
-│   │   │   └── uom.js          UOM constants and Eachs warning
-│   │   ├── App.jsx             Routes + StoreContext
-│   │   ├── App.css             All styling
-│   │   └── main.jsx
-│   ├── index.html
-│   ├── vite.config.js
-│   └── package.json
-├── functions/
-│   └── api/
-│       └── [[route]].js        Cloudflare Pages Function (all /api/* routes)
-├── supabase-schema.sql         Run once in Supabase SQL Editor
-├── .dev.vars.example           Copy to .dev.vars for local dev (git-ignored)
-├── wrangler.toml               Cloudflare Pages config
-├── .gitignore
-└── package.json
+├── client/                          React + Vite frontend
+│   └── src/
+│       ├── App.jsx · App.css · main.jsx
+│       ├── lib/        api.js · roles.js · currentStore.jsx · excel.js · outbox.js · taskTypes.js
+│       ├── components/ Nav · Sidebar · BottomNav · TaskForm · TaskRecordList · RecordMessages
+│       │   └── forms/  ScannerInput · useTaskForm · Task[A-K]Form
+│       └── pages/      Dashboard · Tasks · Reports · StoreTasks · SpacePlan · ProductQuery · Admin*
+├── functions/api/[[route]].js       Cloudflare Pages Function — ALL backend logic
+├── scripts/                         data-sync + aging-report.py (weekly status email)
+├── docs/                            user-manual.html, guides
+├── wrangler.toml · .dev.vars.example
+├── Project_Status.MD                ← full status / orientation
+└── CLAUDE.md                        lightweight pointer
 ```
 
 ---

@@ -1,13 +1,13 @@
 # Homesavers Scanner App — CLAUDE.md
 
-Lightweight orientation. Full detail: `Project_Status.MD` · `docs/phase9-store-tasks-and-roles.md` · `CLAUDE_CODE_INSTRUCTIONS.md`
+Lightweight orientation. **Full, current detail: `Project_Status.MD`** (read it first in a new session) · `CLAUDE_CODE_INSTRUCTIONS.md`
 
 ---
 
 ## What it is
 
-Retail task/error reporting PWA for Homesavers Ireland (8 stores now → 55).  
-Store staff scan products and log issues. Back office reviews. Phase 9 adds store self-managed operational checklists.
+Retail task/query reporting PWA for Homesavers Ireland (~55 stores).
+Store staff scan products and log issues across 11 task types; Support Office reviews (with per-record message threads). Also: Store Tasks checklists, **Space Plan** equipment-count collection, Reports/Dashboard, Suppliers, a weekly status-report email. Single login (username + PIN), role-based scope. See `Project_Status.MD` for everything.
 
 Live: https://homesaversscanner.pages.dev  
 Repo: https://github.com/shayasphilipdev/HomesaversScanner  
