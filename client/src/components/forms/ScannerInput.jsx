@@ -62,40 +62,53 @@ export default function ScannerInput({
   // the time, so the camera button is hidden unless an admin turns it on.
   const cameraEnabled = localStorage.getItem('hs_camera_enabled') === '1'
 
-  // Scanner gun keystroke buffer — global.
-  // Runs in the CAPTURE phase so it sees the scan before any focused element
-  // (button, link, dropdown) can act on it, and preventDefault keeps the
-  // scan's characters + Enter from leaking to the page (which was opening a
-  // new browser window / navigating). Some Android/Bluetooth scanners report
-  // e.key as 'Unidentified' but still set keyCode, so we fall back to keyCode.
+  // Scanner gun keystroke buffer — global, capture phase.
+  //
+  // Two scenarios handled:
+  //   A) No input focused (or a button/link is active): swallow chars + Enter,
+  //      fire the lookup, focus the barcode field. Original behaviour.
+  //
+  //   B) A non-barcode INPUT/TEXTAREA is focused (e.g. Description, Notes):
+  //      Scanner guns send an entire barcode in < 60 ms per char — far faster
+  //      than any human typist (≥ 120 ms/char). Once we detect that speed
+  //      (second char arrives < 60 ms after the first) we suppress subsequent
+  //      chars from landing in the wrong field and redirect the whole scan to
+  //      the barcode input. The first char may still land in the other field
+  //      as a stray digit; that is a single-char artefact and far better than
+  //      a full 13-digit barcode appearing in a notes box.
+  //
+  //   If the barcode input itself is focused the listener returns immediately
+  //   and the input's own onKeyDown handles everything.
   useEffect(() => {
     let buffer = '', timer = null
+    let lastCharMs = 0, scanSpeed = false
 
     const charFromEvent = (e) => {
       if (e.key && e.key.length === 1) return e.key
       const kc = e.keyCode || e.which || 0
-      if (kc >= 48 && kc <= 57)  return String(kc - 48)          // 0–9 (top row)
-      if (kc >= 96 && kc <= 105) return String(kc - 96)          // 0–9 (numpad)
-      if (kc >= 65 && kc <= 90)  return String.fromCharCode(kc)  // A–Z
+      if (kc >= 48 && kc <= 57)  return String(kc - 48)
+      if (kc >= 96 && kc <= 105) return String(kc - 96)
+      if (kc >= 65 && kc <= 90)  return String.fromCharCode(kc)
       return null
     }
     const isEnter = (e) => e.key === 'Enter' || e.keyCode === 13 || e.keyCode === 10
 
+    const reset = () => { buffer = ''; scanSpeed = false; lastCharMs = 0; clearTimeout(timer) }
+
     const onKey = (e) => {
-      // Some Android scanner devices emit a function key (e.g. F1) from the
-      // hardware trigger when their scanner service isn't sending barcodes to
-      // the browser. Chrome turns F1 into "open Help" → a blank new window.
-      // Swallow function keys everywhere (even while an input is focused) so
-      // that stray trigger key can't hijack the browser.
+      // Swallow function/trigger keys everywhere — prevents F1 opening Help etc.
       if (/^F\d{1,2}$/.test(e.key || '') || (e.keyCode >= 112 && e.keyCode <= 123)) {
         e.preventDefault()
         return
       }
 
-      const tag = document.activeElement?.tagName
-      // If the user is genuinely typing in a field, leave them alone — the
-      // field (incl. our barcode input) handles its own Enter.
-      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return
+      const active = document.activeElement
+      const tag    = active?.tagName
+      const isBarcodeActive  = active === inputRef.current
+      const isOtherInputFocused = !isBarcodeActive && (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA')
+
+      // Barcode input is focused — its own onKeyDown handles the scan.
+      if (isBarcodeActive) return
 
       if (isEnter(e)) {
         if (buffer.length >= 4) {
@@ -104,24 +117,37 @@ export default function ScannerInput({
           confirmRef.current(buffer)
           inputRef.current?.focus()
         }
-        buffer = ''
-        clearTimeout(timer)
+        reset()
         return
       }
 
       const ch = charFromEvent(e)
-      if (ch) {
-        // Swallow the scan character so it can't activate a focused link/button
-        // or trigger a browser shortcut.
+      if (!ch) return
+
+      const now = performance.now()
+      const gap = now - lastCharMs
+      lastCharMs = now
+
+      // Detect scan speed once we have at least one prior char to compare.
+      if (buffer.length >= 1 && gap < 60) scanSpeed = true
+
+      if (isOtherInputFocused && !scanSpeed) {
+        // First char (or slow/manual typing) in a non-barcode field — track in
+        // the buffer but let it reach the focused element normally.
+        buffer += ch
+        clearTimeout(timer)
+        timer = setTimeout(reset, 300)
+      } else {
+        // Either no input is focused, OR scan speed confirmed — intercept.
         e.preventDefault()
         buffer += ch
         clearTimeout(timer)
-        timer = setTimeout(() => { buffer = '' }, 300)
+        timer = setTimeout(reset, 300)
       }
     }
-    window.addEventListener('keydown', onKey, true)   // capture phase
+
+    window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-    // Refs keep the latest callbacks; the listener attaches once.
   }, [])
 
   // Keep the scan field focused so a scan always lands here without the
@@ -129,19 +155,41 @@ export default function ScannerInput({
   //   • on mount  — the form was opened / a task was picked from the dropdown
   //   • whenever the field is cleared back to empty — i.e. right after Save
   //     or Clear (every task form resets the barcode to '' then).
-  // requestAnimationFrame defers the focus until the DOM has settled (e.g. a
-  // closing dropdown), which makes it reliable on tablets. We deliberately do
-  // NOT refocus while the field holds a scanned value, so the user can freely
-  // tap other fields (quantity, reason, notes) without focus jumping back.
+  // We retry three times (rAF, 150 ms, 400 ms) so focus survives re-renders,
+  // success toasts, and any other element that might briefly steal it.
+  // We deliberately do NOT refocus while the field holds a scanned value,
+  // so the user can freely tap Description / Notes without focus jumping back.
   useEffect(() => {
     if (value !== '') return
-    lastConfirmedRef.current = ''   // a cleared field is ready for a fresh scan (even the same code)
-    setKbAllowed(false)             // a fresh/auto-focused field must not pop the soft keyboard
-    const id = requestAnimationFrame(() => {
+    lastConfirmedRef.current = ''
+    setKbAllowed(false)
+    const doFocus = () => {
       try { inputRef.current?.focus({ preventScroll: true }) } catch { inputRef.current?.focus() }
-    })
-    return () => cancelAnimationFrame(id)
+    }
+    const raf = requestAnimationFrame(doFocus)
+    const t1  = setTimeout(doFocus, 150)
+    const t2  = setTimeout(doFocus, 400)
+    return () => { cancelAnimationFrame(raf); clearTimeout(t1); clearTimeout(t2) }
   }, [value])
+
+  // Refocus whenever the window/tab regains attention — covers the case where
+  // the user switches apps (stock lookup, camera app) and comes back.
+  useEffect(() => {
+    const refocus = () => {
+      if (value === '') {
+        try { inputRef.current?.focus({ preventScroll: true }) } catch { inputRef.current?.focus() }
+      }
+    }
+    window.addEventListener('focus', refocus)
+    document.addEventListener('visibilitychange', refocus)
+    return () => {
+      window.removeEventListener('focus', refocus)
+      document.removeEventListener('visibilitychange', refocus)
+    }
+  // value intentionally not in deps — we read it at call time via closure over
+  // the stable inputRef; adding value would re-subscribe on every keystroke.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Auto-trigger the lookup once the scanned value stops changing. Scanner guns
   // vary in how (or whether) they terminate a scan — Enter, Tab, a custom
