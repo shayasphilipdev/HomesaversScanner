@@ -51,6 +51,10 @@ export default function ScannerInput({
   // keyboard while still accepting the gun; a genuine tap flips it to "text"
   // so manual entry still works. Reset to "none" whenever the field clears.
   const [kbAllowed, setKbAllowed] = useState(false)
+  // Mirror kbAllowed in a ref so the global keydown listener (attached once,
+  // can't close over state) can read the current value synchronously.
+  const kbAllowedRef = useRef(false)
+  kbAllowedRef.current = kbAllowed   // updated every render — safe, no side-effects
 
   const [cameraOn, setCameraOn]         = useState(false)
   const [cameraStatus, setCameraStatus] = useState('')
@@ -104,11 +108,15 @@ export default function ScannerInput({
 
       const active = document.activeElement
       const tag    = active?.tagName
-      const isBarcodeActive  = active === inputRef.current
+      const isBarcodeActive     = active === inputRef.current
       const isOtherInputFocused = !isBarcodeActive && (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA')
 
-      // Barcode input is focused — its own onKeyDown handles the scan.
-      if (isBarcodeActive) return
+      // Defer to the input's own onKeyDown ONLY when the user physically tapped
+      // it (kbAllowed=true / inputMode="text"). When the field was programmatically
+      // focused (kbAllowed=false / inputMode="none"), some Android browsers don't
+      // route HID scanner keystrokes to the input even though it appears focused —
+      // the global capture listener must intercept those bursts here instead.
+      if (isBarcodeActive && kbAllowedRef.current) return
 
       if (isEnter(e)) {
         if (buffer.length >= 4) {
