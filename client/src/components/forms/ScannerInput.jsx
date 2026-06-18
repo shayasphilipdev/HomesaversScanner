@@ -155,18 +155,45 @@ export default function ScannerInput({
     return () => window.removeEventListener('keydown', onKey, true)
   }, [])
 
-  // Focus the barcode field so the scanner gun types straight into it.
-  // Desktop only (pointer:fine) — on Android (pointer:coarse) we intentionally
-  // skip auto-focus so the software keyboard never pops up. The global
-  // keydown listener calls focus() after each scan from within the HID event
-  // handler; Android does not treat that as a keyboard trigger.
+  // Keep the scan field focused so a scan always lands here without the
+  // staff having to tap the field first. This fires:
+  //   • on mount  — the form was opened / a task was picked from the dropdown
+  //   • whenever the field is cleared back to empty — i.e. right after Save
+  //     or Clear (every task form resets the barcode to '' then).
+  // We retry three times (rAF, 150 ms, 400 ms) so focus survives re-renders,
+  // success toasts, and any other element that might briefly steal it.
+  // We deliberately do NOT refocus while the field holds a scanned value,
+  // so the user can freely tap Description / Notes without focus jumping back.
   useEffect(() => {
+    if (value !== '') return
     lastConfirmedRef.current = ''
-    if (window.matchMedia?.('(pointer: fine)')?.matches) {
-      inputRef.current?.focus()
+    const doFocus = () => {
+      try { inputRef.current?.focus({ preventScroll: true }) } catch { inputRef.current?.focus() }
     }
+    const raf = requestAnimationFrame(doFocus)
+    const t1  = setTimeout(doFocus, 150)
+    const t2  = setTimeout(doFocus, 400)
+    return () => { cancelAnimationFrame(raf); clearTimeout(t1); clearTimeout(t2) }
+  }, [value])
+
+  // Refocus whenever the window/tab regains attention — covers the case where
+  // the user switches apps (stock lookup, camera app) and comes back.
+  useEffect(() => {
+    const refocus = () => {
+      if (value === '') {
+        try { inputRef.current?.focus({ preventScroll: true }) } catch { inputRef.current?.focus() }
+      }
+    }
+    window.addEventListener('focus', refocus)
+    document.addEventListener('visibilitychange', refocus)
+    return () => {
+      window.removeEventListener('focus', refocus)
+      document.removeEventListener('visibilitychange', refocus)
+    }
+  // value intentionally not in deps — we read it at call time via closure over
+  // the stable inputRef; adding value would re-subscribe on every keystroke.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value === '' ? 0 : 1])   // fire on mount and whenever the field clears
+  }, [])
 
   // Auto-trigger the lookup once the scanned value stops changing. Scanner guns
   // vary in how (or whether) they terminate a scan — Enter, Tab, a custom
