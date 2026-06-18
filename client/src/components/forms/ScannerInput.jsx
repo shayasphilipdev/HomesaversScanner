@@ -155,21 +155,20 @@ export default function ScannerInput({
   useEffect(() => {
     if (value !== '') return
     lastConfirmedRef.current = ''
+    // On Android (pointer:coarse) calling focus() from a useEffect/setTimeout
+    // triggers the IME to re-inject the previously typed barcode — root cause
+    // of "need to tap Save twice to clear". The input keeps focus from the
+    // HID keydown handler's own focus() call (IME-safe), so no retry needed.
+    // The global keydown listener catches the next scan if focus was lost.
+    // On desktop (pointer:fine) retries are still useful to reclaim focus after
+    // toasts or other elements briefly stealing it.
+    if (!window.matchMedia?.('(pointer: fine)')?.matches) return
     const el = inputRef.current
     if (!el) return
-
-    // readOnly=true makes Android's IME fully disconnect from the field so it
-    // cannot re-inject the previous barcode when we clear and refocus.
-    // We zero the DOM value while the IME is disconnected, then set
-    // readOnly=false and focus — the IME reconnects to an empty field.
-    el.readOnly = true
-    el.value = ''
-
     const doFocus = () => {
       try { el.focus({ preventScroll: true }) } catch { el.focus() }
-      el.setSelectionRange?.(0, 0)
     }
-    const raf = requestAnimationFrame(() => { el.readOnly = false; doFocus() })
+    const raf = requestAnimationFrame(doFocus)
     const t1  = setTimeout(doFocus, 150)
     const t2  = setTimeout(doFocus, 400)
     return () => { cancelAnimationFrame(raf); clearTimeout(t1); clearTimeout(t2) }
