@@ -45,6 +45,18 @@ export default function ScannerInput({
     onConfirmRef.current?.(code)
   }
 
+  // Incremented each time value goes non-empty → empty (i.e. after every Save).
+  // Used as the `key` on the <input> to force a fresh DOM node, which prevents
+  // Android's IME from re-injecting the previously scanned barcode.
+  const [inputKey, setInputKey] = useState(0)
+  const prevValueRef = useRef(value)
+  if (prevValueRef.current !== '' && value === '') {
+    prevValueRef.current = value
+    setInputKey(k => k + 1)
+  } else {
+    prevValueRef.current = value
+  }
+
   const [cameraOn, setCameraOn]         = useState(false)
   const [cameraStatus, setCameraStatus] = useState('')
   const [zoom, setZoom]                 = useState(2)      // default 2× — barcodes are small
@@ -332,6 +344,7 @@ export default function ScannerInput({
       <div className="flex-row" style={{ gap: 8, alignItems: 'stretch' }}>
         <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
           <input
+            key={inputKey}
             ref={inputRef}
             type="text" className="scan-input" autoComplete="off" spellCheck={false}
             style={{ width: '100%' }}
