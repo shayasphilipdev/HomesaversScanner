@@ -12,6 +12,7 @@ import { useToast } from '../components/Toast.jsx'
 import MultiSelectDropdown from '../components/forms/MultiSelectDropdown.jsx'
 import AdminReports from './AdminReports.jsx'
 import { canAccessMasterReports } from '../lib/roles.js'
+import RecordMessages from '../components/RecordMessages.jsx'
 
 function toLocalInput(d) {
   const pad = n => String(n).padStart(2, '0')
@@ -284,6 +285,12 @@ function HQReports() {
   const [error, setError]             = useState('')
   // Per-row audit-history state: { [recordId]: { loading, events, err } }
   const [history, setHistory]         = useState({})
+  const [expandedMessages, setExpandedMessages] = useState(new Set())
+  const toggleMessages = (id) => setExpandedMessages(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
 
   const toggleHistory = async (recordId) => {
     setHistory(h => {
@@ -682,6 +689,11 @@ function HQReports() {
                                   </button>
                                 </>
                               )}
+                              <button
+                                className={`btn btn-sm btn-icon ${expandedMessages.has(r.id) ? 'btn-primary' : 'btn-outline'}`}
+                                title="Messages"
+                                onClick={() => toggleMessages(r.id)}
+                              >💬</button>
                               <button className="btn btn-sm btn-outline" onClick={() => toggleHistory(r.id)} title="Audit history">
                                 {history[r.id] ? '▴' : '▾'} History
                               </button>
@@ -689,6 +701,14 @@ function HQReports() {
                           </td>
                         )}
                       </tr>
+                      {/* Message thread panel */}
+                      {expandedMessages.has(r.id) && (
+                        <tr>
+                          <td colSpan={isBO ? 11 : 10} style={{ padding: 0, borderTop: 'none' }}>
+                            <RecordMessages recordId={r.id} />
+                          </td>
+                        </tr>
+                      )}
                       {/* Audit-trail panel (BO only) */}
                       {isBO && history[r.id] && (
                         <tr>
