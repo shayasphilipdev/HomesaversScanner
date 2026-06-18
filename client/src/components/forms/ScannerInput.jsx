@@ -45,18 +45,6 @@ export default function ScannerInput({
     onConfirmRef.current?.(code)
   }
 
-  // Incremented each time value goes non-empty → empty (i.e. after every Save).
-  // Used as the `key` on the <input> to force a fresh DOM node, which prevents
-  // Android's IME from re-injecting the previously scanned barcode.
-  const [inputKey, setInputKey] = useState(0)
-  const prevValueRef = useRef(value)
-  if (prevValueRef.current !== '' && value === '') {
-    prevValueRef.current = value
-    setInputKey(k => k + 1)
-  } else {
-    prevValueRef.current = value
-  }
-
   const [cameraOn, setCameraOn]         = useState(false)
   const [cameraStatus, setCameraStatus] = useState('')
   const [zoom, setZoom]                 = useState(2)      // default 2× — barcodes are small
@@ -168,7 +156,14 @@ export default function ScannerInput({
     if (value !== '') return
     lastConfirmedRef.current = ''
     const doFocus = () => {
-      try { inputRef.current?.focus({ preventScroll: true }) } catch { inputRef.current?.focus() }
+      const el = inputRef.current
+      if (!el) return
+      try { el.focus({ preventScroll: true }) } catch { el.focus() }
+      // Explicitly zero the DOM value after focus so Android's IME sees an
+      // empty field and discards any buffered text from the previous scan.
+      // Without this, Android re-injects the last barcode on refocus.
+      el.value = ''
+      el.setSelectionRange?.(0, 0)
     }
     const raf = requestAnimationFrame(doFocus)
     const t1  = setTimeout(doFocus, 150)
@@ -344,7 +339,6 @@ export default function ScannerInput({
       <div className="flex-row" style={{ gap: 8, alignItems: 'stretch' }}>
         <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
           <input
-            key={inputKey}
             ref={inputRef}
             type="text" className="scan-input" autoComplete="off" spellCheck={false}
             style={{ width: '100%' }}
