@@ -45,17 +45,6 @@ export default function ScannerInput({
     onConfirmRef.current?.(code)
   }
 
-  // Soft-keyboard control. The field auto-focuses so a scanner gun (hardware
-  // keyboard) types straight in — but on a phone that also pops the on-screen
-  // keyboard, which staff don't want. inputMode="none" suppresses the virtual
-  // keyboard while still accepting the gun; a genuine tap flips it to "text"
-  // so manual entry still works. Reset to "none" whenever the field clears.
-  const [kbAllowed, setKbAllowed] = useState(false)
-  // Mirror kbAllowed in a ref so the global keydown listener (attached once,
-  // can't close over state) can read the current value synchronously.
-  const kbAllowedRef = useRef(false)
-  kbAllowedRef.current = kbAllowed   // updated every render — safe, no side-effects
-
   const [cameraOn, setCameraOn]         = useState(false)
   const [cameraStatus, setCameraStatus] = useState('')
   const [zoom, setZoom]                 = useState(2)      // default 2× — barcodes are small
@@ -111,12 +100,8 @@ export default function ScannerInput({
       const isBarcodeActive     = active === inputRef.current
       const isOtherInputFocused = !isBarcodeActive && (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA')
 
-      // Defer to the input's own onKeyDown ONLY when the user physically tapped
-      // it (kbAllowed=true / inputMode="text"). When the field was programmatically
-      // focused (kbAllowed=false / inputMode="none"), some Android browsers don't
-      // route HID scanner keystrokes to the input even though it appears focused —
-      // the global capture listener must intercept those bursts here instead.
-      if (isBarcodeActive && kbAllowedRef.current) return
+      // Barcode input is focused and receiving keyboard input normally.
+      if (isBarcodeActive) return
 
       if (isEnter(e)) {
         if (buffer.length >= 4) {
@@ -170,7 +155,6 @@ export default function ScannerInput({
   useEffect(() => {
     if (value !== '') return
     lastConfirmedRef.current = ''
-    setKbAllowed(false)
     const doFocus = () => {
       try { inputRef.current?.focus({ preventScroll: true }) } catch { inputRef.current?.focus() }
     }
@@ -350,10 +334,8 @@ export default function ScannerInput({
           <input
             ref={inputRef}
             type="text" className="scan-input" autoComplete="off" spellCheck={false}
-            inputMode={kbAllowed ? 'text' : 'none'}
             style={{ width: '100%' }}
             value={value} onChange={e => onChange(e.target.value)}
-            onPointerDown={() => setKbAllowed(true)}
             onBlur={e => confirmRef.current(e.target.value)}
             onKeyDown={e => {
               // The scan lands in this focused field, so recognise the
