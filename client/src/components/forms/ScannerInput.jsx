@@ -155,17 +155,21 @@ export default function ScannerInput({
   useEffect(() => {
     if (value !== '') return
     lastConfirmedRef.current = ''
+    const el = inputRef.current
+    if (!el) return
+
+    // readOnly=true makes Android's IME fully disconnect from the field so it
+    // cannot re-inject the previous barcode when we clear and refocus.
+    // We zero the DOM value while the IME is disconnected, then set
+    // readOnly=false and focus — the IME reconnects to an empty field.
+    el.readOnly = true
+    el.value = ''
+
     const doFocus = () => {
-      const el = inputRef.current
-      if (!el) return
       try { el.focus({ preventScroll: true }) } catch { el.focus() }
-      // Explicitly zero the DOM value after focus so Android's IME sees an
-      // empty field and discards any buffered text from the previous scan.
-      // Without this, Android re-injects the last barcode on refocus.
-      el.value = ''
       el.setSelectionRange?.(0, 0)
     }
-    const raf = requestAnimationFrame(doFocus)
+    const raf = requestAnimationFrame(() => { el.readOnly = false; doFocus() })
     const t1  = setTimeout(doFocus, 150)
     const t2  = setTimeout(doFocus, 400)
     return () => { cancelAnimationFrame(raf); clearTimeout(t1); clearTimeout(t2) }
