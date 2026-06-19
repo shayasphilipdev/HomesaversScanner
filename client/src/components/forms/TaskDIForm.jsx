@@ -19,7 +19,11 @@ export default function TaskDIForm({ taskType, onSaved, storeId }) {
   const t = useTaskForm({
     initial: EMPTY,
     onLookup: ({ product, setForm }) => {
-      setForm(f => ({ ...f, product_name_label: f.product_name_label || product.item_name || '' }))
+      // For Task D the user must type what the label actually says — never pre-fill
+      // with the system description, as staff would just save it unchanged.
+      if (taskType !== 'D') {
+        setForm(f => ({ ...f, product_name_label: f.product_name_label || product.item_name || '' }))
+      }
     }
   })
 
@@ -27,6 +31,10 @@ export default function TaskDIForm({ taskType, onSaved, storeId }) {
     e.preventDefault()
     if (!t.form.product_code.trim())       return t.setError('Product code is required.')
     if (!t.form.product_name_label.trim()) return t.setError('Product name (as on the product) is required.')
+    if (taskType === 'D' && t.lookupInfo?.item_name &&
+        t.form.product_name_label.trim().toLowerCase() === t.lookupInfo.item_name.trim().toLowerCase()) {
+      return t.setError('The description you entered matches the system description. Please enter exactly what is printed on the product label.')
+    }
 
     t.setSaving(true); t.setError('')
     try {
