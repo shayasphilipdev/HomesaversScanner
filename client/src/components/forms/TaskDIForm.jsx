@@ -5,9 +5,10 @@ import { useTaskForm, LookupBanner, altFields } from './useTaskForm.jsx'
 
 // Tasks D (Wrong Description) and I (Miscellaneous Tasks) share an identical
 // field set: product_code, product_name_label, notes.
+// Task D adds actual_product_name — what the label physically shows.
 // Uses the shared useTaskForm hook (M22 refactor).
 
-const EMPTY = { product_code: '', product_name_label: '', notes: '' }
+const EMPTY = { product_code: '', product_name_label: '', actual_product_name: '', notes: '' }
 
 const HINTS = {
   D: 'Use this when the description in the system does not match the product in front of you.',
@@ -19,33 +20,37 @@ export default function TaskDIForm({ taskType, onSaved, storeId }) {
   const t = useTaskForm({
     initial: EMPTY,
     onLookup: ({ product, setForm }) => {
-      // For Task D the user must type what the label actually says — never pre-fill
-      // with the system description, as staff would just save it unchanged.
-      if (taskType !== 'D') {
-        setForm(f => ({ ...f, product_name_label: f.product_name_label || product.item_name || '' }))
-      }
+      setForm(f => ({
+        ...f,
+        // Task D: always overwrite with system description (field is read-only reference).
+        // Task I: only fill if user hasn't typed anything yet.
+        product_name_label: taskType === 'D'
+          ? (product.item_name || '')
+          : (f.product_name_label || product.item_name || '')
+      }))
     }
   })
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!t.form.product_code.trim())       return t.setError('Product code is required.')
-    if (!t.form.product_name_label.trim()) return t.setError('Product name (as on the product) is required.')
-    if (taskType === 'D' && t.lookupInfo?.item_name &&
-        t.form.product_name_label.trim().toLowerCase() === t.lookupInfo.item_name.trim().toLowerCase()) {
-      return t.setError('The description you entered matches the system description. Please enter exactly what is printed on the product label.')
+    if (!t.form.product_code.trim()) return t.setError('Product code is required.')
+    if (!t.form.product_name_label.trim()) return t.setError('Product name is required.')
+    if (taskType === 'D') {
+      if (!t.form.actual_product_name.trim()) return t.setError('Actual product name is required.')
+      if (t.form.actual_product_name.trim().length <= 2) return t.setError('Actual product name must be more than 2 characters.')
     }
 
     t.setSaving(true); t.setError('')
     try {
       const res = await createTaskRecord({
-        task_type:          taskType,
-        store_id:           storeId || session.storeId || null,
-        product_code:       t.form.product_code.trim(),
-        product_name_label: t.form.product_name_label.trim(),
-        notes:              t.form.notes.trim() || null,
+        task_type:            taskType,
+        store_id:             storeId || session.storeId || null,
+        product_code:         t.form.product_code.trim(),
+        product_name_label:   t.form.product_name_label.trim(),
+        actual_product_name:  taskType === 'D' ? (t.form.actual_product_name.trim() || null) : null,
+        notes:                t.form.notes.trim() || null,
         ...altFields(t.lookupInfo, t.form.product_code.trim()),
-        status:             'pending'
+        status:               'pending'
       })
       t.reset()
       onSaved?.({ queued: !!res?.queued })
@@ -77,10 +82,23 @@ export default function TaskDIForm({ taskType, onSaved, storeId }) {
               <label>Product Name (as on the product) *</label>
               <input
                 type="text" value={t.form.product_name_label}
-                onChange={t.update('product_name_label')}
+                readOnly={taskType === 'D'}
+                onChange={taskType === 'D' ? undefined : t.update('product_name_label')}
                 placeholder="Exactly what is printed on the product"
+                style={taskType === 'D' ? { background: 'var(--input-disabled-bg, #f0f0f0)', color: 'var(--text-muted, #888)', cursor: 'default' } : undefined}
               />
             </div>
+
+            {taskType === 'D' && (
+              <div className="form-group full">
+                <label>Actual Product Name *</label>
+                <input
+                  type="text" value={t.form.actual_product_name}
+                  onChange={t.update('actual_product_name')}
+                  placeholder="What is actually printed on the product label"
+                />
+              </div>
+            )}
 
             <div className="form-group full">
               <label>Notes (optional)</label>

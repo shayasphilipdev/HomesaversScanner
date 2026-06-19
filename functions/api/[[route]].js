@@ -2761,7 +2761,7 @@ export async function onRequest(context) {
       const scope = await scopedStoreIds(db, session)
       // null = unrestricted; otherwise filter to the scope's stores.
       const params = {
-        select: 'id,task_type,store_id,supplier_name_text,product_code,product_barcode,product_name_label,description,uom,quantity,notes,photo_product_url,photo_barcode_url,details,status,review_notes,reviewed_at,marked_for_deletion,completed_at,store_completed_at,cleared_at,created_at,updated_at,barcode_no,item_name,supl_id,supplier_code,item_status,barcode_status',
+        select: 'id,task_type,store_id,supplier_name_text,product_code,product_barcode,product_name_label,actual_product_name,description,uom,quantity,notes,photo_product_url,photo_barcode_url,details,status,review_notes,reviewed_at,marked_for_deletion,completed_at,store_completed_at,cleared_at,created_at,updated_at,barcode_no,item_name,supl_id,supplier_code,item_status,barcode_status',
         order:  'created_at.desc',
         limit:  String(limit),
         offset: String(offset)
@@ -3096,6 +3096,7 @@ export async function onRequest(context) {
         product_code:        body.product_code || null,
         product_barcode:     body.product_barcode || null,
         product_name_label:  body.product_name_label || null,
+        actual_product_name: body.actual_product_name || null,
         description:         body.description || null,
         uom:                 body.uom || null,
         quantity:            body.quantity ?? null,
@@ -3221,7 +3222,7 @@ export async function onRequest(context) {
 
       const includeCleared = p.get('includeCleared') === '1'
       const params = {
-        select: 'id,task_type,store_id,supplier_id,supplier_name_text,product_code,product_barcode,product_name_label,description,uom,quantity,notes,photo_product_url,photo_barcode_url,details,status,review_notes,created_at,barcode_no,item_name,supl_id,supplier_code,item_status,barcode_status',
+        select: 'id,task_type,store_id,supplier_id,supplier_name_text,product_code,product_barcode,product_name_label,actual_product_name,description,uom,quantity,notes,photo_product_url,photo_barcode_url,details,status,review_notes,created_at,barcode_no,item_name,supl_id,supplier_code,item_status,barcode_status',
         order:  'created_at.asc'
       }
       if (range.length) params['created_at'] = range
@@ -3283,15 +3284,16 @@ export async function onRequest(context) {
         photo_barcode_url:   r.photo_barcode_url || '',
         details:             fmtDetails(r.details),
         created_at:          fmtReportDate(r.created_at),
-        supplier_code:       r.supplier_code || '',
+        supplier_code:        r.supplier_code || '',
+        actual_product_name:  r.actual_product_name || '',
       }))
 
       // Column order matches the numbering requested on the report:
       // Barcode, Code, Description, Task, Details, Supplier, Product Status,
       // Barcode Status, Status, Date, Store, UOM, Quantity, Notes, HO Notes,
-      // Product Photo, Barcode Photo, Supplier Code.
-      const cols    = ['barcode_no','product_barcode','item_name','task_type','details','supl_id','item_status','barcode_status','status','created_at','store_name','uom','quantity','notes','review_notes','photo_product_url','photo_barcode_url','supplier_code']
-      const headers = ['Product Barcode','Product Code','Product Description','Task','Details','Supplier','Product Status','Barcode Status','Status','Date','Store','UOM','Quantity','Notes','HO Notes','Product Photo','Barcode Photo','Supplier Code']
+      // Product Photo, Barcode Photo, Supplier Code, Actual Product Name.
+      const cols    = ['barcode_no','product_barcode','item_name','task_type','details','supl_id','item_status','barcode_status','status','created_at','store_name','uom','quantity','notes','review_notes','photo_product_url','photo_barcode_url','supplier_code','actual_product_name']
+      const headers = ['Product Barcode','Product Code','Product Description','Task','Details','Supplier','Product Status','Barcode Status','Status','Date','Store','UOM','Quantity','Notes','HO Notes','Product Photo','Barcode Photo','Supplier Code','Actual Product Name']
 
       // ?format=json returns the raw flat rows for client-side Excel generation
       if (p.get('format') === 'json') {
