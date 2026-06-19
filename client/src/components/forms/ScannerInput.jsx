@@ -38,7 +38,11 @@ export default function ScannerInput({
   // remember the last code we looked up. The auto-settle effect (below) uses
   // that to avoid running a duplicate lookup that Enter / blur / the gun buffer
   // already triggered.
-  const lastConfirmedRef = useRef('')
+  const lastConfirmedRef  = useRef('')
+  // Holds the last confirmed barcode from just before a reset. Used to detect
+  // Android IME re-injection: after focus() fires post-save, the IME delivers
+  // the old barcode as a single batch input event. We match and suppress it.
+  const pendingClearRef   = useRef('')
   const confirmRef = useRef(() => {})
   confirmRef.current = (code) => {
     lastConfirmedRef.current = (code || '').trim()
@@ -154,15 +158,10 @@ export default function ScannerInput({
   // so the user can freely tap Description / Notes without focus jumping back.
   useEffect(() => {
     if (value !== '') return
+    // Preserve the last confirmed code before clearing so the onChange handler
+    // can detect and drop the IME re-injection event that fires after focus().
+    pendingClearRef.current = lastConfirmedRef.current
     lastConfirmedRef.current = ''
-    // On Android (pointer:coarse) calling focus() from a useEffect/setTimeout
-    // triggers the IME to re-inject the previously typed barcode — root cause
-    // of "need to tap Save twice to clear". The input keeps focus from the
-    // HID keydown handler's own focus() call (IME-safe), so no retry needed.
-    // The global keydown listener catches the next scan if focus was lost.
-    // On desktop (pointer:fine) retries are still useful to reclaim focus after
-    // toasts or other elements briefly stealing it.
-    if (!window.matchMedia?.('(pointer: fine)')?.matches) return
     const el = inputRef.current
     if (!el) return
     const doFocus = () => {
@@ -345,7 +344,22 @@ export default function ScannerInput({
             ref={inputRef}
             type="text" className="scan-input" autoComplete="off" spellCheck={false}
             style={{ width: '100%' }}
-            value={value} onChange={e => onChange(e.target.value)}
+            value={value} onChange={e => {
+              const v = e.target.value
+              // Detect Android IME re-injection: after focus() fires post-reset the
+              // IME replays the previous barcode as a single batch input event while
+              // value is still ''. Real HID scanner chars arrive one at a time, so
+              // the very first char can never equal the full previous code — only a
+              // batch event can. Match → drop it and keep the field clear.
+              if (!value && pendingClearRef.current && v === pendingClearRef.current) {
+                e.target.value = ''
+                pendingClearRef.current = ''
+                onChange('')
+                return
+              }
+              pendingClearRef.current = ''
+              onChange(v)
+            }}
             onBlur={e => confirmRef.current(e.target.value)}
             onKeyDown={e => {
               // The scan lands in this focused field, so recognise the
