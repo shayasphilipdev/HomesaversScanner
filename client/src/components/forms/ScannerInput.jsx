@@ -342,7 +342,7 @@ export default function ScannerInput({
         <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
           <input
             ref={inputRef}
-            type="text" className="scan-input" autoComplete="off" spellCheck={false}
+            type="text" className="scan-input" autoComplete="off" spellCheck={false} inputMode="none"
             style={{ width: '100%' }}
             value={value} onChange={e => {
               const v = e.target.value
