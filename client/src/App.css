@@ -18,16 +18,17 @@
   --primary-soft:   #C6D0EE;
   --primary-tint:   #DEE4F5;
 
-  --bg:             #C3CCDE;
-  --bg-soft:        #CFD6E6;
-  --surface:        #E9EDF5;
-  --surface-warm:   #DBE1EC;
+  --bg:             #DDE5F1;
+  --bg-soft:        #D4DDEC;
+  --surface:        #EEF2F9;
+  --surface-warm:   #E0E7F3;
 
-  /* Glass — cool blue-white sheen so cards read blue-grey over the darker bg */
-  --glass:          linear-gradient(155deg, rgba(243,246,252,.70), rgba(231,236,246,.52));
-  --glass-strong:   linear-gradient(155deg, rgba(244,247,252,.90), rgba(229,235,246,.80));
-  --glass-border:   rgba(255, 255, 255, .82);
-  --glass-blur:     blur(32px) saturate(160%);
+  /* Glass — bright, more translucent so the blue canvas refracts through the
+     cards for real glassy depth; near-white edge highlight + extra saturation. */
+  --glass:          linear-gradient(155deg, rgba(255,255,255,.56), rgba(235,241,251,.38));
+  --glass-strong:   linear-gradient(155deg, rgba(255,255,255,.78), rgba(233,240,251,.58));
+  --glass-border:   rgba(255, 255, 255, .96);
+  --glass-blur:     blur(30px) saturate(185%);
   --use-glass:      1;  /* turn glass utilities on */
 
   /* Header/brand tints — retinted from the old Homesavers green to royal blue.
@@ -50,18 +51,19 @@
   --amber:          #8A5A14;  --amber-soft:  #EFE2C8;
   --blue:           #2A4BC4;  --blue-soft:   #DCE3F5;
 
-  --shadow-sm:      0 1px 1px rgba(17, 27, 51, .05);
-  --shadow:         0 1px 2px rgba(17, 27, 51, .06), 0 4px 12px rgba(17, 27, 51, .07);
-  --shadow-md:      0 8px 22px rgba(17, 27, 51, .10);
-  --shadow-lg:      0 16px 38px rgba(17, 27, 51, .14);
+  --shadow-sm:      0 1px 2px rgba(17, 27, 51, .06);
+  --shadow:         0 1px 2px rgba(17, 27, 51, .06), 0 6px 18px rgba(17, 27, 51, .10);
+  --shadow-md:      0 12px 30px rgba(17, 27, 51, .14);
+  --shadow-lg:      0 24px 50px rgba(17, 27, 51, .18);
 
-  /* Body backdrop — royal-blue radial glows over a deeper blue-grey base. */
+  /* Body backdrop — soft royal-blue glows over an airy near-white base, so the
+     page reads bright while still feeding colour through the glass cards. */
   --body-bg:
-    radial-gradient(58vw 52vh at 98%  -10%, rgba(31, 58, 160, .30), transparent 60%),
-    radial-gradient(54vw 48vh at  2%   2%,  rgba(42, 75, 196, .24), transparent 60%),
-    radial-gradient(64vw 56vh at -10% 110%, rgba(19, 36,  90, .26), transparent 60%),
+    radial-gradient(58vw 52vh at 98%  -10%, rgba(42, 75, 196, .22), transparent 60%),
+    radial-gradient(54vw 48vh at  2%   2%,  rgba(31, 58, 160, .18), transparent 60%),
+    radial-gradient(64vw 56vh at -10% 110%, rgba(19, 36,  90, .16), transparent 62%),
     radial-gradient(46vw 42vh at 60%  112%, rgba(63, 95, 166, .12), transparent 58%),
-    #C3CCDE;
+    #ECF1FA;
 }
 
 /* ── Theme: Dark (elegant multi-colour night mode) ──────────────────────
@@ -404,7 +406,9 @@ body {
   backdrop-filter: var(--glass-blur);
   border: 1px solid var(--glass-border);
   border-radius: 16px;
-  box-shadow: var(--shadow);
+  /* Lifted glass: deeper drop shadow + a bright inset top edge for the
+     refractive sheen that sells the depth. */
+  box-shadow: var(--shadow-md), inset 0 1px 0 rgba(255, 255, 255, .7);
   overflow: hidden;
 }
 
