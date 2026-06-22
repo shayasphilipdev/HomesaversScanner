@@ -916,13 +916,15 @@ a.kpi-card:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
   width: 220px;
   flex-shrink: 0;
   padding: 22px 14px;
-  background: var(--surface-warm);
+  background: #FFFFFF;                          /* brilliant white rail (light theme) */
   border-right: 1px solid var(--border);
   position: sticky;
   top: 62px;                                   /* sits just under the top nav */
   align-self: flex-start;
   height: calc(100vh - 62px);
 }
+/* Dark theme keeps its translucent surface — don't force white there. */
+[data-theme="dark"] .sidebar { background: var(--surface-warm); }
 
 .sidebar-nav {
   display: flex;
