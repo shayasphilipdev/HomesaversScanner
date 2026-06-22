@@ -10,54 +10,58 @@
 /* ── Theme: Light (default) ─────────────────────────────────────────── */
 :root,
 [data-theme="light"] {
-  --primary:        #C96442;
-  --primary-dark:   #A85234;
-  --primary-soft:   #F4E4DB;
-  --primary-tint:   #FCEFE6;
+  /* Royal Blue — darker "day" theme. Royal-blue primary, deep navy chrome,
+     cool blue-grey surfaces. Semantic status colours (green/amber/red) stay
+     for meaning; chart category colours live in the components. */
+  --primary:        #2A4BC4;
+  --primary-dark:   #1F3AA0;
+  --primary-soft:   #C6D0EE;
+  --primary-tint:   #DEE4F5;
 
-  --bg:             #F7F3EE;
-  --bg-soft:        #EDE8DC;
-  --surface:        #FEFCFA;
-  --surface-warm:   #FAF6EE;
+  --bg:             #C3CCDE;
+  --bg-soft:        #CFD6E6;
+  --surface:        #E9EDF5;
+  --surface-warm:   #DBE1EC;
 
-  /* Glass — gradient sheen, semi-transparent + blurred for a fluid look */
-  --glass:          linear-gradient(155deg, rgba(255,255,255,.66), rgba(255,250,245,.44));
-  --glass-strong:   linear-gradient(155deg, rgba(255,255,255,.86), rgba(255,248,241,.66));
-  --glass-border:   rgba(255, 255, 255, .92);
-  --glass-blur:     blur(32px) saturate(175%);
+  /* Glass — cool blue-white sheen so cards read blue-grey over the darker bg */
+  --glass:          linear-gradient(155deg, rgba(243,246,252,.70), rgba(231,236,246,.52));
+  --glass-strong:   linear-gradient(155deg, rgba(244,247,252,.90), rgba(229,235,246,.80));
+  --glass-border:   rgba(255, 255, 255, .82);
+  --glass-blur:     blur(32px) saturate(160%);
   --use-glass:      1;  /* turn glass utilities on */
 
-  /* Homesavers greens (mirror the aging-report email) for header tints. */
-  --hs-green:       #0E9A52;
-  --hs-green-dark:  #064E27;
-  --hs-head-1:      #EFF6F1;
-  --hs-head-2:      #DCEDE0;
+  /* Header/brand tints — retinted from the old Homesavers green to royal blue.
+     (Variable names kept for compatibility; values are now blue.) */
+  --hs-green:       #2A4BC4;
+  --hs-green-dark:  #15265C;
+  --hs-head-1:      #E3E9F7;
+  --hs-head-2:      #D2DBF0;
 
-  --text:           #1F1F1F;
-  --text-muted:     #6E6A60;
-  --text-soft:      #8C8779;
+  --text:           #111B33;
+  --text-muted:     #3F4D6E;
+  --text-soft:      #5C6A8A;
 
-  --border:         #E8E1D2;
-  --border-strong:  #D6CEBC;
-  --border-soft:    #EEE9DD;
+  --border:         #B0BAD0;
+  --border-strong:  #9CA8C4;
+  --border-soft:    #C6CEDE;
 
-  --green:          #2D7A4E;  --green-soft:  #E4EFE6;
-  --red:            #B5443A;  --red-soft:    #F5E2DE;
-  --amber:          #B47F1E;  --amber-soft:  #F5EBD5;
-  --blue:           #3960A8;  --blue-soft:   #E3EAF5;
+  --green:          #1E6B3F;  --green-soft:  #D6E6DC;
+  --red:            #A93B31;  --red-soft:    #F0DAD6;
+  --amber:          #8A5A14;  --amber-soft:  #EFE2C8;
+  --blue:           #2A4BC4;  --blue-soft:   #DCE3F5;
 
-  --shadow-sm:      0 1px 1px rgba(31, 31, 31, .04);
-  --shadow:         0 1px 2px rgba(31, 31, 31, .05), 0 4px 12px rgba(31, 31, 31, .05);
-  --shadow-md:      0 8px 22px rgba(31, 31, 31, .07);
-  --shadow-lg:      0 16px 38px rgba(31, 31, 31, .10);
+  --shadow-sm:      0 1px 1px rgba(17, 27, 51, .05);
+  --shadow:         0 1px 2px rgba(17, 27, 51, .06), 0 4px 12px rgba(17, 27, 51, .07);
+  --shadow-md:      0 8px 22px rgba(17, 27, 51, .10);
+  --shadow-lg:      0 16px 38px rgba(17, 27, 51, .14);
 
-  /* Body backdrop — richer Homesavers green, mirroring the aging-report palette. */
+  /* Body backdrop — royal-blue radial glows over a deeper blue-grey base. */
   --body-bg:
-    radial-gradient(58vw 52vh at 98%  -10%, rgba(7,  94, 46,  .32), transparent 60%),
-    radial-gradient(54vw 48vh at  2%   2%,  rgba(14, 154, 82,  .26), transparent 60%),
-    radial-gradient(64vw 56vh at -10% 110%, rgba(5,  67, 31,  .22), transparent 60%),
-    radial-gradient(46vw 42vh at 60%  112%, rgba(201, 100, 66, .10), transparent 58%),
-    #EEF3EE;
+    radial-gradient(58vw 52vh at 98%  -10%, rgba(31, 58, 160, .30), transparent 60%),
+    radial-gradient(54vw 48vh at  2%   2%,  rgba(42, 75, 196, .24), transparent 60%),
+    radial-gradient(64vw 56vh at -10% 110%, rgba(19, 36,  90, .26), transparent 60%),
+    radial-gradient(46vw 42vh at 60%  112%, rgba(63, 95, 166, .12), transparent 58%),
+    #C3CCDE;
 }
 
 /* ── Theme: Dark (elegant multi-colour night mode) ──────────────────────
@@ -114,6 +118,7 @@ html, body { height: 100%; }
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 15px;
+  font-weight: 500;          /* slightly bolder base — Royal Blue theme */
   line-height: 1.55;
   color: var(--text);
   background: var(--body-bg);
@@ -160,7 +165,7 @@ body {
 
 /* ── Nav — dark Homesavers-green gradient (light) / solid bar (dark) ── */
 .nav {
-  background: linear-gradient(135deg, #0E9A52 0%, #064E27 100%);
+  background: linear-gradient(135deg, #2747B0 0%, #13245A 100%);
   color: #fff;
   padding: 0 22px;
   display: flex;
@@ -171,7 +176,7 @@ body {
   top: 0;
   z-index: 100;
   border-bottom: 1px solid rgba(0,0,0,.18);
-  box-shadow: 0 2px 8px rgba(5,67,31,.25);
+  box-shadow: 0 2px 8px rgba(13,36,90,.28);
 }
 [data-theme="dark"] .nav {
   background: var(--glass-strong);
@@ -184,7 +189,7 @@ body {
 
 .nav-brand {
   font-family: 'Fraunces', Georgia, serif;
-  font-weight: 500;
+  font-weight: 600;
   font-size: 20px;
   letter-spacing: -.02em;
   color: #fff;
@@ -196,7 +201,7 @@ body {
   color: rgba(255,255,255,.82);
   text-decoration: none;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   padding: 8px 14px;
   border-radius: 10px;
   min-height: 36px;
@@ -333,7 +338,7 @@ body {
 [data-theme="dark"] .nav-msg-btn:hover { background: var(--bg-soft); }
 .nav-msg-btn.has-unread {
   border-color: transparent;
-  background: linear-gradient(135deg, #12A156 0%, #064E27 100%);
+  background: linear-gradient(135deg, #3457D6 0%, #13245A 100%);
   color: #fff;
 }
 .nav-msg-ico { font-size: 18px; line-height: 1; }
@@ -386,7 +391,7 @@ body {
 
 .page-title {
   font-size: 30px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text);
   line-height: 1.15;
 }
@@ -512,7 +517,7 @@ body {
 
 label {
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text-muted);
 }
 
@@ -531,6 +536,7 @@ textarea {
   border-radius: 10px;
   font-size: 15px;          /* >=16 avoids iOS zoom but 15 feels right on PC */
   font-family: inherit;
+  font-weight: 500;
   color: var(--text);
   background: var(--surface);
   transition: border-color .15s, box-shadow .15s;
@@ -553,7 +559,7 @@ input:focus, select:focus, textarea:focus {
 
 input.scan-input {
   font-size: 17px;
-  font-weight: 500;
+  font-weight: 700;
   letter-spacing: .3px;
   background: var(--primary-tint);
   border-color: var(--primary-soft);
@@ -571,7 +577,7 @@ input.scan-input {
   border-radius: 10px;
   font-family: inherit;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   transition: background .15s, color .15s, border-color .15s, transform .1s, box-shadow .15s;
   white-space: nowrap;
@@ -615,7 +621,7 @@ input.scan-input {
   padding: 3px 10px;
   border-radius: 99px;
   font-size: 12.5px;
-  font-weight: 500;
+  font-weight: 600;
   border: 1px solid transparent;
 }
 .badge-pending    { background: var(--bg-soft);   color: var(--text-muted); border-color: var(--border); }
@@ -653,7 +659,7 @@ thead th {
   text-align: left;
   padding: 12px 18px;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text-soft);
   background: var(--surface-warm);
   border-bottom: 1px solid var(--border);
@@ -831,12 +837,12 @@ a.kpi-card:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
 
 .kpi-label {
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text-muted);
 }
 .kpi-value {
   font-size: 34px;
-  font-weight: 500;
+  font-weight: 600;
   margin-top: 6px;
   line-height: 1.05;
 }
@@ -893,7 +899,7 @@ a.kpi-card:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
   background: var(--bg-soft);
   border: 1px solid var(--border);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text-muted);
 }
 .chip-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--primary); }
@@ -928,7 +934,7 @@ a.kpi-card:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
   border-radius: 10px;
   color: var(--text-muted);
   text-decoration: none;
-  font-weight: 500;
+  font-weight: 600;
   font-size: 14px;
   transition: background .15s, color .15s;
   min-height: 42px;
@@ -1079,7 +1085,7 @@ a.kpi-card:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
 .bottom-nav-link--accent .bottom-nav-label { font-weight: 700; }
 .bottom-nav-link--accent .bottom-nav-icon {
   font-size: 22px; font-weight: 700;
-  background: linear-gradient(135deg, #12A156 0%, #064E27 100%);
+  background: linear-gradient(135deg, #3457D6 0%, #13245A 100%);
   -webkit-background-clip: text; background-clip: text;
   -webkit-text-fill-color: transparent; color: transparent;
 }

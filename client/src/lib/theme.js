@@ -15,7 +15,7 @@ export function applyTheme(theme) {
   document.documentElement.dataset.theme = theme
   // Keep the iOS / Android status-bar tinted to match the surface.
   const meta = document.querySelector('meta[name="theme-color"]')
-  if (meta) meta.setAttribute('content', theme === 'dark' ? '#0F1419' : '#FAF9F5')
+  if (meta) meta.setAttribute('content', theme === 'dark' ? '#0F1419' : '#15265C')
 }
 
 export function setTheme(theme) {

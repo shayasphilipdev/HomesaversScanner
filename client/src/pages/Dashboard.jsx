@@ -188,8 +188,8 @@ function ActivityChart({ byDay, loading }) {
           <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: '100%', height: 180, display: 'block' }}>
             <defs>
               <linearGradient id="bg-bar" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%"   stopColor="#C96442" stopOpacity=".95" />
-                <stop offset="100%" stopColor="#C96442" stopOpacity=".55" />
+                <stop offset="0%"   stopColor="#2A4BC4" stopOpacity=".95" />
+                <stop offset="100%" stopColor="#2A4BC4" stopOpacity=".55" />
               </linearGradient>
             </defs>
             {/* baseline */}
