@@ -4,7 +4,8 @@ import {
   getStores, getTaskTypes, getToken, getTaskRecords,
   updateTaskRecord, bulkReviewTaskRecords, bulkClearTaskRecords,
   adminListTemplates, getStoreTaskReportRows,
-  getTaskRecordEvents, clearToken, getProductMaster, getProductMasterFilters
+  getTaskRecordEvents, clearToken, getProductMaster, getProductMasterFilters,
+  getSpacePlanReport
 } from '../lib/api.js'
 import { TASK_FORMS } from '../lib/taskTypes.js'
 import { downloadExcel } from '../lib/excel.js'
@@ -35,10 +36,11 @@ const STATUS_LABEL = {
 }
 
 const SUBTITLES = {
-  hq:      'HO task records — error reports from stores',
-  store:   'Store tasks — operational checklist completions',
-  product: 'Product Master — look up any product',
-  master:  'Master reports — back-office data tables'
+  hq:         'HO task records — error reports from stores',
+  store:      'Store tasks — operational checklist completions',
+  product:    'Product Master — look up any product',
+  master:     'Master reports — back-office data tables',
+  spaceplan:  'Space Plan — equipment counts by store and department'
 }
 
 export default function Reports() {
@@ -57,15 +59,17 @@ export default function Reports() {
           <button className={`btn btn-sm ${tab === 'hq' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('hq')}>HO records</button>
           <button className={`btn btn-sm ${tab === 'store' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('store')}>Store tasks</button>
           <button className={`btn btn-sm ${tab === 'product' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('product')}>Product Master</button>
+          <button className={`btn btn-sm ${tab === 'spaceplan' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('spaceplan')}>Space Plan</button>
           {showMaster && (
             <button className={`btn btn-sm ${tab === 'master' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('master')}>Master Reports</button>
           )}
         </div>
       </div>
-      {tab === 'hq'      && <HQReports />}
-      {tab === 'store'   && <StoreTaskReports />}
-      {tab === 'product' && <ProductMasterReport />}
-      {tab === 'master'  && showMaster && <AdminReports embedded />}
+      {tab === 'hq'        && <HQReports />}
+      {tab === 'store'     && <StoreTaskReports />}
+      {tab === 'product'   && <ProductMasterReport />}
+      {tab === 'spaceplan' && <SpacePlanReport />}
+      {tab === 'master'    && showMaster && <AdminReports embedded />}
     </div>
   )
 }
@@ -880,6 +884,98 @@ function StoreTaskReports() {
                     </tr>
                   )
                 })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Space Plan report ────────────────────────────────────────────────────
+const SP_COLS    = ['store_code','store_name','equipment','subcategory','planned_count','category','audited_count','equipment_audited_total','equipment_variance','last_count_date']
+const SP_HEADERS = ['Store Code','Store Name','Equipment','Subcategory','Planned','Category','Audited (dept)','Audited Total','Variance','Last Count']
+
+function SpacePlanReport() {
+  const { session } = useStore()
+  const toast = useToast()
+  const isBO = session.mode === 'backoffice'
+
+  const [stores, setStores]           = useState([])
+  const [storeIds, setStoreIds]       = useState(isBO ? [] : (session.storeId ? [session.storeId] : []))
+  const [rows, setRows]               = useState([])
+  const [loading, setLoading]         = useState(false)
+  const [downloading, setDownloading] = useState(false)
+  const [error, setError]             = useState('')
+
+  useEffect(() => {
+    if (isBO) getStores().then(r => setStores(r.filter(s => s.is_active))).catch(() => {})
+  }, [isBO])
+
+  const fetchData = async () => {
+    const storeParam = storeIds.length ? storeIds.join(',') : undefined
+    return getSpacePlanReport(storeParam)
+  }
+
+  const run = async () => {
+    setLoading(true); setError('')
+    try {
+      const { rows } = await fetchData()
+      setRows(rows)
+    } catch (e) { setError(e.message) } finally { setLoading(false) }
+  }
+
+  const downloadXLSX = async () => {
+    setDownloading(true); setError('')
+    try {
+      const { rows } = await fetchData()
+      if (!rows.length) { toast.error('No data to export yet.'); return }
+      const stamp = new Date().toISOString().slice(0, 10)
+      await downloadExcel(`Space Plan - ${stamp}.xlsx`, rows, SP_COLS, SP_HEADERS)
+    } catch (e) { setError(e.message) } finally { setDownloading(false) }
+  }
+
+  return (
+    <div>
+      <div className="card">
+        <div className="card-body">
+          <div className="filter-row">
+            {isBO && (
+              <div className="filter-field filter-field--wide"><label>Stores</label>
+                <MultiSelectDropdown
+                  value={storeIds}
+                  onChange={setStoreIds}
+                  options={stores.map(s => ({ id: s.id, label: s.store_name, subLabel: s.store_code }))}
+                  placeholder="All stores"
+                />
+              </div>
+            )}
+            <div className="filter-actions">
+              <button className="btn btn-sm btn-primary" onClick={run} disabled={loading}>
+                {loading ? <><span className="spinner" /> Loading…</> : 'Run report'}
+              </button>
+              <button className="btn btn-sm btn-outline" onClick={downloadXLSX} disabled={downloading}>
+                {downloading ? <><span className="spinner spinner-dark" /> Preparing…</> : '↓ Excel'}
+              </button>
+            </div>
+          </div>
+          {error && <div className="login-error mt-12">{error}</div>}
+        </div>
+      </div>
+
+      {rows.length > 0 && (
+        <div className="card mt-20">
+          <div className="card-header">{rows.length.toLocaleString('en-IE')} rows</div>
+          <div className="table-wrap">
+            <table style={{ fontSize: 13 }}>
+              <thead><tr>{SP_HEADERS.map((h, i) => <th key={SP_COLS[i]}>{h}</th>)}</tr></thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={i}>
+                    {SP_COLS.map(c => <td key={c}>{r[c] ?? ''}</td>)}
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
