@@ -29,6 +29,7 @@ function groupSettings(settings) {
   const metaKeys = Object.keys(KEY_META)
   const buckets = {}
   for (const s of settings) {
+    if (KEY_META[s.key]?.hidden) continue   // unused/placeholder keys never render
     const section = KEY_META[s.key]?.section || 'Other'
     ;(buckets[section] ||= []).push(s)
   }
@@ -43,7 +44,7 @@ function groupSettings(settings) {
 
 // Settings are rendered grouped into these sections, in this order. Each
 // KEY_META entry names its section so related fields stay together.
-const SECTION_ORDER = ['Alt-barcode sync', 'Prices sync', 'Camera', 'Retention', 'Capacity']
+const SECTION_ORDER = ['Alt-barcode sync', 'Prices sync', 'Camera', 'Retention', 'Capacity', 'System']
 
 const KEY_META = {
   // ── Alt-barcode sync (kept together) ──────────────────────────────────
@@ -125,12 +126,13 @@ const KEY_META = {
   list_auto_close_hours: {
     section: 'Retention',
     label: 'List auto-close (hours)',
-    hint:  'How long after creation a list auto-closes (planned feature — currently informational).'
+    hidden: true,   // not wired to anything — kept in DB, hidden from the UI
+    hint:  'Planned feature — currently unused.'
   },
   scan_record_retention_days: {
     section: 'Retention',
     label: 'Scan record retention (days)',
-    hint:  'How long task records are kept before cleanup (planned feature).'
+    hint:  'Cleared / store-confirmed task records older than this are removed by the "Delete old task records" cleanup (and the nightly auto-cleanup).'
   },
   photo_retention_days: {
     section: 'Retention',
@@ -149,7 +151,24 @@ const KEY_META = {
     label: 'Storage size limit (MB)',
     mb:    true,
     hint:  'Used by the Capacity meter at the top of this page. Free Supabase tier = 1024 MB (1 GB).'
+  },
+  // ── System (read-only) ──────────────────────────────────────────────────
+  last_auto_cleanup_at: {
+    section: 'System',
+    label: 'Last auto-cleanup',
+    readonly: true,
+    hint:  'When the nightly retention cleanup last ran. Read-only — set automatically.'
   }
+}
+
+// Format an ISO timestamp for the read-only System fields; pass through plain
+// strings unchanged.
+function fmtMaybeDate(v) {
+  if (!v) return '—'
+  const d = new Date(v)
+  return isNaN(d.getTime())
+    ? v
+    : d.toLocaleString('en-IE', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 export default function AdminSettings() {
@@ -282,74 +301,25 @@ export default function AdminSettings() {
         </div>
       )}
 
-      <div className="card" style={{ marginBottom: 20 }}>
-        <div className="card-header">App settings</div>
-        <div className="card-body">
-          {loading ? (
-            <div style={{ textAlign: 'center', padding: 24 }}><span className="spinner spinner-dark" /></div>
-          ) : !settings.length ? (
-            <div className="empty-state"><p>No editable settings.</p></div>
-          ) : (
-            <>
-              {groupSettings(settings).map(({ section, rows }) => (
-                <div key={section} style={{ marginBottom: 20 }}>
-                  <div className="section-subhead">{section}</div>
-                  <div className="form-grid form-grid--settings">
-                    {rows.map(s => {
-                      const meta = KEY_META[s.key] || { label: s.key, hint: '' }
-                      const isOn = values[s.key] === 'true'
-                      return (
-                        <div className={`form-group${meta.wide ? ' full' : ''}`} key={s.key}>
-                          <label>{meta.label}</label>
-                          {meta.bool ? (
-                            <label className="flex-row" style={{ gap: 8, alignItems: 'center' }}>
-                              <input
-                                type="checkbox"
-                                checked={isOn}
-                                onChange={e => updateValue(s.key, e.target.checked ? 'true' : 'false')}
-                              />
-                              <span className="note" style={{ fontSize: 13 }}>{isOn ? 'On' : 'Off'}</span>
-                            </label>
-                          ) : meta.choices ? (
-                            <select value={values[s.key] || ''} onChange={e => updateValue(s.key, e.target.value)}>
-                              {meta.choices.map(c => <option key={c} value={c}>{c}</option>)}
-                            </select>
-                          ) : meta.time ? (
-                            <input
-                              type="time"
-                              value={values[s.key] || ''}
-                              onChange={e => updateValue(s.key, e.target.value)}
-                            />
-                          ) : meta.mb ? (
-                            <input
-                              type="number" min="0" step="1"
-                              value={values[s.key] ? Math.round(Number(values[s.key]) / 1048576) : ''}
-                              onChange={e => updateValue(s.key, e.target.value === '' ? '' : String(Math.round(Number(e.target.value) * 1048576)))}
-                            />
-                          ) : (
-                            <input
-                              type="text"
-                              value={values[s.key] || ''}
-                              onChange={e => updateValue(s.key, e.target.value)}
-                            />
-                          )}
-                          {meta.hint && <span className="note" style={{ fontSize: 11.5, lineHeight: 1.35 }}>{meta.hint}</span>}
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              ))}
-              <div className="flex-row mt-20" style={{ justifyContent: 'flex-end', gap: 8 }}>
-                <button className="btn btn-outline btn-sm" onClick={load} disabled={saving}>Reload</button>
-                <button className="btn btn-primary btn-sm" onClick={save} disabled={!dirty || saving}>
-                  {saving ? <><span className="spinner" /> Saving…</> : 'Save changes'}
-                </button>
-              </div>
-            </>
-          )}
+      {loading ? (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-body" style={{ textAlign: 'center', padding: 24 }}><span className="spinner spinner-dark" /></div>
         </div>
-      </div>
+      ) : !settings.length ? (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-body"><div className="empty-state"><p>No editable settings.</p></div></div>
+        </div>
+      ) : (
+        <SettingsCards
+          groups={groupSettings(settings)}
+          values={values}
+          updateValue={updateValue}
+          onReload={load}
+          onSave={save}
+          dirty={dirty}
+          saving={saving}
+        />
+      )}
 
       <div className="card">
         <div className="card-header">Maintenance</div>
@@ -374,6 +344,78 @@ export default function AdminSettings() {
         </div>
       </div>
     </div>
+  )
+}
+
+// ── App settings — one compact card per section, in responsive grids ───────
+function SettingsCards({ groups, values, updateValue, onReload, onSave, dirty, saving }) {
+  const isSync = sec => sec === 'Alt-barcode sync' || sec === 'Prices sync'
+  const syncGroups  = groups.filter(g => isSync(g.section))
+  const smallGroups = groups.filter(g => !isSync(g.section))
+
+  const field = (s) => {
+    const meta = KEY_META[s.key] || { label: s.key, hint: '' }
+    const isOn = values[s.key] === 'true'
+    return (
+      <div className={`form-group${meta.wide ? ' full' : ''}`} key={s.key}>
+        <label>{meta.label}</label>
+        {meta.readonly ? (
+          <input type="text" readOnly value={fmtMaybeDate(values[s.key])}
+            style={{ background: 'var(--bg-soft)', color: 'var(--text-muted)' }} />
+        ) : meta.bool ? (
+          <label className="flex-row" style={{ gap: 8, alignItems: 'center' }}>
+            <input type="checkbox" checked={isOn}
+              onChange={e => updateValue(s.key, e.target.checked ? 'true' : 'false')} />
+            <span className="note" style={{ fontSize: 13 }}>{isOn ? 'On' : 'Off'}</span>
+          </label>
+        ) : meta.choices ? (
+          <select value={values[s.key] || ''} onChange={e => updateValue(s.key, e.target.value)}>
+            {meta.choices.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        ) : meta.time ? (
+          <input type="time" value={values[s.key] || ''} onChange={e => updateValue(s.key, e.target.value)} />
+        ) : meta.mb ? (
+          <input type="number" min="0" step="1"
+            value={values[s.key] ? Math.round(Number(values[s.key]) / 1048576) : ''}
+            onChange={e => updateValue(s.key, e.target.value === '' ? '' : String(Math.round(Number(e.target.value) * 1048576)))} />
+        ) : (
+          <input type="text" value={values[s.key] || ''} onChange={e => updateValue(s.key, e.target.value)} />
+        )}
+        {meta.hint && <span className="note" style={{ fontSize: 11, lineHeight: 1.35 }}>{meta.hint}</span>}
+      </div>
+    )
+  }
+
+  const card = ({ section, rows }, oneCol) => (
+    <div className="card settings-card" key={section}>
+      <div className="card-header">{section}</div>
+      <div className="card-body">
+        <div className={'settings-field-grid' + (oneCol ? ' settings-field-grid--one' : '')}>
+          {rows.map(field)}
+        </div>
+      </div>
+    </div>
+  )
+
+  return (
+    <>
+      {syncGroups.length > 0 && (
+        <div className="settings-card-grid settings-card-grid--wide">
+          {syncGroups.map(g => card(g, false))}
+        </div>
+      )}
+      {smallGroups.length > 0 && (
+        <div className="settings-card-grid">
+          {smallGroups.map(g => card(g, true))}
+        </div>
+      )}
+      <div className="flex-row" style={{ justifyContent: 'flex-end', gap: 8, marginBottom: 20 }}>
+        <button className="btn btn-outline btn-sm" onClick={onReload} disabled={saving}>Reload</button>
+        <button className="btn btn-primary btn-sm" onClick={onSave} disabled={!dirty || saving}>
+          {saving ? <><span className="spinner" /> Saving…</> : 'Save changes'}
+        </button>
+      </div>
+    </>
   )
 }
 

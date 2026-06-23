@@ -474,6 +474,23 @@ body {
   .form-grid--settings { grid-template-columns: 1fr; }
 }
 
+/* Admin Settings — one compact card per section, arranged in responsive grids.
+   Wide grid holds the two big sync cards; the plain grid packs the small ones. */
+.settings-card-grid { display: grid; gap: 16px; margin-bottom: 16px; }
+.settings-card-grid--wide { grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
+.settings-card-grid:not(.settings-card-grid--wide) {
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  align-items: start;
+}
+.settings-card .card-body { padding: 14px 16px; }
+.settings-card label { font-size: 12.5px; }
+.settings-card input, .settings-card select {
+  min-height: 36px; font-size: 14px; padding: 8px 11px; border-radius: 8px;
+}
+.settings-field-grid { display: grid; gap: 12px 16px; grid-template-columns: 1fr 1fr; }
+.settings-field-grid--one { grid-template-columns: 1fr; }
+@media (max-width: 560px) { .settings-field-grid { grid-template-columns: 1fr; } }
+
 /* Compact horizontal filter row — Reports filters, etc. */
 .filter-row {
   display: flex;
