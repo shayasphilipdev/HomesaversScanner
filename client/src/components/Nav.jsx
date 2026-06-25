@@ -4,7 +4,7 @@ import { useStore } from '../App.jsx'
 import { resolvedTheme, setTheme } from '../lib/theme.js'
 import { canAccessAdmin, canDoHQTasks, canDoStoreTasks, STORE_ROLE_KEYS, roleLabel } from '../lib/roles.js'
 import { useCurrentStore } from '../lib/currentStore.jsx'
-import { getMessageThreads } from '../lib/api.js'
+import { getMessageThreads, dismissMessageThread } from '../lib/api.js'
 import { TASK_FORMS } from '../lib/taskTypes.js'
 import OfflineIndicator from './OfflineIndicator.jsx'
 import CapacityAlert from './CapacityAlert.jsx'
@@ -43,9 +43,19 @@ export default function Nav() {
   }, [msgOpen])
 
   const openThread = (t) => {
-    setMsgOpen(false)
-    // HO Tasks list opens this record's message thread (and marks it read).
+    // Navigate to the record — keep the dropdown open so users can see the full list.
     navigate('/tasks', { state: { openRecordId: t.record_id, taskType: t.task_type } })
+    setMsgOpen(false)
+  }
+
+  const clearThread = async (e, t) => {
+    e.stopPropagation()
+    try {
+      await dismissMessageThread(t.record_id)
+      setThreads(prev => prev.filter(x => x.record_id !== t.record_id))
+      setUnread(prev => Math.max(0, prev - (t.unread || 0)))
+      window.dispatchEvent(new Event('hs:messages-read'))
+    } catch (_) {}
   }
 
   const toggleTheme = () => {
@@ -89,15 +99,24 @@ export default function Nav() {
               Messages{unread > 0 ? ` · ${unread} unread` : ''}
             </div>
             {threads.length === 0 ? (
-              <div className="nav-msg-empty">No messages waiting for a reply.</div>
+              <div className="nav-msg-empty">No active messages.</div>
             ) : threads.map(t => (
-              <button key={t.record_id} type="button" className="nav-msg-item" onClick={() => openThread(t)}>
-                <div className="nav-msg-item-top">
-                  <span className="nav-msg-item-label">{(TASK_FORMS[t.task_type]?.name || t.task_type)} · {t.label}</span>
-                  {t.unread > 0 && <span className="nav-msg-item-count">{t.unread}</span>}
-                </div>
-                <div className="nav-msg-item-preview">{t.preview}</div>
-              </button>
+              <div key={t.record_id} className="nav-msg-item-wrap">
+                <button type="button" className="nav-msg-item" onClick={() => openThread(t)}>
+                  <div className="nav-msg-item-top">
+                    {t.has_high_priority && <span className="nav-msg-hipri">HIGH</span>}
+                    <span className="nav-msg-item-label">{(TASK_FORMS[t.task_type]?.name || t.task_type)} · {t.label}</span>
+                    {t.unread > 0 && <span className="nav-msg-item-count">{t.unread}</span>}
+                  </div>
+                  <div className="nav-msg-item-preview">{t.preview}</div>
+                </button>
+                <button
+                  type="button"
+                  className="nav-msg-clear"
+                  title="Dismiss this thread"
+                  onClick={(e) => clearThread(e, t)}
+                >✕</button>
+              </div>
             ))}
           </div>
         )}

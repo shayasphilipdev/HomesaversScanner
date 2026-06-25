@@ -380,6 +380,29 @@ body {
   font-size: 12.5px; color: var(--text-muted); margin-top: 2px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+/* Thread item row: click area + dismiss button side by side */
+.nav-msg-item-wrap {
+  display: flex; align-items: stretch; gap: 0; border-radius: 10px;
+}
+.nav-msg-item-wrap .nav-msg-item {
+  flex: 1; border-radius: 10px 0 0 10px;
+}
+.nav-msg-clear {
+  flex-shrink: 0; width: 32px; cursor: pointer;
+  background: none; border: 0; border-radius: 0 10px 10px 0;
+  color: var(--text-muted); font-size: 13px; display: flex; align-items: center; justify-content: center;
+}
+.nav-msg-clear:hover { background: var(--red-soft); color: var(--red); }
+.nav-msg-hipri {
+  flex-shrink: 0; font-size: 10px; font-weight: 700; color: #DC2626;
+  background: #FEE2E2; border-radius: 4px; padding: 1px 5px;
+}
+
+/* ── Task record row colour coding ── */
+/* Green left border = completed by HO / no change needed */
+.tr-reviewed { border-left: 4px solid var(--green, #22c55e); }
+/* Amber left border = has active message thread */
+.tr-has-msg  { border-left: 4px solid #F59E0B; }
 
 /* ── Page header ── */
 .page-header {

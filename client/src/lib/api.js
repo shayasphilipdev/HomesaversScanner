@@ -259,10 +259,12 @@ export const getTaskRecordEvents      = (id) => request(`/task-records/${id}/eve
 
 // ── Per-record message threads ──────────────────────────────────────────────
 export const getRecordMessages      = (id) => request(`/task-records/${id}/messages`)
-export const postRecordMessage      = (id, body) => request(`/task-records/${id}/messages`, { method: 'POST', body: { body } })
+export const postRecordMessage      = (id, body, priority = 'normal', msg_type = 'query') =>
+  request(`/task-records/${id}/messages`, { method: 'POST', body: { body, priority, msg_type } })
 export const getUnreadMessageCount  = () => request('/task-messages/unread-count')
 export const getMessageThreads      = () => request('/task-messages/threads')
 export const markRecordMessagesRead = (id) => request(`/task-records/${id}/messages/mark-read`, { method: 'POST' })
+export const dismissMessageThread   = (id) => request(`/task-messages/threads/${id}/dismiss`, { method: 'POST' })
 
 // ── Space Plan ──────────────────────────────────────────────────────────────
 export const getSpacePlanGrid   = (storeId) => request('/space-plan/grid' + (storeId ? `?storeId=${storeId}` : ''))

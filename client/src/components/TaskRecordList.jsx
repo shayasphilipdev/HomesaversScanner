@@ -23,7 +23,7 @@ function formatDT(iso) {
     + ' ' + d.toLocaleTimeString('en-IE', { hour: '2-digit', minute: '2-digit' })
 }
 
-export default function TaskRecordList({ records, loading, onRefresh, onOptimisticRemove, onUnreadChange, autoOpenId }) {
+export default function TaskRecordList({ records, loading, onRefresh, onOptimisticRemove, onUnreadChange, autoOpenId, messageRecordIds }) {
   const { session } = useStore()
   const toast = useToast()
   // Area managers get store-side clear UI (J/K bulk-clear) despite being in backoffice mode.
@@ -202,10 +202,13 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
               const reviewed = r.status === 'completed' || r.status === 'no_change_needed'
               // Store-side: J/K records can be cleared directly from pending.
               const storeCanClearNow = !isBO && STORE_CLEARABLE.has(r.task_type) && r.status === 'pending'
-              const isSelectable = storeCanClearNow
+              const isSelectable  = storeCanClearNow
+              const hasMessages   = messageRecordIds?.has(r.id)
+              // Row colour class: green = HO reviewed; amber = has active messages.
+              const rowClass = reviewed ? 'tr-reviewed' : hasMessages ? 'tr-has-msg' : ''
               return (
                 <Fragment key={r.id}>
-                  <tr style={isSelectable && selected.has(r.id) ? { background: 'var(--surface-warm)' } : undefined}>
+                  <tr className={rowClass} style={isSelectable && selected.has(r.id) ? { background: 'var(--surface-warm)' } : undefined}>
                     {showCheckCol && (
                       <td style={{ textAlign: 'center', paddingRight: 0 }}>
                         {isSelectable && (

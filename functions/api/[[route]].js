@@ -2940,17 +2940,19 @@ export async function onRequest(context) {
       return json({ count: uniqRecordIds.length })
     }
 
-    // GET /task-messages/threads — list of records that have message(s) the
-    // current user hasn't read, with a one-line preview + unread count. Powers
-    // the header message dropdown.
+    // GET /task-messages/threads — all active (not-dismissed) message threads for
+    // the current user, newest first. Powers the header message dropdown.
+    // Threads only disappear when explicitly dismissed via the Clear button.
     if (path === '/task-messages/threads' && method === 'GET') {
       if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled for this account', 403)
-      const unreadField = isBO ? 'is_read_by_bo' : 'is_read_by_store'
+      const dismissedField = isBO ? 'is_dismissed_by_bo'  : 'is_dismissed_by_store'
+      const readField      = isBO ? 'is_read_by_bo'       : 'is_read_by_store'
       const scope = await scopedStoreIds(db, session)
 
-      const unreadMsgs = await db.select('task_record_messages', { select: 'record_id', [unreadField]: 'eq.false' })
-      if (!unreadMsgs.length) return json({ threads: [], unread_total: 0 })
-      const recordIds = [...new Set(unreadMsgs.map(m => m.record_id))]
+      // Fetch all messages that haven't been dismissed for this side.
+      const activeMsgs = await db.select('task_record_messages', { select: 'record_id', [dismissedField]: 'eq.false' })
+      if (!activeMsgs.length) return json({ threads: [], unread_total: 0 })
+      const recordIds = [...new Set(activeMsgs.map(m => m.record_id))]
 
       const recParams = {
         select: 'id,task_type,store_id,product_code,product_barcode,item_name,description,product_name_label',
@@ -2962,39 +2964,60 @@ export async function onRequest(context) {
       }
       const records = await db.select('task_records', recParams)
       if (!records.length) return json({ threads: [], unread_total: 0 })
-      const recById   = Object.fromEntries(records.map(r => [r.id, r]))
+      const recById    = Object.fromEntries(records.map(r => [r.id, r]))
       const allowedIds = records.map(r => r.id)
 
-      // All messages for the allowed records (newest first) → preview + unread.
+      // All non-dismissed messages for allowed records → preview + unread + priority.
       const msgs = await db.select('task_record_messages', {
-        select:    `record_id,body,created_at,${unreadField}`,
+        select:    `record_id,body,priority,created_at,${readField},${dismissedField}`,
         record_id: `in.(${allowedIds.join(',')})`,
         order:     'created_at.desc'
       })
       const acc = {}
       for (const m of msgs) {
-        const t = acc[m.record_id] || (acc[m.record_id] = { record_id: m.record_id, unread: 0, preview: '', latest_at: m.created_at })
-        if (m[unreadField] === false) t.unread++
+        if (m[dismissedField]) continue
+        const t = acc[m.record_id] || (acc[m.record_id] = { record_id: m.record_id, unread: 0, preview: '', latest_at: m.created_at, has_high_priority: false })
+        if (m[readField] === false) t.unread++
+        if (m.priority === 'high') t.has_high_priority = true
         if (!t.preview) { t.preview = String(m.body || '').replace(/\s+/g, ' ').trim().slice(0, 90); t.latest_at = m.created_at }
       }
       const threads = allowedIds
         .map(id => {
           const r = recById[id], t = acc[id]
-          if (!t || !t.unread) return null
+          if (!t) return null
           return {
-            record_id: id,
-            store_id:  r.store_id,
-            task_type: r.task_type,
-            label:     r.item_name || r.description || r.product_name_label || r.product_code || r.product_barcode || 'Record',
-            preview:   t.preview,
-            unread:    t.unread,
-            latest_at: t.latest_at
+            record_id:        id,
+            store_id:         r.store_id,
+            task_type:        r.task_type,
+            label:            r.item_name || r.description || r.product_name_label || r.product_code || r.product_barcode || 'Record',
+            preview:          t.preview,
+            unread:           t.unread,
+            latest_at:        t.latest_at,
+            has_high_priority: t.has_high_priority
           }
         })
         .filter(Boolean)
         .sort((a, b) => String(b.latest_at || '').localeCompare(String(a.latest_at || '')))
       const unread_total = threads.reduce((n, t) => n + t.unread, 0)
       return json({ threads, unread_total })
+    }
+
+    // POST /task-messages/threads/:recordId/dismiss — marks all messages in a
+    // thread as dismissed (and read) for the current user's side, removing it
+    // from the dropdown. New messages in the same thread will un-dismiss it.
+    const threadDismissMatch = path.match(/^\/task-messages\/threads\/([a-f0-9-]+)\/dismiss$/)
+    if (threadDismissMatch && method === 'POST') {
+      if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled for this account', 403)
+      const recId          = threadDismissMatch[1]
+      const dismissedField = isBO ? 'is_dismissed_by_bo' : 'is_dismissed_by_store'
+      const readField      = isBO ? 'is_read_by_bo'      : 'is_read_by_store'
+      const scope = await scopedStoreIds(db, session)
+      if (scope !== null) {
+        const [own] = await db.select('task_records', { select: 'store_id', id: `eq.${recId}`, limit: '1' })
+        if (!own || !scope.includes(own.store_id)) return err('Record not found or not allowed', 404)
+      }
+      await db.update('task_record_messages', { record_id: `eq.${recId}` }, { [dismissedField]: true, [readField]: true })
+      return json({ ok: true })
     }
 
     const recMsgMarkReadMatch = path.match(/^\/task-records\/([a-f0-9-]+)\/messages\/mark-read$/)
@@ -3022,7 +3045,7 @@ export async function onRequest(context) {
         if (!own || !scope.includes(own.store_id)) return err('Record not found or not allowed', 404)
       }
       const msgs = await db.select('task_record_messages', {
-        select:    'id,record_id,author_id,author_name,author_role,body,is_read_by_store,is_read_by_bo,created_at',
+        select:    'id,record_id,author_id,author_name,author_role,body,priority,msg_type,is_read_by_store,is_read_by_bo,created_at',
         record_id: `eq.${recId}`,
         order:     'created_at.asc'
       })
@@ -3039,15 +3062,21 @@ export async function onRequest(context) {
       }
       const body = await request.json()
       if (!body.body || !String(body.body).trim()) return err('Message body required', 400)
+      const VALID_PRIORITY = ['high', 'normal']
+      const VALID_TYPE     = ['information', 'query', 'action']
       const inserted = await db.insert('task_record_messages', {
-        record_id:         recId,
-        author_id:         session.user_id || null,
-        author_name:       session.display_name || session.username || 'Unknown',
-        author_role:       session.role || 'unknown',
-        body:              String(body.body).trim(),
-        // The sender's side is immediately read; the other side starts unread.
-        is_read_by_store:  !isBO,
-        is_read_by_bo:     isBO
+        record_id:            recId,
+        author_id:            session.user_id || null,
+        author_name:          session.display_name || session.username || 'Unknown',
+        author_role:          session.role || 'unknown',
+        body:                 String(body.body).trim(),
+        priority:             VALID_PRIORITY.includes(body.priority) ? body.priority : 'normal',
+        msg_type:             VALID_TYPE.includes(body.msg_type) ? body.msg_type : 'query',
+        // Sender's side starts read + dismissed; recipient's side starts unread + active.
+        is_read_by_store:     !isBO,
+        is_read_by_bo:        isBO,
+        is_dismissed_by_store: !isBO,
+        is_dismissed_by_bo:    isBO
       })
       return json(inserted[0] ?? inserted, 201)
     }

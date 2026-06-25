@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Department Check — User Guide | Homesavers</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 14px;
+    color: #1F1F1F;
+    background: #F7F3EE;
+    line-height: 1.6;
+  }
+
+  /* ── Outer wrapper — A4 width on screen, full A4 on print ── */
+  .doc-wrap {
+    width: 210mm;
+    margin: 0 auto;
+    background: #fff;
+    box-shadow: 0 0 12px rgba(0,0,0,0.1);
+  }
+  @media (max-width: 210mm) {
+    .doc-wrap { width: 100%; box-shadow: none; }
+  }
+
+  /* ── Header ── */
+  .doc-header {
+    background: #C96442;
+    color: #fff;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .doc-header .brand { font-size: 18px; font-weight: 700; }
+  .doc-header .brand span { font-weight: 400; font-size: 16px; margin-left: 6px; opacity: 0.9; }
+  .doc-header .meta { font-size: 11px; opacity: 0.85; text-align: right; line-height: 1.6; white-space: nowrap; }
+
+  /* ── Title block ── */
+  .doc-title-block {
+    background: #FCEFE6;
+    border-bottom: 2px solid #F4E4DB;
+    padding: 14px 20px;
+  }
+  .doc-title-block h1 { font-size: 16px; font-weight: 700; color: #A85234; margin-bottom: 3px; }
+  .doc-title-block p { font-size: 12px; color: #6E6A60; }
+
+  /* ── Body ── */
+  .doc-body { padding: 20px; }
+
+  /* ── Section ── */
+  .section { margin-bottom: 24px; }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #C96442;
+  }
+  .section-num {
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: #C96442;
+    color: #fff;
+    font-size: 13px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .section-title { font-size: 14px; font-weight: 700; color: #A85234; }
+
+  .role-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #F4E4DB;
+    color: #A85234;
+    border-radius: 99px;
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-bottom: 12px;
+  }
+
+  /* ── Steps ── */
+  .steps { list-style: none; }
+  .steps li {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+    font-size: 14px;
+    line-height: 1.6;
+    align-items: flex-start;
+  }
+  .step-n {
+    min-width: 22px; height: 22px;
+    border-radius: 50%;
+    background: #E8E1D2;
+    color: #6E6A60;
+    font-size: 11px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  /* ── Callouts ── */
+  .callout {
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin: 12px 0;
+    font-size: 13px;
+    line-height: 1.6;
+    display: flex;
+    gap: 9px;
+    align-items: flex-start;
+  }
+  .callout-icon { font-size: 15px; flex-shrink: 0; margin-top: 1px; }
+  .callout.danger { background: #F5E2DE; border-left: 3px solid #B5443A; color: #7A2E26; }
+  .callout.info   { background: #E3EAF5; border-left: 3px solid #3960A8; color: #28437A; }
+
+  /* ── Pre-step notice ── */
+  .pre-step {
+    background: #F7F3EE;
+    border: 1px solid #E8E1D2;
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+    font-size: 13px;
+    color: #6E6A60;
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+  }
+
+  /* ── Screenshot placeholder ── */
+  .screenshot-slot {
+    border: 1.5px dashed #D6CEBC;
+    border-radius: 8px;
+    background: #FEFCFA;
+    margin: 14px 0;
+    overflow: hidden;
+    width: 100%;
+  }
+  .screenshot-slot.portrait {
+    max-width: 260px;
+    margin: 14px auto;
+  }
+  .screenshot-slot img {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+  .screenshot-slot .ph {
+    padding: 24px 16px;
+    text-align: center;
+  }
+  .screenshot-slot .ph-icon {
+    font-size: 28px;
+    margin-bottom: 8px;
+    display: block;
+    opacity: 0.4;
+  }
+  .screenshot-slot .ph-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #6E6A60;
+    margin-bottom: 6px;
+  }
+  .screenshot-slot .ph-hint {
+    font-size: 11px;
+    color: #B0A898;
+    margin-top: 4px;
+  }
+  .screenshot-slot .ph-hint code {
+    background: #F0EBE2;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 10px;
+    color: #8C8779;
+  }
+
+  /* ── Divider ── */
+  .divider { border: none; border-top: 1px solid #EDE8DC; margin: 20px 0; }
+
+  /* ── Footer ── */
+  .doc-footer {
+    background: #F7F3EE;
+    border-top: 1px solid #E8E1D2;
+    padding: 12px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    font-size: 10px;
+    color: #8C8779;
+  }
+
+  /* ── Mobile tweaks ── */
+  @media (max-width: 420px) {
+    .doc-header { padding: 14px 16px; }
+    .doc-header .brand { font-size: 16px; }
+    .doc-header .brand span { font-size: 14px; }
+    .doc-header .meta { font-size: 10px; }
+    .doc-title-block { padding: 12px 16px; }
+    .doc-body { padding: 16px; }
+    .doc-footer { padding: 10px 16px; flex-direction: column; align-items: flex-start; }
+  }
+
+  /* ── Print ── */
+  @page { size: A4; margin: 1.5cm; }
+  @media print {
+    body { background: #fff; font-size: 12px; }
+    .doc-wrap { max-width: 100%; min-height: 0; box-shadow: none; }
+    /* Only avoid breaks on small elements — not whole sections */
+    .callout { page-break-inside: avoid; }
+    .steps li { page-break-inside: avoid; }
+    .pre-step { page-break-inside: avoid; }
+    .section-header { page-break-after: avoid; }
+    .screenshot-slot { page-break-inside: avoid; }
+    .screenshot-slot .ph { display: none !important; }
+    .screenshot-slot img { display: block !important; }
+    .doc-header, .doc-title-block, .callout, .section-num, .role-badge {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+  }
+</style>
+</head>
+<body>
+
+<div class="doc-wrap">
+
+  <div class="doc-header">
+    <div class="brand">Homesavers <span>Scanner App</span></div>
+    <div class="meta">Internal Use Only<br>June 2026</div>
+  </div>
+
+  <div class="doc-title-block">
+    <h1>Department Check &mdash; User Guide</h1>
+    <p>Scanning &nbsp;&middot;&nbsp; Reports &nbsp;&middot;&nbsp; Clearing records</p>
+  </div>
+
+  <div class="doc-body">
+
+    <!-- Section 1 -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-num">1</div>
+        <div class="section-title">How to do a department check</div>
+      </div>
+      <div class="role-badge">&#128101;&nbsp; Store staff</div>
+
+      <ol class="steps">
+        <li><div class="step-n">1</div><div>Log in to the Homesavers Scanner app using your store PIN.</div></li>
+        <li><div class="step-n">2</div><div>Tap <strong>HO Tasks</strong>, then select <strong>Department Check</strong> from the task type list.</div></li>
+      </ol>
+
+      <div class="screenshot-slot portrait">
+        <img src="screenshots/step-ho-tasks.png" alt="HO Tasks screen" onerror="this.style.display='none';this.nextElementSibling.style.display='block'" style="display:none;">
+        <div class="ph">
+          <span class="ph-icon">&#128247;</span>
+          <div class="ph-label">HO Tasks &amp; Department Check selection</div>
+          <div class="ph-hint">Save as <code>screenshots/step-ho-tasks.png</code></div>
+        </div>
+      </div>
+
+      <ol class="steps">
+        <li><div class="step-n">3</div><div>Scan the product barcode using the scanner gun or phone camera. Alternatively, type the barcode into the <strong>Product code</strong> field and press <strong>Enter</strong>.</div></li>
+        <li><div class="step-n">4</div><div>If the product is found in the system, its details will be pulled in automatically — no manual entry needed.</div></li>
+        <li><div class="step-n">5</div><div>Tap <strong>Save</strong> to submit the record, then scan the next barcode to move on to the next product.</div></li>
+      </ol>
+
+      <div class="callout danger">
+        <div class="callout-icon">&#9888;</div>
+        <div>Always scan the barcode on the product itself — do not scan the Product ID printed on the shelf edge label (SEL).</div>
+      </div>
+
+      <div class="callout info">
+        <div class="callout-icon">&#8505;</div>
+        <div>If a product is not available or the device is offline, the product details fields won't populate. Keep scanning and save each record as usual. Records will be updated in the system when the device is back online. Do not exit the app.</div>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <!-- Section 2 -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-num">2</div>
+        <div class="section-title">How to pull the report</div>
+      </div>
+      <div class="role-badge">&#128101;&nbsp; Store staff</div>
+
+      <div class="pre-step">
+        <span>&#128187;</span>
+        <div>This report can be run from the store back-office PC or from your phone. Log in using your store PIN, then follow the steps below.</div>
+      </div>
+
+      <ol class="steps">
+        <li><div class="step-n">1</div><div>Go to <strong>Reports</strong> in the top navigation.</div></li>
+        <li><div class="step-n">2</div><div>Set the <strong>Date range</strong> — choose From and To dates for the period you want to review.</div></li>
+        <li><div class="step-n">3</div><div>In the <strong>Task type</strong> filter, select <strong>Department Check</strong>, then click <strong>Run Report</strong>.</div></li>
+        <li><div class="step-n">4</div><div>The table updates with all matching records. Columns shown: Task type, Store, Product ID, Department, Product Barcode, Status, Date.</div></li>
+        <li><div class="step-n">5</div><div>To download: click <strong>Export CSV</strong> at the top right of the table and open in Excel.</div></li>
+      </ol>
+
+      <div class="screenshot-slot">
+        <img src="screenshots/step-reports.png" alt="Reports screen" onerror="this.style.display='none';this.nextElementSibling.style.display='block'" style="display:none;">
+        <div class="ph">
+          <span class="ph-icon">&#128247;</span>
+          <div class="ph-label">Reports page with Department Check filter applied</div>
+          <div class="ph-hint">Save as <code>screenshots/step-reports.png</code></div>
+        </div>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <!-- Section 3 -->
+    <div class="section">
+      <div class="section-header">
+        <div class="section-num">3</div>
+        <div class="section-title">How to clear records in bulk</div>
+      </div>
+      <div class="role-badge">&#128101;&nbsp; Store staff</div>
+
+      <p style="font-size:13px; color:#6E6A60; margin-bottom:12px;">Once back-office has reviewed and completed your records, clear them regularly to keep your list tidy and prevent a large backlog. This can be done from the back-office PC, a Pricer, or your phone.</p>
+
+      <ol class="steps">
+        <li><div class="step-n">1</div><div>Go to <strong>HO Tasks</strong> — your submitted records appear in the list below the scanning area.</div></li>
+        <li><div class="step-n">2</div><div>A <strong>Select all</strong> button appears at the top of the list when there are records ready to clear. Tap it to select all, or tick individual checkboxes.</div></li>
+        <li><div class="step-n">3</div><div>Once records are selected, tap <strong>Clear selected</strong> to archive them.</div></li>
+        <li><div class="step-n">4</div><div>The cleared records are removed from the active list.</div></li>
+      </ol>
+
+      <div class="screenshot-slot">
+        <img src="screenshots/step-bulk-clear.png" alt="Bulk clear screen" onerror="this.style.display='none';this.nextElementSibling.style.display='block'" style="display:none;">
+        <div class="ph">
+          <span class="ph-icon">&#128247;</span>
+          <div class="ph-label">Bulk clear — Select all &amp; Clear selected</div>
+          <div class="ph-hint">Save as <code>screenshots/step-bulk-clear.png</code></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="doc-footer">
+    <div>Homesavers Internal Use Only</div>
+    <div>Department Check &nbsp;&middot;&nbsp; June 2026</div>
+  </div>
+
+</div>
+
+<script>
+  document.querySelectorAll('.screenshot-slot img').forEach(function(img) {
+    img.onload = function() { this.style.display='block'; this.nextElementSibling.style.display='none'; };
+    img.onerror = function() { this.style.display='none'; this.nextElementSibling.style.display='block'; };
+    if (img.complete && img.naturalWidth > 0) { img.style.display='block'; img.nextElementSibling.style.display='none'; }
+  });
+</script>
+</body>
+</html>
