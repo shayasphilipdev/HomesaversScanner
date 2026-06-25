@@ -31,8 +31,8 @@ export default function Tasks() {
   const [filter, setFilter] = useState('all')
   const [records, setRecords] = useState([])
   const [loading, setLoading] = useState(true)
-  const [autoOpenId, setAutoOpenId]               = useState(null)
-  const [messageRecordIds, setMessageRecordIds]   = useState(new Set())
+  const [autoOpenId, setAutoOpenId]           = useState(null)
+  const [messageThreadMap, setMessageThreadMap] = useState(new Map())
 
   // Opened from the header message dropdown — jump to that record's thread.
   const location = useLocation()
@@ -48,11 +48,11 @@ export default function Tasks() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.key])
 
-  // Keep a live set of which record IDs have active message threads (for row highlighting).
+  // Keep a live map of record_id → thread info (unread count etc.) for row badges.
   useEffect(() => {
     if (!session) return
     const refresh = () => getMessageThreads()
-      .then(d => setMessageRecordIds(new Set((d?.threads || []).map(t => t.record_id))))
+      .then(d => setMessageThreadMap(new Map((d?.threads || []).map(t => [t.record_id, t]))))
       .catch(() => {})
     refresh()
     window.addEventListener('hs:messages-read', refresh)
@@ -185,7 +185,7 @@ export default function Tasks() {
         loading={loading}
         onRefresh={load}
         autoOpenId={autoOpenId}
-        messageRecordIds={messageRecordIds}
+        messageThreadMap={messageThreadMap}
         onOptimisticRemove={(id) => setRecords(rs => rs.filter(r => r.id !== id))}
       />
 

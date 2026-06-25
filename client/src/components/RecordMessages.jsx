@@ -130,23 +130,23 @@ export default function RecordMessages({ recordId, onUnreadChange }) {
 
       {/* Compose area */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-          <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>Priority</span>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <label style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>Priority</label>
           <select
             value={priority}
             onChange={e => setPriority(e.target.value)}
             disabled={sending}
-            style={{ fontSize: 12, padding: '2px 6px', borderRadius: 5, border: '1px solid var(--border)', background: priority === 'high' ? '#FEF2F2' : 'var(--surface)', cursor: 'pointer' }}
+            style={{ width: 110, fontSize: 12, padding: '3px 6px', borderRadius: 5, border: '1px solid var(--border)', background: priority === 'high' ? '#FEF2F2' : 'var(--surface)', cursor: 'pointer' }}
           >
             <option value="normal">Normal</option>
             <option value="high">🔴 High</option>
           </select>
-          <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600, marginLeft: 6 }}>Type</span>
+          <label style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>Type</label>
           <select
             value={msgType}
             onChange={e => setMsgType(e.target.value)}
             disabled={sending}
-            style={{ fontSize: 12, padding: '2px 6px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer' }}
+            style={{ width: 140, fontSize: 12, padding: '3px 6px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer' }}
           >
             <option value="query">Query</option>
             <option value="information">Information</option>

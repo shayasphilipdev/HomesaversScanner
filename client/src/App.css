@@ -398,6 +398,34 @@ body {
   background: #FEE2E2; border-radius: 4px; padding: 1px 5px;
 }
 
+/* ── Message toggle button in record rows ── */
+.btn-msg-toggle {
+  position: relative;
+  min-width: 38px; padding: 0 8px; height: 32px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  border: 1.5px solid var(--border); border-radius: 8px;
+  background: var(--surface); color: var(--text-muted);
+  font-size: 16px; cursor: pointer; transition: background .15s, border-color .15s;
+}
+.btn-msg-toggle:hover { border-color: var(--hs-green); color: var(--hs-green); }
+/* Active = thread open */
+.btn-msg-toggle.active {
+  background: var(--hs-green); border-color: var(--hs-green); color: #fff;
+}
+/* Has thread = green outline + icon, even when closed */
+.btn-msg-toggle.has-thread {
+  border-color: var(--hs-green); color: var(--hs-green);
+  background: var(--green-soft, #D6E6DC);
+}
+.msg-toggle-badge {
+  position: absolute; top: -6px; right: -6px;
+  min-width: 17px; height: 17px; padding: 0 4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #e53e3e; color: #fff; border-radius: 999px;
+  font-size: 10px; font-weight: 700; pointer-events: none;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
 /* ── Task record row colour coding ── */
 /* Green left border = completed by HO / no change needed */
 .tr-reviewed { border-left: 4px solid var(--green, #22c55e); }
