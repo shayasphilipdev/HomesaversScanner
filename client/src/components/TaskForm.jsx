@@ -35,7 +35,7 @@ export default function TaskForm({ taskType, storeId, onSaved }) {
     }}>
       <span style={{ fontSize: 15 }}>⚠️</span>
       <span style={{ flex: 1, fontSize: 13, color: '#7A5610', lineHeight: 1.5 }}>
-        Scan only the product barcode on the item — do not scan the shelf ticket (SEL).
+        Scan the product barcode only — not the shelf label (SEL).
       </span>
       <button
         onClick={dismissReminder}

@@ -262,11 +262,11 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
                           </button>
                         )}
                         <button
-                          className={`btn btn-sm btn-msg-toggle ${expandedMessages.has(r.id) ? 'active' : ''} ${hasMessages && !expandedMessages.has(r.id) ? 'has-thread' : ''}`}
+                          className={`btn-msg-toggle ${expandedMessages.has(r.id) ? 'active' : ''} ${hasMessages && !expandedMessages.has(r.id) ? 'has-thread' : ''}`}
                           title={msgUnread > 0 ? `${msgUnread} unread message${msgUnread > 1 ? 's' : ''}` : 'Messages'}
                           onClick={() => toggleMessages(r.id)}
                         >
-                          💬
+                          💬 <span style={{ fontSize: 12 }}>Msg</span>
                           {msgUnread > 0 && <span className="msg-toggle-badge">{msgUnread}</span>}
                         </button>
                         {(isBO || r.status === 'store_completed') && (
