@@ -81,8 +81,10 @@ export default function Dashboard() {
       .finally(() => setLoading(false))
   }, [rangeKey, scope, scopedStoreIds, isBO])
 
-  const totals = stats?.totals || { all: 0, pending: 0, completed: 0, no_change_needed: 0, store_completed: 0 }
-  const reviewed = totals.completed + totals.no_change_needed
+  const totals = stats?.totals   || { all: 0, pending: 0, completed: 0, no_change_needed: 0, store_completed: 0 }
+  const ho     = stats?.ho_totals  || { all: 0, pending: 0, completed: 0, no_change_needed: 0, store_completed: 0 }
+  const ops    = stats?.ops_totals || { all: 0, pending: 0, store_completed: 0 }
+  const hoReviewed = ho.completed + ho.no_change_needed
 
   const scopeLabel = (() => {
     if (scope === 'all') return 'All stores'
@@ -130,11 +132,19 @@ export default function Dashboard() {
 
       {error && <div className="login-error">{error}</div>}
 
+      <DashSection icon="📋" title="HO Tasks" />
       <div className="kpi-grid">
-        <KpiCard loading={loading} label="Total records"    value={totals.all}             feature sub={isBO ? scopeLabel : 'Your stores'} />
-        <KpiCard loading={loading} label="Pending review"   value={totals.pending}         sub="Awaiting HO action" />
-        <KpiCard loading={loading} label="HO reviewed"      value={reviewed}               sub={`${totals.completed} complete · ${totals.no_change_needed} no change`} />
-        <KpiCard loading={loading} label="Store confirmed"  value={totals.store_completed} sub="Loop closed" />
+        <KpiCard loading={loading} label="Total HO records"  value={ho.all}              variant="ho"  sub={isBO ? scopeLabel : 'Your stores'} />
+        <KpiCard loading={loading} label="Pending review"    value={ho.pending}          sub="Awaiting HO action"   tone={ho.pending > 0 ? 'warn' : 'ok'} />
+        <KpiCard loading={loading} label="HO reviewed"       value={hoReviewed}          sub={`${ho.completed} complete · ${ho.no_change_needed} no change`} />
+        <KpiCard loading={loading} label="Store confirmed"   value={ho.store_completed}  sub="Loop closed" />
+      </div>
+
+      <DashSection icon="✅" title="Operations Tasks" />
+      <div className="kpi-grid">
+        <KpiCard loading={loading} label="Total ops records"    value={ops.all}            variant="ops" sub={isBO ? scopeLabel : 'Your stores'} />
+        <KpiCard loading={loading} label="Pending store action" value={ops.pending}        sub="Store to clear"      tone={ops.pending > 0 ? 'warn' : 'ok'} />
+        <KpiCard loading={loading} label="Store cleared"        value={ops.store_completed} sub="Actioned by store"  tone={ops.store_completed > 0 ? 'ok' : null} />
       </div>
 
       <div className="dash-row">
@@ -154,14 +164,30 @@ export default function Dashboard() {
   )
 }
 
-function KpiCard({ label, value, sub, feature, loading }) {
+function KpiCard({ label, value, sub, variant, tone, loading }) {
+  const cls = ['kpi-card']
+  if (variant === 'ho')  cls.push('kpi-feature')
+  if (variant === 'ops') cls.push('kpi-ops-feature')
+  if (tone === 'warn')   cls.push('kpi-card-warn')
+  if (tone === 'ok')     cls.push('kpi-card-ok')
   return (
-    <div className={`kpi-card${feature ? ' kpi-feature' : ''}`}>
+    <div className={cls.join(' ')}>
       <div className="kpi-label">{label}</div>
       <div className="kpi-value">
         {loading ? <Skeleton w={80} h={28} /> : Number(value || 0).toLocaleString('en-IE')}
       </div>
       {sub && <div className="kpi-sub">{loading ? <Skeleton w={140} h={12} /> : sub}</div>}
+    </div>
+  )
+}
+
+function DashSection({ icon, title }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '22px 0 10px' }}>
+      <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+        {icon}&nbsp; {title}
+      </span>
+      <div style={{ flex: 1, height: 1, background: 'var(--border-soft)' }} />
     </div>
   )
 }

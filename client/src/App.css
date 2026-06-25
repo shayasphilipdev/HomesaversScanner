@@ -921,6 +921,16 @@ tbody tr:hover { background: var(--bg-soft); }
 .kpi-card.kpi-feature .kpi-label,
 .kpi-card.kpi-feature .kpi-sub { color: rgba(255,255,255,.82); }
 
+/* Operations Tasks feature card — teal-green gradient */
+.kpi-card.kpi-ops-feature {
+  background: linear-gradient(135deg, #0b6e3a 0%, #0E9A52 100%);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: var(--shadow);
+}
+.kpi-card.kpi-ops-feature .kpi-label,
+.kpi-card.kpi-ops-feature .kpi-sub { color: rgba(255,255,255,.82); }
+
 /* Tonal KPI variants for the Manager dashboard. Soft tinted card to
    draw the eye when something needs the manager's attention. */
 .kpi-card.kpi-card-warn {

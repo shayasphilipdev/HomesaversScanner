@@ -2312,7 +2312,7 @@ export async function onRequest(context) {
       const explicit = p.get('storeId')
       const multi    = (p.get('storeIds') || '').split(',').map(s => s.trim()).filter(Boolean)
       const scope = await scopedStoreIds(db, session)
-      const empty = () => json({ totals: { all: 0, pending: 0, completed: 0, no_change_needed: 0, store_completed: 0 }, by_task_type: [], by_store: [], by_day: [], recent: [] })
+      const empty = () => json({ totals: { all: 0, pending: 0, completed: 0, no_change_needed: 0, store_completed: 0 }, ho_totals: { all: 0, pending: 0, completed: 0, no_change_needed: 0, store_completed: 0 }, ops_totals: { all: 0, pending: 0, store_completed: 0 }, by_task_type: [], by_store: [], by_day: [], recent: [] })
 
       // Resolve which store_ids the SQL should see (null = no scope filter,
       // [] = nothing accessible, [...] = explicit set).
