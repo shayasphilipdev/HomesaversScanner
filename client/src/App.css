@@ -179,6 +179,15 @@ body {
   z-index: 100;
   border-bottom: 1px solid rgba(0,0,0,.18);
   box-shadow: 0 2px 8px rgba(13,36,90,.28);
+  overflow: visible;  /* let the message dropdown escape */
+}
+/* On small phones hide the wide items so Sign out always fits */
+@media (max-width: 560px) {
+  .nav { padding: 0 10px; gap: 6px; }
+  .nav-msg-label { display: none; }
+  .nav-msg-btn   { padding: 0 9px; }
+  .nav-store-badge { display: none; }
+  .nav-logout { padding: 6px 10px; }
 }
 [data-theme="dark"] .nav {
   background: var(--glass-strong);

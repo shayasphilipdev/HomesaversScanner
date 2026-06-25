@@ -14,33 +14,49 @@ import TaskKForm  from './forms/TaskKForm.jsx'
 const REMINDER_KEY = 'hs_barcode_reminder_dismissed'
 
 // Top-level dispatcher: picks the right form component for the chosen task type.
-// `storeId` is the current store from the CurrentStorePicker — required for
-// every record post (server rejects multi-store users that don't specify one).
 export default function TaskForm({ taskType, storeId, onSaved }) {
   const [reminderDismissed, setReminderDismissed] = useState(
-    () => !!sessionStorage.getItem(REMINDER_KEY)
+    () => !!localStorage.getItem(REMINDER_KEY)
   )
-  const dismissReminder = () => {
-    sessionStorage.setItem(REMINDER_KEY, '1')
+
+  const hideReminder = () => {
+    localStorage.setItem(REMINDER_KEY, '1')
     setReminderDismissed(true)
+  }
+  const showReminder = () => {
+    localStorage.removeItem(REMINDER_KEY)
+    setReminderDismissed(false)
   }
 
   const meta = TASK_FORMS[taskType]
 
-  const reminder = !reminderDismissed && (
+  const reminder = reminderDismissed ? (
+    // Compact one-line toggle to bring the banner back
+    <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'flex-end' }}>
+      <button
+        onClick={showReminder}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12,
+          color: '#B47F1E', padding: '2px 4px', display: 'flex', alignItems: 'center', gap: 4 }}
+        title="Show scan reminder"
+      >
+        ⚠️ <span style={{ textDecoration: 'underline' }}>Show scan reminder</span>
+      </button>
+    </div>
+  ) : (
     <div style={{
       background: '#FFF8E6', border: '1px solid #E8C84A', borderRadius: 8,
       padding: '10px 14px', marginBottom: 12,
       display: 'flex', alignItems: 'center', gap: 10
     }}>
       <span style={{ fontSize: 15 }}>⚠️</span>
-      <span style={{ flex: 1, fontSize: 13, color: '#7A5610', lineHeight: 1.5 }}>
+      <span style={{ flex: 1, fontSize: 13, color: '#7A5610' }}>
         Scan the product barcode only — not the shelf label (SEL).
       </span>
       <button
-        onClick={dismissReminder}
+        onClick={hideReminder}
         style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: '#B47F1E', padding: '0 2px', lineHeight: 1 }}
-        aria-label="Dismiss"
+        aria-label="Hide reminder"
+        title="Hide (saved permanently)"
       >
         ✕
       </button>
