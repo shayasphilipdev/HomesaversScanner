@@ -64,7 +64,7 @@ export const ROLES = {
   }
 }
 
-export const ADMIN_ROLES          = ['admin', 'buying_manager']
+export const ADMIN_ROLES          = ['admin', 'buying_manager', 'buying_head']
 export const TASK_CREATOR_ROLES   = ['admin', 'buying_manager', 'buying_head', 'area_manager', 'store_manager']
 export const TASK_REVIEWER_ROLES  = ['admin', 'buying_manager', 'buying_head', 'support_admin']
 

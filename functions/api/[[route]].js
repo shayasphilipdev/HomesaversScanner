@@ -147,7 +147,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
-const ADMIN_ROLES    = ['admin', 'buying_manager']
+const ADMIN_ROLES    = ['admin', 'buying_manager', 'buying_head']
 // Manager dashboard — anyone above shop-floor level. Same set as BO_ROLES
 // plus store_manager + assistant_store_manager so an in-store manager can
 // see their own store's rollup on their phone.
@@ -191,7 +191,7 @@ function buildSessionForUser(_db, user) {
 // Returns [] = no stores at all (user shouldn't see anything).
 async function scopedStoreIds(db, session) {
   if (!session) return []
-  if (session.all_stores) return null
+  if (session.all_stores || isAdminRole(session)) return null
   const set = new Set(Array.isArray(session.store_ids) ? session.store_ids : [])
   if (Array.isArray(session.area_ids) && session.area_ids.length) {
     const stores = await db.select('stores', {

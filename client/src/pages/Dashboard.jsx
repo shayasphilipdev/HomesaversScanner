@@ -148,7 +148,7 @@ export default function Dashboard() {
         <StatusBreakdown totals={totals} loading={loading} />
       </div>
 
-      {isBO && <StoreDonutGrid rows={stats?.by_store || []} loading={loading} />}
+      {isBO && <StoreDonutGrid rows={stats?.by_store || []} loading={loading} allStores={stores} />}
       {!isBO && <RecentList rows={stats?.recent || []} loading={loading} isBO={isBO} />}
     </div>
   )
@@ -342,23 +342,50 @@ const TYPE_COLORS = {
   I: '#9A6B12', J: '#0A7339', K: '#5DCAA5',
 }
 
-function StoreDonutGrid({ rows, loading }) {
+function StoreDonutGrid({ rows, loading, allStores }) {
+  // Merge stats rows (stores with records) with the full store list so every
+  // store is always shown. Inactive stores appear faded at the end.
+  const merged = useMemo(() => {
+    if (!allStores.length) return rows
+    const statsById = Object.fromEntries((rows || []).map(r => [r.id, r]))
+    return allStores.map(s => ({
+      id: s.id,
+      store_name: s.store_name,
+      is_active: s.is_active,
+      types: [],
+      ...(statsById[s.id] || {})
+    })).sort((a, b) => {
+      // active first, then by descending record count
+      if (a.is_active !== b.is_active) return a.is_active ? -1 : 1
+      const aC = (a.types || []).reduce((sum, t) => sum + t.count, 0)
+      const bC = (b.types || []).reduce((sum, t) => sum + t.count, 0)
+      return bC - aC
+    })
+  }, [rows, allStores])
+
+  const display      = allStores.length ? merged : rows
+  const activeCount  = display.filter(s => s.is_active !== false).length
+  const inactiveCount = display.filter(s => s.is_active === false).length
+
   return (
     <div className="card" style={{ marginBottom: 24 }}>
       <div className="card-header">
         By store
-        {!loading && rows.length > 0 && (
-          <span className="chip" style={{ marginLeft: 'auto' }}><span className="chip-dot" /> {rows.length} stores</span>
+        {!loading && display.length > 0 && (
+          <span className="chip" style={{ marginLeft: 'auto' }}>
+            <span className="chip-dot" />
+            {activeCount} active{inactiveCount > 0 ? ` · ${inactiveCount} inactive` : ''}
+          </span>
         )}
       </div>
       <div className="card-body" style={{ padding: 16 }}>
         {loading ? (
           <div style={{ textAlign: 'center', padding: 24 }}><span className="spinner spinner-dark" /></div>
-        ) : !rows.length ? (
+        ) : !display.length ? (
           <div className="empty-state" style={{ padding: 20 }}><p style={{ fontSize: 13 }}>No records in this range yet.</p></div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(148px, 1fr))', gap: 10 }}>
-            {rows.map(r => <StoreDualDonut key={r.id} store={r} />)}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(172px, 1fr))', gap: 12 }}>
+            {display.map(r => <StoreDualDonut key={r.id} store={r} inactive={r.is_active === false} />)}
           </div>
         )}
       </div>
@@ -366,7 +393,7 @@ function StoreDonutGrid({ rows, loading }) {
   )
 }
 
-function StoreDualDonut({ store }) {
+function StoreDualDonut({ store, inactive }) {
   const hoTypes  = (store.types || []).filter(t => !CHECK_CODES.has(t.code))
   const opsTypes = (store.types || []).filter(t =>  CHECK_CODES.has(t.code))
   const hoTotal  = hoTypes.reduce((s, t) => s + t.count, 0)
@@ -380,17 +407,23 @@ function StoreDualDonut({ store }) {
       border: '1px solid var(--glass-border)',
       boxShadow: 'var(--shadow-sm)',
       overflow: 'hidden',
+      opacity: inactive ? 0.42 : 1,
+      filter: inactive ? 'grayscale(70%)' : 'none',
     }}>
       <div style={{
-        padding: '5px 8px',
+        padding: '7px 10px',
         borderBottom: '1px solid var(--border-soft)',
-        background: 'linear-gradient(135deg, var(--hs-head-1) 0%, var(--hs-head-2) 100%)',
-        fontSize: 10.5, fontWeight: 600, color: 'var(--hs-green-dark)',
+        background: inactive
+          ? 'var(--bg-soft)'
+          : 'linear-gradient(135deg, var(--hs-head-1) 0%, var(--hs-head-2) 100%)',
+        fontSize: 11.5, fontWeight: 600,
+        color: inactive ? 'var(--text-muted)' : 'var(--hs-green-dark)',
         textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
       }}>
         {store.store_name}
+        {inactive && <span style={{ fontWeight: 400, fontSize: 9.5, marginLeft: 4, opacity: 0.8 }}>(inactive)</span>}
       </div>
-      <div style={{ display: 'flex', gap: 4, justifyContent: 'center', padding: '8px 6px 8px' }}>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'center', padding: '10px 8px' }}>
         <MiniDonutSvg types={hoTypes}  total={hoTotal}  label="HO" />
         <MiniDonutSvg types={opsTypes} total={opsTotal} label="Ops" />
       </div>
@@ -399,7 +432,7 @@ function StoreDualDonut({ store }) {
 }
 
 function MiniDonutSvg({ types, total, label }) {
-  const cx = 32, cy = 32, r = 22, sw = 8
+  const cx = 38, cy = 38, r = 27, sw = 10
   const circ = 2 * Math.PI * r
   let offset = 0
   const segs = types.map(t => {
@@ -409,9 +442,9 @@ function MiniDonutSvg({ types, total, label }) {
     return seg
   })
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}
       title={types.map(t => `${t.name || t.code}: ${t.count}`).join('\n')}>
-      <svg viewBox="0 0 64 64" style={{ width: 54, height: 54 }}>
+      <svg viewBox="0 0 76 76" style={{ width: 70, height: 70 }}>
         <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--border-soft)" strokeWidth={sw} />
         {total > 0 && segs.map((s, i) => (
           <circle key={i} cx={cx} cy={cy} r={r} fill="none"
@@ -420,9 +453,9 @@ function MiniDonutSvg({ types, total, label }) {
             strokeDashoffset={-s.off}
             transform={`rotate(-90 ${cx} ${cy})`} />
         ))}
-        <text x={cx} y={cy + 4} textAnchor="middle" fontSize="10" fontWeight="700" fill="var(--text)">{total}</text>
+        <text x={cx} y={cy + 5} textAnchor="middle" fontSize="13" fontWeight="700" fill="var(--text)">{total}</text>
       </svg>
-      <span style={{ fontSize: 9.5, color: 'var(--text-muted)', fontWeight: 500 }}>{label}</span>
+      <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500 }}>{label}</span>
     </div>
   )
 }
