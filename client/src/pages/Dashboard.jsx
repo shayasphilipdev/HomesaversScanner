@@ -351,16 +351,11 @@ function StoreDonutGrid({ rows, loading, allStores }) {
     return allStores.map(s => ({
       id: s.id,
       store_name: s.store_name,
+      store_code: s.store_code,
       is_active: s.is_active,
       types: [],
       ...(statsById[s.id] || {})
-    })).sort((a, b) => {
-      // active first, then by descending record count
-      if (a.is_active !== b.is_active) return a.is_active ? -1 : 1
-      const aC = (a.types || []).reduce((sum, t) => sum + t.count, 0)
-      const bC = (b.types || []).reduce((sum, t) => sum + t.count, 0)
-      return bC - aC
-    })
+    })).sort((a, b) => (a.store_code || '').localeCompare(b.store_code || '', undefined, { numeric: true }))
   }, [rows, allStores])
 
   const display      = allStores.length ? merged : rows
@@ -384,7 +379,7 @@ function StoreDonutGrid({ rows, loading, allStores }) {
         ) : !display.length ? (
           <div className="empty-state" style={{ padding: 20 }}><p style={{ fontSize: 13 }}>No records in this range yet.</p></div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(172px, 1fr))', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(194px, 1fr))', gap: 14 }}>
             {display.map(r => <StoreDualDonut key={r.id} store={r} inactive={r.is_active === false} />)}
           </div>
         )}
@@ -399,12 +394,11 @@ function StoreDualDonut({ store, inactive }) {
   const hoTotal  = hoTypes.reduce((s, t) => s + t.count, 0)
   const opsTotal = opsTypes.reduce((s, t) => s + t.count, 0)
   return (
-    <div style={{
+    <div className={`store-donut-card${inactive ? ' inactive' : ''}`} style={{
       borderRadius: 12,
       background: 'var(--glass-strong)',
       backdropFilter: 'var(--glass-blur)',
       WebkitBackdropFilter: 'var(--glass-blur)',
-      border: '1px solid var(--glass-border)',
       boxShadow: 'var(--shadow-sm)',
       overflow: 'hidden',
       opacity: inactive ? 0.42 : 1,
@@ -423,7 +417,7 @@ function StoreDualDonut({ store, inactive }) {
         {store.store_name}
         {inactive && <span style={{ fontWeight: 400, fontSize: 9.5, marginLeft: 4, opacity: 0.8 }}>(inactive)</span>}
       </div>
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'center', padding: '10px 8px' }}>
+      <div style={{ display: 'flex', gap: 10, justifyContent: 'center', padding: '12px 10px' }}>
         <MiniDonutSvg types={hoTypes}  total={hoTotal}  label="HO" />
         <MiniDonutSvg types={opsTypes} total={opsTotal} label="Ops" />
       </div>
@@ -432,7 +426,7 @@ function StoreDualDonut({ store, inactive }) {
 }
 
 function MiniDonutSvg({ types, total, label }) {
-  const cx = 38, cy = 38, r = 27, sw = 10
+  const cx = 42, cy = 42, r = 30, sw = 11
   const circ = 2 * Math.PI * r
   let offset = 0
   const segs = types.map(t => {
@@ -444,7 +438,7 @@ function MiniDonutSvg({ types, total, label }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}
       title={types.map(t => `${t.name || t.code}: ${t.count}`).join('\n')}>
-      <svg viewBox="0 0 76 76" style={{ width: 70, height: 70 }}>
+      <svg viewBox="0 0 84 84" style={{ width: 78, height: 78 }}>
         <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--border-soft)" strokeWidth={sw} />
         {total > 0 && segs.map((s, i) => (
           <circle key={i} cx={cx} cy={cy} r={r} fill="none"
@@ -453,9 +447,9 @@ function MiniDonutSvg({ types, total, label }) {
             strokeDashoffset={-s.off}
             transform={`rotate(-90 ${cx} ${cy})`} />
         ))}
-        <text x={cx} y={cy + 5} textAnchor="middle" fontSize="13" fontWeight="700" fill="var(--text)">{total}</text>
+        <text x={cx} y={cy + 5} textAnchor="middle" fontSize="14" fontWeight="700" fill="var(--text)">{total}</text>
       </svg>
-      <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500 }}>{label}</span>
+      <span style={{ fontSize: 11.5, color: 'var(--text-muted)', fontWeight: 500 }}>{label}</span>
     </div>
   )
 }

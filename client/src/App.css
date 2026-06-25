@@ -937,6 +937,21 @@ tbody tr:hover { background: var(--bg-soft); }
 a.kpi-card { transition: transform 80ms ease, box-shadow 120ms ease; }
 a.kpi-card:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
 
+/* Store donut card — fluid animated border */
+@keyframes store-card-border {
+  0%, 100% { border-color: rgba(14, 154, 82, 0.65); }
+  33%       { border-color: rgba(57, 96, 168, 0.65); }
+  66%       { border-color: rgba(180, 127, 30, 0.55); }
+}
+.store-donut-card {
+  border: 2px solid rgba(14, 154, 82, 0.65) !important;
+  animation: store-card-border 5s ease-in-out infinite;
+}
+.store-donut-card.inactive {
+  animation: none;
+  border-color: var(--border-soft) !important;
+}
+
 .kpi-label {
   font-size: 14px;
   font-weight: 600;
