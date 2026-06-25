@@ -91,6 +91,7 @@ export default function Nav() {
           title="Messages"
         >
           <span className="nav-msg-ico" aria-hidden>✉</span>
+          <span className="nav-msg-label">{unread > 0 ? `${unread} new` : 'Messages'}</span>
           {unread > 0 && <span className="nav-msg-badge">{unread}</span>}
         </button>
         {msgOpen && (
