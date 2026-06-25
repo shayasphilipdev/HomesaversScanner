@@ -1,158 +1,191 @@
-import { Fragment, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useStore } from '../App.jsx'
 import { getManagerOverview } from '../lib/api.js'
 import { canSeeManagerDashboard } from '../lib/roles.js'
 
-// Phone-first manager dashboard.
-//   - Big finger-friendly KPI tiles up top
-//   - "By store today" table ranked worst-first
-//   - Last-7-days heatmap so a slipping store is obvious at a glance
-// Tap any tile or row -> drill straight to the appropriate filtered view.
-
 export default function ManagerDashboard() {
   const { session } = useStore()
-  const [data, setData]   = useState(null)
+  const [data, setData]     = useState(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [error, setError]   = useState('')
 
   const load = async () => {
     setLoading(true); setError('')
     try { setData(await getManagerOverview()) }
     catch (e) { setError(e.message) }
-    finally { setLoading(false) }
+    finally   { setLoading(false) }
   }
   useEffect(() => { load() }, [])
 
   if (!canSeeManagerDashboard(session)) {
     return <div className="card"><div className="empty-state"><p>This page is for managers and head-office roles.</p></div></div>
   }
-
   if (loading) {
     return <div className="card"><div className="card-body" style={{ textAlign: 'center', padding: 40 }}><span className="spinner spinner-dark" /></div></div>
   }
-  if (error) {
-    return <div className="login-error mt-12">{error}</div>
-  }
-  if (!data) return null
+  if (error) return <div className="login-error mt-12">{error}</div>
+  if (!data)  return null
 
   const t = data.totals
+  const perStore = data.per_store   // sorted worst-first by backend
+  const total    = perStore.length
+
+  // Derived manager-specific metrics (not available on main dashboard)
+  const storesActive    = perStore.filter(r => r.ho_today > 0 || r.tasks_today_done > 0).length
+  const storesOnTrack   = perStore.filter(r => r.completion_pct != null && r.completion_pct >= 70).length
+  const storesAlert     = perStore.filter(r => r.ho_today === 0 && (r.completion_pct == null || r.completion_pct < 40)).length
+
+  // Build store_id → days[] lookup from heatmap data
+  const dayMap = Object.fromEntries((data.by_day_7 || []).map(r => [r.store_id, r.days]))
+  const dayKeys = data.by_day_7?.[0]?.days.map(d => d.date) || []
+  const todayKey = dayKeys[dayKeys.length - 1]
 
   return (
     <div>
       <div className="page-header">
         <div>
-          <div className="page-title">Manager view</div>
+          <div className="page-title">Store overview</div>
           <div className="page-subtitle">
-            {data.per_store.length} store{data.per_store.length === 1 ? '' : 's'} · refreshed {new Date(data.as_of).toLocaleTimeString('en-IE', { hour: '2-digit', minute: '2-digit' })}
+            {total} store{total !== 1 ? 's' : ''} in scope · refreshed {new Date(data.as_of).toLocaleTimeString('en-IE', { hour: '2-digit', minute: '2-digit' })}
           </div>
         </div>
         <button className="btn btn-outline btn-sm" onClick={load}>↻ Refresh</button>
       </div>
 
-      {/* KPI tiles — tap to drill */}
+      {/* Manager-specific KPIs — not duplicated on main dashboard */}
       <div className="kpi-grid">
-        <KpiTile
-          label="Today's HO records"
-          value={t.ho_today}
-          sub="logged across your stores"
-          to="/reports"
+        <MgrKpi
+          label="Stores active today"
+          value={`${storesActive} / ${total}`}
+          sub="have HO or checklist activity"
           feature
         />
-        <KpiTile
-          label="Awaiting HO"
-          value={t.ho_pending}
-          sub="pending review"
-          to="/tasks"
-          tone={t.ho_pending > 0 ? 'warn' : 'ok'}
-        />
-        <KpiTile
-          label="Awaiting Clear"
-          value={t.ho_to_clear}
-          sub="HO replied — verify at till"
-          to="/tasks"
-          tone={t.ho_to_clear > 0 ? 'warn' : 'ok'}
-        />
-        <KpiTile
-          label="Today's checklists"
-          value={t.store_completion_pct == null ? '—' : `${t.store_completion_pct}%`}
-          sub={`${t.tasks_today_done} of ${t.tasks_today_total} done`}
+        <MgrKpi
+          label="Checklists on track"
+          value={storesOnTrack}
+          sub={`of ${total} stores ≥ 70% done`}
           to="/store-tasks"
-          tone={completionTone(t.store_completion_pct)}
+          tone={storesOnTrack === total ? 'ok' : storesOnTrack < total / 2 ? 'warn' : null}
+        />
+        <MgrKpi
+          label="Photos today"
+          value={t.photos_today ?? 0}
+          sub="product + barcode across stores"
+        />
+        <MgrKpi
+          label="Need attention"
+          value={storesAlert}
+          sub="no HO + low checklist today"
+          to="/store-tasks"
+          tone={storesAlert > 0 ? 'warn' : 'ok'}
         />
       </div>
 
-      {/* Per-store league */}
+      {/* Unified table — today's stats + 7-day checklist trend in one row per store */}
       <div className="card" style={{ marginTop: 16 }}>
-        <div className="card-header">By store today</div>
+        <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span>Store details · today + checklist trend</span>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 12, fontSize: 11.5, color: 'var(--text-muted)', flexWrap: 'wrap' }}>
+            <HeatLegend />
+          </div>
+        </div>
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
                 <th>Store</th>
-                <th className="td-right">HO today</th>
-                <th className="td-right">Pending</th>
-                <th className="td-right">To clear</th>
-                <th className="td-right">Checklist</th>
+                <th className="td-right" title="HO task records logged today">HO today</th>
+                <th className="td-right" title="HO records pending review">Pending</th>
+                <th className="td-right" title="HO reviewed — waiting for store to clear">To clear</th>
+                <th className="td-right" title="Today's checklist completion">Checklist</th>
+                {dayKeys.map((d, i) => {
+                  const isToday = d === todayKey
+                  const label   = new Date(d + 'T12:00:00').toLocaleDateString('en-IE', { weekday: 'short' })
+                  const dayNum  = new Date(d + 'T12:00:00').getDate()
+                  return (
+                    <th key={d} style={{ width: 34, textAlign: 'center', padding: '6px 2px' }}>
+                      <div style={{ fontSize: 9, fontWeight: isToday ? 700 : 500, color: isToday ? 'var(--primary)' : 'var(--text-muted)', lineHeight: 1.3 }}>
+                        {label.slice(0, 2)}
+                      </div>
+                      <div style={{ fontSize: 9, color: isToday ? 'var(--primary)' : 'var(--text-muted)', fontWeight: isToday ? 700 : 400 }}>
+                        {dayNum}
+                      </div>
+                    </th>
+                  )
+                })}
               </tr>
             </thead>
             <tbody>
-              {data.per_store.map(r => (
-                <tr key={r.store_id}>
-                  <td><strong>{r.store_name}</strong></td>
-                  <td className="td-right">{r.ho_today}</td>
-                  <td className="td-right">{r.ho_pending || <span className="td-muted">—</span>}</td>
-                  <td className="td-right">{r.ho_to_clear || <span className="td-muted">—</span>}</td>
-                  <td className="td-right"><CompletionPill pct={r.completion_pct} done={r.tasks_today_done} total={r.tasks_today_total} /></td>
-                </tr>
-              ))}
-              {!data.per_store.length && (
-                <tr><td colSpan={5} className="td-muted" style={{ textAlign: 'center', padding: 20 }}>No stores in your scope.</td></tr>
+              {perStore.length === 0 && (
+                <tr><td colSpan={5 + dayKeys.length} className="td-muted" style={{ textAlign: 'center', padding: 20 }}>No stores in scope.</td></tr>
               )}
+              {perStore.map(r => {
+                const days   = dayMap[r.store_id] || []
+                const alert  = r.ho_today === 0 && (r.completion_pct == null || r.completion_pct < 40)
+                return (
+                  <tr key={r.store_id} style={alert ? { borderLeft: '3px solid #E0A03A' } : undefined}>
+                    <td>
+                      <strong style={{ fontSize: 13 }}>{r.store_name}</strong>
+                      {r.store_code && <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 6 }}>{r.store_code}</span>}
+                    </td>
+                    <td className="td-right">
+                      {r.ho_today > 0
+                        ? <strong style={{ color: 'var(--primary)' }}>{r.ho_today}</strong>
+                        : <span className="td-muted">—</span>}
+                    </td>
+                    <td className="td-right">
+                      {r.ho_pending > 0
+                        ? <span style={{ color: '#B47F1E', fontWeight: 600 }}>{r.ho_pending}</span>
+                        : <span className="td-muted">—</span>}
+                    </td>
+                    <td className="td-right">
+                      {r.ho_to_clear > 0
+                        ? <span style={{ color: '#3E9F4B', fontWeight: 600 }}>{r.ho_to_clear}</span>
+                        : <span className="td-muted">—</span>}
+                    </td>
+                    <td className="td-right">
+                      <CompletionPill pct={r.completion_pct} done={r.tasks_today_done} total={r.tasks_today_total} />
+                    </td>
+                    {days.map(d => (
+                      <td key={d.date} style={{ padding: '4px 3px', textAlign: 'center' }}>
+                        <div
+                          title={d.pct == null ? 'No checklist data' : `${d.pct}%`}
+                          style={{
+                            width: 26, height: 26, borderRadius: 5, margin: '0 auto',
+                            background: heatColour(d.pct),
+                            border: d.pct == null ? '1px solid var(--border-soft)' : 'none',
+                            boxShadow: d.date === todayKey && d.pct != null ? '0 0 0 2px var(--primary)' : 'none'
+                          }}
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
       </div>
-
-      {/* 7-day heatmap */}
-      {data.by_day_7.length > 0 && (
-        <div className="card" style={{ marginTop: 16 }}>
-          <div className="card-header">Checklist completion · last 7 days</div>
-          <div className="card-body" style={{ paddingTop: 6 }}>
-            <Heatmap rows={data.by_day_7} />
-            <div className="flex-row" style={{ gap: 14, fontSize: 11.5, color: 'var(--text-muted)', marginTop: 8, flexWrap: 'wrap' }}>
-              <LegendDot colour="#3E9F4B" label="≥ 90%" />
-              <LegendDot colour="#7FB347" label="70–89%" />
-              <LegendDot colour="#E0A03A" label="40–69%" />
-              <LegendDot colour="#D14B3D" label="< 40%" />
-              <LegendDot colour="var(--bg-soft)" label="no data" border />
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
 
-function KpiTile({ label, value, sub, to, feature, tone }) {
+function MgrKpi({ label, value, sub, to, feature, tone }) {
   const cls = ['kpi-card']
-  if (feature) cls.push('kpi-feature')
+  if (feature)         cls.push('kpi-feature')
   if (tone === 'warn') cls.push('kpi-card-warn')
   if (tone === 'ok')   cls.push('kpi-card-ok')
-  return (
-    <Link to={to} className={cls.join(' ')} style={{ textDecoration: 'none', color: 'inherit' }}>
+  const inner = (
+    <>
       <div className="kpi-label">{label}</div>
       <div className="kpi-value">{value}</div>
       <div className="kpi-sub">{sub}</div>
-    </Link>
+    </>
   )
-}
-
-function completionTone(pct) {
-  if (pct == null) return null
-  if (pct >= 90) return 'ok'
-  if (pct < 70)  return 'warn'
-  return null
+  return to
+    ? <Link to={to} className={cls.join(' ')} style={{ textDecoration: 'none', color: 'inherit' }}>{inner}</Link>
+    : <div className={cls.join(' ')}>{inner}</div>
 }
 
 function CompletionPill({ pct, done, total }) {
@@ -169,39 +202,6 @@ function CompletionPill({ pct, done, total }) {
   )
 }
 
-function Heatmap({ rows }) {
-  if (!rows.length) return null
-  const dayLabels = rows[0].days.map(d => new Date(d.date).toLocaleDateString('en-IE', { weekday: 'short' }))
-  return (
-    <div style={{ overflowX: 'auto' }}>
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'minmax(120px, 1fr) repeat(7, 36px)',
-        gap: 4, alignItems: 'center', fontSize: 12.5, minWidth: 360
-      }}>
-        <div></div>
-        {dayLabels.map((d, i) => (
-          <div key={i} style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 11 }}>{d}</div>
-        ))}
-        {rows.map(r => (
-          <Fragment key={r.store_id}>
-            <div style={{ fontWeight: 600, paddingRight: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.store_name}</div>
-            {r.days.map(d => (
-              <div key={d.date}
-                title={`${r.store_name} · ${new Date(d.date).toLocaleDateString('en-IE', { day: '2-digit', month: 'short' })} · ${d.pct == null ? 'no checklist' : d.pct + '%'}`}
-                style={{
-                  height: 28, borderRadius: 4,
-                  background: heatColour(d.pct),
-                  border: d.pct == null ? '1px solid var(--border-soft)' : 'none'
-                }} />
-            ))}
-          </Fragment>
-        ))}
-      </div>
-    </div>
-  )
-}
-
 function heatColour(pct) {
   if (pct == null) return 'var(--bg-soft)'
   if (pct >= 90) return '#3E9F4B'
@@ -210,15 +210,22 @@ function heatColour(pct) {
   return '#D14B3D'
 }
 
-function LegendDot({ colour, label, border }) {
+function HeatLegend() {
+  const items = [
+    { colour: '#3E9F4B', label: '≥ 90%' },
+    { colour: '#7FB347', label: '70–89%' },
+    { colour: '#E0A03A', label: '40–69%' },
+    { colour: '#D14B3D', label: '< 40%' },
+    { colour: 'var(--bg-soft)', label: 'no data', border: true },
+  ]
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-      <span style={{
-        width: 14, height: 14, borderRadius: 3, display: 'inline-block',
-        background: colour, border: border ? '1px solid var(--border)' : 'none'
-      }} />
-      {label}
-    </span>
+    <>
+      {items.map(i => (
+        <span key={i.label} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ width: 12, height: 12, borderRadius: 3, display: 'inline-block', background: i.colour, border: i.border ? '1px solid var(--border)' : 'none', flexShrink: 0 }} />
+          {i.label}
+        </span>
+      ))}
+    </>
   )
 }
-
