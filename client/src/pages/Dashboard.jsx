@@ -132,19 +132,20 @@ export default function Dashboard() {
 
       {error && <div className="login-error">{error}</div>}
 
-      <DashSection icon="📋" title="HO Tasks" />
       <div className="kpi-grid">
-        <KpiCard loading={loading} label="Total HO records"  value={ho.all}              variant="ho"  sub={isBO ? scopeLabel : 'Your stores'} />
-        <KpiCard loading={loading} label="Pending review"    value={ho.pending}          sub="Awaiting HO action"   tone={ho.pending > 0 ? 'warn' : 'ok'} />
-        <KpiCard loading={loading} label="HO reviewed"       value={hoReviewed}          sub={`${ho.completed} complete · ${ho.no_change_needed} no change`} />
-        <KpiCard loading={loading} label="Store confirmed"   value={ho.store_completed}  sub="Loop closed" />
-      </div>
-
-      <DashSection icon="✅" title="Operations Tasks" />
-      <div className="kpi-grid">
-        <KpiCard loading={loading} label="Total ops records"    value={ops.all}            variant="ops" sub={isBO ? scopeLabel : 'Your stores'} />
-        <KpiCard loading={loading} label="Pending store action" value={ops.pending}        sub="Store to clear"      tone={ops.pending > 0 ? 'warn' : 'ok'} />
-        <KpiCard loading={loading} label="Store cleared"        value={ops.store_completed} sub="Actioned by store"  tone={ops.store_completed > 0 ? 'ok' : null} />
+        <SplitKpiCard loading={loading} feature
+          hoLabel="Total HO records"  hoValue={ho.all}           hoSub={isBO ? scopeLabel : 'Your stores'}
+          opsLabel="Total ops records" opsValue={ops.all}        opsSub={isBO ? scopeLabel : 'Your stores'}
+        />
+        <SplitKpiCard loading={loading}
+          hoLabel="Pending review"    hoValue={ho.pending}       hoSub="Awaiting HO action"
+          opsLabel="Pending action"   opsValue={ops.pending}     opsSub="Store to clear"
+        />
+        <SplitKpiCard loading={loading}
+          hoLabel="HO reviewed"       hoValue={hoReviewed}       hoSub={`${ho.completed} complete · ${ho.no_change_needed} no change`}
+          opsLabel="Store cleared"    opsValue={ops.store_completed} opsSub="Actioned by store"
+        />
+        <KpiCard loading={loading} label="Store confirmed" value={ho.store_completed} sub="Loop closed" />
       </div>
 
       <div className="dash-row">
@@ -164,12 +165,10 @@ export default function Dashboard() {
   )
 }
 
-function KpiCard({ label, value, sub, variant, tone, loading }) {
+function KpiCard({ label, value, sub, tone, loading }) {
   const cls = ['kpi-card']
-  if (variant === 'ho')  cls.push('kpi-feature')
-  if (variant === 'ops') cls.push('kpi-ops-feature')
-  if (tone === 'warn')   cls.push('kpi-card-warn')
-  if (tone === 'ok')     cls.push('kpi-card-ok')
+  if (tone === 'warn') cls.push('kpi-card-warn')
+  if (tone === 'ok')   cls.push('kpi-card-ok')
   return (
     <div className={cls.join(' ')}>
       <div className="kpi-label">{label}</div>
@@ -181,13 +180,22 @@ function KpiCard({ label, value, sub, variant, tone, loading }) {
   )
 }
 
-function DashSection({ icon, title }) {
+function SplitKpiCard({ loading, feature, hoLabel, hoValue, hoSub, opsLabel, opsValue, opsSub }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '22px 0 10px' }}>
-      <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-        {icon}&nbsp; {title}
-      </span>
-      <div style={{ flex: 1, height: 1, background: 'var(--border-soft)' }} />
+    <div className={`kpi-card kpi-split${feature ? ' kpi-split-feature' : ''}`}>
+      <div className="kpi-split-side kpi-split-ho">
+        <div className="kpi-split-tag">HO</div>
+        <div className="kpi-label">{hoLabel}</div>
+        <div className="kpi-value">{loading ? <Skeleton w={70} h={26} /> : Number(hoValue || 0).toLocaleString('en-IE')}</div>
+        {hoSub && <div className="kpi-sub">{loading ? <Skeleton w={120} h={11} /> : hoSub}</div>}
+      </div>
+      <div className="kpi-split-divider" />
+      <div className="kpi-split-side kpi-split-ops">
+        <div className="kpi-split-tag ops">Ops</div>
+        <div className="kpi-label">{opsLabel}</div>
+        <div className="kpi-value">{loading ? <Skeleton w={70} h={26} /> : Number(opsValue || 0).toLocaleString('en-IE')}</div>
+        {opsSub && <div className="kpi-sub">{loading ? <Skeleton w={120} h={11} /> : opsSub}</div>}
+      </div>
     </div>
   )
 }

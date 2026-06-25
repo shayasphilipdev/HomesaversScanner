@@ -84,8 +84,8 @@ export const canReviewHQRecords   = (session) => !!session && TASK_REVIEWER_ROLE
 export const canSeeAnyAdminLink   = (session) => canAccessAdmin(session) || canAccessTemplates(session)
 
 // Per-employee feature toggles (Phase 9J)
-export const canDoHQTasks    = (session) => !!session && session.can_access_hq_tasks    !== false
-export const canDoStoreTasks = (session) => !!session && session.can_access_store_tasks !== false
+export const canDoHQTasks    = (session) => !!session && (session.can_access_hq_tasks    !== false || canAccessAdmin(session))
+export const canDoStoreTasks = (session) => !!session && (session.can_access_store_tasks !== false || canAccessAdmin(session))
 
 // Manager dashboard — anyone above shop-floor level. Sales Assistant /
 // Supervisor stay on the regular Dashboard.

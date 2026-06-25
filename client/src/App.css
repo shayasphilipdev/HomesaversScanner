@@ -921,15 +921,50 @@ tbody tr:hover { background: var(--bg-soft); }
 .kpi-card.kpi-feature .kpi-label,
 .kpi-card.kpi-feature .kpi-sub { color: rgba(255,255,255,.82); }
 
-/* Operations Tasks feature card — teal-green gradient */
-.kpi-card.kpi-ops-feature {
-  background: linear-gradient(135deg, #0b6e3a 0%, #0E9A52 100%);
-  color: #fff;
-  border-color: transparent;
-  box-shadow: var(--shadow);
+/* Split KPI card — left=HO, right=Ops */
+.kpi-card.kpi-split {
+  display: flex;
+  padding: 0;
+  overflow: hidden;
+  align-items: stretch;
 }
-.kpi-card.kpi-ops-feature .kpi-label,
-.kpi-card.kpi-ops-feature .kpi-sub { color: rgba(255,255,255,.82); }
+.kpi-split-side {
+  flex: 1;
+  padding: 16px 18px;
+  min-width: 0;
+}
+.kpi-split-divider {
+  width: 1px;
+  flex-shrink: 0;
+  background: var(--border-soft);
+}
+.kpi-split-tag {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--primary);
+  margin-bottom: 4px;
+}
+.kpi-split-tag.ops { color: var(--hs-green-dark); }
+
+/* Feature (first card) — HO side orange, Ops side green */
+.kpi-split-feature .kpi-split-ho {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+}
+.kpi-split-feature .kpi-split-ho .kpi-split-tag,
+.kpi-split-feature .kpi-split-ho .kpi-label,
+.kpi-split-feature .kpi-split-ho .kpi-value,
+.kpi-split-feature .kpi-split-ho .kpi-sub { color: rgba(255,255,255,.9); }
+
+.kpi-split-feature .kpi-split-ops {
+  background: linear-gradient(135deg, #0b6e3a 0%, #0E9A52 100%);
+}
+.kpi-split-feature .kpi-split-ops .kpi-split-tag,
+.kpi-split-feature .kpi-split-ops .kpi-label,
+.kpi-split-feature .kpi-split-ops .kpi-value,
+.kpi-split-feature .kpi-split-ops .kpi-sub { color: rgba(255,255,255,.9); }
+.kpi-split-feature .kpi-split-divider { background: rgba(255,255,255,.25); }
 
 /* Tonal KPI variants for the Manager dashboard. Soft tinted card to
    draw the eye when something needs the manager's attention. */

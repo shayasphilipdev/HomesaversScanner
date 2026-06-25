@@ -202,8 +202,8 @@ async function scopedStoreIds(db, session) {
   return [...set]
 }
 
-function userCanAccessHQTasks(s)    { return !!s && s.can_access_hq_tasks !== false }
-function userCanAccessStoreTasks(s) { return !!s && s.can_access_store_tasks !== false }
+function userCanAccessHQTasks(s)    { return !!s && (s.can_access_hq_tasks    !== false || isAdminRole(s)) }
+function userCanAccessStoreTasks(s) { return !!s && (s.can_access_store_tasks !== false || isAdminRole(s)) }
 
 // Append-only audit log writer. Records every transition of
 // task_records.status (creation -> pending, HO completion, store
