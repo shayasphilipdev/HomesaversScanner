@@ -23,7 +23,7 @@ function formatDT(iso) {
     + ' ' + d.toLocaleTimeString('en-IE', { hour: '2-digit', minute: '2-digit' })
 }
 
-export default function TaskRecordList({ records, loading, onRefresh, onOptimisticRemove, onUnreadChange, autoOpenId, messageThreadMap }) {
+export default function TaskRecordList({ records, loading, onRefresh, onOptimisticRemove, onUnreadChange, autoOpenId }) {
   const { session } = useStore()
   const toast = useToast()
   // Area managers get store-side clear UI (J/K bulk-clear) despite being in backoffice mode.
@@ -203,11 +203,9 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
               // Store-side: J/K records can be cleared directly from pending.
               const storeCanClearNow = !isBO && STORE_CLEARABLE.has(r.task_type) && r.status === 'pending'
               const isSelectable  = storeCanClearNow
-              const msgThread     = messageThreadMap?.get(r.id)
-              const hasMessages   = !!msgThread
-              const msgUnread     = msgThread?.unread || 0
-              // Row colour class: green = HO reviewed; amber = has active messages.
-              const rowClass = reviewed ? 'tr-reviewed' : hasMessages ? 'tr-has-msg' : ''
+              const msgCount      = r.message_count || 0
+              // Row colour class: green = HO reviewed; amber = has messages.
+              const rowClass = reviewed ? 'tr-reviewed' : msgCount > 0 ? 'tr-has-msg' : ''
               return (
                 <Fragment key={r.id}>
                   <tr className={rowClass} style={isSelectable && selected.has(r.id) ? { background: 'var(--surface-warm)' } : undefined}>
@@ -262,12 +260,12 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
                           </button>
                         )}
                         <button
-                          className={`btn-msg-toggle ${expandedMessages.has(r.id) ? 'active' : ''} ${hasMessages && !expandedMessages.has(r.id) ? 'has-thread' : ''}`}
-                          title={msgUnread > 0 ? `${msgUnread} unread message${msgUnread > 1 ? 's' : ''}` : 'Messages'}
+                          className={`btn-msg-toggle ${expandedMessages.has(r.id) ? 'active' : ''} ${msgCount > 0 && !expandedMessages.has(r.id) ? 'has-thread' : ''}`}
+                          title={msgCount > 0 ? `${msgCount} message${msgCount > 1 ? 's' : ''}` : 'Messages'}
                           onClick={() => toggleMessages(r.id)}
                         >
                           💬 <span style={{ fontSize: 12 }}>Msg</span>
-                          {msgUnread > 0 && <span className="msg-toggle-badge">{msgUnread}</span>}
+                          {msgCount > 0 && <span className="msg-toggle-badge">{msgCount}</span>}
                         </button>
                         {(isBO || r.status === 'store_completed') && (
                           <button className="btn btn-sm btn-icon btn-outline" title="Delete" onClick={() => handleDelete(r.id)}>🗑</button>

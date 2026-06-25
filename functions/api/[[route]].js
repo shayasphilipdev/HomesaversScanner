@@ -2792,12 +2792,27 @@ export async function onRequest(context) {
 
       // selectPage returns total via PostgREST count=exact.
       const { rows, total } = await db.selectPage('task_records', params)
+
+      // Annotate each record with how many messages are attached (any state).
+      let msgCountMap = {}
+      if (rows.length) {
+        const msgRows = await db.select('task_record_messages', {
+          select:    'record_id',
+          record_id: `in.(${rows.map(r => r.id).join(',')})`,
+          limit:     '10000'
+        }).catch(() => [])
+        for (const m of msgRows) {
+          msgCountMap[m.record_id] = (msgCountMap[m.record_id] || 0) + 1
+        }
+      }
+
       const flat = rows.map(r => ({
         ...r,
         // Supplier now comes from the Alternate Barcode snapshot (supl_id /
         // supplier_code). Old free-text supplier kept as a fallback for rows
         // created before Phase 3.
-        supplier_name: r.supl_id || r.supplier_name_text || null
+        supplier_name:  r.supl_id || r.supplier_name_text || null,
+        message_count:  msgCountMap[r.id] || 0
       }))
       return json({
         records:  flat,

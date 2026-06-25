@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect, useCallback } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useStore } from '../App.jsx'
-import { getTaskRecords, getTaskTypes, getMessageThreads } from '../lib/api.js'
+import { getTaskRecords, getTaskTypes } from '../lib/api.js'
 import { useCurrentStore } from '../lib/currentStore.jsx'
 import TaskTypePicker from '../components/TaskTypePicker.jsx'
 import TaskForm from '../components/TaskForm.jsx'
@@ -31,8 +31,7 @@ export default function Tasks() {
   const [filter, setFilter] = useState('all')
   const [records, setRecords] = useState([])
   const [loading, setLoading] = useState(true)
-  const [autoOpenId, setAutoOpenId]           = useState(null)
-  const [messageThreadMap, setMessageThreadMap] = useState(new Map())
+  const [autoOpenId, setAutoOpenId] = useState(null)
 
   // Opened from the header message dropdown — jump to that record's thread.
   const location = useLocation()
@@ -47,17 +46,6 @@ export default function Tasks() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.key])
-
-  // Keep a live map of record_id → thread info (unread count etc.) for row badges.
-  useEffect(() => {
-    if (!session) return
-    const refresh = () => getMessageThreads()
-      .then(d => setMessageThreadMap(new Map((d?.threads || []).map(t => [t.record_id, t]))))
-      .catch(() => {})
-    refresh()
-    window.addEventListener('hs:messages-read', refresh)
-    return () => window.removeEventListener('hs:messages-read', refresh)
-  }, [session])
 
   useEffect(() => {
     getTaskTypes()
@@ -185,7 +173,6 @@ export default function Tasks() {
         loading={loading}
         onRefresh={load}
         autoOpenId={autoOpenId}
-        messageThreadMap={messageThreadMap}
         onOptimisticRemove={(id) => setRecords(rs => rs.filter(r => r.id !== id))}
       />
 
