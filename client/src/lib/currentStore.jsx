@@ -13,6 +13,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { getStores } from './api.js'
 import { useStore } from '../App.jsx'
+import { canAccessAdmin } from './roles.js'
 
 const KEY = 'hs_current_store'
 
@@ -52,7 +53,7 @@ export function CurrentStoreProvider({ children }) {
         const active = all.filter(s => s.is_active)
         // Restrict to the employee's scope.
         let scoped = active
-        if (!session.all_stores) {
+        if (!session.all_stores && !canAccessAdmin(session)) {
           const set = new Set(session.store_ids || [])
           if (Array.isArray(session.area_ids) && session.area_ids.length) {
             for (const s of active) if (session.area_ids.includes(s.area_id)) set.add(s.id)
