@@ -899,8 +899,11 @@ tbody tr:hover { background: var(--bg-soft); }
   gap: 14px;
   margin-bottom: 24px;
 }
+/* Tablet: two cards per row. */
 @media (max-width: 760px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 380px) { .kpi-grid { grid-template-columns: 1fr; } }
+/* Phone: one card per row so each split half gets ~half the screen — the big
+   6-digit numbers (e.g. 32,837) then fit without clipping or 3-line labels. */
+@media (max-width: 560px) { .kpi-grid { grid-template-columns: 1fr; } }
 
 .kpi-card {
   background: var(--glass-strong);
@@ -1007,6 +1010,7 @@ a.kpi-card:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
   font-weight: 600;
   margin-top: 6px;
   line-height: 1.05;
+  white-space: nowrap;   /* never break a number mid-digit */
 }
 .kpi-sub {
   font-size: 13px;
@@ -1432,6 +1436,14 @@ a.kpi-card:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
   .card-body { padding: 18px; }
   .page-header { flex-direction: column; align-items: flex-start; }
   .page-title { font-size: 26px; }
-  .kpi-value { font-size: 28px; }
+  .kpi-value { font-size: 27px; }
   .nav { padding: 0 14px; }
+
+  /* Split KPI cards on phones: tighter padding + smaller label so the HO/Ops
+     halves and their 6-digit numbers fit cleanly side by side. */
+  .kpi-split-side { padding: 13px 12px; }
+  .kpi-split-side .kpi-label { font-size: 12.5px; line-height: 1.25; }
+  .kpi-split-side .kpi-value { font-size: 24px; margin-top: 4px; }
+  .kpi-split-side .kpi-sub   { font-size: 11px; margin-top: 4px; line-height: 1.3; }
+  .kpi-split-tag { font-size: 8.5px; margin-bottom: 3px; }
 }
