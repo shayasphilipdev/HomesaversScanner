@@ -201,52 +201,63 @@ function SplitKpiCard({ loading, feature, hoLabel, hoValue, hoSub, opsLabel, ops
 }
 
 function ActivityChart({ byDay, loading }) {
-  // Build SVG bar chart of last 14 days
-  const W = 600, H = 180, P = 24
-  const max = Math.max(1, ...byDay.map(d => d.count))
-  const bw = byDay.length ? (W - P * 2) / byDay.length : 0
-  const total = byDay.reduce((s, d) => s + d.count, 0)
+  const hoTotal  = byDay.reduce((s, d) => s + (d.ho_count  || 0), 0)
+  const opsTotal = byDay.reduce((s, d) => s + (d.ops_count || 0), 0)
 
   return (
     <div className="card">
       <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
         <span>Activity · last 14 days</span>
         <span className="chip" style={{ marginLeft: 'auto' }}>
-          <span className="chip-dot" /> {total} records
+          <span className="chip-dot" /> {(hoTotal + opsTotal).toLocaleString('en-IE')} records
         </span>
       </div>
-      <div className="card-body" style={{ padding: 16 }}>
+      <div className="card-body" style={{ padding: '8px 16px 14px' }}>
         {loading ? (
           <div style={{ textAlign: 'center', padding: 40 }}><span className="spinner spinner-dark" /></div>
         ) : (
-          <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: '100%', height: 180, display: 'block' }}>
-            <defs>
-              <linearGradient id="bg-bar" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%"   stopColor="#2A4BC4" stopOpacity=".95" />
-                <stop offset="100%" stopColor="#2A4BC4" stopOpacity=".55" />
-              </linearGradient>
-            </defs>
-            {/* baseline */}
-            <line x1={P} y1={H - P} x2={W - P} y2={H - P} stroke="#E8E1D2" strokeWidth="1" />
-            {byDay.map((d, i) => {
-              const h = d.count === 0 ? 2 : ((H - P * 2) * d.count) / max
-              const x = P + i * bw + 3
-              const y = H - P - h
-              const w = Math.max(2, bw - 6)
-              return (
-                <g key={d.date}>
-                  <rect x={x} y={y} width={w} height={h} rx="4" fill="url(#bg-bar)" />
-                  {(i === 0 || i === byDay.length - 1 || i === Math.floor(byDay.length / 2)) && (
-                    <text x={x + w / 2} y={H - 6} textAnchor="middle" fill="#8C8779" fontSize="10">
-                      {new Date(d.date).toLocaleDateString('en-IE', { day: '2-digit', month: 'short' })}
-                    </text>
-                  )}
-                </g>
-              )
-            })}
-          </svg>
+          <>
+            <DayBars days={byDay} field="ho_count"  color="#2A4BC4" label="HO Tasks"           total={hoTotal}  />
+            <DayBars days={byDay} field="ops_count" color="#0E9A52" label="Operations Tasks"   total={opsTotal} />
+          </>
         )}
       </div>
+    </div>
+  )
+}
+
+function DayBars({ days, field, color, label, total }) {
+  const W = 600, H = 120, P = 22
+  const max = Math.max(1, ...days.map(d => d[field] || 0))
+  const bw  = days.length ? (W - P * 2) / days.length : 0
+  return (
+    <div style={{ marginBottom: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+        <span style={{ width: 9, height: 9, borderRadius: 2, background: color, display: 'inline-block', flexShrink: 0 }} />
+        <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-muted)' }}>{label}</span>
+        <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>{total.toLocaleString('en-IE')}</span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: '100%', height: 100, display: 'block' }}>
+        <line x1={P} y1={H - P} x2={W - P} y2={H - P} stroke="var(--border-soft)" strokeWidth="1" />
+        {days.map((d, i) => {
+          const val = d[field] || 0
+          const h   = val === 0 ? 2 : Math.max(3, ((H - P * 2) * val) / max)
+          const x   = P + i * bw + 3
+          const y   = H - P - h
+          const w   = Math.max(2, bw - 6)
+          const showLabel = i === 0 || i === days.length - 1 || i === Math.floor(days.length / 2)
+          return (
+            <g key={d.date}>
+              <rect x={x} y={y} width={w} height={h} rx="3" fill={color} fillOpacity={val === 0 ? 0.18 : 0.82} />
+              {showLabel && (
+                <text x={x + w / 2} y={H - 6} textAnchor="middle" fill="var(--text-muted)" fontSize="9">
+                  {new Date(d.date).toLocaleDateString('en-IE', { day: '2-digit', month: 'short' })}
+                </text>
+              )}
+            </g>
+          )
+        })}
+      </svg>
     </div>
   )
 }
