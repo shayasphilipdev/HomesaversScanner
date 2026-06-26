@@ -200,61 +200,93 @@ function SplitKpiCard({ loading, feature, hoLabel, hoValue, hoSub, opsLabel, ops
   )
 }
 
-const HO_COLOR  = '#2A4BC4'
-const OPS_COLOR = '#E07346'
-
 function ActivityChart({ byDay, loading }) {
-  const W = 600, H = 180, P = 28
+  const W = 600, H = 200, P = 30, R = 6
   const hoTotal  = byDay.reduce((s, d) => s + (d.ho_count  || 0), 0)
   const opsTotal = byDay.reduce((s, d) => s + (d.ops_count || 0), 0)
-  const max = Math.max(1, ...byDay.map(d => (d.ho_count || 0) + (d.ops_count || 0)))
-  const bw  = byDay.length ? (W - P * 2) / byDay.length : 0
-  const barH = H - P * 2
+  const max  = Math.max(1, ...byDay.map(d => (d.ho_count || 0) + (d.ops_count || 0)))
+  const bw   = byDay.length ? (W - P * 2) / byDay.length : 0
+  const barH = H - P * 2 - 14
 
   return (
-    <div className="card">
-      <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <span>Activity · last 14 days</span>
-        <div style={{ display: 'flex', gap: 12, marginLeft: 'auto', alignItems: 'center' }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text-muted)' }}>
-            <span style={{ width: 10, height: 10, borderRadius: 2, background: HO_COLOR, display: 'inline-block' }} />
-            HO <strong style={{ color: 'var(--text)' }}>{hoTotal.toLocaleString('en-IE')}</strong>
+    <div className="card activity-card">
+      <div className="activity-card-header">
+        <span className="activity-card-title">Activity · last 14 days</span>
+        <div className="activity-legend">
+          <span className="activity-leg">
+            <span className="activity-leg-swatch ho-swatch" />
+            HO Tasks <strong>{hoTotal.toLocaleString('en-IE')}</strong>
           </span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text-muted)' }}>
-            <span style={{ width: 10, height: 10, borderRadius: 2, background: OPS_COLOR, display: 'inline-block' }} />
-            Ops <strong style={{ color: 'var(--text)' }}>{opsTotal.toLocaleString('en-IE')}</strong>
+          <span className="activity-leg">
+            <span className="activity-leg-swatch ops-swatch" />
+            Ops Tasks <strong>{opsTotal.toLocaleString('en-IE')}</strong>
           </span>
         </div>
       </div>
-      <div className="card-body" style={{ padding: '12px 16px 16px' }}>
+      <div className="activity-chart-body">
         {loading ? (
           <div style={{ textAlign: 'center', padding: 40 }}><span className="spinner spinner-dark" /></div>
         ) : (
-          <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: '100%', height: 180, display: 'block' }}>
-            <line x1={P} y1={H - P} x2={W - P} y2={H - P} stroke="var(--border-soft)" strokeWidth="1" />
+          <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: '100%', height: H, display: 'block' }}>
+            <defs>
+              {/* Rich blue gradient — lighter at top, deep navy at bottom */}
+              <linearGradient id="ho-grad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor="#6B8EF5" />
+                <stop offset="100%" stopColor="#1A2E9A" />
+              </linearGradient>
+              {/* Rich orange gradient — bright amber at top, burnt orange at bottom */}
+              <linearGradient id="ops-grad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor="#FFB35A" />
+                <stop offset="100%" stopColor="#C44D0C" />
+              </linearGradient>
+              {/* Subtle grid line colour */}
+            </defs>
+
+            {/* Soft horizontal grid lines */}
+            {[0.33, 0.66, 1].map((f, i) => (
+              <line key={i}
+                x1={P} y1={P + barH * (1 - f)}
+                x2={W - P} y2={P + barH * (1 - f)}
+                stroke="var(--border-soft)" strokeWidth="0.6" strokeDasharray={i < 2 ? '4 5' : '0'} />
+            ))}
+
             {byDay.map((d, i) => {
               const ho   = d.ho_count  || 0
               const ops  = d.ops_count || 0
-              const hoH  = ho  === 0 ? 0 : Math.max(3, (barH * ho)  / max)
-              const opsH = ops === 0 ? 0 : Math.max(3, (barH * ops) / max)
-              const x    = P + i * bw + 3
-              const w    = Math.max(2, bw - 6)
+              const hoH  = ho  === 0 ? 0 : Math.max(5, (barH * ho)  / max)
+              const opsH = ops === 0 ? 0 : Math.max(5, (barH * ops) / max)
+              const x    = P + i * bw + 4
+              const w    = Math.max(3, bw - 8)
+              const base = P + barH  // y of the baseline
               const showLabel = i === 0 || i === byDay.length - 1 || i === Math.floor(byDay.length / 2)
+
               return (
                 <g key={d.date}>
+                  {/* HO — blue, sits at the bottom. Rounded bottom corners only (top covered by Ops rect). */}
                   {hoH > 0 && (
-                    <rect x={x} y={H - P - hoH - opsH} width={w} height={hoH} rx="3"
-                      fill={HO_COLOR} fillOpacity="0.88" />
+                    <rect
+                      x={x} y={base - hoH - opsH}
+                      width={w}
+                      height={hoH + (opsH > 0 ? R : 0)}
+                      rx={R}
+                      fill="url(#ho-grad)"
+                    />
                   )}
+                  {/* Ops — orange, sits on top. Rounded top corners, flat bottom flush with HO top. */}
                   {opsH > 0 && (
-                    <rect x={x} y={H - P - opsH} width={w} height={opsH} rx="3"
-                      fill={OPS_COLOR} fillOpacity="0.88" />
+                    <rect
+                      x={x} y={base - opsH}
+                      width={w} height={opsH}
+                      rx={R}
+                      fill="url(#ops-grad)"
+                    />
                   )}
+                  {/* ghost bar for zero days */}
                   {hoH === 0 && opsH === 0 && (
-                    <rect x={x} y={H - P - 3} width={w} height={3} rx="2" fill="var(--border-soft)" />
+                    <rect x={x} y={base - 3} width={w} height={3} rx="2" fill="var(--border-soft)" />
                   )}
                   {showLabel && (
-                    <text x={x + w / 2} y={H - 8} textAnchor="middle" fill="var(--text-muted)" fontSize="10">
+                    <text x={x + w / 2} y={base + 14} textAnchor="middle" fill="var(--text-muted)" fontSize="10">
                       {new Date(d.date).toLocaleDateString('en-IE', { day: '2-digit', month: 'short' })}
                     </text>
                   )}
