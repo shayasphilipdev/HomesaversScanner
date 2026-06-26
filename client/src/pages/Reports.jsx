@@ -273,7 +273,16 @@ function HQReports() {
   // Back-office logins default to the "live" statuses only — Completed by HO and
   // Clear are hidden unless the user deliberately selects them. Store users keep
   // the default (everything except Clear) so they can see + clear HO-completed items.
-  const [statusIds, setStatusIds]     = useState(isBO ? ['pending', 'no_change_needed', 'store_completed'] : [])
+  // Buying Manager, Admin and Store Support Administrator default to Pending only —
+  // their workflow is reviewing the unactioned queue, so the other live statuses
+  // just add noise they'd otherwise have to deselect each time.
+  const PENDING_ONLY_ROLES = ['buying_manager', 'admin', 'support_admin']
+  const defaultStatusIds = !isBO
+    ? []
+    : (PENDING_ONLY_ROLES.includes(session.role)
+        ? ['pending']
+        : ['pending', 'no_change_needed', 'store_completed'])
+  const [statusIds, setStatusIds]     = useState(defaultStatusIds)
   const [stores, setStores]           = useState([])
   const [taskTypes, setTaskTypes]     = useState([])
 
