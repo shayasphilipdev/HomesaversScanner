@@ -2352,11 +2352,12 @@ export async function onRequest(context) {
       // RPC's by_day only includes days that had records -- fill the
       // missing days so the chart shows a continuous 14-day window.
       const today = new Date(); today.setHours(0, 0, 0, 0)
-      const byDay = Object.fromEntries((stats.by_day || []).map(d => [d.date, d.count]))
+      const byDay = Object.fromEntries((stats.by_day || []).map(d => [d.date, d]))
       const filled = []
       for (let i = 13; i >= 0; i--) {
         const d = new Date(today.getTime() - i * 86400000).toISOString().slice(0, 10)
-        filled.push({ date: d, count: byDay[d] || 0 })
+        const row = byDay[d]
+        filled.push({ date: d, count: row?.count || 0, ho_count: row?.ho_count || 0, ops_count: row?.ops_count || 0 })
       }
       stats.by_day = filled
       // Hide by_store for non-BO -- only HO needs the per-store split.
