@@ -22,14 +22,25 @@ export default function Nav() {
 
   useEffect(() => {
     if (!session) return
+    let timer = null
     const refresh = () => getMessageThreads()
       .then(d => { setThreads(d?.threads || []); setUnread(d?.unread_total || 0) })
       .catch(() => {})
-    refresh()
-    const t = setInterval(refresh, 60000)
+
+    // Only poll while the tab is actually visible. Tills/back-office machines
+    // leave tabs open all day; a backgrounded tab polling every minute burns
+    // thousands of Cloudflare requests for nothing. Stop when hidden, and
+    // refresh immediately when the user returns so the unread badge is current.
+    const start = () => { if (timer) return; refresh(); timer = setInterval(refresh, 120000) }
+    const stop  = () => { if (timer) { clearInterval(timer); timer = null } }
+    const onVisibility = () => { document.hidden ? stop() : start() }
+
+    if (!document.hidden) start()
+    document.addEventListener('visibilitychange', onVisibility)
     window.addEventListener('hs:messages-read', refresh)
     return () => {
-      clearInterval(t)
+      stop()
+      document.removeEventListener('visibilitychange', onVisibility)
       window.removeEventListener('hs:messages-read', refresh)
     }
   }, [session])
