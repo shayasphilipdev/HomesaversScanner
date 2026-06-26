@@ -200,64 +200,70 @@ function SplitKpiCard({ loading, feature, hoLabel, hoValue, hoSub, opsLabel, ops
   )
 }
 
+const HO_COLOR  = '#2A4BC4'
+const OPS_COLOR = '#E07346'
+
 function ActivityChart({ byDay, loading }) {
+  const W = 600, H = 180, P = 28
   const hoTotal  = byDay.reduce((s, d) => s + (d.ho_count  || 0), 0)
   const opsTotal = byDay.reduce((s, d) => s + (d.ops_count || 0), 0)
+  const max = Math.max(1, ...byDay.map(d => (d.ho_count || 0) + (d.ops_count || 0)))
+  const bw  = byDay.length ? (W - P * 2) / byDay.length : 0
+  const barH = H - P * 2
 
   return (
     <div className="card">
-      <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <span>Activity · last 14 days</span>
-        <span className="chip" style={{ marginLeft: 'auto' }}>
-          <span className="chip-dot" /> {(hoTotal + opsTotal).toLocaleString('en-IE')} records
-        </span>
+        <div style={{ display: 'flex', gap: 12, marginLeft: 'auto', alignItems: 'center' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text-muted)' }}>
+            <span style={{ width: 10, height: 10, borderRadius: 2, background: HO_COLOR, display: 'inline-block' }} />
+            HO <strong style={{ color: 'var(--text)' }}>{hoTotal.toLocaleString('en-IE')}</strong>
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text-muted)' }}>
+            <span style={{ width: 10, height: 10, borderRadius: 2, background: OPS_COLOR, display: 'inline-block' }} />
+            Ops <strong style={{ color: 'var(--text)' }}>{opsTotal.toLocaleString('en-IE')}</strong>
+          </span>
+        </div>
       </div>
-      <div className="card-body" style={{ padding: '8px 16px 14px' }}>
+      <div className="card-body" style={{ padding: '12px 16px 16px' }}>
         {loading ? (
           <div style={{ textAlign: 'center', padding: 40 }}><span className="spinner spinner-dark" /></div>
         ) : (
-          <>
-            <DayBars days={byDay} field="ho_count"  color="#2A4BC4" label="HO Tasks"           total={hoTotal}  />
-            <DayBars days={byDay} field="ops_count" color="#0E9A52" label="Operations Tasks"   total={opsTotal} />
-          </>
+          <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: '100%', height: 180, display: 'block' }}>
+            <line x1={P} y1={H - P} x2={W - P} y2={H - P} stroke="var(--border-soft)" strokeWidth="1" />
+            {byDay.map((d, i) => {
+              const ho   = d.ho_count  || 0
+              const ops  = d.ops_count || 0
+              const hoH  = ho  === 0 ? 0 : Math.max(3, (barH * ho)  / max)
+              const opsH = ops === 0 ? 0 : Math.max(3, (barH * ops) / max)
+              const x    = P + i * bw + 3
+              const w    = Math.max(2, bw - 6)
+              const showLabel = i === 0 || i === byDay.length - 1 || i === Math.floor(byDay.length / 2)
+              return (
+                <g key={d.date}>
+                  {hoH > 0 && (
+                    <rect x={x} y={H - P - hoH - opsH} width={w} height={hoH} rx="3"
+                      fill={HO_COLOR} fillOpacity="0.88" />
+                  )}
+                  {opsH > 0 && (
+                    <rect x={x} y={H - P - opsH} width={w} height={opsH} rx="3"
+                      fill={OPS_COLOR} fillOpacity="0.88" />
+                  )}
+                  {hoH === 0 && opsH === 0 && (
+                    <rect x={x} y={H - P - 3} width={w} height={3} rx="2" fill="var(--border-soft)" />
+                  )}
+                  {showLabel && (
+                    <text x={x + w / 2} y={H - 8} textAnchor="middle" fill="var(--text-muted)" fontSize="10">
+                      {new Date(d.date).toLocaleDateString('en-IE', { day: '2-digit', month: 'short' })}
+                    </text>
+                  )}
+                </g>
+              )
+            })}
+          </svg>
         )}
       </div>
-    </div>
-  )
-}
-
-function DayBars({ days, field, color, label, total }) {
-  const W = 600, H = 120, P = 22
-  const max = Math.max(1, ...days.map(d => d[field] || 0))
-  const bw  = days.length ? (W - P * 2) / days.length : 0
-  return (
-    <div style={{ marginBottom: 6 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-        <span style={{ width: 9, height: 9, borderRadius: 2, background: color, display: 'inline-block', flexShrink: 0 }} />
-        <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-muted)' }}>{label}</span>
-        <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>{total.toLocaleString('en-IE')}</span>
-      </div>
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: '100%', height: 100, display: 'block' }}>
-        <line x1={P} y1={H - P} x2={W - P} y2={H - P} stroke="var(--border-soft)" strokeWidth="1" />
-        {days.map((d, i) => {
-          const val = d[field] || 0
-          const h   = val === 0 ? 2 : Math.max(3, ((H - P * 2) * val) / max)
-          const x   = P + i * bw + 3
-          const y   = H - P - h
-          const w   = Math.max(2, bw - 6)
-          const showLabel = i === 0 || i === days.length - 1 || i === Math.floor(days.length / 2)
-          return (
-            <g key={d.date}>
-              <rect x={x} y={y} width={w} height={h} rx="3" fill={color} fillOpacity={val === 0 ? 0.18 : 0.82} />
-              {showLabel && (
-                <text x={x + w / 2} y={H - 6} textAnchor="middle" fill="var(--text-muted)" fontSize="9">
-                  {new Date(d.date).toLocaleDateString('en-IE', { day: '2-digit', month: 'short' })}
-                </text>
-              )}
-            </g>
-          )
-        })}
-      </svg>
     </div>
   )
 }
