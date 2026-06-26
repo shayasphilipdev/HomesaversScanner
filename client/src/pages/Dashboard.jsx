@@ -132,20 +132,9 @@ export default function Dashboard() {
 
       {error && <div className="login-error">{error}</div>}
 
-      <div className="kpi-grid">
-        <SplitKpiCard loading={loading} feature
-          hoLabel="Total HO records"  hoValue={ho.all}           hoSub={isBO ? scopeLabel : 'Your stores'}
-          opsLabel="Total ops records" opsValue={ops.all}        opsSub={isBO ? scopeLabel : 'Your stores'}
-        />
-        <SplitKpiCard loading={loading}
-          hoLabel="Pending review"    hoValue={ho.pending}       hoSub="Awaiting HO action"
-          opsLabel="Pending action"   opsValue={ops.pending}     opsSub="Store to clear"
-        />
-        <SplitKpiCard loading={loading}
-          hoLabel="HO reviewed"       hoValue={hoReviewed}       hoSub={`${ho.completed} complete · ${ho.no_change_needed} no change`}
-          opsLabel="Store cleared"    opsValue={ops.store_completed} opsSub="Actioned by store"
-        />
-        <KpiCard loading={loading} label="Store confirmed" value={ho.store_completed} sub="Loop closed" />
+      <div className="task-panels">
+        <HoTasksPanel ho={ho} hoReviewed={hoReviewed} loading={loading} />
+        <OpsTasksPanel ops={ops} loading={loading} />
       </div>
 
       <div className="dash-row">
@@ -195,6 +184,144 @@ function SplitKpiCard({ loading, feature, hoLabel, hoValue, hoSub, opsLabel, ops
         <div className="kpi-label">{opsLabel}</div>
         <div className="kpi-value">{loading ? <Skeleton w={70} h={26} /> : Number(opsValue || 0).toLocaleString('en-IE')}</div>
         {opsSub && <div className="kpi-sub">{loading ? <Skeleton w={120} h={11} /> : opsSub}</div>}
+      </div>
+    </div>
+  )
+}
+
+// ── HO Tasks panel — pipeline flow ──────────────────────────────────────
+function HoTasksPanel({ ho, hoReviewed, loading }) {
+  const pct = (n) => ho.all ? Math.round((n / ho.all) * 100) : 0
+  return (
+    <div className="task-panel task-panel-ho">
+      <div className="task-panel-header">
+        <div className="task-panel-header-text">
+          <div className="task-panel-badge ho-badge">HO Tasks</div>
+          <div className="task-panel-title">Head Office Records</div>
+          <div className="task-panel-sub">Submitted by stores · reviewed by back office</div>
+        </div>
+        <div className="task-panel-total">
+          <div className="task-panel-total-val">
+            {loading ? <Skeleton w={60} h={28} /> : Number(ho.all || 0).toLocaleString('en-IE')}
+          </div>
+          <div className="task-panel-total-tag">total records</div>
+        </div>
+      </div>
+      <div className="ho-pipeline">
+        <PipelineStep
+          label="Pending review" value={ho.pending} pct={pct(ho.pending)}
+          color="#B47F1E" bg="rgba(180,127,30,.10)" loading={loading}
+          icon="⏳"
+        />
+        <PipelineArrow />
+        <PipelineStep
+          label="HO Reviewed" value={hoReviewed} pct={pct(hoReviewed)}
+          color="#2A4BC4" bg="rgba(42,75,196,.10)" loading={loading}
+          icon="✔"
+          detail={ho.all ? `${ho.completed} complete · ${ho.no_change_needed} no change` : null}
+        />
+        <PipelineArrow />
+        <PipelineStep
+          label="Store confirmed" value={ho.store_completed} pct={pct(ho.store_completed)}
+          color="#1E6B3F" bg="rgba(30,107,63,.10)" loading={loading}
+          icon="🏁"
+        />
+      </div>
+    </div>
+  )
+}
+
+function PipelineStep({ label, value, pct, color, bg, loading, icon, detail }) {
+  return (
+    <div className="pipeline-step" style={{ background: bg, borderLeft: `3px solid ${color}` }}>
+      <div className="pipeline-step-icon">{icon}</div>
+      <div className="pipeline-step-val" style={{ color }}>
+        {loading ? <Skeleton w={50} h={22} /> : Number(value || 0).toLocaleString('en-IE')}
+      </div>
+      <div className="pipeline-step-label">{label}</div>
+      <div className="pipeline-step-pct" style={{ color }}>{loading ? '—' : `${pct}%`}</div>
+      {detail && <div className="pipeline-step-detail">{detail}</div>}
+    </div>
+  )
+}
+
+function PipelineArrow() {
+  return <div className="pipeline-arrow">→</div>
+}
+
+// ── Ops Tasks panel — completion ring ────────────────────────────────────
+function OpsTasksPanel({ ops, loading }) {
+  const clearPct   = ops.all ? Math.round((ops.store_completed / ops.all) * 100) : 0
+  const pendingPct = ops.all ? Math.round((ops.pending        / ops.all) * 100) : 0
+  const r = 40, sw = 10, cx = 50, cy = 50
+  const circ      = 2 * Math.PI * r
+  const clearLen  = (clearPct   / 100) * circ
+  const pendLen   = (pendingPct / 100) * circ
+
+  return (
+    <div className="task-panel task-panel-ops">
+      <div className="task-panel-header">
+        <div className="task-panel-header-text">
+          <div className="task-panel-badge ops-badge">Operations Tasks</div>
+          <div className="task-panel-title">Daily Checks & Compliance</div>
+          <div className="task-panel-sub">Completed directly by store staff — no HO review needed</div>
+        </div>
+        <div className="task-panel-total">
+          <div className="task-panel-total-val ops">
+            {loading ? <Skeleton w={60} h={28} /> : Number(ops.all || 0).toLocaleString('en-IE')}
+          </div>
+          <div className="task-panel-total-tag">total records</div>
+        </div>
+      </div>
+      <div className="ops-visual">
+        <div className="ops-ring-wrap">
+          {loading ? (
+            <Skeleton w={100} h={100} style={{ borderRadius: '50%' }} />
+          ) : (
+            <svg viewBox="0 0 100 100" style={{ width: 110, height: 110 }}>
+              <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--border-soft)" strokeWidth={sw} />
+              {ops.all > 0 && (
+                <circle cx={cx} cy={cy} r={r} fill="none" stroke="#1E6B3F" strokeWidth={sw}
+                  strokeDasharray={`${clearLen} ${circ - clearLen}`}
+                  strokeDashoffset={0}
+                  transform={`rotate(-90 ${cx} ${cy})`} />
+              )}
+              {ops.all > 0 && pendLen > 0 && (
+                <circle cx={cx} cy={cy} r={r} fill="none" stroke="#B47F1E" strokeWidth={sw}
+                  strokeDasharray={`${pendLen} ${circ - pendLen}`}
+                  strokeDashoffset={-clearLen}
+                  transform={`rotate(-90 ${cx} ${cy})`} />
+              )}
+              <text x={cx} y={cy - 5} textAnchor="middle" fontSize="17" fontWeight="800" fill="var(--text)">{clearPct}%</text>
+              <text x={cx} y={cy + 10} textAnchor="middle" fontSize="9" fill="var(--text-muted)">cleared</text>
+            </svg>
+          )}
+        </div>
+        <div className="ops-stats">
+          <div className="ops-stat">
+            <span className="ops-stat-dot" style={{ background: '#1E6B3F' }} />
+            <div>
+              <div className="ops-stat-val" style={{ color: '#1E6B3F' }}>
+                {loading ? <Skeleton w={50} h={20} /> : Number(ops.store_completed || 0).toLocaleString('en-IE')}
+              </div>
+              <div className="ops-stat-label">Cleared by store</div>
+            </div>
+          </div>
+          <div className="ops-stat">
+            <span className="ops-stat-dot" style={{ background: '#B47F1E' }} />
+            <div>
+              <div className="ops-stat-val" style={{ color: '#B47F1E' }}>
+                {loading ? <Skeleton w={50} h={20} /> : Number(ops.pending || 0).toLocaleString('en-IE')}
+              </div>
+              <div className="ops-stat-label">Pending — store to action</div>
+            </div>
+          </div>
+        </div>
+        <div className="ops-ring-legend">
+          <div className="ops-legend-item"><span style={{ background: '#1E6B3F' }} />Cleared</div>
+          <div className="ops-legend-item"><span style={{ background: '#B47F1E' }} />Pending</div>
+          <div className="ops-legend-item grey"><span />Unstarted</div>
+        </div>
       </div>
     </div>
   )
