@@ -5,7 +5,7 @@ fresh Claude session opening this repo cold, **read this file first** — it has
 the architecture, data model, every module, recent changes, known issues, and
 the project memory all in one place.
 
-*Last updated: 2026-06-16.*
+*Last updated: 2026-06-26.*
 
 ---
 
@@ -354,7 +354,25 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ---
 
-## 13. Local dev & ops
+## 13. Backlog / planned (not yet built)
+
+Items requested but deliberately deferred — to be built later.
+
+- **In-app feedback form** *(requested 2026-06-26)* — let any logged-in user
+  submit feedback / suggestions / bug reports from inside the app. Not yet
+  implemented; placeholder for the future build. Likely shape when picked up:
+  - **DB:** new `feedback` table — `id · user_id · user_name · role · store_id
+    (nullable) · category (suggestion|bug|other) · message · status
+    (new|reviewed|closed) · created_at`. Grant anon, no RLS (mirror the rest).
+  - **Backend:** `POST /api/feedback` (insert, stamps the session user) and
+    `GET /api/feedback` (admin/buying_manager only, for review).
+  - **Frontend:** a small `/feedback` route + nav entry (or a header/footer
+    "Send feedback" button opening a modal); admin sees submissions under
+    Reports or Admin. Keep it lightweight — one textarea + a category select.
+
+---
+
+## 14. Local dev & ops
 
 ```powershell
 # Terminal 1 — Vite
@@ -374,7 +392,7 @@ cd C:\Scraping\homesavers-scanner ; npx wrangler pages dev --proxy 5173 # :8788
 
 ---
 
-## 14. Project memory (mirrors `~/.claude/.../memory/`)
+## 15. Project memory (mirrors `~/.claude/.../memory/`)
 
 These are the auto-loaded memory facts, embedded here so a cold session has
 them even before recall kicks in.
