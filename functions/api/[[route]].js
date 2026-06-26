@@ -440,6 +440,28 @@ async function runAutoCleanup(db, env) {
     for (const o of (oldPhotos || [])) {
       await deleteStorageFile(o.name)
     }
+
+    // 4 — Product Query board: remove questions (+ their answers + photos) older
+    // than the retention window (default 14 days). The board is a transient
+    // "what is this product?" queue, not a long-term record.
+    const [pqSetting] = await db.select('app_settings', { select: 'value', key: 'eq.product_query_retention_days' })
+    const pqDays   = Math.max(1, Number(pqSetting?.value || 14))
+    const pqCutoff = new Date(Date.now() - pqDays * 86400000).toISOString()
+    const doomedQ  = await db.select('product_questions', { select: 'id,photo_url', created_at: `lt.${pqCutoff}` })
+    if (doomedQ.length) {
+      const inList = `in.(${doomedQ.map(q => q.id).join(',')})`
+      // Collect answer photos before the rows go.
+      const answers = await db.select('product_question_answers', { select: 'photo_url', question_id: inList })
+      // Delete child answers first (FK-safe), then the questions.
+      await db.remove('product_question_answers', { question_id: inList })
+      await db.remove('product_questions',        { id: inList })
+      // Best-effort storage cleanup for both question and answer photos.
+      const pqUrls = [...doomedQ.map(q => q.photo_url), ...answers.map(a => a.photo_url)].filter(Boolean)
+      for (const u of pqUrls) {
+        if (!u.startsWith(storageBase)) continue
+        await deleteStorageFile(u.slice(storageBase.length))
+      }
+    }
   } catch (e) {
     // Best-effort — never throw from a background task.
     console.error('[auto-cleanup]', e?.message || e)
