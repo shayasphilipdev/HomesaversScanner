@@ -201,100 +201,101 @@ function SplitKpiCard({ loading, feature, hoLabel, hoValue, hoSub, opsLabel, ops
 }
 
 function ActivityChart({ byDay, loading }) {
-  const W = 600, H = 200, P = 30, R = 6
-  const hoTotal  = byDay.reduce((s, d) => s + (d.ho_count  || 0), 0)
-  const opsTotal = byDay.reduce((s, d) => s + (d.ops_count || 0), 0)
-  const max  = Math.max(1, ...byDay.map(d => (d.ho_count || 0) + (d.ops_count || 0)))
-  const bw   = byDay.length ? (W - P * 2) / byDay.length : 0
-  const barH = H - P * 2 - 14
+  const days = Array.isArray(byDay) ? byDay : []
+
+  const hoTotal  = days.reduce((s, d) => s + (d.ho_count  || 0), 0)
+  const opsTotal = days.reduce((s, d) => s + (d.ops_count || 0), 0)
+  const fmt = (n) => n.toLocaleString('en-IE')
+
+  // SVG coordinate space. Drawn with preserveAspectRatio="none" so it stretches
+  // to fill the flex body and the bars always sit on the bottom baseline (VH).
+  const VW = 1000, VH = 300, GAP = 12
+  const n = days.length || 14
+  const slot = VW / n
+  const barW = Math.max(1, slot - GAP)
+
+  const HO_MIN = 6        // min visible HO (blue) height when ho_count > 0
+  const ZERO_TICK = 3     // faint flat tick on the baseline for zero days
+
+  // Stacked scale: (ho + ops) mapped into VH. HO stays a thin base because Ops dwarfs it.
+  const maxStack = Math.max(1, ...days.map(d => (d.ho_count || 0) + (d.ops_count || 0)))
+  const yScale = (v) => (v / maxStack) * VH
+
+  const bars = days.map((d, i) => {
+    const x = i * slot + GAP / 2
+    const ho = d.ho_count || 0
+    const ops = d.ops_count || 0
+    const hoH = ho > 0 ? Math.max(yScale(ho), HO_MIN) : 0
+    let opsH = ops > 0 ? yScale(ops) : 0
+    if (hoH + opsH > VH) opsH = Math.max(0, VH - hoH)   // never eat the HO base
+    const hoY  = VH - hoH        // HO is the BOTTOM block — bottom edge on baseline
+    const opsY = hoY - opsH      // Ops stacked directly on top
+    const isZero = ho === 0 && ops === 0
+    return { i, x, ho, ops, opsY, opsH, hoY, hoH, isZero }
+  })
+
+  const labelDate = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-IE', { day: '2-digit', month: 'short' }) : ''
+  const firstLabel = days[0] ? labelDate(days[0].date) : ''
+  const midLabel   = days.length ? labelDate(days[Math.floor((days.length - 1) / 2)].date) : ''
+  const lastLabel  = days.length ? labelDate(days[days.length - 1].date) : ''
 
   return (
-    <div className="card activity-card">
-      <div className="activity-card-header">
-        <span className="activity-card-title">Activity · last 14 days</span>
-        <div className="activity-legend">
-          <span className="activity-leg">
-            <span className="activity-leg-swatch ho-swatch" />
-            HO Tasks <strong>{hoTotal.toLocaleString('en-IE')}</strong>
-          </span>
-          <span className="activity-leg">
-            <span className="activity-leg-swatch ops-swatch" />
-            Ops Tasks <strong>{opsTotal.toLocaleString('en-IE')}</strong>
-          </span>
+    <div className="ac-card">
+      <div className="ac-accent" />
+
+      <div className="ac-head">
+        <div className="ac-title">Activity · last 14 days</div>
+        <div className="ac-legend">
+          <span className="ac-leg"><span className="ac-sw ac-sw-ho" /> HO <b>{fmt(hoTotal)}</b></span>
+          <span className="ac-leg"><span className="ac-sw ac-sw-ops" /> Ops <b>{fmt(opsTotal)}</b></span>
         </div>
       </div>
-      <div className="activity-chart-body">
+
+      <div className="ac-body">
         {loading ? (
-          <div style={{ textAlign: 'center', padding: 40 }}><span className="spinner spinner-dark" /></div>
+          <div className="ac-loading"><span className="spinner spinner-dark" /></div>
         ) : (
-          <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: '100%', height: H, display: 'block' }}>
+          <svg className="ac-svg" viewBox={`0 0 ${VW} ${VH}`} preserveAspectRatio="none"
+            role="img" aria-label={`Stacked bar chart of activity over the last 14 days. HO total ${fmt(hoTotal)}, Ops total ${fmt(opsTotal)}.`}>
             <defs>
-              {/* Rich blue gradient — lighter at top, deep navy at bottom */}
-              <linearGradient id="ho-grad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%"   stopColor="#6B8EF5" />
-                <stop offset="100%" stopColor="#1A2E9A" />
+              {/* HO blue: bright at top, medium blue at bottom — refined, never navy/muddy */}
+              <linearGradient id="acHoGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stopColor="#5BA8F5" />
+                <stop offset="1" stopColor="#2E78D6" />
               </linearGradient>
-              {/* Rich orange gradient — bright amber at top, burnt orange at bottom */}
-              <linearGradient id="ops-grad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%"   stopColor="#FFB35A" />
-                <stop offset="100%" stopColor="#C44D0C" />
+              {/* Ops orange: light at top, warm amber at bottom — premium, never burnt/dark */}
+              <linearGradient id="acOpsGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stopColor="#FFB066" />
+                <stop offset="1" stopColor="#F2843C" />
               </linearGradient>
-              {/* Subtle grid line colour */}
             </defs>
 
-            {/* Soft horizontal grid lines */}
-            {[0.33, 0.66, 1].map((f, i) => (
-              <line key={i}
-                x1={P} y1={P + barH * (1 - f)}
-                x2={W - P} y2={P + barH * (1 - f)}
-                stroke="var(--border-soft)" strokeWidth="0.6" strokeDasharray={i < 2 ? '4 5' : '0'} />
+            <line x1="0" y1={VH * (1 / 3)} x2={VW} y2={VH * (1 / 3)} className="ac-grid" />
+            <line x1="0" y1={VH * (2 / 3)} x2={VW} y2={VH * (2 / 3)} className="ac-grid" />
+            <line x1="0" y1={VH} x2={VW} y2={VH} className="ac-baseline" />
+
+            {bars.map((b) => b.isZero ? (
+              <rect key={b.i} x={b.x} y={VH - ZERO_TICK} width={barW} height={ZERO_TICK} rx="0" className="ac-zero" />
+            ) : (
+              <g key={b.i}>
+                {/* Ops (orange) stacked ON TOP */}
+                {b.ops > 0 && (
+                  <rect x={b.x} y={b.opsY} width={barW} height={b.opsH} rx="0" fill="url(#acOpsGrad)" />
+                )}
+                {/* HO (blue) at the BOTTOM — crisp top edge meets Ops cleanly */}
+                {b.ho > 0 && (
+                  <rect x={b.x} y={b.hoY} width={barW} height={b.hoH} rx="0" fill="url(#acHoGrad)" />
+                )}
+              </g>
             ))}
-
-            {byDay.map((d, i) => {
-              const ho   = d.ho_count  || 0
-              const ops  = d.ops_count || 0
-              const hoH  = ho  === 0 ? 0 : Math.max(5, (barH * ho)  / max)
-              const opsH = ops === 0 ? 0 : Math.max(5, (barH * ops) / max)
-              const x    = P + i * bw + 4
-              const w    = Math.max(3, bw - 8)
-              const base = P + barH  // y of the baseline
-              const showLabel = i === 0 || i === byDay.length - 1 || i === Math.floor(byDay.length / 2)
-
-              return (
-                <g key={d.date}>
-                  {/* HO — blue, sits at the bottom. Rounded bottom corners only (top covered by Ops rect). */}
-                  {hoH > 0 && (
-                    <rect
-                      x={x} y={base - hoH - opsH}
-                      width={w}
-                      height={hoH + (opsH > 0 ? R : 0)}
-                      rx={R}
-                      fill="url(#ho-grad)"
-                    />
-                  )}
-                  {/* Ops — orange, sits on top. Rounded top corners, flat bottom flush with HO top. */}
-                  {opsH > 0 && (
-                    <rect
-                      x={x} y={base - opsH}
-                      width={w} height={opsH}
-                      rx={R}
-                      fill="url(#ops-grad)"
-                    />
-                  )}
-                  {/* ghost bar for zero days */}
-                  {hoH === 0 && opsH === 0 && (
-                    <rect x={x} y={base - 3} width={w} height={3} rx="2" fill="var(--border-soft)" />
-                  )}
-                  {showLabel && (
-                    <text x={x + w / 2} y={base + 14} textAnchor="middle" fill="var(--text-muted)" fontSize="10">
-                      {new Date(d.date).toLocaleDateString('en-IE', { day: '2-digit', month: 'short' })}
-                    </text>
-                  )}
-                </g>
-              )
-            })}
           </svg>
         )}
+      </div>
+
+      <div className="ac-axis">
+        <span>{firstLabel}</span>
+        <span>{midLabel}</span>
+        <span>{lastLabel}</span>
       </div>
     </div>
   )
