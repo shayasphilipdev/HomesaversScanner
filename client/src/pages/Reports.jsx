@@ -382,13 +382,37 @@ function HQReports() {
   const downloadXLSX = async () => {
     setDownloading(true); setError('')
     try {
-      const params = new URLSearchParams({ from, to, format: 'json' })
-      if (storeIds.length)    params.set('storeId',    storeIds.join(','))
-      if (taskTypeIds.length) params.set('task_type',  taskTypeIds.join(','))
-      if (statusIds.length)   params.set('status',     statusIds.join(','))
-      if (statusIds.includes('cleared')) params.set('includeCleared', '1')
-      const res = await authedFetch(`/api/reports/task-records?${params}`)
-      const { cols, headers, rows, truncated } = await res.json()
+      const baseParams = { from, to, format: 'json' }
+      if (storeIds.length)    baseParams.storeId   = storeIds.join(',')
+      if (taskTypeIds.length) baseParams.task_type = taskTypeIds.join(',')
+      if (statusIds.length)   baseParams.status    = statusIds.join(',')
+      if (statusIds.includes('cleared')) baseParams.includeCleared = '1'
+
+      // The server used to assemble the whole export inside one long-lived
+      // streamed response. On a large export (200k+ rows, 20-40+ internal
+      // Supabase round trips) that request ran long enough for Cloudflare
+      // to kill the Worker mid-stream -- outside any server-side try/catch,
+      // so it just came back as truncated, unparseable JSON. Driving the
+      // pagination from here instead means every request is one short page,
+      // so no single request can run long enough to hit that ceiling.
+      let cols = null, headers = null
+      const rows = []
+      let cursor = null
+      for (let i = 0; i < 1000; i++) {
+        const params = new URLSearchParams(baseParams)
+        if (cursor) {
+          params.set('after_created_at', cursor.created_at)
+          params.set('after_id',         cursor.id)
+        }
+        const res = await authedFetch(`/api/reports/task-records?${params}`)
+        const page = await res.json()
+        cols    = cols    || page.cols
+        headers = headers || page.headers
+        rows.push(...page.rows)
+        if (!page.next_cursor) break
+        cursor = page.next_cursor
+      }
+
       const n = new Date()
       const p = x => String(x).padStart(2, '0')
       const stamp = `${p(n.getDate())}${p(n.getMonth() + 1)}${n.getFullYear()}${p(n.getHours())}${p(n.getMinutes())}${p(n.getSeconds())}`
@@ -396,11 +420,6 @@ function HQReports() {
         `Task Reports - ${stamp}.xlsx`, rows, cols, headers,
         new Set(['photo_product_url', 'photo_barcode_url'])
       )
-      // The export streams from the server; a connection blip partway through
-      // means the file was still generated, but only with the rows fetched
-      // before the failure. Downloading it silently would hide that from
-      // whoever's relying on the numbers -- flag it instead of failing outright.
-      if (truncated) toast.error(`Export incomplete — connection dropped partway through (${rows.length} rows saved). Try again.`)
     } catch (e) {
       setError(e.message)
     } finally {

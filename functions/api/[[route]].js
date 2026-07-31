@@ -3360,20 +3360,12 @@ export async function onRequest(context) {
       }
       const csvRow  = flatRow => cols.map(c => (urlCols.has(c) ? escUrl(flatRow[c]) : esc(flatRow[c]))).join(',')
       const isJson  = p.get('format') === 'json'
+      const PAGE    = 10000
+      const sleep   = ms => new Promise(res => setTimeout(res, ms))
 
-      // Stream pages straight into the response instead of buffering the
-      // whole export in Worker memory first. A wide export (300k+ rows) is
-      // 100MB+ once flattened to JSON/CSV -- building that as one big
-      // array/string before responding risks the Worker's memory ceiling
-      // regardless of how fast each DB page comes back. Streaming keeps
-      // memory bounded to roughly one page at a time.
-      const PAGE = 10000
-      const sleep = ms => new Promise(res => setTimeout(res, ms))
-      // A transient blip between the Worker and Supabase mid-export used to
-      // kill the stream outright -- the response is already committed (200,
-      // partial body sent) by that point, so there's no way to turn it into
-      // a clean error; the client just gets truncated, unparseable JSON.
-      // Retry each page a few times before giving up.
+      // A single call to report_task_records_page, retried a few times --
+      // transient Supabase blips are common enough on a chain this size to
+      // be worth absorbing here rather than failing the whole export.
       const fetchPage = async (cursor) => {
         for (let attempt = 0; attempt < 4; attempt++) {
           try {
@@ -3389,51 +3381,53 @@ export async function onRequest(context) {
           }
         }
       }
+
+      // format=json returns ONE page per call plus a cursor for the next one
+      // -- the client (Reports.jsx) drives the loop itself, calling this
+      // endpoint once per page. Each call is short and independent, so no
+      // single request stays open long enough to hit a platform execution
+      // time limit. The previous approach did all pages inside one
+      // long-lived streamed response; on a 200k+ row export that request
+      // ran long enough that Cloudflare killed the Worker mid-stream --
+      // outside any try/catch in this code, so no amount of retry/error
+      // handling in here could catch it. The client just got a truncated,
+      // unparseable response with no indication of what happened.
+      if (isJson) {
+        const cursor = p.get('after_created_at')
+          ? { created_at: p.get('after_created_at'), id: p.get('after_id') }
+          : null
+        const pageRows = await fetchPage(cursor)
+        const flat = pageRows.map(flatten)
+        const last = pageRows[pageRows.length - 1]
+        const next_cursor = pageRows.length === PAGE
+          ? { created_at: last.created_at, id: last.id }
+          : null
+        return json({ cols, headers, rows: flat, next_cursor })
+      }
+
+      // Plain CSV (no client today uses this, but kept working for direct
+      // links) still streams the full export in one request.
       const encoder = new TextEncoder()
       const stream = new ReadableStream({
         async start(controller) {
           const push = s => controller.enqueue(encoder.encode(s))
           let cursor = null
-          let first  = true
           try {
-            if (isJson) {
-              push(`{"cols":${JSON.stringify(cols)},"headers":${JSON.stringify(headers)},"rows":[`)
-            } else {
-              push(headers.map(esc).join(',') + '\n')
-            }
+            push(headers.map(esc).join(',') + '\n')
             for (let i = 0; i < 500; i++) {
               const pageRows = await fetchPage(cursor)
-              for (const r of pageRows) {
-                const flatRow = flatten(r)
-                if (isJson) {
-                  push((first ? '' : ',') + JSON.stringify(flatRow))
-                } else {
-                  push(csvRow(flatRow) + '\n')
-                }
-                first = false
-              }
+              for (const r of pageRows) push(csvRow(flatten(r)) + '\n')
               if (pageRows.length < PAGE) break
               const last = pageRows[pageRows.length - 1]
               cursor = { created_at: last.created_at, id: last.id }
             }
-            if (isJson) push(']}')
             controller.close()
           } catch (e) {
-            // Retries exhausted. The CSV path is fine as-is -- any prefix of
-            // a CSV is still valid, just short. The JSON path needs a proper
-            // close or the client's res.json() throws on truncated input
-            // instead of surfacing anything usable, so close the array/object
-            // out and flag it rather than leaving broken JSON on the wire.
-            console.error('report export failed mid-stream:', e)
-            if (isJson) push(`],"truncated":true,"error":${JSON.stringify(e.message || 'export failed')}}`)
+            console.error('CSV report export failed mid-stream:', e)
             controller.close()
           }
         }
       })
-
-      if (isJson) {
-        return new Response(stream, { headers: { 'Content-Type': 'application/json' } })
-      }
       const filename = `task-records-${(from || 'start').slice(0,10)}-to-${(to || 'now').slice(0,10)}.csv`
       return new Response(stream, {
         headers: {
