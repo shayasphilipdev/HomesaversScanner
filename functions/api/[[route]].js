@@ -3317,21 +3317,6 @@ export async function onRequest(context) {
         p_statuses:        statusCsvList.length ? statusCsvList : null,
         p_include_cleared: includeCleared
       }
-      const PAGE = 1000
-      const records = []
-      let cursor = null
-      for (let i = 0; i < 500; i++) {
-        const pageRows = await db.rpc('report_task_records_page', {
-          ...rpcBase,
-          p_after_created_at: cursor ? cursor.created_at : null,
-          p_after_id:         cursor ? cursor.id         : null,
-          p_limit:            PAGE
-        })
-        records.push(...pageRows)
-        if (pageRows.length < PAGE) break
-        const last = pageRows[pageRows.length - 1]
-        cursor = { created_at: last.created_at, id: last.id }
-      }
       const [stores, taskTypes] = await Promise.all([
         db.select('stores', { select: 'id,store_name' }),
         db.select('task_types', { select: 'code,name' }),
@@ -3339,7 +3324,7 @@ export async function onRequest(context) {
       const taskTypeName = Object.fromEntries(taskTypes.map(t => [t.code, t.name]))
       const storeName    = Object.fromEntries(stores.map(s => [s.id, s.store_name]))
 
-      const flat = records.map(r => ({
+      const flatten = r => ({
         barcode_no:          r.barcode_no || r.product_code || '',
         product_barcode:     r.product_barcode || '',
         item_name:           r.item_name || r.description || r.product_name_label || '',
@@ -3359,7 +3344,7 @@ export async function onRequest(context) {
         created_at:          fmtReportDate(r.created_at),
         supplier_code:        r.supplier_code || '',
         actual_product_name:  r.actual_product_name || '',
-      }))
+      })
 
       // Column order matches the numbering requested on the report:
       // Barcode, Code, Description, Task, Details, Supplier, Product Status,
@@ -3367,19 +3352,67 @@ export async function onRequest(context) {
       // Product Photo, Barcode Photo, Supplier Code, Actual Product Name.
       const cols    = ['barcode_no','product_barcode','item_name','task_type','details','supl_id','item_status','barcode_status','status','created_at','store_name','uom','quantity','notes','review_notes','photo_product_url','photo_barcode_url','supplier_code','actual_product_name']
       const headers = ['Product Barcode','Product Code','Product Description','Task','Details','Supplier','Product Status','Barcode Status','Status','Date','Store','UOM','Quantity','Notes','HO Notes','Product Photo','Barcode Photo','Supplier Code','Actual Product Name']
-
-      // ?format=json returns the raw flat rows for client-side Excel generation
-      if (p.get('format') === 'json') {
-        return new Response(JSON.stringify({ cols, headers, rows: flat }), {
-          headers: { 'Content-Type': 'application/json' }
-        })
-      }
-
       const urlCols = new Set(['photo_product_url','photo_barcode_url'])
-      const csv  = toCSV(flat, cols, headers, urlCols)
-      const filename = `task-records-${(from || 'start').slice(0,10)}-to-${(to || 'now').slice(0,10)}.csv`
+      const esc     = v => `"${String(v ?? '').replace(/"/g, '""')}"`
+      const escUrl  = v => {
+        const s = String(v ?? '').trim()
+        return s ? `"=HYPERLINK(""${s.replace(/"/g, '""')}"",""View"")"` : '""'
+      }
+      const csvRow  = flatRow => cols.map(c => (urlCols.has(c) ? escUrl(flatRow[c]) : esc(flatRow[c]))).join(',')
+      const isJson  = p.get('format') === 'json'
 
-      return new Response(csv, {
+      // Stream pages straight into the response instead of buffering the
+      // whole export in Worker memory first. A wide export (300k+ rows) is
+      // 100MB+ once flattened to JSON/CSV -- building that as one big
+      // array/string before responding risks the Worker's memory ceiling
+      // regardless of how fast each DB page comes back. Streaming keeps
+      // memory bounded to roughly one page at a time.
+      const PAGE = 10000
+      const encoder = new TextEncoder()
+      const stream = new ReadableStream({
+        async start(controller) {
+          const push = s => controller.enqueue(encoder.encode(s))
+          try {
+            if (isJson) {
+              push(`{"cols":${JSON.stringify(cols)},"headers":${JSON.stringify(headers)},"rows":[`)
+            } else {
+              push(headers.map(esc).join(',') + '\n')
+            }
+            let cursor = null
+            let first  = true
+            for (let i = 0; i < 500; i++) {
+              const pageRows = await db.rpc('report_task_records_page', {
+                ...rpcBase,
+                p_after_created_at: cursor ? cursor.created_at : null,
+                p_after_id:         cursor ? cursor.id         : null,
+                p_limit:            PAGE
+              })
+              for (const r of pageRows) {
+                const flatRow = flatten(r)
+                if (isJson) {
+                  push((first ? '' : ',') + JSON.stringify(flatRow))
+                } else {
+                  push(csvRow(flatRow) + '\n')
+                }
+                first = false
+              }
+              if (pageRows.length < PAGE) break
+              const last = pageRows[pageRows.length - 1]
+              cursor = { created_at: last.created_at, id: last.id }
+            }
+            if (isJson) push(']}')
+            controller.close()
+          } catch (e) {
+            controller.error(e)
+          }
+        }
+      })
+
+      if (isJson) {
+        return new Response(stream, { headers: { 'Content-Type': 'application/json' } })
+      }
+      const filename = `task-records-${(from || 'start').slice(0,10)}-to-${(to || 'now').slice(0,10)}.csv`
+      return new Response(stream, {
         headers: {
           'Content-Type':        'text/csv;charset=utf-8',
           'Content-Disposition': `attachment; filename="${filename}"`
