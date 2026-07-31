@@ -395,6 +395,23 @@ function HQReports() {
       // so it just came back as truncated, unparseable JSON. Driving the
       // pagination from here instead means every request is one short page,
       // so no single request can run long enough to hit that ceiling.
+      //
+      // Firing ~25-30 requests back-to-back with no pacing looks like a
+      // burst to rate-limiting, and hit a 503 on this project (already under
+      // heavy load today). Space page requests out and retry a single failed
+      // page a couple of times before giving up on the whole export.
+      const sleep = ms => new Promise(res => setTimeout(res, ms))
+      const fetchPage = async (params) => {
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const res = await authedFetch(`/api/reports/task-records?${params}`)
+            return await res.json()
+          } catch (e) {
+            if (attempt === 2) throw e
+            await sleep(800 * (attempt + 1))
+          }
+        }
+      }
       let cols = null, headers = null
       const rows = []
       let cursor = null
@@ -404,8 +421,8 @@ function HQReports() {
           params.set('after_created_at', cursor.created_at)
           params.set('after_id',         cursor.id)
         }
-        const res = await authedFetch(`/api/reports/task-records?${params}`)
-        const page = await res.json()
+        if (i > 0) await sleep(150)
+        const page = await fetchPage(params)
         cols    = cols    || page.cols
         headers = headers || page.headers
         rows.push(...page.rows)
