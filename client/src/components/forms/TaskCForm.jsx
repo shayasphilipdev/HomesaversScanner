@@ -42,7 +42,7 @@ export default function TaskCForm({ onSaved, storeId }) {
         status: 'pending'
       })
       t.reset()
-      onSaved?.({ queued: !!res?.queued })
+      onSaved?.({ queued: !!res?.queued, record: res?.queued ? null : res })
     } catch (err) { t.setError(err.message) } finally { t.setSaving(false) }
   }
 

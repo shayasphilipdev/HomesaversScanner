@@ -61,7 +61,7 @@ export default function TaskKForm({ onSaved, storeId }) {
         status: 'pending'
       })
       handleReset()
-      onSaved?.({ queued: !!res?.queued })
+      onSaved?.({ queued: !!res?.queued, record: res?.queued ? null : res })
     } catch (err) {
       t.setError(err.message)
     } finally {

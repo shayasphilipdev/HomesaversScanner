@@ -45,7 +45,7 @@ export default function TaskHForm({ onSaved, storeId }) {
         status:       'pending'
       })
       setForm(EMPTY); setLookupInfo(null)
-      onSaved?.({ queued: !!res?.queued })
+      onSaved?.({ queued: !!res?.queued, record: res?.queued ? null : res })
     } catch (err) {
       setError(err.message)
     } finally {

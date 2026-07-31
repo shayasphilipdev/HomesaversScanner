@@ -2350,6 +2350,22 @@ export async function onRequest(context) {
         storeIds = scope
       }
 
+      // If the resolved scope happens to cover every active store (an
+      // area/store list that adds up to "everything" rather than a true
+      // admin/all_stores session), normalize to null. dashboard_stats scans
+      // store_id = ANY(array) via a (store_id, created_at) index as one
+      // small range scan per array value merged together -- ~13x more page
+      // reads than the single unscoped scan for the same rows, and was the
+      // real cause behind this RPC's statement timeouts on "all stores"
+      // views for non-admin sessions.
+      if (storeIds !== null) {
+        const activeStores = await db.select('stores', { select: 'id', is_active: 'eq.true' })
+        const storeIdSet = new Set(storeIds)
+        if (activeStores.length && activeStores.every(s => storeIdSet.has(s.id))) {
+          storeIds = null
+        }
+      }
+
       // Push all the heavy aggregation into Postgres -- the RPC returns a
       // single JSON blob with totals, by_task_type, by_store, by_day, recent.
       // Saves a 5000-row Worker fetch on every dashboard load.
@@ -3392,17 +3408,49 @@ export async function onRequest(context) {
       // outside any try/catch in this code, so no amount of retry/error
       // handling in here could catch it. The client just got a truncated,
       // unparseable response with no indication of what happened.
+      //
+      // report_task_records_flat_page does the store/task-type joins, the
+      // details formatting, and the date formatting server-side in Postgres
+      // (json_build_object), instead of this Worker looping over pageRows
+      // and calling flatten()+JSON.stringify() per row. That JS-side work
+      // was real CPU time against Cloudflare's free-tier 10ms-per-request
+      // budget -- exceeding it silently kills the request the same way the
+      // old long-lived stream did. With Postgres doing the formatting, the
+      // Worker only has to relay the response text (string concatenation,
+      // not a parse+rebuild), so a much bigger page size is safe -- which
+      // also means far fewer total requests per export against the
+      // account's daily Cloudflare request cap.
       if (isJson) {
-        const cursor = p.get('after_created_at')
-          ? { created_at: p.get('after_created_at'), id: p.get('after_id') }
-          : null
-        const pageRows = await fetchPage(cursor)
-        const flat = pageRows.map(flatten)
-        const last = pageRows[pageRows.length - 1]
-        const next_cursor = pageRows.length === PAGE
-          ? { created_at: last.created_at, id: last.id }
-          : null
-        return json({ cols, headers, rows: flat, next_cursor })
+        const JSON_PAGE = 50000
+        const afterCreatedAt = p.get('after_created_at')
+        const afterId        = p.get('after_id')
+        let rpcRes
+        for (let attempt = 0; attempt < 4; attempt++) {
+          rpcRes = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/report_task_records_flat_page`, {
+            method: 'POST',
+            headers: {
+              'apikey':        env.SUPABASE_ANON_KEY,
+              'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`,
+              'Content-Type':  'application/json'
+            },
+            body: JSON.stringify({
+              ...rpcBase,
+              p_after_created_at: afterCreatedAt || null,
+              p_after_id:         afterId || null,
+              p_limit:            JSON_PAGE
+            })
+          })
+          if (rpcRes.ok || attempt === 3) break
+          await sleep(500 * (attempt + 1))
+        }
+        if (!rpcRes.ok) return err(`Report RPC failed: ${await rpcRes.text()}`, 502)
+        // Body is exactly {"rows":[...],"next_cursor":{...}|null} -- graft
+        // cols/headers on with string concatenation rather than
+        // JSON.parse-ing (and re-stringifying) a payload that can be tens
+        // of megabytes, which would burn real CPU time for no reason.
+        const bodyText = await rpcRes.text()
+        const wrapped = `{"cols":${JSON.stringify(cols)},"headers":${JSON.stringify(headers)},${bodyText.slice(1)}`
+        return new Response(wrapped, { headers: { 'Content-Type': 'application/json' } })
       }
 
       // Plain CSV (no client today uses this, but kept working for direct

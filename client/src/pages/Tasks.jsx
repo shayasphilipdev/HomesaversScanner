@@ -125,9 +125,22 @@ export default function Tasks() {
           taskType={selectedType}
           storeId={currentStoreId}
           onSaved={(info) => {
-            if (info?.queued) toast.info("Saved offline — will sync when you're back online.")
-            else              toast.success('Record saved.')
-            load()
+            if (info?.queued) {
+              toast.info("Saved offline — will sync when you're back online.")
+              load()   // no server record yet to add locally -- refresh once it's queued
+              return
+            }
+            toast.success('Record saved.')
+            // New records always land as 'pending' -- append locally instead of
+            // re-fetching the whole list (up to 500 rows) on every single scan.
+            // That reload fired on every save regardless of task type or volume
+            // and was one of the biggest single contributors to Cloudflare's
+            // daily Worker request count.
+            if (info?.record && (filter === 'all' || filter === 'pending')) {
+              setRecords(prev => [info.record, ...prev].slice(0, 500))
+            } else if (!info?.record) {
+              load()
+            }
           }}
         />
       )}

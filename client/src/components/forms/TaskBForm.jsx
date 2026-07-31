@@ -71,10 +71,10 @@ export default function TaskBForm({ onSaved, storeId }) {
       barcodePath = b.path
 
       setSavingStep('Saving record…')
-      await createTaskRecord({ ...body, photo_product_url: p.url, photo_barcode_url: b.url })
+      const res = await createTaskRecord({ ...body, photo_product_url: p.url, photo_barcode_url: b.url })
 
       setForm(EMPTY); setProductPhoto(null); setBarcodePhoto(null)
-      onSaved?.({ queued: false })
+      onSaved?.({ queued: false, record: res })
     } catch (err) {
       if (isOfflineError(err)) {
         // Queue the full operation (body + both photo Blobs) and clear the form.
