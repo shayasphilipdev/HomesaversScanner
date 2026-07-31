@@ -1780,6 +1780,68 @@ export async function onRequest(context) {
       })
     }
 
+    // GET /admin/cloudflare-usage — daily Worker/Pages Functions request
+    // counts for the last 7 days, straight from Cloudflare's own GraphQL
+    // Analytics API (not something Supabase or this app's own DB has any
+    // visibility into). Admin-only, loaded on demand from the Settings page
+    // rather than polled, so this monitoring feature doesn't itself add to
+    // the request volume it's tracking.
+    if (path === '/admin/cloudflare-usage' && method === 'GET') {
+      if (!isOnlyAdmin(session)) return err('Forbidden', 403)
+      if (!env.CLOUDFLARE_API_TOKEN || !env.CLOUDFLARE_ACCOUNT_ID) {
+        return err('CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID not configured', 501)
+      }
+      const today = new Date(); today.setUTCHours(0, 0, 0, 0)
+      const since = new Date(today.getTime() - 6 * 86400000)   // 7 days inclusive of today
+      const until = new Date(today.getTime() + 86400000)       // exclusive upper bound
+
+      const query = `
+        query GetWorkerRequests($accountTag: string, $since: string, $until: string) {
+          viewer {
+            accounts(filter: { accountTag: $accountTag }) {
+              workersInvocationsAdaptiveGroups(
+                limit: 1000
+                filter: { datetime_geq: $since, datetime_leq: $until }
+              ) {
+                dimensions { datetimeDay }
+                sum { requests }
+              }
+            }
+          }
+        }
+      `
+      const gqlRes = await fetch('https://api.cloudflare.com/client/v4/graphql', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${env.CLOUDFLARE_API_TOKEN}`,
+          'Content-Type':  'application/json',
+          'Accept':        'application/json'
+        },
+        body: JSON.stringify({
+          query,
+          variables: {
+            accountTag: env.CLOUDFLARE_ACCOUNT_ID,
+            since:      since.toISOString(),
+            until:      until.toISOString()
+          }
+        })
+      })
+      const gqlJson = await gqlRes.json().catch(() => null)
+      if (!gqlRes.ok || !gqlJson || gqlJson.errors) {
+        return err(`Cloudflare Analytics API failed: ${JSON.stringify(gqlJson?.errors || gqlJson || await gqlRes.text())}`, 502)
+      }
+      const groups = gqlJson?.data?.viewer?.accounts?.[0]?.workersInvocationsAdaptiveGroups || []
+      const byDate = Object.fromEntries(
+        groups.map(g => [String(g.dimensions.datetimeDay).slice(0, 10), g.sum.requests])
+      )
+      const days = []
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(today.getTime() - i * 86400000).toISOString().slice(0, 10)
+        days.push({ date: d, requests: byDate[d] || 0 })
+      }
+      return json({ days, daily_limit: 100000 })
+    }
+
     if (path === '/admin/settings' && method === 'GET') {
       if (!isAdminRole(session)) return err('Forbidden', 403)
       const rows = await db.select('app_settings', { select: 'key,value,updated_at', order: 'key.asc' })

@@ -222,6 +222,7 @@ export const adminUpdateSettings = (updates) => request('/admin/settings', { met
 export const adminCleanupPhotos       = () => request('/admin/cleanup/photos',       { method: 'POST' })
 export const adminCleanupTaskRecords  = () => request('/admin/cleanup/task-records', { method: 'POST' })
 export const adminGetCapacity         = () => request('/admin/capacity')
+export const adminGetCloudflareUsage  = () => request('/admin/cloudflare-usage')
 export const adminListSyncRuns         = () => request('/admin/sync-runs')
 export const adminImportAltBarcodes    = (rows) => request('/alt-barcodes/import', { method: 'POST', body: rows })
 export const adminImportPrices         = (rows) => request('/prices/import',        { method: 'POST', body: rows })

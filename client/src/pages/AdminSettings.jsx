@@ -3,7 +3,7 @@ import { useStore } from '../App.jsx'
 import {
   adminGetSettings, adminUpdateSettings,
   adminCleanupPhotos, adminCleanupTaskRecords, adminGetCapacity, adminListSyncRuns,
-  adminUploadExcel
+  adminUploadExcel, adminGetCloudflareUsage
 } from '../lib/api.js'
 import AdminNav from '../components/AdminNav.jsx'
 import { useToast } from '../components/Toast.jsx'
@@ -187,6 +187,9 @@ export default function AdminSettings() {
   const [recordCleanupBusy, setRecordCleanupBusy] = useState(false)
   const [capacity, setCapacity] = useState(null)
   const [syncRuns, setSyncRuns] = useState([])
+  const [cfUsage, setCfUsage]           = useState(null)
+  const [cfUsageLoading, setCfUsageLoading] = useState(false)
+  const [cfUsageError, setCfUsageError]     = useState('')
   const isOnlyAdmin = session?.role === 'admin'
 
   const loadCapacity = async () => {
@@ -196,7 +199,18 @@ export default function AdminSettings() {
   const loadSyncRuns = async () => {
     try { setSyncRuns(await adminListSyncRuns()) } catch { /* silent */ }
   }
+  // Loaded on demand (page open + manual refresh) rather than polled, so this
+  // monitoring feature doesn't itself add to the Cloudflare request volume
+  // it's meant to be tracking.
+  const loadCfUsage = async () => {
+    if (!isOnlyAdmin) return
+    setCfUsageLoading(true); setCfUsageError('')
+    try { setCfUsage(await adminGetCloudflareUsage()) }
+    catch (e) { setCfUsageError(e.message) }
+    finally { setCfUsageLoading(false) }
+  }
   useEffect(() => { loadCapacity() }, [isOnlyAdmin])
+  useEffect(() => { loadCfUsage() }, [isOnlyAdmin])
   useEffect(() => { if (isBO) loadSyncRuns() }, [isBO])
 
   const load = async () => {
@@ -297,6 +311,24 @@ export default function AdminSettings() {
             <p className="note" style={{ fontSize: 12, marginTop: 10, marginBottom: 0 }}>
               When usage gets high, lower <code>scan_record_retention_days</code> or <code>photo_retention_days</code> below and run the cleanups in the Maintenance card. Limits are editable below if you upgrade Supabase plan.
             </p>
+          </div>
+        </div>
+      )}
+
+      {isOnlyAdmin && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>Cloudflare requests · last 7 days</span>
+            <button className="btn btn-sm btn-outline" style={{ marginLeft: 'auto' }} onClick={loadCfUsage} disabled={cfUsageLoading}>
+              {cfUsageLoading ? <span className="spinner spinner-dark" /> : '↻ Refresh'}
+            </button>
+          </div>
+          <div className="card-body">
+            {cfUsageError ? (
+              <p className="note" style={{ color: '#D14B3D' }}>{cfUsageError}</p>
+            ) : (
+              <CloudflareUsageChart data={cfUsage} loading={cfUsageLoading} />
+            )}
           </div>
         </div>
       )}
@@ -700,6 +732,67 @@ function Meter({ label, used, limit }) {
       <div style={{ height: 10, borderRadius: 6, background: 'var(--bg-soft)', overflow: 'hidden' }}>
         <div style={{ height: '100%', width: `${pct}%`, background: colour, transition: 'width 250ms ease' }} />
       </div>
+    </div>
+  )
+}
+
+// Daily Cloudflare Workers/Pages Functions request count vs. the free-tier
+// daily cap, with a reference line at the limit so it's obvious at a glance
+// how close a given day came. Same WARN/CRIT thresholds as the Supabase
+// capacity meter above, applied per-bar.
+function CloudflareUsageChart({ data, loading }) {
+  if (loading && !data) {
+    return <div style={{ textAlign: 'center', padding: 24 }}><span className="spinner spinner-dark" /></div>
+  }
+  if (!data?.days?.length) {
+    return <p className="note">No data yet — click Refresh.</p>
+  }
+
+  const { days, daily_limit: limit } = data
+  const fmt = (n) => n.toLocaleString('en-IE')
+  const maxVal = Math.max(limit, ...days.map(d => d.requests), 1)
+
+  const VW = 700, VH = 220, GAP = 14
+  const slot = VW / days.length
+  const barW = Math.max(1, slot - GAP)
+  const yScale = (v) => (v / maxVal) * VH
+  const limitY = VH - yScale(limit)
+
+  const colourFor = (pct) => pct >= CRIT_PCT ? '#D14B3D' : pct >= WARN_PCT ? '#E0A03A' : '#3E9F4B'
+  const labelDate = (s) => new Date(s + 'T00:00:00').toLocaleDateString('en-IE', { weekday: 'short', day: '2-digit', month: 'short' })
+
+  const total = days.reduce((s, d) => s + d.requests, 0)
+  const worst = days.reduce((m, d) => Math.max(m, d.requests), 0)
+
+  return (
+    <div>
+      <div className="flex-row" style={{ marginBottom: 10, fontSize: 13, flexWrap: 'wrap', gap: 10 }}>
+        <span><strong>{fmt(total)}</strong> total this week</span>
+        <span style={{ marginLeft: 'auto', color: 'var(--text-muted)' }}>
+          Peak day: <strong style={{ color: colourFor((worst / limit) * 100) }}>{fmt(worst)}</strong> of {fmt(limit)}/day
+        </span>
+      </div>
+      <svg viewBox={`0 0 ${VW} ${VH + 30}`} style={{ width: '100%', height: 220 }} preserveAspectRatio="none"
+        role="img" aria-label={`Bar chart of daily Cloudflare requests over the last 7 days against a ${fmt(limit)} per day limit. Total ${fmt(total)}.`}>
+        <line x1="0" y1={limitY} x2={VW} y2={limitY} stroke="#D14B3D" strokeWidth="1.5" strokeDasharray="6,4" />
+        <text x={VW - 4} y={limitY - 6} textAnchor="end" fontSize="11" fill="#D14B3D">{fmt(limit)}/day limit</text>
+        {days.map((d, i) => {
+          const pct = (d.requests / limit) * 100
+          const h = yScale(d.requests)
+          const x = i * slot + GAP / 2
+          return (
+            <g key={d.date}>
+              <rect x={x} y={VH - h} width={barW} height={h} rx="3" fill={colourFor(pct)} />
+              <text x={x + barW / 2} y={VH + 16} textAnchor="middle" fontSize="10" fill="var(--text-muted)">
+                {labelDate(d.date)}
+              </text>
+              <text x={x + barW / 2} y={Math.max(12, VH - h - 6)} textAnchor="middle" fontSize="10" fill="var(--text-muted)">
+                {fmt(d.requests)}
+              </text>
+            </g>
+          )
+        })}
+      </svg>
     </div>
   )
 }

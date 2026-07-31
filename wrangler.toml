@@ -5,9 +5,11 @@ compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = "client/dist"
 
 # Non-secret env vars (visible in repo — safe values only).
-# SUPABASE_ANON_KEY is set as an encrypted Secret in the Cloudflare dashboard.
+# SUPABASE_ANON_KEY and CLOUDFLARE_API_TOKEN are set as encrypted Secrets in
+# the Cloudflare dashboard.
 [vars]
 SUPABASE_URL = "https://eggspkdengnxktwkdwpw.supabase.co"
+CLOUDFLARE_ACCOUNT_ID = "565191064c74a1e202aa0211133c895d"
 
 # Local dev: create a `.dev.vars` file in the root (gitignored) with:
 #   SUPABASE_URL=https://eggspkdengnxktwkdwpw.supabase.co
