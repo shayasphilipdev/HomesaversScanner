@@ -3283,48 +3283,54 @@ export async function onRequest(context) {
       const taskType = p.get('task_type')
       const scope    = await scopedStoreIds(db, session)
 
-      const range = []
-      if (from) range.push(`gte.${new Date(from).toISOString()}`)
-      if (to)   range.push(`lte.${new Date(to).toISOString()}`)
-
       const includeCleared = p.get('includeCleared') === '1'
-      const params = {
-        select: 'id,task_type,store_id,supplier_id,supplier_name_text,product_code,product_barcode,product_name_label,actual_product_name,description,uom,quantity,notes,photo_product_url,photo_barcode_url,details,status,review_notes,created_at,barcode_no,item_name,supl_id,supplier_code,item_status,barcode_status',
-        order:  'created_at.asc'
-      }
-      if (range.length) params['created_at'] = range
-      const statusCsvList = (p.get('status') || '').split(',').map(s => s.trim()).filter(s => s && s !== 'all')
-      if (statusCsvList.length) {
-        params['status'] = statusCsvList.length === 1 ? `eq.${statusCsvList[0]}` : `in.(${statusCsvList.join(',')})`
-      } else if (!includeCleared) {
-        params['status'] = `neq.cleared`
-      }
-      // C7: exclude store-confirmed records pending deletion from all report views.
-      params['marked_for_deletion'] = 'neq.true'
       const emptyCsv = () => new Response('', { headers: { 'Content-Type': 'text/csv;charset=utf-8' } })
       const csv2 = (s) => (s || '').split(',').map(x => x.trim()).filter(x => x && x !== 'all')
+      const statusCsvList = csv2(p.get('status'))
 
-      // Scope-aware store filter — comma-separated list supported.
+      // Scope-aware store filter — comma-separated list supported. null = no restriction.
       const storesWanted = csv2(explicit)
+      let storeIdsParam = null
       if (storesWanted.length) {
         const allowed = scope === null ? storesWanted : storesWanted.filter(id => scope.includes(id))
         if (!allowed.length) return emptyCsv()
-        params['store_id'] = allowed.length === 1 ? `eq.${allowed[0]}` : `in.(${allowed.join(',')})`
+        storeIdsParam = allowed
       } else if (scope !== null) {
         if (!scope.length) return emptyCsv()
-        params['store_id'] = `in.(${scope.join(',')})`
+        storeIdsParam = scope
       }
       const ttCsv = csv2(taskType)
-      if (ttCsv.length) params['task_type'] = ttCsv.length === 1 ? `eq.${ttCsv[0]}` : `in.(${ttCsv.join(',')})`
 
-      // Page past PostgREST's 1000-row cap so large stores export in full
-      // (a single select silently truncated at 1000 — e.g. store 1015 has 6000+).
+      // Pulls the export via report_task_records_page — a keyset-paginated RPC
+      // (seeks on (created_at, id) using a row comparison, which only plans as
+      // an index seek as raw/dynamic SQL; PostgREST's REST filter syntax can't
+      // express it, and a plain OFFSET loop gets slower with every page since
+      // Postgres has to walk and discard every skipped row first). On a wide
+      // export (200k+ rows) OFFSET's later pages got slow enough to blow the
+      // statement_timeout; this RPC keeps every page's cost flat regardless
+      // of depth.
+      const rpcBase = {
+        p_from:            from ? new Date(from).toISOString() : null,
+        p_to:              to   ? new Date(to).toISOString()   : null,
+        p_store_ids:       storeIdsParam,
+        p_task_types:      ttCsv.length ? ttCsv : null,
+        p_statuses:        statusCsvList.length ? statusCsvList : null,
+        p_include_cleared: includeCleared
+      }
       const PAGE = 1000
       const records = []
-      for (let offset = 0; offset < 500000; offset += PAGE) {
-        const pageRows = await db.select('task_records', { ...params, limit: String(PAGE), offset: String(offset) })
+      let cursor = null
+      for (let i = 0; i < 500; i++) {
+        const pageRows = await db.rpc('report_task_records_page', {
+          ...rpcBase,
+          p_after_created_at: cursor ? cursor.created_at : null,
+          p_after_id:         cursor ? cursor.id         : null,
+          p_limit:            PAGE
+        })
         records.push(...pageRows)
         if (pageRows.length < PAGE) break
+        const last = pageRows[pageRows.length - 1]
+        cursor = { created_at: last.created_at, id: last.id }
       }
       const [stores, taskTypes] = await Promise.all([
         db.select('stores', { select: 'id,store_name' }),
