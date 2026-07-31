@@ -1799,11 +1799,11 @@ export async function onRequest(context) {
         query GetWorkerRequests($accountTag: string, $since: string, $until: string) {
           viewer {
             accounts(filter: { accountTag: $accountTag }) {
-              workersInvocationsAdaptiveGroups(
+              workersInvocationsAdaptive(
                 limit: 1000
                 filter: { datetime_geq: $since, datetime_leq: $until }
               ) {
-                dimensions { datetimeDay }
+                dimensions { date }
                 sum { requests }
               }
             }
@@ -1830,10 +1830,12 @@ export async function onRequest(context) {
       if (!gqlRes.ok || !gqlJson || gqlJson.errors) {
         return err(`Cloudflare Analytics API failed: ${JSON.stringify(gqlJson?.errors || gqlJson || await gqlRes.text())}`, 502)
       }
-      const groups = gqlJson?.data?.viewer?.accounts?.[0]?.workersInvocationsAdaptiveGroups || []
-      const byDate = Object.fromEntries(
-        groups.map(g => [String(g.dimensions.datetimeDay).slice(0, 10), g.sum.requests])
-      )
+      const rows = gqlJson?.data?.viewer?.accounts?.[0]?.workersInvocationsAdaptive || []
+      const byDate = {}
+      for (const r of rows) {
+        const d = String(r.dimensions.date).slice(0, 10)
+        byDate[d] = (byDate[d] || 0) + (r.sum?.requests || 0)
+      }
       const days = []
       for (let i = 6; i >= 0; i--) {
         const d = new Date(today.getTime() - i * 86400000).toISOString().slice(0, 10)
