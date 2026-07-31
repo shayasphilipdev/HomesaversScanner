@@ -27,11 +27,12 @@ export default function Nav() {
       .then(d => { setThreads(d?.threads || []); setUnread(d?.unread_total || 0) })
       .catch(() => {})
 
-    // Only poll while the tab is actually visible. Tills/back-office machines
-    // leave tabs open all day; a backgrounded tab polling every minute burns
-    // thousands of Cloudflare requests for nothing. Stop when hidden, and
-    // refresh immediately when the user returns so the unread badge is current.
-    const start = () => { if (timer) return; refresh(); timer = setInterval(refresh, 120000) }
+    // Only poll while the tab is actually visible, every 5 minutes. Tills and
+    // back-office machines leave the app open all day; a frequent poll on ~100
+    // always-open tabs burned tens of thousands of Cloudflare requests for
+    // nothing. Stop when hidden, and refresh immediately when the user returns
+    // (and on the hs:messages-read event) so the unread badge stays current.
+    const start = () => { if (timer) return; refresh(); timer = setInterval(refresh, 300000) }
     const stop  = () => { if (timer) { clearInterval(timer); timer = null } }
     const onVisibility = () => { document.hidden ? stop() : start() }
 
