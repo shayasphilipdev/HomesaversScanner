@@ -388,7 +388,7 @@ function HQReports() {
       if (statusIds.length)   params.set('status',     statusIds.join(','))
       if (statusIds.includes('cleared')) params.set('includeCleared', '1')
       const res = await authedFetch(`/api/reports/task-records?${params}`)
-      const { cols, headers, rows } = await res.json()
+      const { cols, headers, rows, truncated } = await res.json()
       const n = new Date()
       const p = x => String(x).padStart(2, '0')
       const stamp = `${p(n.getDate())}${p(n.getMonth() + 1)}${n.getFullYear()}${p(n.getHours())}${p(n.getMinutes())}${p(n.getSeconds())}`
@@ -396,6 +396,11 @@ function HQReports() {
         `Task Reports - ${stamp}.xlsx`, rows, cols, headers,
         new Set(['photo_product_url', 'photo_barcode_url'])
       )
+      // The export streams from the server; a connection blip partway through
+      // means the file was still generated, but only with the rows fetched
+      // before the failure. Downloading it silently would hide that from
+      // whoever's relying on the numbers -- flag it instead of failing outright.
+      if (truncated) toast.error(`Export incomplete — connection dropped partway through (${rows.length} rows saved). Try again.`)
     } catch (e) {
       setError(e.message)
     } finally {

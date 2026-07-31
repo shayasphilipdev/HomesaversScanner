@@ -3368,25 +3368,41 @@ export async function onRequest(context) {
       // regardless of how fast each DB page comes back. Streaming keeps
       // memory bounded to roughly one page at a time.
       const PAGE = 10000
+      const sleep = ms => new Promise(res => setTimeout(res, ms))
+      // A transient blip between the Worker and Supabase mid-export used to
+      // kill the stream outright -- the response is already committed (200,
+      // partial body sent) by that point, so there's no way to turn it into
+      // a clean error; the client just gets truncated, unparseable JSON.
+      // Retry each page a few times before giving up.
+      const fetchPage = async (cursor) => {
+        for (let attempt = 0; attempt < 4; attempt++) {
+          try {
+            return await db.rpc('report_task_records_page', {
+              ...rpcBase,
+              p_after_created_at: cursor ? cursor.created_at : null,
+              p_after_id:         cursor ? cursor.id         : null,
+              p_limit:            PAGE
+            })
+          } catch (e) {
+            if (attempt === 3) throw e
+            await sleep(500 * (attempt + 1))
+          }
+        }
+      }
       const encoder = new TextEncoder()
       const stream = new ReadableStream({
         async start(controller) {
           const push = s => controller.enqueue(encoder.encode(s))
+          let cursor = null
+          let first  = true
           try {
             if (isJson) {
               push(`{"cols":${JSON.stringify(cols)},"headers":${JSON.stringify(headers)},"rows":[`)
             } else {
               push(headers.map(esc).join(',') + '\n')
             }
-            let cursor = null
-            let first  = true
             for (let i = 0; i < 500; i++) {
-              const pageRows = await db.rpc('report_task_records_page', {
-                ...rpcBase,
-                p_after_created_at: cursor ? cursor.created_at : null,
-                p_after_id:         cursor ? cursor.id         : null,
-                p_limit:            PAGE
-              })
+              const pageRows = await fetchPage(cursor)
               for (const r of pageRows) {
                 const flatRow = flatten(r)
                 if (isJson) {
@@ -3403,7 +3419,14 @@ export async function onRequest(context) {
             if (isJson) push(']}')
             controller.close()
           } catch (e) {
-            controller.error(e)
+            // Retries exhausted. The CSV path is fine as-is -- any prefix of
+            // a CSV is still valid, just short. The JSON path needs a proper
+            // close or the client's res.json() throws on truncated input
+            // instead of surfacing anything usable, so close the array/object
+            // out and flag it rather than leaving broken JSON on the wire.
+            console.error('report export failed mid-stream:', e)
+            if (isJson) push(`],"truncated":true,"error":${JSON.stringify(e.message || 'export failed')}}`)
+            controller.close()
           }
         }
       })
