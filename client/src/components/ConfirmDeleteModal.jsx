@@ -74,6 +74,16 @@ export default function ConfirmDeleteModal({ open, count = 1, busy = false, onCo
             This is different from <strong>Clear</strong>, which only archives the record. Delete removes it for good.
           </p>
 
+          <div style={{
+            fontSize: 12.5, margin: '12px 0 0', padding: '8px 10px',
+            background: 'rgba(192,57,43,.07)', border: '1px solid rgba(192,57,43,.25)',
+            borderRadius: 8, color: 'var(--text)'
+          }}>
+            Date of deletion: <strong>{new Date().toLocaleString('en-IE', {
+              day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+            })}</strong>
+          </div>
+
           <div className="flex-row" style={{ justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
             <button type="button" className="btn btn-outline" onClick={onCancel} disabled={busy}>
               Cancel
