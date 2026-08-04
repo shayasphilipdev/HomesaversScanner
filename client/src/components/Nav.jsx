@@ -55,8 +55,11 @@ export default function Nav() {
   }, [msgOpen])
 
   const openThread = (t) => {
-    // Navigate to the record — keep the dropdown open so users can see the full list.
-    navigate('/tasks', { state: { openRecordId: t.record_id, taskType: t.task_type } })
+    // Navigate to the record. Pass the record's store so the Tasks page can
+    // switch to it — otherwise a back-office user on a different (or no)
+    // current store loads a list that doesn't contain this record, and the
+    // thread can never open. (store_id comes from the /task-messages/threads API.)
+    navigate('/tasks', { state: { openRecordId: t.record_id, taskType: t.task_type, storeId: t.store_id } })
     setMsgOpen(false)
   }
 

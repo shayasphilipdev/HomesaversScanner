@@ -14,7 +14,7 @@ import { failedCount } from '../lib/outbox.js'
 export default function Tasks() {
   const { session } = useStore()
   const toast = useToast()
-  const { currentStoreId } = useCurrentStore()
+  const { currentStoreId, setCurrentStoreId } = useCurrentStore()
   const [outboxFailed, setOutboxFailed] = useState(0)
 
   // M14: show a persistent warning when records are stuck in the failed outbox.
@@ -41,6 +41,10 @@ export default function Tasks() {
     if (st?.openRecordId) {
       setAutoOpenId(st.openRecordId)
       if (st.taskType) setSelectedType(st.taskType)
+      // Switch to the record's store so the list actually contains it — without
+      // this a back-office user on a different/blank current store loads a list
+      // that never includes the record, so the thread can't open.
+      if (st.storeId) setCurrentStoreId(st.storeId)
       setFilter('all')
       navigate('.', { replace: true, state: null })   // consume so it doesn't re-fire
     }
