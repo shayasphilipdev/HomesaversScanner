@@ -102,6 +102,17 @@ Postgres where possible), and avoid frequent polling / reload-after-every-
 mutation patterns. See §11 (2026-07-31) and §12 for what this broke and how
 it was fixed.
 
+**DB statement_timeout — root cause of the `57014` timeouts (fixed 2026-08-04):**
+the app has **no Supabase Auth**, so every query runs through the Pages Function
+as the **`anon`** Postgres role. Supabase had `anon` capped at
+`statement_timeout=3s` (vs 8s for `authenticated`/`authenticator`), so any query
+over the 320k-row `task_records` (reports, batch deletes, dashboard) that took
+>3s was cancelled with `57014 canceling statement due to statement timeout`.
+Raised with `ALTER ROLE anon SET statement_timeout = '15s'; NOTIFY pgrst,
+'reload config';`. To check/change: `SELECT rolname, rolconfig FROM pg_roles
+WHERE rolname='anon';`. This is the first thing to check if broad timeouts
+reappear — it is NOT bloat (table was only ~5% dead, autovacuum healthy).
+
 ---
 
 ## 4. Auth & roles (current model — "single login")
