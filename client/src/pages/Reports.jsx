@@ -878,6 +878,8 @@ function HQReports() {
         open={!!deleteTarget}
         count={deleteTarget?.ids.length || 1}
         busy={deleting}
+        dateFrom={from}
+        dateTo={to}
         onConfirm={confirmDelete}
         onCancel={() => { if (!deleting) setDeleteTarget(null) }}
       />
@@ -886,6 +888,8 @@ function HQReports() {
         open={matchDelete}
         count={total}
         busy={matchDeleting}
+        dateFrom={from}
+        dateTo={to}
         onConfirm={runDeleteAllMatching}
         onCancel={() => { if (!matchDeleting) setMatchDelete(false) }}
       />

@@ -11,7 +11,16 @@ import { useEffect } from 'react'
 //   busy      — disables buttons + shows a spinner while the request runs
 //   onConfirm — called when the user confirms the permanent delete
 //   onCancel  — called on Cancel / backdrop click / Esc
-export default function ConfirmDeleteModal({ open, count = 1, busy = false, onConfirm, onCancel }) {
+//   dateFrom / dateTo — optional report filter range; shown so the user can see
+//                       exactly which dates' records they're about to delete.
+export default function ConfirmDeleteModal({ open, count = 1, busy = false, onConfirm, onCancel, dateFrom, dateTo }) {
+  const fmtDate = (v) => {
+    if (!v) return '—'
+    const d = new Date(v)
+    return isNaN(d) ? String(v) : d.toLocaleString('en-IE', {
+      day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+    })
+  }
   // Esc closes (but never confirms).
   useEffect(() => {
     if (!open) return
@@ -74,15 +83,16 @@ export default function ConfirmDeleteModal({ open, count = 1, busy = false, onCo
             This is different from <strong>Clear</strong>, which only archives the record. Delete removes it for good.
           </p>
 
-          <div style={{
-            fontSize: 12.5, margin: '12px 0 0', padding: '8px 10px',
-            background: 'rgba(192,57,43,.07)', border: '1px solid rgba(192,57,43,.25)',
-            borderRadius: 8, color: 'var(--text)'
-          }}>
-            Date of deletion: <strong>{new Date().toLocaleString('en-IE', {
-              day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
-            })}</strong>
-          </div>
+          {(dateFrom || dateTo) && (
+            <div style={{
+              fontSize: 12.5, margin: '12px 0 0', padding: '8px 10px',
+              background: 'rgba(192,57,43,.07)', border: '1px solid rgba(192,57,43,.25)',
+              borderRadius: 8, color: 'var(--text)'
+            }}>
+              Deleting records dated:{' '}
+              <strong>{fmtDate(dateFrom)} → {fmtDate(dateTo)}</strong>
+            </div>
+          )}
 
           <div className="flex-row" style={{ justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
             <button type="button" className="btn btn-outline" onClick={onCancel} disabled={busy}>
