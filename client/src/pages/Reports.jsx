@@ -3,7 +3,7 @@ import { useStore } from '../App.jsx'
 import {
   getStores, getTaskTypes, getToken, getTaskRecords,
   updateTaskRecord, bulkReviewTaskRecords, bulkClearTaskRecords,
-  deleteTaskRecord, bulkDeleteTaskRecords,
+  deleteTaskRecord, bulkDeleteTaskRecords, deleteJkMatching,
   adminListTemplates, getStoreTaskReportRows,
   getTaskRecordEvents, clearToken, getProductMaster, getProductMasterFilters,
   getSpacePlanReport
