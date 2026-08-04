@@ -3,6 +3,7 @@ import { useStore } from '../App.jsx'
 import {
   getStores, getTaskTypes, getToken, getTaskRecords,
   updateTaskRecord, bulkReviewTaskRecords, bulkClearTaskRecords,
+  deleteTaskRecord, bulkDeleteTaskRecords,
   adminListTemplates, getStoreTaskReportRows,
   getTaskRecordEvents, clearToken, getProductMaster, getProductMasterFilters,
   getSpacePlanReport
@@ -11,6 +12,7 @@ import { TASK_FORMS } from '../lib/taskTypes.js'
 import { downloadExcel } from '../lib/excel.js'
 import { useToast } from '../components/Toast.jsx'
 import MultiSelectDropdown from '../components/forms/MultiSelectDropdown.jsx'
+import ConfirmDeleteModal from '../components/ConfirmDeleteModal.jsx'
 import AdminReports from './AdminReports.jsx'
 import { canAccessMasterReports } from '../lib/roles.js'
 import RecordMessages from '../components/RecordMessages.jsx'
@@ -292,6 +294,9 @@ function HQReports() {
   const PAGE_SIZE = 200
   const [storesById, setStoresById]   = useState({})
   const [selected, setSelected]       = useState(new Set())
+  // Permanent-delete confirmation (J/K only). deleteTarget = { ids:[...] } or null.
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [deleting, setDeleting]       = useState(false)
   const [loading, setLoading]         = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [busy, setBusy]               = useState(false)
@@ -458,6 +463,33 @@ function HQReports() {
   const selectableSet  = useMemo(() => new Set(selectableIds), [selectableIds])
   const showCheckCol   = isBO || storeClearableIds.length > 0
   const allSelectableSelected = selectableIds.length > 0 && selectableIds.every(id => selected.has(id))
+
+  // J/K (Department/Price Check) records — permanently deletable by every user.
+  const jkIdSet = useMemo(
+    () => new Set(records.filter(r => r.task_type === 'J' || r.task_type === 'K').map(r => r.id)),
+    [records]
+  )
+  const selectedJkIds = [...selected].filter(id => jkIdSet.has(id))
+
+  const confirmDelete = async () => {
+    const ids = deleteTarget?.ids || []
+    if (!ids.length) { setDeleteTarget(null); return }
+    setDeleting(true)
+    try {
+      if (ids.length === 1) await deleteTaskRecord(ids[0])
+      else                  await bulkDeleteTaskRecords(ids)
+      const idSet = new Set(ids)
+      setRecords(rs => rs.filter(r => !idSet.has(r.id)))
+      setTotal(t => Math.max(0, t - ids.length))
+      setSelected(prev => { const n = new Set(prev); ids.forEach(i => n.delete(i)); return n })
+      toast.success(`${ids.length} record${ids.length === 1 ? '' : 's'} permanently deleted.`)
+    } catch (e) {
+      setError(e.message); toast.error(`Delete failed — ${e.message}`)
+    } finally {
+      setDeleting(false)
+      setDeleteTarget(null)
+    }
+  }
 
   const toggleAllSelectable = () => {
     if (allSelectableSelected) setSelected(new Set())
@@ -647,6 +679,12 @@ function HQReports() {
               <button className="btn btn-sm btn-outline" disabled={busy} onClick={() => bulkReview('no_change_needed')}>
                 ⊘ No change needed
               </button>
+              {selectedJkIds.length > 0 && (
+                <button className="btn btn-sm" disabled={busy} onClick={() => setDeleteTarget({ ids: selectedJkIds })}
+                  style={{ background: '#C0392B', color: '#fff', border: 'none', fontWeight: 600 }}>
+                  🗑 Delete J/K ({selectedJkIds.length})
+                </button>
+              )}
               <button className="btn btn-sm btn-outline" disabled={busy} onClick={() => setSelected(new Set())}>
                 Clear selection
               </button>
@@ -659,6 +697,12 @@ function HQReports() {
               <button className="btn btn-sm btn-primary" disabled={busy} onClick={bulkClear}>
                 {busy ? <><span className="spinner" /> Clearing…</> : `✓ Clear selected (${selected.size})`}
               </button>
+              {selectedJkIds.length > 0 && (
+                <button className="btn btn-sm" disabled={busy} onClick={() => setDeleteTarget({ ids: selectedJkIds })}
+                  style={{ background: '#C0392B', color: '#fff', border: 'none', fontWeight: 600 }}>
+                  🗑 Delete J/K ({selectedJkIds.length})
+                </button>
+              )}
               <button className="btn btn-sm btn-outline" disabled={busy} onClick={() => setSelected(new Set())}>
                 Clear selection
               </button>
@@ -751,6 +795,14 @@ function HQReports() {
                               <button className="btn btn-sm btn-outline" onClick={() => toggleHistory(r.id)} title="Audit history">
                                 {history[r.id] ? '▴' : '▾'} History
                               </button>
+                              {(r.task_type === 'J' || r.task_type === 'K') && (
+                                <button
+                                  className="btn btn-sm"
+                                  title="Permanently delete this record"
+                                  onClick={() => setDeleteTarget({ ids: [r.id] })}
+                                  style={{ background: '#C0392B', color: '#fff', border: 'none', fontWeight: 600 }}
+                                >🗑</button>
+                              )}
                             </div>
                           </td>
                         )}
@@ -779,6 +831,14 @@ function HQReports() {
           </div>
         </div>
       )}
+
+      <ConfirmDeleteModal
+        open={!!deleteTarget}
+        count={deleteTarget?.ids.length || 1}
+        busy={deleting}
+        onConfirm={confirmDelete}
+        onCancel={() => { if (!deleting) setDeleteTarget(null) }}
+      />
     </div>
   )
 }

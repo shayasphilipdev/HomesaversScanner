@@ -182,6 +182,10 @@ export const bulkReviewTaskRecords = ({ ids, status, review_notes }) =>
 export const bulkClearTaskRecords = (ids) =>
   request('/task-records/bulk-clear', { method: 'POST', body: { ids } })
 
+// PERMANENT (hard) delete of multiple J/K records — every user, cannot be undone.
+export const bulkDeleteTaskRecords = (ids) =>
+  request('/task-records/bulk-delete', { method: 'POST', body: { ids } })
+
 // ── Admin (back office) ─────────────────────────────────────────────────────
 
 export const adminListStores    = () => request('/admin/stores')

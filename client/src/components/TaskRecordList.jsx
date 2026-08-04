@@ -1,5 +1,6 @@
 import { Fragment, useState, useCallback, useEffect } from 'react'
-import { updateTaskRecord, deleteTaskRecord, bulkClearTaskRecords } from '../lib/api.js'
+import { updateTaskRecord, deleteTaskRecord, bulkClearTaskRecords, bulkDeleteTaskRecords } from '../lib/api.js'
+import ConfirmDeleteModal from './ConfirmDeleteModal.jsx'
 import { useStore } from '../App.jsx'
 import { useToast } from './Toast.jsx'
 import { TASK_FORMS } from '../lib/taskTypes.js'
@@ -29,9 +30,13 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
   // Area managers get store-side clear UI (J/K bulk-clear) despite being in backoffice mode.
   const isBO = session.mode === 'backoffice' && session.role !== 'area_manager'
 
-  // ── Bulk-select state (store users + area managers, J/K pending rows only) ─
+  // ── Bulk-select state (J/K rows). Drives both the store Clear and the
+  //    permanent Delete (available to every user for Department/Price checks). ─
   const [selected, setSelected] = useState(new Set())
   const [bulkClearing, setBulkClearing] = useState(false)
+  // Permanent-delete confirmation. deleteTarget = { ids:[...] } or null.
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [deleting, setDeleting] = useState(false)
 
   // ── Message thread expand state ───────────────────────────────────────────
   const [expandedMessages, setExpandedMessages] = useState(new Set())
@@ -50,11 +55,17 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
     }
   }, [autoOpenId, records])
 
-  // Rows eligible for store-side bulk clear.
+  // Rows eligible for store-side bulk clear (unchanged: store users, J/K pending).
   const clearableRows = isBO ? [] : records.filter(r =>
     STORE_CLEARABLE.has(r.task_type) && r.status === 'pending'
   )
+  const clearableSet = new Set(clearableRows.map(r => r.id))
   const hasBulkClear = clearableRows.length > 0
+
+  // Rows eligible for permanent delete: every J/K (Department/Price Check) row,
+  // for every user. Selection checkboxes are shown whenever any exist.
+  const jkRows = records.filter(r => STORE_CLEARABLE.has(r.task_type))
+  const selectedClearableCount = [...selected].filter(id => clearableSet.has(id)).length
 
   const toggleRow = (id) => setSelected(prev => {
     const next = new Set(prev)
@@ -62,7 +73,7 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
     return next
   })
   const toggleAll = () => {
-    const ids = clearableRows.map(r => r.id)
+    const ids = jkRows.map(r => r.id)
     setSelected(prev => prev.size === ids.length ? new Set() : new Set(ids))
   }
 
@@ -102,14 +113,16 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
   }
 
   const handleBulkClear = async () => {
-    if (!selected.size) return
+    // Clear only the clearable subset of the selection (a J/K row that isn't
+    // pending can be selected for delete but must never be silently cleared).
+    const ids = [...selected].filter(id => clearableSet.has(id))
+    if (!ids.length) return
     setBulkClearing(true)
     try {
-      const { cleared } = await bulkClearTaskRecords([...selected])
+      const { cleared } = await bulkClearTaskRecords(ids)
       toast.success(`${cleared} record${cleared === 1 ? '' : 's'} cleared.`)
-      setSelected(new Set())
-      // Optimistically remove all cleared rows.
-      for (const id of selected) onOptimisticRemove?.(id)
+      setSelected(prev => { const n = new Set(prev); ids.forEach(i => n.delete(i)); return n })
+      for (const id of ids) onOptimisticRemove?.(id)
     } catch (e) {
       toast.error('Bulk clear failed — ' + (e?.message || 'please try again'))
       onRefresh()
@@ -118,6 +131,7 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
     }
   }
 
+  // Existing generic delete (unchanged) — used for the old 🗑 on non-J/K rows.
   const handleDelete = async (id) => {
     if (!confirm("Delete this record? This can't be undone.")) return
     // Optimistic — drop the row from the table immediately. If the server
@@ -128,6 +142,26 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
     } catch (e) {
       onRefresh()
       alert('Could not delete: ' + (e?.message || 'unknown error'))
+    }
+  }
+
+  // Permanent delete for J/K (single or bulk), behind the strong red modal.
+  const confirmDelete = async () => {
+    const ids = deleteTarget?.ids || []
+    if (!ids.length) { setDeleteTarget(null); return }
+    setDeleting(true)
+    try {
+      if (ids.length === 1) await deleteTaskRecord(ids[0])
+      else                  await bulkDeleteTaskRecords(ids)
+      toast.success(`${ids.length} record${ids.length === 1 ? '' : 's'} permanently deleted.`)
+      setSelected(prev => { const n = new Set(prev); ids.forEach(i => n.delete(i)); return n })
+      for (const id of ids) onOptimisticRemove?.(id)
+    } catch (e) {
+      toast.error('Delete failed — ' + (e?.message || 'please try again'))
+      onRefresh()
+    } finally {
+      setDeleting(false)
+      setDeleteTarget(null)
     }
   }
 
@@ -149,28 +183,38 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
     )
   }
 
-  // Show an extra column only when there are selectable rows.
-  const showCheckCol = hasBulkClear
+  // Checkbox column shows whenever there are J/K rows (selectable for delete,
+  // and — for store users — clear).
+  const showCheckCol = jkRows.length > 0
 
   return (
     <div className="card">
-      {/* Bulk-clear toolbar — appears only for store users with J/K pending rows */}
-      {hasBulkClear && (
+      {/* Bulk toolbar for J/K rows: store Clear (archive) + everyone Delete (permanent). */}
+      {jkRows.length > 0 && (
         <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <button className="btn btn-sm btn-outline" onClick={toggleAll}>
-            {selected.size === clearableRows.length ? 'Deselect all' : `Select all (${clearableRows.length})`}
+            {selected.size === jkRows.length && jkRows.length > 0 ? 'Deselect all' : `Select all J/K (${jkRows.length})`}
           </button>
-          {selected.size > 0 && (
+          {hasBulkClear && selectedClearableCount > 0 && (
             <button
               className="btn btn-sm btn-primary"
               onClick={handleBulkClear}
               disabled={bulkClearing}
             >
-              {bulkClearing ? <><span className="spinner" /> Clearing…</> : `✓ Clear selected (${selected.size})`}
+              {bulkClearing ? <><span className="spinner" /> Clearing…</> : `✓ Clear selected (${selectedClearableCount})`}
+            </button>
+          )}
+          {selected.size > 0 && (
+            <button
+              className="btn btn-sm"
+              onClick={() => setDeleteTarget({ ids: [...selected] })}
+              style={{ background: '#C0392B', color: '#fff', border: 'none', fontWeight: 600 }}
+            >
+              🗑 Delete selected ({selected.size})
             </button>
           )}
           <span className="note" style={{ fontSize: 12 }}>
-            Select records you have actioned and mark them Clear.
+            {hasBulkClear ? 'Clear archives the record · Delete removes it permanently.' : 'Delete removes J/K records permanently.'}
           </span>
         </div>
       )}
@@ -202,7 +246,9 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
               const reviewed = r.status === 'completed' || r.status === 'no_change_needed'
               // Store-side: J/K records can be cleared directly from pending.
               const storeCanClearNow = !isBO && STORE_CLEARABLE.has(r.task_type) && r.status === 'pending'
-              const isSelectable  = storeCanClearNow
+              const isJK          = STORE_CLEARABLE.has(r.task_type)
+              // Every J/K row is selectable (for permanent delete; store clear too).
+              const isSelectable  = isJK
               const msgCount      = r.message_count || 0
               // Row colour class: green = HO reviewed; amber = has messages.
               const rowClass = reviewed ? 'tr-reviewed' : msgCount > 0 ? 'tr-has-msg' : ''
@@ -267,7 +313,17 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
                           💬 <span style={{ fontSize: 12 }}>Msg</span>
                           {msgCount > 0 && <span className="msg-toggle-badge">{msgCount}</span>}
                         </button>
-                        {(isBO || r.status === 'store_completed') && (
+                        {/* J/K: permanent delete for every user, behind the strong red modal. */}
+                        {isJK && (
+                          <button
+                            className="btn btn-sm"
+                            title="Permanently delete this record"
+                            onClick={() => setDeleteTarget({ ids: [r.id] })}
+                            style={{ background: '#C0392B', color: '#fff', border: 'none', fontWeight: 600 }}
+                          >🗑 Delete</button>
+                        )}
+                        {/* Existing generic delete — unchanged — for non-J/K rows only. */}
+                        {!isJK && (isBO || r.status === 'store_completed') && (
                           <button className="btn btn-sm btn-icon btn-outline" title="Delete" onClick={() => handleDelete(r.id)}>🗑</button>
                         )}
                       </div>
@@ -286,6 +342,14 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
           </tbody>
         </table>
       </div>
+
+      <ConfirmDeleteModal
+        open={!!deleteTarget}
+        count={deleteTarget?.ids.length || 1}
+        busy={deleting}
+        onConfirm={confirmDelete}
+        onCancel={() => { if (!deleting) setDeleteTarget(null) }}
+      />
     </div>
   )
 }

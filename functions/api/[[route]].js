@@ -3328,7 +3328,9 @@ export async function onRequest(context) {
       if (scope !== null) {
         if (!scope.length) return err('Record not found or not allowed', 404)
         filter['store_id'] = `in.(${scope.join(',')})`
-        if (!isBO) filter['status'] = `eq.store_completed`
+        // Store users may permanently delete Department/Price Check (J/K) records
+        // in their stores, plus their own store-confirmed records (existing rule).
+        if (!isBO) filter['or'] = '(status.eq.store_completed,task_type.in.(J,K))'
       }
       // Fetch the record first so we can delete any attached photos from storage.
       const [rec] = await db.select('task_records', {
@@ -3351,6 +3353,42 @@ export async function onRequest(context) {
         }).catch(() => {})
       }
       return json({ ok: true })
+    }
+
+    // Bulk PERMANENT delete (hard delete, not the soft 'clear'). Store users may
+    // only delete J/K (Department/Price Check) records, plus their own
+    // store-confirmed ones; back office may delete any record in scope. Removes
+    // the rows and their photos from storage.
+    if (path === '/task-records/bulk-delete' && method === 'POST') {
+      if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled', 403)
+      const { ids } = await request.json()
+      if (!Array.isArray(ids) || !ids.length) return err('ids required', 400)
+      const safeIds = ids.filter(i => /^[a-f0-9-]{36}$/.test(i))
+      if (!safeIds.length) return err('No valid ids', 400)
+
+      const scope = await scopedStoreIds(db, session)
+      const filter = { id: `in.(${safeIds.join(',')})` }
+      if (scope !== null) {
+        if (!scope.length) return json({ deleted: 0 })
+        filter['store_id'] = `in.(${scope.join(',')})`
+        if (!isBO) filter['or'] = '(status.eq.store_completed,task_type.in.(J,K))'
+      }
+
+      // Grab photos for the rows we're allowed to delete BEFORE removing them.
+      const doomed = await db.select('task_records', { select: 'photo_product_url,photo_barcode_url', ...filter })
+      const removed = await db.remove('task_records', filter)
+
+      const storageBase = `${env.SUPABASE_URL}/storage/v1/object/public/task-photos/`
+      for (const r of doomed) {
+        for (const u of [r.photo_product_url, r.photo_barcode_url].filter(Boolean)) {
+          if (!u.startsWith(storageBase)) continue
+          await fetch(`${env.SUPABASE_URL}/storage/v1/object/task-photos/${u.slice(storageBase.length)}`, {
+            method:  'DELETE',
+            headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}` }
+          }).catch(() => {})
+        }
+      }
+      return json({ deleted: removed.length })
     }
 
     // ── Reports ───────────────────────────────────────────────────────────
