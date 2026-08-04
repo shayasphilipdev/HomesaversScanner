@@ -37,9 +37,12 @@ function sb(env) {
     // Like select, but also returns the total row count via PostgREST's
     // Content-Range header. Used by paginated endpoints to fill the UI's
     // "Showing N of M" indicator without a second query.
-    async selectPage(table, params = {}) {
+    // countMode: 'exact' (real COUNT — accurate but scans the whole match set),
+    // or 'estimated' (exact for small sets, planner estimate for large ones —
+    // avoids statement timeouts on big tables). Default stays 'exact'.
+    async selectPage(table, params = {}, countMode = 'exact') {
       const res = await fetch(`${url}/rest/v1/${table}?${buildQuery(params)}`, {
-        headers: { ...headers, Prefer: 'count=exact' }
+        headers: { ...headers, Prefer: `count=${countMode}` }
       })
       if (!res.ok) throw new Error(await res.text())
       const rows  = await res.json()
@@ -2893,8 +2896,12 @@ export async function onRequest(context) {
       if (to)   range.push(`lte.${new Date(to).toISOString()}`)
       if (range.length) params['created_at'] = range
 
-      // selectPage returns total via PostgREST count=exact.
-      const { rows, total } = await db.selectPage('task_records', params)
+      // Use an ESTIMATED count here — an exact COUNT(*) over this large, growing
+      // table (all stores × high-volume J/K over a wide date range) scans every
+      // matching row and hit the Postgres statement timeout (57014). 'estimated'
+      // stays exact for small result sets and uses the planner estimate for huge
+      // ones, so the report always returns quickly.
+      const { rows, total } = await db.selectPage('task_records', params, 'estimated')
 
       // Annotate each record with how many messages are attached (any state).
       let msgCountMap = {}
@@ -2922,7 +2929,9 @@ export async function onRequest(context) {
         total,
         limit,
         offset,
-        has_more: offset + flat.length < total
+        // Base "Load more" on page fullness, not the (now estimated) total, so
+        // pagination is always correct even when total is approximate.
+        has_more: flat.length === limit
       })
     }
 
