@@ -113,6 +113,21 @@ Raised with `ALTER ROLE anon SET statement_timeout = '15s'; NOTIFY pgrst,
 WHERE rolname='anon';`. This is the first thing to check if broad timeouts
 reappear — it is NOT bloat (table was only ~5% dead, autovacuum healthy).
 
+**Record retention — now server-side via pg_cron (changed 2026-08-04):** the old
+retention only auto-deleted `cleared`/`store_completed` rows, so ~140k **pending**
+J/K piled up. Now a **pg_cron** job `purge-old-task-records` (daily 02:00 UTC)
+runs `CALL public.purge_old_task_records()`, which deletes every `task_records`
+row older than `app_settings.scan_record_retention_days` (14) **EXCEPT** still-
+pending HO query records (A–I) — i.e. rule `created_at < cutoff AND (task_type IN
+('J','K') OR status <> 'pending')`. It deletes in committed 5k batches (no
+statement-timeout, short locks). `delete_old_task_records_batch(cutoff, limit)`
+is the single-batch version used for one-off backlog clears. Runs entirely in
+the DB (independent of the Cloudflare login-triggered `runAutoCleanup`, which
+still handles photo + product-query cleanup). Backlog of 165k was purged
+2026-08-04, table 302k→137k. Manage: `SELECT * FROM cron.job;` /
+`cron.unschedule('purge-old-task-records')`. Photos of deleted rows are reclaimed
+by the existing age-based photo cleanup, not by this job.
+
 ---
 
 ## 4. Auth & roles (current model — "single login")
