@@ -5,7 +5,7 @@ fresh Claude session opening this repo cold, **read this file first** — it has
 the architecture, data model, every module, recent changes, known issues, and
 the project memory all in one place.
 
-*Last updated: 2026-06-26.*
+*Last updated: 2026-07-31.*
 
 ---
 
@@ -85,7 +85,22 @@ Browser (React PWA) ──/api/*  Bearer <HMAC token>──▶ Cloudflare Pages
 
 **Cloudflare secrets:** `SUPABASE_ANON_KEY`, `SESSION_SECRET`,
 `PRODUCT_SYNC_SECRET` (gates the secret-authed sync + `/reports/aging`
-endpoints). `SUPABASE_URL` is non-secret in `wrangler.toml`.
+endpoints), `CLOUDFLARE_API_TOKEN` (added 2026-07-31 — Account Analytics: Read
++ Workers Scripts: Read; powers the Settings → Cloudflare requests chart, §6).
+`SUPABASE_URL` and `CLOUDFLARE_ACCOUNT_ID` are non-secret in `wrangler.toml`.
+
+**Platform limits to design around (discovered 2026-07-31):** the Cloudflare
+account is on the **Free** Workers/Pages plan — 100,000 requests/day
+account-wide, **10 ms CPU time per request** (hard kill, not catchable), 50
+subrequests per request. A single long-lived request that loops internally
+making many Supabase calls, or that does heavy per-row JS (JSON.stringify
+over thousands of rows), will silently die against these caps with no
+JS-catchable error — the client just sees a truncated response or a bare
+500/503. New features that touch large datasets must page from the
+**client**, keep each request's own JS work minimal (push formatting into
+Postgres where possible), and avoid frequent polling / reload-after-every-
+mutation patterns. See §11 (2026-07-31) and §12 for what this broke and how
+it was fixed.
 
 ---
 
@@ -140,6 +155,14 @@ below.)
 - `task_record_events` — append-only audit ledger of every status transition.
 - `task_record_messages` — per-record two-way thread. `record_id · author_id ·
   author_name · author_role · body · is_read_by_store · is_read_by_bo · created_at`.
+- **Scale (as of 2026-07-31):** ~294k rows, ~251k not `cleared`, growing
+  ~40-75k/week. Indexes added for this volume: `idx_tr_active_store_date
+  (store_id, created_at) WHERE status<>'cleared'`, `idx_tr_active_created_at
+  (created_at) WHERE status<>'cleared'`, `idx_tr_created_at_id (created_at, id)`
+  — the last one backs keyset (seek) pagination via `ROW(created_at,id) >
+  ROW(cursor)`, which only plans as an index seek when written as a literal
+  row-comparison in raw/dynamic SQL — PostgREST's REST filter syntax and a
+  plain `OFFSET` loop both degrade badly at this size (see §11).
 
 **Product data** (read-only master, synced from VRS Excel)
 - `alt_barcodes` — `barcode_no (scanned key) · ean_barcode · item_name ·
@@ -201,12 +224,24 @@ below.)
   audit history. Every form uses the shared **`ScannerInput`** (see §7).
 - **Reports** (`/reports`): filter by date/store/task-type/status; on-screen
   table with BO bulk-review and **store bulk-clear**; Excel/CSV export
-  (`/reports/task-records`, paginated past the 1000-row cap). Also "Master
-  Reports" (Product Master, lookups) for admin/buying_manager.
+  (`/reports/task-records`). **Rebuilt 2026-07-31** for data volume — the
+  client now drives pagination itself, calling `?format=json` once per page
+  (cursor via `after_created_at`/`after_id`) and accumulating rows before
+  building the `.xlsx`, instead of the server assembling the whole export in
+  one long-lived request (see §11 for why that stopped working). Each page
+  hits `report_task_records_flat_page`, which does the store/task-type joins
+  and `details`/date formatting **in Postgres** (`fmt_task_details`,
+  `to_char(... 'Europe/Dublin' ...)`) so the Worker just passes the response
+  text through instead of looping over rows in JS. Plain CSV
+  (`report_task_records_page`, still server-streamed, unused by the current
+  UI) is kept working for any direct link. Also "Master Reports" (Product
+  Master, lookups) for admin/buying_manager.
 - **Dashboard** (`/dashboard`): KPI cards, 14-day activity chart, by-task-type
   bars, **HO task allocation donut**, **status breakdown** card, by-store (BO),
   recent activity (shows product description, not code). Stats via the
-  `dashboard_stats` Postgres RPC.
+  `dashboard_stats` Postgres RPC (`work_mem='32MB'` set on the function itself
+  since 2026-07-31 — eliminates a disk-spill sort at current row counts; see
+  §12 for the recurring-timeout issue that isn't fully resolved).
 - **Space Plan** (`/space-plan`, admin `/admin/space-plan`): per-store grid,
   Equipment Variance summary (planned vs audited total), auto-save, Excel
   export. PRIMARY BAYS renders subcategory sub-rows (mobile: collapsible). Admin
@@ -217,6 +252,16 @@ below.)
   `/task-messages/threads`, `/task-messages/unread-count`, `/task-records/:id/messages*`.
 - **Store Tasks** (`/store-tasks`), **Product Query** (`/product-query`),
   **Suppliers** admin (`/admin/suppliers`), **Product Master** browse.
+- **Settings** (`/admin/settings`, `admin` role only): retention windows,
+  maintenance (manual photo/record cleanup — see §12 re: automation),
+  Supabase capacity meters, and (added 2026-07-31) a **Cloudflare requests**
+  chart — 7 days of daily Worker/Pages Functions request counts vs. the
+  100k/day free-tier cap, via `GET /admin/cloudflare-usage` calling
+  Cloudflare's own GraphQL Analytics API (`workersInvocationsAdaptive`,
+  dimension `date` — note: **not** `...AdaptiveGroups`/`datetimeDay`, which
+  don't exist despite matching Cloudflare's naming convention elsewhere).
+  Loaded on page-open + manual refresh only, never polled, so it doesn't add
+  to the number it's tracking.
 - **Status-report email** — see §9.
 
 ---
@@ -309,7 +354,76 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ---
 
-## 11. Recent work (this session — 2026-06)
+## 11. Recent work
+
+### 2026-07-31 — Data volume: purge, dashboard/report performance, Cloudflare limits
+
+Triggered by `task_records` reaching ~325k rows (55 stores, months of live
+scanning) and the DB size alarm crossing 60%+.
+
+- **One-time purge + reclaim:** deleted `cleared`/`store_completed` rows past
+  `scan_record_retention_days` (14d) — 40,634 rows — then `VACUUM FULL` on
+  `task_records` + `task_record_events` (320MB → 262MB). **Not automated** —
+  see §12, only 401 rows are eligible on a normal day since the 14-day window
+  is already "caught up"; the bulk of current size is legitimate active data,
+  not un-purged bloat.
+- **Dashboard (`dashboard_stats`) statement timeouts (`57014`):** several
+  layered causes, fixed as found —
+  1. Missing index for the unscoped ("all stores") case → added
+     `idx_tr_active_created_at`.
+  2. `work_mem` defaults to ~2.1MB on this Supabase compute tier → the
+     function's own GROUP BY/sort steps were spilling ~176MB to disk per call.
+     Fixed with `ALTER FUNCTION dashboard_stats(...) SET work_mem = '32MB'`
+     (function-scoped, not instance-wide).
+  3. A store-scope array covering *every* active store (rather than a true
+     `NULL`/admin session) forced Postgres into ~13x more index pages read
+     (59 small per-store scans merged, vs. one clean scan). Fixed in
+     `/dashboard/stats` by normalizing such an array back to `null` before
+     calling the RPC.
+  - **Still open:** recurring `57014`s continue under real concurrent load
+    even though every isolated test after the above fixes runs in 1-3s — see
+    §12. Proposed but not built: short-TTL caching of `dashboard_stats`
+    results so concurrent dashboard opens within the same window share one
+    computation.
+- **Excel export (`/reports/task-records?format=json`) — rebuilt three times
+  as each fix exposed the next bottleneck:**
+  1. `OFFSET`-based Worker-side pagination → replaced with keyset seek
+     pagination (`report_task_records_page`, `idx_tr_created_at_id`).
+  2. Still failed on large exports (500/503, `Unexpected end of JSON input`)
+     — root cause was the **Cloudflare Free plan's 50-subrequests-per-request
+     and 10ms-CPU-per-request limits** (see §3), not the DB. A single
+     long-lived Worker request doing 20-40+ internal Supabase calls, or
+     looping JS-side `flatten()`+`JSON.stringify()` over 10k+ rows, silently
+     exceeds these — not a catchable error, so the client just got a
+     truncated/dead response.
+  3. Fixed by moving pagination to the **client** (`Reports.jsx` calls one
+     page at a time via `after_created_at`/`after_id`, accumulates, then
+     builds the `.xlsx`) and moving row **formatting into Postgres**
+     (`report_task_records_flat_page` — joins + `fmt_task_details` +
+     `to_char(...)` server-side, Worker does a cheap string-concat passthrough
+     instead of a JS parse+rebuild). Page size raised to 50k rows/page since
+     the Worker's own CPU cost per request is now near-zero. Added
+     retry-with-backoff per page for transient Supabase blips.
+- **Cloudflare daily request cap (hit 76%):** found and fixed the actual
+  dominant cause — every scan-save across **all 10 task forms**
+  (`Task[A-K]Form.jsx`) called `load()` afterward, re-fetching the entire
+  task-records list (500 rows) even though the save's own response already
+  returns the full created record. That's 3 Worker requests per scan
+  (lookup, save, reload) × 55 stores scanning all day. Each form now passes
+  the created record through `onSaved`; `Tasks.jsx` appends it to local state
+  instead of refetching (falls back to `load()` only for the rare
+  offline-queued case, which has no server record yet).
+- **Settings → Cloudflare requests chart** added for ongoing visibility — see
+  §6. Needed a **`Workers Scripts: Read`** token permission in addition to
+  the documented `Account Analytics: Read` — the latter alone gave
+  `"authorization denied"` on `workersInvocationsAdaptive` even though it's
+  what Cloudflare's own docs say to use.
+- **One-off manual DB export:** full raw `task_records` dump to CSV
+  (290,364 rows, 102MB) via direct Supabase access, paginated 20k rows/call
+  server-side (using two temporary SQL helper functions, dropped after) —
+  not an app feature, a one-time ask.
+
+### 2026-06 (previous session)
 
 - **Dept-check race fix:** generation counter in `useTaskForm` + `priceInfo`
   state in `TaskJForm`; backfilled 1,344 historical null records.
@@ -351,6 +465,34 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
   horizontally inside the centred container on smaller screens.
 - Older docs (`docs/phase8-...md`, parts of `CLAUDE.md`) describe earlier
   designs; this file is the current source of truth.
+- **`dashboard_stats` still times out (`57014`) intermittently under real
+  load**, despite the fixes in §11 (2026-07-31). Every isolated test after
+  those fixes completes in 1-3s regardless of scope (admin/null or a 10-store
+  area-manager array), with locks, autovacuum, checkpoint I/O overlap, and
+  table bloat all ruled out directly against Postgres logs/stats. What's left
+  is CPU contention on a small, shared Supabase compute tier — several
+  concurrent multi-second aggregation queries (e.g. several BO/area-manager
+  dashboards opened around the same time) can plausibly stack into the full
+  2-minute timeout even though no single query is ever that slow alone. Query
+  tuning has hit its ceiling here; the two realistic remaining levers are a
+  short-TTL cache in front of `dashboard_stats` (proposed, not built) or a
+  paid Supabase compute tier.
+- **`task_records` retention purge is manual, not automated.** The 14-day
+  window for `cleared`/`store_completed` rows is "caught up" after the
+  2026-07-31 one-time purge (only ~400 rows eligible on a normal day), but
+  nothing runs `/admin/cleanup/task-records` on a schedule — it's a button in
+  Settings → Maintenance. Active (non-cleared) rows grow ~40-75k/week
+  regardless of this and are NOT something the purge addresses (they're live
+  pending/reviewed data, not stale). Automating the purge call (Cloudflare
+  Cron Trigger or an external cron hitting the endpoint, same pattern as the
+  existing Supabase keepalive ping) was discussed and deferred by request.
+- **Cloudflare Free plan limits are real design constraints now**, not just
+  theoretical — see §3. Confirmed empirically 2026-07-31: 50
+  subrequests/request and 10ms CPU/request killed the Excel export outright
+  until fixed; the account also hit 76% of the 100k/day request cap from
+  normal operation (mostly the since-fixed reload-after-save pattern). Any
+  new feature touching bulk data or firing on a high-frequency action should
+  be checked against these before shipping.
 
 ---
 
@@ -358,6 +500,18 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 Items requested but deliberately deferred — to be built later.
 
+- **`dashboard_stats` short-TTL cache** *(proposed 2026-07-31, not yet
+  approved/built)* — cache the RPC result for ~30-60s (keyed on
+  from/to/store_ids) so concurrent dashboard opens in the same window share
+  one computation instead of each triggering the full aggregation. Aimed at
+  the recurring statement-timeout issue in §12 that query tuning alone
+  couldn't fully resolve.
+- **Automate the `task_records` retention purge** *(discussed 2026-07-31,
+  deferred by request)* — currently a manual button
+  (`/admin/cleanup/task-records`) in Settings → Maintenance. Wire it to a
+  schedule (Cloudflare Cron Trigger, or an external cron hitting the endpoint
+  like the existing Supabase keepalive ping) so it doesn't need a person to
+  remember to click it.
 - **In-app feedback form** *(requested 2026-06-26)* — let any logged-in user
   submit feedback / suggestions / bug reports from inside the app. Not yet
   implemented; placeholder for the future build. Likely shape when picked up:
