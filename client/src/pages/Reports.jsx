@@ -297,6 +297,10 @@ function HQReports() {
   // Permanent-delete confirmation (J/K only). deleteTarget = { ids:[...] } or null.
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleting, setDeleting]       = useState(false)
+  // "Delete ALL matching J/K" (filter-based, batched) confirmation + progress.
+  const [matchDelete, setMatchDelete]   = useState(false)
+  const [matchDeleting, setMatchDeleting] = useState(false)
+  const [matchDeleted, setMatchDeleted] = useState(0)
   const [loading, setLoading]         = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [busy, setBusy]               = useState(false)
@@ -491,6 +495,34 @@ function HQReports() {
     }
   }
 
+  // Delete EVERY J/K record matching the current report filters, batch by batch
+  // (server-side), until the server reports it's done. This is what deletes all
+  // pages, not just the loaded rows.
+  const runDeleteAllMatching = async () => {
+    setMatchDeleting(true); setMatchDeleted(0)
+    let totalDeleted = 0
+    try {
+      for (let i = 0; i < 5000; i++) {           // hard cap as a runaway guard
+        const { deleted, done } = await deleteJkMatching({
+          from, to,
+          storeId:  storeIds.length    ? storeIds.join(',')    : undefined,
+          status:   statusIds.length   ? statusIds.join(',')   : undefined,
+          taskType: taskTypeIds.length ? taskTypeIds.join(',') : undefined
+        })
+        totalDeleted += deleted
+        setMatchDeleted(totalDeleted)
+        if (done) break
+      }
+      toast.success(`Permanently deleted ${totalDeleted.toLocaleString('en-IE')} J/K record${totalDeleted === 1 ? '' : 's'}.`)
+      setMatchDelete(false)
+      runReport()   // refresh the now-smaller result set
+    } catch (e) {
+      setError(e.message); toast.error(`Delete failed — ${e.message}`)
+    } finally {
+      setMatchDeleting(false)
+    }
+  }
+
   const toggleAllSelectable = () => {
     if (allSelectableSelected) setSelected(new Set())
     else setSelected(new Set(selectableIds))
@@ -661,11 +693,21 @@ function HQReports() {
             {!isBO && storeClearableIds.length > 0 && (
               <span className="note" style={{ fontSize: 12 }}>· {storeClearableIds.length} clearable</span>
             )}
-            {hasMore && (
-              <button className="btn btn-sm btn-outline" style={{ marginLeft: 'auto' }} onClick={loadMore} disabled={loading}>
-                {loading ? <><span className="spinner" /> Loading…</> : `Load more (${(total - records.length).toLocaleString('en-IE')} left)`}
-              </button>
-            )}
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              {total > 0 && (taskTypeIds.length === 0 || taskTypeIds.some(t => t === 'J' || t === 'K')) && (
+                <button
+                  className="btn btn-sm"
+                  onClick={() => setMatchDelete(true)}
+                  title="Permanently delete every J/K record matching this report — all pages"
+                  style={{ background: '#C0392B', color: '#fff', border: 'none', fontWeight: 600 }}
+                >🗑 Delete all matching J/K</button>
+              )}
+              {hasMore && (
+                <button className="btn btn-sm btn-outline" onClick={loadMore} disabled={loading}>
+                  {loading ? <><span className="spinner" /> Loading…</> : `Load more (${(total - records.length).toLocaleString('en-IE')} left)`}
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Bulk action bar — back office reviews, store users clear */}
@@ -838,6 +880,14 @@ function HQReports() {
         busy={deleting}
         onConfirm={confirmDelete}
         onCancel={() => { if (!deleting) setDeleteTarget(null) }}
+      />
+
+      <ConfirmDeleteModal
+        open={matchDelete}
+        count={total}
+        busy={matchDeleting}
+        onConfirm={runDeleteAllMatching}
+        onCancel={() => { if (!matchDeleting) setMatchDelete(false) }}
       />
     </div>
   )

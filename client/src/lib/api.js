@@ -186,6 +186,11 @@ export const bulkClearTaskRecords = (ids) =>
 export const bulkDeleteTaskRecords = (ids) =>
   request('/task-records/bulk-delete', { method: 'POST', body: { ids } })
 
+// PERMANENT delete of ALL J/K records matching a report filter, one batch at a
+// time. Returns { deleted, done }; the caller loops until done. Cannot be undone.
+export const deleteJkMatching = ({ from, to, storeId, status, taskType } = {}) =>
+  request('/task-records/delete-jk-matching', { method: 'POST', body: { from, to, storeId, status, taskType } })
+
 // ── Admin (back office) ─────────────────────────────────────────────────────
 
 export const adminListStores    = () => request('/admin/stores')

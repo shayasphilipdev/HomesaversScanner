@@ -3376,28 +3376,74 @@ export async function onRequest(context) {
       if (!safeIds.length) return err('No valid ids', 400)
 
       const scope = await scopedStoreIds(db, session)
-      const filter = { id: `in.(${safeIds.join(',')})` }
-      if (scope !== null) {
-        if (!scope.length) return json({ deleted: 0 })
-        filter['store_id'] = `in.(${scope.join(',')})`
-        if (!isBO) filter['or'] = '(status.eq.store_completed,task_type.in.(J,K))'
-      }
-
-      // Grab photos for the rows we're allowed to delete BEFORE removing them.
-      const doomed = await db.select('task_records', { select: 'photo_product_url,photo_barcode_url', ...filter })
-      const removed = await db.remove('task_records', filter)
+      if (scope !== null && !scope.length) return json({ deleted: 0 })
 
       const storageBase = `${env.SUPABASE_URL}/storage/v1/object/public/task-photos/`
-      for (const r of doomed) {
-        for (const u of [r.photo_product_url, r.photo_barcode_url].filter(Boolean)) {
-          if (!u.startsWith(storageBase)) continue
-          await fetch(`${env.SUPABASE_URL}/storage/v1/object/task-photos/${u.slice(storageBase.length)}`, {
-            method:  'DELETE',
-            headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}` }
-          }).catch(() => {})
+      let deletedCount = 0
+      // Chunk the id list — a single URL with thousands of UUIDs blows past the
+      // request URL length limit (that was the "Internal error" on big deletes).
+      const CHUNK = 100
+      for (let i = 0; i < safeIds.length; i += CHUNK) {
+        const chunk = safeIds.slice(i, i + CHUNK)
+        const filter = { id: `in.(${chunk.join(',')})` }
+        if (scope !== null) {
+          filter['store_id'] = `in.(${scope.join(',')})`
+          if (!isBO) filter['or'] = '(status.eq.store_completed,task_type.in.(J,K))'
+        }
+        // Grab photos for the rows we're allowed to delete BEFORE removing them.
+        const doomed  = await db.select('task_records', { select: 'photo_product_url,photo_barcode_url', ...filter })
+        const removed = await db.remove('task_records', filter)
+        deletedCount += removed.length
+        for (const r of doomed) {
+          for (const u of [r.photo_product_url, r.photo_barcode_url].filter(Boolean)) {
+            if (!u.startsWith(storageBase)) continue
+            await fetch(`${env.SUPABASE_URL}/storage/v1/object/task-photos/${u.slice(storageBase.length)}`, {
+              method:  'DELETE',
+              headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}` }
+            }).catch(() => {})
+          }
         }
       }
-      return json({ deleted: removed.length })
+      return json({ deleted: deletedCount })
+    }
+
+    // Delete ALL J/K (Department/Price Check) records matching a report filter,
+    // ONE batch at a time (client loops until done). Solves both "internal error"
+    // on huge id lists and "can only delete the first page" — this ignores
+    // pagination and deletes everything matching, in the caller's scope.
+    if (path === '/task-records/delete-jk-matching' && method === 'POST') {
+      if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled', 403)
+      const body  = await request.json().catch(() => ({}))
+      const scope = await scopedStoreIds(db, session)
+
+      // Resolve the store filter within the user's scope.
+      let storeIds = null
+      const wanted = String(body.storeId || '').split(',').map(s => s.trim()).filter(Boolean)
+      if (wanted.length) {
+        storeIds = scope === null ? wanted : wanted.filter(id => scope.includes(id))
+        if (!storeIds.length) return json({ deleted: 0, done: true })
+      } else if (scope !== null) {
+        if (!scope.length) return json({ deleted: 0, done: true })
+        storeIds = scope
+      }
+
+      const statuses = String(body.status || '').split(',').map(s => s.trim()).filter(s => s && s !== 'all')
+      // Respect the report's task-type selection, but only ever J/K.
+      const wantedTypes = String(body.taskType || '').split(',').map(s => s.trim()).filter(Boolean)
+      const jkTypes = (wantedTypes.length ? wantedTypes : ['J', 'K']).filter(t => t === 'J' || t === 'K')
+      if (!jkTypes.length) return json({ deleted: 0, done: true })      // report has no J/K types selected
+
+      const BATCH = 2000
+      const res = await db.rpc('delete_jk_records_batch', {
+        p_store_ids:  storeIds,                                           // null = all stores in scope
+        p_from:       body.from ? new Date(body.from).toISOString() : null,
+        p_to:         body.to   ? new Date(body.to).toISOString()   : null,
+        p_statuses:   statuses.length ? statuses : null,
+        p_task_types: jkTypes,
+        p_limit:      BATCH
+      })
+      const deleted = Array.isArray(res) ? (res[0] ?? 0) : (res ?? 0)
+      return json({ deleted, done: deleted < BATCH })
     }
 
     // ── Reports ───────────────────────────────────────────────────────────
