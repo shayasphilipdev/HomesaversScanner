@@ -128,6 +128,18 @@ still handles photo + product-query cleanup). Backlog of 165k was purged
 `cron.unschedule('purge-old-task-records')`. Photos of deleted rows are reclaimed
 by the existing age-based photo cleanup, not by this job.
 
+**Disk space ≠ row count (gotcha, 2026-08-04):** a `DELETE` does NOT return disk
+to the OS — it only marks rows dead; autovacuum frees them for *reuse inside the
+file*, so `pg_database_size` stays at the high-water mark. After the 165k-row
+purge the DB still showed ~350 MB (70% of the 500 MB free-tier cap). Ran
+`VACUUM (FULL, ANALYZE) task_records;` and `... task_record_events;` (rewrites
+table + rebuilds indexes, briefly ACCESS-EXCLUSIVE-locks the table) → DB dropped
+to **191 MB**. Steady-state now self-balances (daily deletes ≈ daily inserts, space
+recycled), so VACUUM FULL is only needed after a big one-off delete. Check sizes:
+`SELECT relname, pg_size_pretty(pg_total_relation_size(relid)) FROM
+pg_stat_user_tables ORDER BY pg_total_relation_size(relid) DESC;`. task_record_events
+cascade-deletes with task_records (FK), so it shrinks in step.
+
 ---
 
 ## 4. Auth & roles (current model — "single login")
