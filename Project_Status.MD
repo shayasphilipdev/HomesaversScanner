@@ -135,7 +135,12 @@ purge the DB still showed ~350 MB (70% of the 500 MB free-tier cap). Ran
 `VACUUM (FULL, ANALYZE) task_records;` and `... task_record_events;` (rewrites
 table + rebuilds indexes, briefly ACCESS-EXCLUSIVE-locks the table) → DB dropped
 to **191 MB**. Steady-state now self-balances (daily deletes ≈ daily inserts, space
-recycled), so VACUUM FULL is only needed after a big one-off delete. Check sizes:
+recycled). **Automated nightly compaction (added 2026-08-05):** two pg_cron jobs
+run VACUUM FULL just after the 02:00 purge — `vacuum-task-records` (02:30 UTC)
+and `vacuum-task-events` (02:40 UTC) — so the day's deletions (nightly purge +
+ad-hoc J/K deletes) are returned to the OS each night while stores are closed
+(03:30 Irish). VACUUM FULL takes an ACCESS-EXCLUSIVE lock, so it MUST stay at
+the off-hours slot — never run it after individual deletes. Check sizes:
 `SELECT relname, pg_size_pretty(pg_total_relation_size(relid)) FROM
 pg_stat_user_tables ORDER BY pg_total_relation_size(relid) DESC;`. task_record_events
 cascade-deletes with task_records (FK), so it shrinks in step.
