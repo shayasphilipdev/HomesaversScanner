@@ -767,10 +767,9 @@ function HQReports() {
                     </th>
                   )}
                   <th>Task</th>
-                  <th>Store</th>
-                  <th>Product Id</th>
-                  <th>Product Description</th>
-                  <th>Department</th>
+                  <th style={{ minWidth: 200 }}>Store</th>
+                  <th style={{ whiteSpace: 'nowrap' }}>Product Id</th>
+                  <th style={{ minWidth: 260 }}>Product Description</th>
                   <th>Product Barcode</th>
                   <th>Photos</th>
                   <th>Status</th>
@@ -796,9 +795,8 @@ function HQReports() {
                         )}
                         <td><strong>{TASK_FORMS[r.task_type]?.name || r.task_type}</strong></td>
                         <td>{storesById[r.store_id]?.store_name || <span className="td-muted">—</span>}</td>
-                        <td className="td-code">{r.product_barcode || r.product_code || <span className="td-muted">—</span>}</td>
+                        <td className="td-code" style={{ whiteSpace: 'nowrap' }}>{r.product_barcode || r.product_code || <span className="td-muted">—</span>}</td>
                         <td>{desc || <span className="td-muted">—</span>}</td>
-                        <td>{r.details?.item_group || <span className="td-muted">—</span>}</td>
                         <td className="td-code">{r.barcode_no || r.product_code || ''}</td>
                         <td>
                           <div className="flex-row" style={{ gap: 6 }}>
@@ -852,7 +850,7 @@ function HQReports() {
                       {/* Message thread panel */}
                       {expandedMessages.has(r.id) && (
                         <tr>
-                          <td colSpan={isBO ? 11 : 10} style={{ padding: 0, borderTop: 'none' }}>
+                          <td colSpan={isBO ? 10 : 9} style={{ padding: 0, borderTop: 'none' }}>
                             <RecordMessages recordId={r.id} />
                           </td>
                         </tr>
@@ -860,7 +858,7 @@ function HQReports() {
                       {/* Audit-trail panel (BO only) */}
                       {isBO && history[r.id] && (
                         <tr>
-                          <td colSpan={isBO ? 11 : 10} style={{ background: 'var(--surface-warm)' }}>
+                          <td colSpan={isBO ? 10 : 9} style={{ background: 'var(--surface-warm)' }}>
                             <HistoryPanel state={history[r.id]} />
                           </td>
                         </tr>
