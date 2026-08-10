@@ -116,12 +116,20 @@ reappear — it is NOT bloat (table was only ~5% dead, autovacuum healthy).
 **Record retention — now server-side via pg_cron (changed 2026-08-04):** the old
 retention only auto-deleted `cleared`/`store_completed` rows, so ~140k **pending**
 J/K piled up. Now a **pg_cron** job `purge-old-task-records` (daily 02:00 UTC)
-runs `CALL public.purge_old_task_records()`, which deletes every `task_records`
+runs `SELECT public.purge_old_task_records()`, which deletes every `task_records`
 row older than `app_settings.scan_record_retention_days` (14) **EXCEPT** still-
 pending HO query records (A–I) — i.e. rule `created_at < cutoff AND (task_type IN
-('J','K') OR status <> 'pending')`. It deletes in committed 5k batches (no
-statement-timeout, short locks). `delete_old_task_records_batch(cutoff, limit)`
-is the single-batch version used for one-off backlog clears. Runs entirely in
+('J','K') OR status <> 'pending')`.
+**IMPORTANT (fixed 2026-08-10):** this MUST be a plain FUNCTION called via
+`SELECT` doing ONE `DELETE` — the original was a PROCEDURE with a batched
+`COMMIT` loop called via `CALL`, which pg_cron cannot run (`invalid transaction
+termination`), so it silently failed every night for ~5 days. The cron role has
+no `statement_timeout`, so a single DELETE is safe even for a large backlog; at
+steady state it's tiny. `delete_old_task_records_batch(cutoff, limit)` remains
+as a single-batch helper for manual, business-hours backlog clears (SKIP LOCKED,
+short locks). Check it's actually running: `SELECT j.jobname, d.status,
+d.start_time, d.return_message FROM cron.job_run_details d JOIN cron.job j USING
+(jobid) ORDER BY d.start_time DESC;`. Runs entirely in
 the DB (independent of the Cloudflare login-triggered `runAutoCleanup`, which
 still handles photo + product-query cleanup). Backlog of 165k was purged
 2026-08-04, table 302k→137k. Manage: `SELECT * FROM cron.job;` /
