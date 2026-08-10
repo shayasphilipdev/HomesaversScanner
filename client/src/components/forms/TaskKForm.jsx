@@ -69,7 +69,6 @@ export default function TaskKForm({ onSaved, storeId }) {
     }
   }
 
-  const hasPrice  = t.form.sale_rate !== ''
   const priceMiss = t.lookupInfo && !priceInfo
 
   return (
@@ -96,38 +95,14 @@ export default function TaskKForm({ onSaved, storeId }) {
             }
           />
 
-          <LookupBanner info={t.lookupInfo} />
+          {/* Product info + Selling Price (red for Price Check) all in one box. */}
+          <LookupBanner info={t.lookupInfo} price={t.form.sale_rate} priceRed />
 
-          {/* Product Description — auto-filled, editable */}
-          <div className="form-group full" style={{ marginTop: 4 }}>
-            <label>Product Description</label>
-            <input
-              type="text"
-              value={t.form.description}
-              onChange={t.update('description')}
-              placeholder="Auto-filled on scan"
-            />
-          </div>
-
-          {/* Selling Price — auto-filled from ItemMaster, read-only */}
-          <div className="form-group" style={{ marginTop: 4 }}>
-            <label>Selling Price (€)</label>
-            <input
-              type="text"
-              readOnly
-              value={hasPrice ? `€${Number(t.form.sale_rate).toFixed(2)}` : ''}
-              placeholder={priceMiss ? 'Not found in price list' : 'Auto-filled on scan'}
-              style={{
-                background: 'var(--bg-soft)',
-                color:      hasPrice ? 'inherit' : 'var(--text-muted)'
-              }}
-            />
-            {priceMiss && (
-              <span className="note" style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>
-                This barcode was not found in the ItemMaster price list.
-              </span>
-            )}
-          </div>
+          {priceMiss && (
+            <div className="note" style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 2 }}>
+              This barcode was not found in the ItemMaster price list.
+            </div>
+          )}
 
           <div style={{ marginTop: 8 }}>
             <button type="button" className="btn btn-sm btn-outline" onClick={handleReset}>

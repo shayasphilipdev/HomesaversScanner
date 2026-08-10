@@ -124,7 +124,7 @@ function StatusPill({ label, value }) {
 // Alternate Barcode table. Shows Product Code (EAN), Product Description,
 // Supplier, and Product / Barcode status pills. Optionally shows the selling
 // price (`price` = sale_rate from the prices table) when the caller passes it.
-export function LookupBanner({ info, price }) {
+export function LookupBanner({ info, price, priceRed }) {
   if (!info) return null
   const supplier = [info.supl_id, info.supplier_code].filter(Boolean).join(' · ')
   const hasPrice = price != null && price !== '' && !isNaN(Number(price))
@@ -144,7 +144,12 @@ export function LookupBanner({ info, price }) {
         <div className="note" style={{ fontSize: 13 }}>Product Code: <strong>{info.ean_barcode}</strong></div>
       )}
       {hasPrice && (
-        <div className="note" style={{ fontSize: 13 }}>Selling Price: <strong>€{Number(price).toFixed(2)}</strong></div>
+        <div className="note" style={{ fontSize: priceRed ? 14 : 13 }}>
+          Selling Price:{' '}
+          <strong style={priceRed ? { color: 'var(--red)', fontSize: 17, fontWeight: 800 } : undefined}>
+            €{Number(price).toFixed(2)}
+          </strong>
+        </div>
       )}
       {supplier && (
         <div className="note" style={{ fontSize: 13 }}>Supplier: <strong>{supplier}</strong></div>
