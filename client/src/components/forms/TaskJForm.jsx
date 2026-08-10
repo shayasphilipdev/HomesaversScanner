@@ -92,7 +92,7 @@ export default function TaskJForm({ onSaved, storeId }) {
             }
           />
 
-          <LookupBanner info={t.lookupInfo} />
+          <LookupBanner info={t.lookupInfo} price={priceInfo?.sale_rate} />
 
           {/* Department — auto-filled from ItemMaster, read-only */}
           <div className="form-group full" style={{ marginTop: 4 }}>

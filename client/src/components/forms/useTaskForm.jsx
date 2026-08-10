@@ -122,10 +122,12 @@ function StatusPill({ label, value }) {
 
 // Shown under the scanner input once a barcode resolves against the
 // Alternate Barcode table. Shows Product Code (EAN), Product Description,
-// Supplier, and Product / Barcode status pills.
-export function LookupBanner({ info }) {
+// Supplier, and Product / Barcode status pills. Optionally shows the selling
+// price (`price` = sale_rate from the prices table) when the caller passes it.
+export function LookupBanner({ info, price }) {
   if (!info) return null
   const supplier = [info.supl_id, info.supplier_code].filter(Boolean).join(' · ')
+  const hasPrice = price != null && price !== '' && !isNaN(Number(price))
   return (
     <div className="form-group full" style={{
       marginTop: -2, marginBottom: 6,
@@ -140,6 +142,9 @@ export function LookupBanner({ info }) {
       )}
       {info.ean_barcode && (
         <div className="note" style={{ fontSize: 13 }}>Product Code: <strong>{info.ean_barcode}</strong></div>
+      )}
+      {hasPrice && (
+        <div className="note" style={{ fontSize: 13 }}>Selling Price: <strong>€{Number(price).toFixed(2)}</strong></div>
       )}
       {supplier && (
         <div className="note" style={{ fontSize: 13 }}>Supplier: <strong>{supplier}</strong></div>
