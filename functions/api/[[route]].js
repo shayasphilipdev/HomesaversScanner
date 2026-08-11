@@ -1793,16 +1793,21 @@ export async function onRequest(context) {
       const since = new Date(today.getTime() - 6 * 86400000)   // 7 days inclusive of today
       const until = new Date(today.getTime() + 86400000)       // exclusive upper bound
 
+      // This app is a Cloudflare PAGES project, so its request volume is in the
+      // pagesFunctionsInvocationsAdaptiveGroups dataset (grouped by date; `count`
+      // = invocations = requests). workersInvocationsAdaptive is standalone
+      // Workers only and returns nothing here → the chart showed empty bars.
       const query = `
-        query GetWorkerRequests($accountTag: string, $since: string, $until: string) {
+        query GetPagesRequests($accountTag: string, $since: string, $until: string) {
           viewer {
             accounts(filter: { accountTag: $accountTag }) {
-              workersInvocationsAdaptive(
+              pagesFunctionsInvocationsAdaptiveGroups(
                 limit: 1000
                 filter: { datetime_geq: $since, datetime_leq: $until }
+                orderBy: [date_ASC]
               ) {
                 dimensions { date }
-                sum { requests }
+                count
               }
             }
           }
