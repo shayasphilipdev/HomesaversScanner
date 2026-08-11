@@ -961,23 +961,13 @@ export async function onRequest(context) {
 
       // Tasks created in the last 7 days (any status), per type — recent
       // activity, not aging. Includes the two check tasks (Department / Price)
-      // alongside the six query types. Rolling 7-day (168h) window.
-      const COUNT_TYPES = ['A', 'B', 'C', 'D', 'E', 'F', 'J', 'K']
+      // alongside the six query types. Counted with a single GROUP BY aggregate
+      // RPC: paging J/K (tens of thousands) with OFFSET was slow enough to hit
+      // the statement timeout, which 500-ed this endpoint every week from Jul.
       const sinceIso = new Date(Date.now() - 7 * 86400000).toISOString()
       const created_last7 = {}
-      for (let offset = 0; offset < 50000; offset += PAGE) {
-        const page = await db.select('task_records', {
-          select:              'task_type,created_at',
-          task_type:           `in.(${COUNT_TYPES.join(',')})`,
-          created_at:          `gte.${sinceIso}`,
-          marked_for_deletion: 'neq.true',
-          order:               'created_at.asc',
-          limit:               String(PAGE),
-          offset:              String(offset)
-        })
-        for (const r of page) created_last7[r.task_type] = (created_last7[r.task_type] || 0) + 1
-        if (page.length < PAGE) break
-      }
+      const c7 = await db.rpc('aging_created_last7', { p_since: sinceIso })
+      for (const r of (c7 || [])) created_last7[r.task_type] = Number(r.cnt)
 
       return json({ now: new Date().toISOString(), total: records.length, records, created_last7 })
     }
