@@ -1794,9 +1794,11 @@ export async function onRequest(context) {
       const until = new Date(today.getTime() + 86400000)       // exclusive upper bound
 
       // This app is a Cloudflare PAGES project, so its request volume is in the
-      // pagesFunctionsInvocationsAdaptiveGroups dataset (grouped by date; `count`
-      // = invocations = requests). workersInvocationsAdaptive is standalone
-      // Workers only and returns nothing here → the chart showed empty bars.
+      // pagesFunctionsInvocationsAdaptiveGroups dataset. The request metric is
+      // `sum { requests }` (NOT `count` — that field only exists on some datasets
+      // like DNS/firewall and is rejected here). `date` gives one daily bucket per
+      // day, which is what the 7-day chart wants. workersInvocationsAdaptive is
+      // standalone Workers only and returns nothing here → the empty bars.
       const query = `
         query GetPagesRequests($accountTag: string, $since: string, $until: string) {
           viewer {
@@ -1804,10 +1806,9 @@ export async function onRequest(context) {
               pagesFunctionsInvocationsAdaptiveGroups(
                 limit: 1000
                 filter: { datetime_geq: $since, datetime_leq: $until }
-                orderBy: [date_ASC]
               ) {
                 dimensions { date }
-                count
+                sum { requests }
               }
             }
           }
@@ -1833,7 +1834,7 @@ export async function onRequest(context) {
       if (!gqlRes.ok || !gqlJson || gqlJson.errors) {
         return err(`Cloudflare Analytics API failed: ${JSON.stringify(gqlJson?.errors || gqlJson || await gqlRes.text())}`, 502)
       }
-      const rows = gqlJson?.data?.viewer?.accounts?.[0]?.workersInvocationsAdaptive || []
+      const rows = gqlJson?.data?.viewer?.accounts?.[0]?.pagesFunctionsInvocationsAdaptiveGroups || []
       const byDate = {}
       for (const r of rows) {
         const d = String(r.dimensions.date).slice(0, 10)
