@@ -370,6 +370,12 @@ the Brevo SMTP key). Setup doc: `scripts/AGING-REPORT-SETUP.md`.
   **Cc** shayas.philip@supplychain1.ie · chamya.herath@supplychain1.ie.
 - Test: `py scripts\aging-report.py --dry-run` (writes `aging-report-preview.html`,
   no send).
+- **Fixed 2026-08-11:** the email failed silently every Wed from 15 Jul —
+  `/reports/aging` was 500-ing because its "created in the last 7 days" count
+  paged J/K (~46k rows) with `OFFSET`, hitting the statement timeout. Now counted
+  via the `aging_created_last7(p_since)` GROUP BY aggregate RPC (one fast query).
+  If the email stops again, dry-run first and check whether the 500 is the fetch
+  (endpoint) or the SMTP send (Brevo key in `aging-report.config.json`).
 
 ---
 
