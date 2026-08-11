@@ -969,7 +969,12 @@ export async function onRequest(context) {
       const c7 = await db.rpc('aging_created_last7', { p_since: sinceIso })
       for (const r of (c7 || [])) created_last7[r.task_type] = Number(r.cnt)
 
-      return json({ now: new Date().toISOString(), total: records.length, records, created_last7 })
+      // Active stores with NO Department Check (J) in the last 7 full days before
+      // today (excludes the report-generation day). Computed server-side.
+      const missing = await db.rpc('stores_missing_dept_check', { p_days: 7 })
+      const stores_no_dept_check = (missing || []).map(m => ({ store_code: m.store_code, store_name: m.store_name }))
+
+      return json({ now: new Date().toISOString(), total: records.length, records, created_last7, stores_no_dept_check })
     }
 
     const session = await authenticate(request, env)

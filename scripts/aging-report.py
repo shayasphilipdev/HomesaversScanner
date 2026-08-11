@@ -131,7 +131,8 @@ def fetch_records(cfg, secret):
     resp.raise_for_status()
     data = resp.json()
     now = parse_iso(data.get("now")) or dt.datetime.now(dt.timezone.utc)
-    return data.get("records", []), now, data.get("created_last7", {}) or {}
+    return (data.get("records", []), now, data.get("created_last7", {}) or {},
+            data.get("stores_no_dept_check", []) or [])
 
 
 def enrich(records, now, buckets):
@@ -167,7 +168,7 @@ ALERT    = "#B42318"
 FONT     = "Segoe UI,Arial,Helvetica,sans-serif"
 
 
-def build_html(by_cat, cfg, now, created_last7):
+def build_html(by_cat, cfg, now, created_last7, stores_no_dept=None):
     buckets = cfg["aging_buckets"]
     overdue = int(cfg["overdue_days"])
     bucket_labels = [b["label"] for b in buckets]
@@ -276,6 +277,24 @@ def build_html(by_cat, cfg, now, created_last7):
         H.append(sbox(SHORT.get(code, code), int(created_last7.get(code, 0))))
     H.append('</tr></table></td></tr>')
 
+    # Stores with no Department Check in the last 7 days (excludes today, the
+    # report-generation day). Active stores only.
+    sdc = stores_no_dept or []
+    _cnt = f" &mdash; {len(sdc)} store(s)" if sdc else ""
+    H.append(f'<tr><td style="padding:16px 24px 2px;font-family:{FONT};font-size:16px;'
+             f'font-weight:700;color:#1f2724;">Stores with no Department Check'
+             f'<span style="font-size:13px;font-weight:400;color:#5b665e;"> last 7 days, excl. today{_cnt}</span></td></tr>')
+    if not sdc:
+        H.append(f'<tr><td style="padding:4px 24px 10px;font-family:{FONT};font-size:13px;color:{TEXT};">'
+                 'All active stores completed at least one Department Check.</td></tr>')
+    else:
+        H.append('<tr><td style="padding:4px 18px 8px;">'
+                 '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">')
+        H.append('<tr>' + th("Store Code", "left") + th("Store", "left") + '</tr>')
+        for s in sdc:
+            H.append('<tr>' + td(str(s.get("store_code", "")), "left") + td(str(s.get("store_name", "")), "left") + '</tr>')
+        H.append('</table></td></tr>')
+
     # Footer
     H.append(f'<tr><td style="padding:16px 24px 24px;font-family:{FONT};font-size:13px;'
              f'color:#5b665e;line-height:1.6;border-top:1px solid #eef2ee;">'
@@ -361,7 +380,7 @@ def main():
     secret = read_secret()
 
     try:
-        records, now, created_last7 = fetch_records(cfg, secret)
+        records, now, created_last7, stores_no_dept = fetch_records(cfg, secret)
     except Exception as e:
         log(f"Could not fetch report data: {e}", "ERROR")
         sys.exit(1)
@@ -371,7 +390,7 @@ def main():
     enriched = enrich(records, now, cfg["aging_buckets"])
     by_cat = {code: [x for x in enriched if x["task_type"] == code] for code, _ in CATEGORIES}
 
-    html = build_html(by_cat, cfg, now, created_last7)
+    html = build_html(by_cat, cfg, now, created_last7, stores_no_dept)
 
     attachments = []
     for code, name in CATEGORIES:
