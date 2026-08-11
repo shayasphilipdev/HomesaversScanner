@@ -752,17 +752,32 @@ function CloudflareUsageChart({ data, loading }) {
   const fmt = (n) => n.toLocaleString('en-IE')
   const maxVal = Math.max(limit, ...days.map(d => d.requests), 1)
 
-  const VW = 700, VH = 220, GAP = 14
-  const slot = VW / days.length
-  const barW = Math.max(1, slot - GAP)
-  const yScale = (v) => (v / maxVal) * VH
-  const limitY = VH - yScale(limit)
+  const VW = 700, VH = 210, PAD_L = 10, PAD_R = 10, TOP = 26, BOT = 168
+  const n = days.length
+  const xAt = (i) => n <= 1 ? VW / 2 : PAD_L + (VW - PAD_L - PAD_R) * (i / (n - 1))
+  const yAt = (v) => BOT - (v / maxVal) * (BOT - TOP)
+  const limitY = yAt(limit)
 
   const colourFor = (pct) => pct >= CRIT_PCT ? '#D14B3D' : pct >= WARN_PCT ? '#E0A03A' : '#3E9F4B'
   const labelDate = (s) => new Date(s + 'T00:00:00').toLocaleDateString('en-IE', { weekday: 'short', day: '2-digit', month: 'short' })
 
   const total = days.reduce((s, d) => s + d.requests, 0)
   const worst = days.reduce((m, d) => Math.max(m, d.requests), 0)
+
+  // Smooth (Catmull-Rom → cubic bézier) line through the daily points, plus a
+  // matching area path closed down to the baseline for the gradient fill.
+  const pts = days.map((d, i) => [xAt(i), yAt(d.requests)])
+  const linePath = pts.reduce((acc, p, i) => {
+    if (i === 0) return `M${p[0]},${p[1]}`
+    const p0 = pts[i - 2 >= 0 ? i - 2 : 0]
+    const p1 = pts[i - 1]
+    const p2 = p
+    const p3 = pts[i + 1 < pts.length ? i + 1 : i]
+    const c1x = p1[0] + (p2[0] - p0[0]) / 6, c1y = p1[1] + (p2[1] - p0[1]) / 6
+    const c2x = p2[0] - (p3[0] - p1[0]) / 6, c2y = p2[1] - (p3[1] - p1[1]) / 6
+    return `${acc}C${c1x},${c1y} ${c2x},${c2y} ${p2[0]},${p2[1]}`
+  }, '')
+  const areaPath = pts.length ? `${linePath} L${pts[pts.length - 1][0]},${BOT} L${pts[0][0]},${BOT} Z` : ''
 
   return (
     <div>
@@ -772,22 +787,31 @@ function CloudflareUsageChart({ data, loading }) {
           Peak day: <strong style={{ color: colourFor((worst / limit) * 100) }}>{fmt(worst)}</strong> of {fmt(limit)}/day
         </span>
       </div>
-      <svg viewBox={`0 0 ${VW} ${VH + 30}`} style={{ width: '100%', height: 220 }} preserveAspectRatio="none"
-        role="img" aria-label={`Bar chart of daily Cloudflare requests over the last 7 days against a ${fmt(limit)} per day limit. Total ${fmt(total)}.`}>
-        <line x1="0" y1={limitY} x2={VW} y2={limitY} stroke="#D14B3D" strokeWidth="1.5" strokeDasharray="6,4" />
-        <text x={VW - 4} y={limitY - 6} textAnchor="end" fontSize="11" fill="#D14B3D">{fmt(limit)}/day limit</text>
+      <svg viewBox={`0 0 ${VW} ${VH}`} style={{ width: '100%', height: 'auto', display: 'block' }}
+        role="img" aria-label={`Area chart of daily Cloudflare requests over the last 7 days against a ${fmt(limit)} per day limit. Total ${fmt(total)}.`}>
+        <defs>
+          <linearGradient id="cfAreaFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#2E78D6" stopOpacity="0.28" />
+            <stop offset="100%" stopColor="#2E78D6" stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
+        <line x1={PAD_L} y1={limitY} x2={VW - PAD_R} y2={limitY} stroke="#D14B3D" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.85" />
+        <text x={VW - PAD_R} y={limitY - 6} textAnchor="end" fontSize="11" fill="#D14B3D">{fmt(limit)}/day limit</text>
+        {areaPath && <path d={areaPath} fill="url(#cfAreaFill)" />}
+        {linePath && <path d={linePath} fill="none" stroke="#2E78D6" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />}
         {days.map((d, i) => {
           const pct = (d.requests / limit) * 100
-          const h = yScale(d.requests)
-          const x = i * slot + GAP / 2
+          const cx = pts[i][0], cy = pts[i][1]
+          const anchor = i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'
+          const valY = cy < TOP + 24 ? cy + 16 : cy - 11
           return (
             <g key={d.date}>
-              <rect x={x} y={VH - h} width={barW} height={h} rx="3" fill={colourFor(pct)} />
-              <text x={x + barW / 2} y={VH + 16} textAnchor="middle" fontSize="10" fill="var(--text-muted)">
-                {labelDate(d.date)}
-              </text>
-              <text x={x + barW / 2} y={Math.max(12, VH - h - 6)} textAnchor="middle" fontSize="10" fill="var(--text-muted)">
+              <circle cx={cx} cy={cy} r="4.5" fill={colourFor(pct)} stroke="var(--surface)" strokeWidth="2.5" />
+              <text x={cx} y={valY} textAnchor={anchor} fontSize="11" fill="var(--text-muted)">
                 {fmt(d.requests)}
+              </text>
+              <text x={cx} y={VH - 6} textAnchor={anchor} fontSize="11" fill="var(--text-muted)">
+                {labelDate(d.date)}
               </text>
             </g>
           )
