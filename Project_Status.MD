@@ -153,6 +153,19 @@ the off-hours slot — never run it after individual deletes. Check sizes:
 pg_stat_user_tables ORDER BY pg_total_relation_size(relid) DESC;`. task_record_events
 cascade-deletes with task_records (FK), so it shrinks in step.
 
+**Index audit (2026-08-12):** full pass over every table — all hot paths hit
+indexes (alt_barcodes 17.7M idx scans vs 788 seq; prices 8.7M vs 440;
+task_records 3.1M vs 1,920 — the seq scans are the nightly sync/purge jobs,
+where a full scan is the correct plan). No additions needed: a trial composite
+`(task_type, created_at)` on task_records was EXPLAIN-verified and reverted —
+the 14-day retention keeps every real date window small enough that
+`idx_tr_created_at` always wins, and rare-type wide scans use `idx_tr_task_type`.
+Dropped four never-scanned indexes (`idx_sti_period`, `idx_sti_completed_by`,
+`idx_tre_user`, `idx_tr_cleared_at` — the last was malformed: it indexed
+`cleared_at WHERE cleared_at IS NULL`, i.e. only NULLs). DB 171 MB = 34% of the
+500 MB cap. If Admin → Reports "Activity by user" filtering ever becomes a real
+workflow, recreate `idx_tre_user ON task_record_events (by_user_id)`.
+
 ---
 
 ## 4. Auth & roles (current model — "single login")
