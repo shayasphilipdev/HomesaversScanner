@@ -286,6 +286,15 @@ export const adminUpdateSpaceEquipment = (id, updates) => request(`/admin/space-
 export const adminGetSpacePlanned      = (storeId) => request(`/admin/space-plan/planned?storeId=${storeId}`)
 export const adminSetSpacePlanned      = (store_id, equipment_id, planned_count) => request('/admin/space-plan/planned', { method: 'PATCH', body: { store_id, equipment_id, planned_count } })
 
+// ── Competition capture ──────────────────────────────────────────────────────
+export const getCompetitors        = (storeId) => request('/competitors' + (storeId ? `?storeId=${encodeURIComponent(storeId)}` : ''))
+export const createCompetitor      = (body) => request('/competitors', { method: 'POST', body })
+export const updateCompetitor      = (id, body) => request(`/competitors/${id}`, { method: 'PATCH', body })
+export const deleteCompetitor      = (id) => request(`/competitors/${id}`, { method: 'DELETE' })
+export const getCompetitorRetailers = () => request('/competitors/retailers')
+export const addCompetitorRetailer  = (name) => request('/competitors/retailers', { method: 'POST', body: { name } })
+export const getCompetitorReport   = (storeId) => request('/competitors/report' + (storeId ? `?storeId=${encodeURIComponent(storeId)}` : ''))
+
 // Manager mobile dashboard rollup (today + 7-day heatmap, scope-aware).
 export const getManagerOverview       = () => request('/manager/overview')
 

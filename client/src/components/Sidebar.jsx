@@ -6,7 +6,7 @@ import { canSeeAnyAdminLink, canAccessAdmin, canDoHQTasks, canDoStoreTasks, canS
 // links at that width. Active state matches `/admin/*` for the Admin
 // link even though it links to /admin/stores specifically.
 export default function Sidebar() {
-  const { session } = useStore()
+  const { session, appConfig } = useStore()
   const { pathname } = useLocation()
 
   const items = [
@@ -16,6 +16,8 @@ export default function Sidebar() {
   if (canDoHQTasks(session))    items.push({ to: '/tasks',       icon: '✚', label: 'HO Tasks' })
   if (canDoStoreTasks(session)) items.push({ to: '/store-tasks', icon: '☑', label: 'Store Tasks' })
   items.push({ to: '/space-plan', icon: '▦', label: 'Space Plan' })
+  // Competition module — hidden only when an admin has explicitly disabled it.
+  if (appConfig?.competition_enabled !== false) items.push({ to: '/competition', icon: '⚑', label: 'Competition' })
   items.push({ to: '/product-query', icon: '💬', label: 'Product Query' })
   items.push({ to: '/reports', icon: '▤', label: 'Reports' })
   if (canSeeAnyAdminLink(session)) {

@@ -25,6 +25,7 @@ import AdminSettings from './pages/AdminSettings.jsx'
 import AdminReports from './pages/AdminReports.jsx'
 import AdminSuppliers from './pages/AdminSuppliers.jsx'
 import SpacePlan from './pages/SpacePlan.jsx'
+import Competition from './pages/Competition.jsx'
 import AdminSpacePlan from './pages/AdminSpacePlan.jsx'
 import { setToken, clearToken, getAppConfig } from './lib/api.js'
 import { canDoHQTasks, STORE_ROLE_KEYS } from './lib/roles.js'
@@ -54,16 +55,30 @@ function clearSession() {
   localStorage.removeItem(SESSION_KEY)
 }
 
+const APP_CONFIG_KEY = 'hs_app_config'
+function loadAppConfig() {
+  try { return JSON.parse(localStorage.getItem(APP_CONFIG_KEY)) || null } catch { return null }
+}
+
 export default function App() {
   const [session, setSession] = useState(loadSession)
+  // Chain-wide client flags. Seeded synchronously from the last cached copy so
+  // nav gating (e.g. the Competition module) doesn't flicker on reload, then
+  // refreshed from the server once we have a session.
+  const [appConfig, setAppConfig] = useState(loadAppConfig)
 
-  // Pull chain-wide client flags once we have a session. Currently just the
-  // camera-scan toggle; cached in localStorage so ScannerInput can read it
-  // synchronously. Default off until proven on.
+  // Pull chain-wide client flags once we have a session (camera-scan toggle,
+  // Competition module on/off). Cached in localStorage: the camera flag so
+  // ScannerInput can read it synchronously, the whole config so nav gating is
+  // available on the next reload before the fetch resolves.
   useEffect(() => {
     if (!session) return
     getAppConfig()
-      .then(cfg => localStorage.setItem('hs_camera_enabled', cfg?.scanner_camera_enabled ? '1' : '0'))
+      .then(cfg => {
+        setAppConfig(cfg)
+        localStorage.setItem(APP_CONFIG_KEY, JSON.stringify(cfg))
+        localStorage.setItem('hs_camera_enabled', cfg?.scanner_camera_enabled ? '1' : '0')
+      })
       .catch(() => {})
   }, [session])
 
@@ -88,7 +103,7 @@ export default function App() {
   }
 
   return (
-    <StoreContext.Provider value={{ session, logout }}>
+    <StoreContext.Provider value={{ session, logout, appConfig }}>
       <ToastProvider>
         <CurrentStoreProvider>
           <Shell />
@@ -124,6 +139,7 @@ function Shell() {
             <Route path="/sync"          element={<Sync />} />
             <Route path="/store-tasks"   element={<StoreTasks />} />
             <Route path="/space-plan"    element={<SpacePlan />} />
+            <Route path="/competition"   element={<Competition />} />
             <Route path="/product-query" element={<ProductQuery />} />
             <Route path="/manager"       element={<ManagerDashboard />} />
             <Route path="/admin/task-templates" element={<AdminGuard mode="templates"><AdminTaskTemplates /></AdminGuard>} />

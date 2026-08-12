@@ -1411,6 +1411,140 @@ export async function onRequest(context) {
       return json({ cols: SP_COLS, headers: SP_HEADERS, rows })
     }
 
+    // ── Competition capture ──────────────────────────────────────────────
+    // Operations/store users record competitors around each store. One row per
+    // competitor; store-scoped like Space Plan. Collected-by / updated-by are
+    // taken from the session (never trusted from the client).
+    const COMPETITOR_COLS =
+      'id,store_id,retailer_name,retailer_type,size_vs_us,status,distance_band,' +
+      'distance_value,distance_unit,travel,direct,price_vs_us,threat,setting,details,' +
+      'collected_by_name,updated_by_name,created_at,updated_at'
+    const COMP_EDITABLE = ['retailer_name','retailer_type','size_vs_us','status','distance_band','distance_unit','travel','direct','price_vs_us','threat','setting','details']
+    const whoName = () => session.display_name || session.username || 'unknown'
+    const numOrNull = (v) => {
+      if (v === '' || v === null || v === undefined) return null
+      const n = Number(v)
+      return Number.isFinite(n) ? n : null
+    }
+
+    // Shared, user-extensible retailer master list for the dropdown.
+    if (path === '/competitors/retailers' && method === 'GET') {
+      const rows = await db.select('competitor_retailers', { select: 'id,name', is_active: 'eq.true', order: 'name.asc' })
+      return json(rows)
+    }
+    if (path === '/competitors/retailers' && method === 'POST') {
+      const body = await request.json()
+      const name = String(body.name || '').trim()
+      if (!name) return err('name required', 400)
+      const existing = await db.select('competitor_retailers', { select: 'id,name', name: `ilike.${name}`, limit: '1' })
+      if (existing.length) return json(existing[0])
+      const inserted = await db.insert('competitor_retailers', { name, is_active: true, created_by_user_id: session.user_id || null, created_at: new Date().toISOString() })
+      return json(inserted[0] ?? inserted, 201)
+    }
+
+    // Flat-row report for Excel export (client downloadExcel consumes {cols,headers,rows}).
+    if (path === '/competitors/report' && method === 'GET') {
+      const C_COLS    = ['store_code','store_name','region','retailer_name','retailer_type','size_vs_us','distance_band','distance_value','distance_unit','travel','status','direct','price_vs_us','threat','setting','details','collected_by','collected_at','updated_by','updated_at']
+      const C_HEADERS = ['Store Code','Store Name','Region','Retailer','Type','Size vs Us','Distance Band','Distance','Unit','Travel','Status','Direct','Price vs Us','Threat','Setting','Details','Collected By','Collected At','Updated By','Last Updated']
+      const scope = await scopedStoreIds(db, session)
+      const wanted = (url.searchParams.get('storeId') || '').split(',').map(s => s.trim()).filter(s => s && s !== 'all')
+      let storeIds = null
+      if (wanted.length) storeIds = scope === null ? wanted : wanted.filter(id => scope.includes(id))
+      else               storeIds = scope
+      if (Array.isArray(storeIds) && !storeIds.length) return json({ cols: C_COLS, headers: C_HEADERS, rows: [] })
+
+      const storeParams = { select: 'id,store_code,store_name,region', order: 'store_code.asc' }
+      if (Array.isArray(storeIds)) storeParams['id'] = `in.(${storeIds.join(',')})`
+      const stores = await db.select('stores', storeParams)
+      const idList = stores.map(s => s.id)
+      if (!idList.length) return json({ cols: C_COLS, headers: C_HEADERS, rows: [] })
+      const storeMap = Object.fromEntries(stores.map(s => [s.id, s]))
+
+      const comps = await db.select('store_competitors', {
+        select: COMPETITOR_COLS,
+        store_id: `in.(${idList.join(',')})`,
+        is_active: 'eq.true',
+        order: 'store_id.asc,updated_at.desc'
+      })
+      const rows = comps.map(c => ({
+        store_code:     storeMap[c.store_id]?.store_code || '',
+        store_name:     storeMap[c.store_id]?.store_name || '',
+        region:         storeMap[c.store_id]?.region || '',
+        retailer_name:  c.retailer_name || '',
+        retailer_type:  c.retailer_type || '',
+        size_vs_us:     c.size_vs_us || '',
+        distance_band:  c.distance_band || '',
+        distance_value: c.distance_value ?? '',
+        distance_unit:  c.distance_unit || '',
+        travel:         c.travel || '',
+        status:         c.status || '',
+        direct:         c.direct || '',
+        price_vs_us:    c.price_vs_us || '',
+        threat:         c.threat || '',
+        setting:        c.setting || '',
+        details:        c.details || '',
+        collected_by:   c.collected_by_name || '',
+        collected_at:   c.created_at ? fmtReportDate(c.created_at) : '',
+        updated_by:     c.updated_by_name || '',
+        updated_at:     c.updated_at ? fmtReportDate(c.updated_at) : ''
+      }))
+      return json({ cols: C_COLS, headers: C_HEADERS, rows })
+    }
+
+    // List competitors for the resolved store.
+    if (path === '/competitors' && method === 'GET') {
+      const r = await resolveSpaceStore(url.searchParams.get('storeId'))
+      if (r.error) return r.error
+      if (!r.storeId) return json({ store_id: null, competitors: [] })
+      const competitors = await db.select('store_competitors', {
+        select: COMPETITOR_COLS,
+        store_id: `eq.${r.storeId}`,
+        is_active: 'eq.true',
+        order: 'updated_at.desc'
+      })
+      return json({ store_id: r.storeId, competitors })
+    }
+
+    // Create a competitor.
+    if (path === '/competitors' && method === 'POST') {
+      const body = await request.json()
+      const r = await resolveSpaceStore(body.store_id)
+      if (r.error) return r.error
+      if (!r.storeId) return err('store_id required', 400)
+      const name = String(body.retailer_name || '').trim()
+      if (!name) return err('retailer_name required', 400)
+      const now = new Date().toISOString()
+      const rec = { store_id: r.storeId, retailer_name: name, is_active: true,
+        distance_value: numOrNull(body.distance_value),
+        collected_by_user_id: session.user_id || null, collected_by_name: whoName(),
+        updated_by_user_id: session.user_id || null, updated_by_name: whoName(),
+        created_at: now, updated_at: now }
+      for (const f of COMP_EDITABLE) if (f !== 'retailer_name' && body[f] !== undefined) rec[f] = body[f] === '' ? null : body[f]
+      const inserted = await db.insert('store_competitors', rec)
+      return json(inserted[0] ?? inserted, 201)
+    }
+
+    // Update / delete a single competitor (scope-checked against its store).
+    const compMatch = path.match(/^\/competitors\/([a-f0-9-]{36})$/)
+    if (compMatch && (method === 'PATCH' || method === 'DELETE')) {
+      const id = compMatch[1]
+      const existing = await db.select('store_competitors', { select: 'id,store_id', id: `eq.${id}`, limit: '1' })
+      if (!existing.length) return err('Not found', 404)
+      const r = await resolveSpaceStore(existing[0].store_id)
+      if (r.error) return r.error
+      const now = new Date().toISOString()
+      if (method === 'DELETE') {
+        await db.update('store_competitors', { id: `eq.${id}` }, { is_active: false, updated_at: now, updated_by_user_id: session.user_id || null, updated_by_name: whoName() })
+        return json({ deleted: true })
+      }
+      const body = await request.json()
+      const updates = { updated_at: now, updated_by_user_id: session.user_id || null, updated_by_name: whoName() }
+      for (const f of COMP_EDITABLE) if (body[f] !== undefined) updates[f] = body[f] === '' ? null : body[f]
+      if (body.distance_value !== undefined) updates.distance_value = numOrNull(body.distance_value)
+      const upd = await db.update('store_competitors', { id: `eq.${id}` }, updates)
+      return json(upd[0] ?? upd)
+    }
+
     // ── Admin: Space Plan equipment visibility + planned counts ──────────
     if (path === '/admin/space-plan/equipment' && method === 'GET') {
       if (!isAdminRole(session)) return err('Forbidden', 403)
@@ -2618,11 +2752,13 @@ export async function onRequest(context) {
     if (path === '/app-config' && method === 'GET') {
       const rows = await db.select('app_settings', {
         select: 'key,value',
-        key: 'in.(scanner_camera_enabled)'
+        key: 'in.(scanner_camera_enabled,competition_enabled)'
       })
       const byKey = Object.fromEntries(rows.map(r => [r.key, r.value]))
       return json({
-        scanner_camera_enabled: byKey.scanner_camera_enabled === 'true'
+        scanner_camera_enabled: byKey.scanner_camera_enabled === 'true',
+        // Default ON when the row is absent, so a fresh deploy shows the module.
+        competition_enabled: byKey.competition_enabled !== 'false'
       })
     }
 

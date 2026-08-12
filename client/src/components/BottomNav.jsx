@@ -6,7 +6,7 @@ import { canAccessAdmin, canDoHQTasks, canDoStoreTasks, canSeeManagerDashboard }
 // Thumb-reach navigation pinned to the bottom edge, with safe-area
 // inset support so it sits above the iOS home indicator.
 export default function BottomNav() {
-  const { session } = useStore()
+  const { session, appConfig } = useStore()
 
   const items = [
     { to: '/dashboard', icon: '◧', label: 'Home' }
@@ -15,6 +15,7 @@ export default function BottomNav() {
   // HO Tasks comes before Store Tasks (swapped) — it's the primary store action.
   if (canDoHQTasks(session))    items.push({ to: '/tasks', icon: '✚', label: 'HO' })
   items.push({ to: '/space-plan', icon: '⊞', label: 'Space Plan', accent: true })
+  if (appConfig?.competition_enabled !== false) items.push({ to: '/competition', icon: '⚑', label: 'Compete' })
   items.push({ to: '/product-query', icon: '💬', label: 'Query' })
   if (canDoStoreTasks(session)) items.push({ to: '/store-tasks', icon: '☑', label: 'Tasks' })
   items.push({ to: '/reports', icon: '▤', label: 'Reports' })

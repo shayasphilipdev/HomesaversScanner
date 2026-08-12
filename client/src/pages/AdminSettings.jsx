@@ -122,6 +122,13 @@ const KEY_META = {
     hint:  'When on, every barcode field shows a "Use camera" button. Off by default — stores use a scanner gun.',
     bool:  true
   },
+  // ── Competition ────────────────────────────────────────────────────────
+  competition_enabled: {
+    section: 'Competition',
+    label: 'Competition capture',
+    hint:  'When on, the Competition screen (record competitors around each store) is available to all users, plus its Reports tab. Off hides it everywhere.',
+    bool:  true
+  },
   // ── Retention ──────────────────────────────────────────────────────────
   list_auto_close_hours: {
     section: 'Retention',
