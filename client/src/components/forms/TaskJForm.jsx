@@ -68,7 +68,6 @@ export default function TaskJForm({ onSaved, storeId }) {
   }
 
   const dept         = priceInfo?.item_group || ''
-  const hasDept      = !!dept
   const deptMiss     = t.lookupInfo && priceInfo === null && !t.lookupLoading
   const deptNotFound = t.lookupInfo && priceInfo !== null && !dept
 
@@ -92,26 +91,19 @@ export default function TaskJForm({ onSaved, storeId }) {
             }
           />
 
-          <LookupBanner info={t.lookupInfo} price={priceInfo?.sale_rate} />
-
-          {/* Department — auto-filled from ItemMaster, read-only */}
-          <div className="form-group full" style={{ marginTop: 4 }}>
-            <label>Department</label>
-            <input
-              type="text"
-              readOnly
-              value={dept}
-              placeholder={
-                deptMiss      ? 'Barcode not in price list' :
-                deptNotFound  ? 'No department on record' :
-                                'Auto-filled on scan'
-              }
-              style={{
-                background: 'var(--bg-soft)',
-                color:      hasDept ? 'inherit' : 'var(--text-muted)'
-              }}
-            />
-          </div>
+          {/* Department + Product Status are folded into the lookup box (below
+              the Selling Price) to save vertical space — no separate field. */}
+          <LookupBanner
+            info={t.lookupInfo}
+            price={priceInfo?.sale_rate}
+            productStatus={priceInfo?.product_type}
+            department={dept}
+            departmentEmpty={
+              deptMiss        ? 'Barcode not in price list' :
+              deptNotFound    ? 'No department on record'   :
+              t.lookupLoading ? 'Looking up…'               : ''
+            }
+          />
 
           <div style={{ marginTop: 8 }}>
             <button type="button" className="btn btn-sm btn-outline" onClick={handleReset}>

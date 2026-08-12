@@ -3503,6 +3503,7 @@ export async function onRequest(context) {
         product_barcode:     r.product_barcode || '',
         item_name:           r.item_name || r.description || r.product_name_label || '',
         selling_price:       r.selling_price || '',
+        product_type:        r.product_type || '',
         task_type:           taskTypeName[r.task_type] || r.task_type,
         store_name:          storeName[r.store_id] || '',
         uom:                 r.uom || '',
@@ -3522,11 +3523,14 @@ export async function onRequest(context) {
       })
 
       // Column order matches the numbering requested on the report:
-      // Barcode, Code, Description, Task, Details, Supplier, Product Status,
-      // Barcode Status, Status, Date, Store, UOM, Quantity, Notes, HO Notes,
-      // Product Photo, Barcode Photo, Supplier Code, Actual Product Name.
-      const cols    = ['barcode_no','product_barcode','item_name','selling_price','task_type','details','supl_id','item_status','barcode_status','status','created_at','store_name','uom','quantity','notes','review_notes','photo_product_url','photo_barcode_url','supplier_code','actual_product_name']
-      const headers = ['Product Barcode','Product Code','Product Description','Selling Price','Task','Details','Supplier','Product Status','Barcode Status','Status','Date','Store','UOM','Quantity','Notes','HO Notes','Product Photo','Barcode Photo','Supplier Code','Actual Product Name']
+      // Barcode, Code, Description, Selling Price, Product Status (ItemMaster
+      // ProductType), Task, Details, Supplier, Item Status, Barcode Status,
+      // Status, Date, Store, UOM, Quantity, Notes, HO Notes, Product Photo,
+      // Barcode Photo, Supplier Code, Actual Product Name.
+      // NB: `item_status` (the Active/Inactive flag) is headed "Item Status" so
+      // it doesn't collide with the new "Product Status" = product_type column.
+      const cols    = ['barcode_no','product_barcode','item_name','selling_price','product_type','task_type','details','supl_id','item_status','barcode_status','status','created_at','store_name','uom','quantity','notes','review_notes','photo_product_url','photo_barcode_url','supplier_code','actual_product_name']
+      const headers = ['Product Barcode','Product Code','Product Description','Selling Price','Product Status','Task','Details','Supplier','Item Status','Barcode Status','Status','Date','Store','UOM','Quantity','Notes','HO Notes','Product Photo','Barcode Photo','Supplier Code','Actual Product Name']
       const urlCols = new Set(['photo_product_url','photo_barcode_url'])
       const esc     = v => `"${String(v ?? '').replace(/"/g, '""')}"`
       const escUrl  = v => {

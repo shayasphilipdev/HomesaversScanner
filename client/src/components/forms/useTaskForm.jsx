@@ -123,11 +123,17 @@ function StatusPill({ label, value }) {
 // Shown under the scanner input once a barcode resolves against the
 // Alternate Barcode table. Shows Product Code (EAN), Product Description,
 // Supplier, and Product / Barcode status pills. Optionally shows the selling
-// price (`price` = sale_rate from the prices table) when the caller passes it.
-export function LookupBanner({ info, price, priceRed }) {
+// price (`price` = sale_rate from the prices table) when the caller passes it,
+// plus the Department (`department` = item_group) and Product Status
+// (`productStatus` = product_type from the prices/ItemMaster table) when the
+// caller passes them — Department Check folds both into this box to save space.
+export function LookupBanner({ info, price, priceRed, department, departmentEmpty, productStatus }) {
   if (!info) return null
   const supplier = [info.supl_id, info.supplier_code].filter(Boolean).join(' · ')
   const hasPrice = price != null && price !== '' && !isNaN(Number(price))
+  // Show the Department row whenever the caller opts in (passes either a value
+  // or a placeholder) — that keeps it out of every other form's banner.
+  const showDept = department != null || departmentEmpty != null
   return (
     <div className="form-group full" style={{
       marginTop: -2, marginBottom: 6,
@@ -143,6 +149,14 @@ export function LookupBanner({ info, price, priceRed }) {
       {info.ean_barcode && (
         <div className="note" style={{ fontSize: 13 }}>Product Code: <strong>{info.ean_barcode}</strong></div>
       )}
+      {showDept && (
+        <div className="note" style={{ fontSize: 13 }}>
+          Department:{' '}
+          {department
+            ? <strong>{department}</strong>
+            : <span style={{ color: 'var(--text-muted)' }}>{departmentEmpty || '—'}</span>}
+        </div>
+      )}
       {hasPrice && (
         <div className="note" style={{ fontSize: priceRed ? 14 : 13 }}>
           Selling Price:{' '}
@@ -150,6 +164,9 @@ export function LookupBanner({ info, price, priceRed }) {
             €{Number(price).toFixed(2)}
           </strong>
         </div>
+      )}
+      {productStatus && (
+        <div className="note" style={{ fontSize: 13 }}>Product Status: <strong>{productStatus}</strong></div>
       )}
       {supplier && (
         <div className="note" style={{ fontSize: 13 }}>Supplier: <strong>{supplier}</strong></div>
