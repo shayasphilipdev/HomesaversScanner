@@ -72,7 +72,7 @@ export default function TaskHForm({ onSaved, storeId }) {
               readerId="reader-h"
             />
 
-            <LookupBanner info={lookupInfo} price={priceInfo?.sale_rate} />
+            <LookupBanner info={lookupInfo} price={priceInfo?.sale_rate} productStatus={priceInfo?.product_type} />
 
             <div className="form-group">
               <label>Count in the Shop Floor *</label>
