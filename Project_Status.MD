@@ -314,6 +314,31 @@ below.)
   threads with unread messages (one-line preview, per-thread + total unread
   count) → clicking opens the record's thread in HO Tasks. Endpoints
   `/task-messages/threads`, `/task-messages/unread-count`, `/task-records/:id/messages*`.
+- **Competition** (`/competition`, added 2026-08-13): per-store competitor
+  capture for all users — dropdown-driven form (retailer from a shared,
+  user-extensible `competitor_retailers` list seeded with ~100 Irish chains;
+  type/size/status/distance band + numeric km/m/travel/direct/price/threat/
+  setting + freehand details), records listed below the form, collected-by/
+  updated-by from the session. Reports → Competition tab + Excel. Admin →
+  Settings toggle `competition_enabled` (default on) hides the module
+  everywhere when off. Tables: `store_competitors`, `competitor_retailers`.
+- **Pricing** (`/pricing`, added 2026-08-13, back-office logins only):
+  Reports → HO records selection bar gains "€ Send to Pricing" → snapshot
+  copies into `pricing_items` (full record jsonb — survives the 14-day
+  retention purge; duplicates skipped via unique `task_record_id`). Grid
+  shows record columns + Cost (`prices.cost` = ItemMaster LandedCost) +
+  Current SP, editable New Selling Price / VAT Rate / Notes. VAT dropdown
+  Standard 23 · Reduced 13.5 · Nine 9 · Zero 0 · Exempted 0, pre-filled from
+  `prices.tax_id`; unrecognised values display the 9999 sentinel. Margin % =
+  (Net SP − Cost) ÷ Net SP × 100, Net SP = New SP ÷ (1 + VAT) — computed live
+  client-side, recomputed server-side on save (authoritative). Save requires
+  New SP + VAT → status `priced`, stamps `task_records.priced_at` → Reports
+  shows a gold € bubble in the Product Id column. Delete removes only the
+  pricing copy. Status filter (All/To price/Priced) + Excel export respect
+  the filter. **ItemMaster sync now also carries `Tax_Id` + `LandedCost`**
+  (python `sync-prices.py` COLUMN_MAP, `/prices/sync`, `/prices/import`,
+  `/prices/upload-excel` → `prices.tax_id`/`prices.cost`). Non-scan records
+  without an ItemMaster match keep Cost/Margin empty by design.
 - **Store Tasks** (`/store-tasks`), **Product Query** (`/product-query`),
   **Suppliers** admin (`/admin/suppliers`), **Product Master** browse.
 - **Settings** (`/admin/settings`, `admin` role only): retention windows,
