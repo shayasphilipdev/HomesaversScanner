@@ -30,6 +30,15 @@ export default function Pricing() {
     setLoading(true); setError('')
     try {
       const rows = await getPricingItems(filter)
+      // To price always on top, then by Task, newest first within a task.
+      rows.sort((a, b) => {
+        const pa = a.pricing_status === 'priced' ? 1 : 0
+        const pb = b.pricing_status === 'priced' ? 1 : 0
+        if (pa !== pb) return pa - pb
+        const t = (a.task_type_name || '').localeCompare(b.task_type_name || '')
+        if (t !== 0) return t
+        return new Date(b.created_at) - new Date(a.created_at)
+      })
       setItems(rows)
       // Seed row edits from stored values so re-opening shows what was saved.
       setEdits(Object.fromEntries(rows.map(it => [it.id, {
@@ -128,28 +137,28 @@ export default function Pricing() {
             <table style={{ fontSize: 13 }}>
               <thead>
                 <tr>
-                  <th>Store</th>
-                  <th>Task</th>
-                  <th>Date</th>
                   <th style={{ whiteSpace: 'nowrap' }}>Product Barcode</th>
                   <th style={{ whiteSpace: 'nowrap' }}>Product Code</th>
-                  <th style={{ minWidth: 220 }}>Description</th>
-                  <th>UOM</th>
-                  <th>Qty</th>
-                  <th>Supplier</th>
-                  <th>Item Status</th>
-                  <th>Barcode Status</th>
-                  <th>Record Status</th>
-                  <th style={{ minWidth: 140 }}>Details</th>
-                  <th style={{ minWidth: 120 }}>Record Notes</th>
+                  <th style={{ minWidth: 200 }}>Description</th>
+                  <th style={{ minWidth: 130 }}>Details</th>
+                  <th style={{ minWidth: 110 }}>Record Notes</th>
                   <th>Cost</th>
                   <th style={{ whiteSpace: 'nowrap' }}>Current SP</th>
                   <th style={{ whiteSpace: 'nowrap' }}>New Selling Price *</th>
                   <th style={{ whiteSpace: 'nowrap' }}>VAT Rate *</th>
                   <th style={{ whiteSpace: 'nowrap' }}>Margin %</th>
-                  <th style={{ minWidth: 140 }}>Notes</th>
+                  <th style={{ minWidth: 130 }}>Notes</th>
+                  <th>Task</th>
+                  <th>Item Status</th>
+                  <th>Barcode Status</th>
                   <th>Status</th>
                   <th></th>
+                  <th>Store</th>
+                  <th>Date</th>
+                  <th>UOM</th>
+                  <th>Qty</th>
+                  <th>Supplier</th>
+                  <th>Record Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -163,18 +172,9 @@ export default function Pricing() {
                   const empty = <span className="td-muted">—</span>
                   return (
                     <tr key={it.id} style={isPriced ? { background: 'var(--surface-warm)' } : undefined}>
-                      <td style={{ whiteSpace: 'nowrap' }}>{it.store_name || empty}</td>
-                      <td><strong>{it.task_type_name || empty}</strong></td>
-                      <td className="td-muted" style={{ whiteSpace: 'nowrap' }}>{fmtDT(r.created_at)}</td>
-                      <td className="td-code" style={{ whiteSpace: 'nowrap' }}>{it.product_barcode || empty}</td>
                       <td className="td-code" style={{ whiteSpace: 'nowrap' }}>{r.barcode_no || r.product_code || empty}</td>
+                      <td className="td-code" style={{ whiteSpace: 'nowrap' }}>{it.product_barcode || empty}</td>
                       <td>{r.item_name || r.description || r.product_name_label || empty}</td>
-                      <td>{r.uom || empty}</td>
-                      <td>{r.quantity ?? empty}</td>
-                      <td style={{ whiteSpace: 'nowrap' }}>{[r.supl_id, r.supplier_code].filter(Boolean).join(' · ') || empty}</td>
-                      <td>{r.item_status || empty}</td>
-                      <td>{r.barcode_status || empty}</td>
-                      <td>{r.status || empty}</td>
                       <td style={{ fontSize: 12 }}>{it.details_fmt || empty}</td>
                       <td style={{ fontSize: 12 }}>{r.notes || empty}</td>
                       <td style={{ whiteSpace: 'nowrap' }}>{euro(it.cost) || empty}</td>
@@ -204,16 +204,19 @@ export default function Pricing() {
                         <input
                           type="text" value={e.pricing_notes ?? ''}
                           onChange={ev => setEdit(it.id, 'pricing_notes', ev.target.value)}
-                          placeholder="Notes…" style={{ width: 140 }}
+                          placeholder="Notes…" style={{ width: 130 }}
                         />
                       </td>
+                      <td><strong>{it.task_type_name || empty}</strong></td>
+                      <td>{r.item_status || empty}</td>
+                      <td>{r.barcode_status || empty}</td>
                       <td style={{ whiteSpace: 'nowrap' }}>
                         {isPriced
                           ? <span className="badge badge-completed" title={`Priced by ${it.priced_by_name || '—'} · ${fmtDT(it.priced_at)}`}>€ Priced</span>
                           : <span className="badge badge-pending">To price</span>}
                       </td>
                       <td>
-                        <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>
+                        <div className="flex-row" style={{ gap: 6, whiteSpace: 'nowrap' }}>
                           <button className="btn btn-sm btn-primary" disabled={savingId === it.id || !canSave} onClick={() => save(it)}
                             title={canSave ? (isPriced ? 'Save changes' : 'Save and mark Priced') : 'New Selling Price and VAT Rate are required'}>
                             {savingId === it.id ? <span className="spinner" /> : 'Save'}
@@ -223,6 +226,12 @@ export default function Pricing() {
                           </button>
                         </div>
                       </td>
+                      <td style={{ whiteSpace: 'nowrap' }}>{it.store_name || empty}</td>
+                      <td className="td-muted" style={{ whiteSpace: 'nowrap' }}>{fmtDT(r.created_at)}</td>
+                      <td>{r.uom || empty}</td>
+                      <td>{r.quantity ?? empty}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}>{[r.supl_id, r.supplier_code].filter(Boolean).join(' · ') || empty}</td>
+                      <td>{r.status || empty}</td>
                     </tr>
                   )
                 })}
