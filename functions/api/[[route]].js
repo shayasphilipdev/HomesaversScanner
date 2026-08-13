@@ -1615,7 +1615,13 @@ export async function onRequest(context) {
           updated_at:            now
         })
       }
-      if (toInsert.length) await db.insert('pricing_items', toInsert)
+      if (toInsert.length) {
+        await db.insert('pricing_items', toInsert)
+        // Re-sending a previously-removed record puts it back in pricing —
+        // clear the "removed" marker so Reports stops showing the empty bubble.
+        const backIds = toInsert.map(t => t.task_record_id)
+        try { await db.update('task_records', { id: `in.(${backIds.join(',')})`, pricing_removed_at: 'not.is.null' }, { pricing_removed_at: null }) } catch { /* cosmetic */ }
+      }
       return json({ added: toInsert.length, skipped: records.length - toInsert.length })
     }
 
@@ -1715,6 +1721,11 @@ export async function onRequest(context) {
       if (!existing.length) return err('Not found', 404)
       if (method === 'DELETE') {
         await db.remove('pricing_items', { id: `eq.${id}` })
+        // Mark the original record so Reports shows the empty "was in pricing,
+        // since removed" bubble (no €). Record may already be purged — ignore.
+        if (existing[0].task_record_id) {
+          try { await db.update('task_records', { id: `eq.${existing[0].task_record_id}` }, { pricing_removed_at: new Date().toISOString() }) } catch { /* purged */ }
+        }
         return json({ deleted: true })
       }
       const body = await request.json()
@@ -3202,7 +3213,7 @@ export async function onRequest(context) {
       const scope = await scopedStoreIds(db, session)
       // null = unrestricted; otherwise filter to the scope's stores.
       const params = {
-        select: 'id,task_type,store_id,supplier_name_text,product_code,product_barcode,product_name_label,actual_product_name,description,uom,quantity,notes,photo_product_url,photo_barcode_url,details,status,review_notes,reviewed_at,marked_for_deletion,completed_at,store_completed_at,cleared_at,created_at,updated_at,barcode_no,item_name,supl_id,supplier_code,item_status,barcode_status,priced_at',
+        select: 'id,task_type,store_id,supplier_name_text,product_code,product_barcode,product_name_label,actual_product_name,description,uom,quantity,notes,photo_product_url,photo_barcode_url,details,status,review_notes,reviewed_at,marked_for_deletion,completed_at,store_completed_at,cleared_at,created_at,updated_at,barcode_no,item_name,supl_id,supplier_code,item_status,barcode_status,priced_at,pricing_removed_at',
         order:  'created_at.desc',
         limit:  String(limit),
         offset: String(offset)

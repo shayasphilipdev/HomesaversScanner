@@ -826,7 +826,16 @@ function HQReports() {
                         <td>{storesById[r.store_id]?.store_name || <span className="td-muted">—</span>}</td>
                         <td className="td-code" style={{ whiteSpace: 'nowrap' }}>
                           {r.product_barcode || r.product_code || <span className="td-muted">—</span>}
-                          {r.priced_at && (
+                          {/* € = priced (still on the Pricing page). Empty bubble =
+                              was sent for pricing but later removed from it. */}
+                          {r.pricing_removed_at ? (
+                            <span title={`Was sent for pricing — removed ${formatDT(r.pricing_removed_at)}`} style={{
+                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                              marginLeft: 6, width: 18, height: 18, borderRadius: '50%',
+                              background: 'transparent', border: '1px solid #C9B26A',
+                              verticalAlign: 'middle'
+                            }} />
+                          ) : r.priced_at && (
                             <span title={`Priced ${formatDT(r.priced_at)}`} style={{
                               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                               marginLeft: 6, width: 18, height: 18, borderRadius: '50%',
