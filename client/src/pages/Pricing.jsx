@@ -81,7 +81,7 @@ export default function Pricing() {
       if (!rows.length) { toast.error('Nothing to export for this filter.'); return }
       const stamp = new Date().toISOString().slice(0, 10)
       const suffix = statusFilter === 'all' ? '' : ` - ${statusFilter === 'priced' ? 'Priced' : 'To price'}`
-      await downloadExcel(`Pricing${suffix} - ${stamp}.xlsx`, rows, cols, headers)
+      await downloadExcel(`Pricing${suffix} - ${stamp}.xlsx`, rows, cols, headers, new Set(['photo_product_url', 'photo_barcode_url']))
     } catch (e) { setError(e.message) } finally { setDownloading(false) }
   }
 
@@ -148,6 +148,8 @@ export default function Pricing() {
                   <th style={{ whiteSpace: 'nowrap' }}>VAT Rate *</th>
                   <th style={{ whiteSpace: 'nowrap' }}>Margin %</th>
                   <th style={{ minWidth: 130 }}>Notes</th>
+                  <th style={{ whiteSpace: 'nowrap' }}>Product Picture</th>
+                  <th style={{ whiteSpace: 'nowrap' }}>Barcode Picture</th>
                   <th>Task</th>
                   <th>Item Status</th>
                   <th>Barcode Status</th>
@@ -206,6 +208,16 @@ export default function Pricing() {
                           onChange={ev => setEdit(it.id, 'pricing_notes', ev.target.value)}
                           placeholder="Notes…" style={{ width: 130 }}
                         />
+                      </td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        {r.photo_product_url
+                          ? <a href={r.photo_product_url} target="_blank" rel="noopener noreferrer">📷 View</a>
+                          : empty}
+                      </td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        {r.photo_barcode_url
+                          ? <a href={r.photo_barcode_url} target="_blank" rel="noopener noreferrer">📷 View</a>
+                          : empty}
                       </td>
                       <td><strong>{it.task_type_name || empty}</strong></td>
                       <td>{r.item_status || empty}</td>

@@ -1662,8 +1662,8 @@ export async function onRequest(context) {
       const ttMap = Object.fromEntries(taskTypes.map(t => [t.code, t.name]))
       // Column order mirrors the Pricing page grid (user-specified), with the
       // audit/meta fields appended at the end.
-      const P_COLS    = ['barcode_no','product_barcode','description','details','record_notes','cost','current_selling_price','new_selling_price','vat_rate','vat_pct','margin_pct','pricing_notes','task_type','item_status','barcode_status','pricing_status','store_code','store_name','region','record_date','uom','quantity','supl_id','supplier_code','record_status','tax_id','added_by','added_at','priced_by','priced_at']
-      const P_HEADERS = ['Product Barcode','Product Code','Product Description','Details','Record Notes','Cost','Current Selling Price','New Selling Price','VAT Rate','VAT %','Margin %','Pricing Notes','Task','Item Status','Barcode Status','Pricing Status','Store Code','Store Name','Region','Record Date','UOM','Quantity','Supplier','Supplier Code','Record Status','Tax Id','Added By','Added At','Priced By','Priced At']
+      const P_COLS    = ['barcode_no','product_barcode','description','details','record_notes','cost','current_selling_price','new_selling_price','vat_rate','vat_pct','margin_pct','pricing_notes','photo_product_url','photo_barcode_url','task_type','item_status','barcode_status','pricing_status','store_code','store_name','region','record_date','uom','quantity','supl_id','supplier_code','record_status','tax_id','added_by','added_at','priced_by','priced_at']
+      const P_HEADERS = ['Product Barcode','Product Code','Product Description','Details','Record Notes','Cost','Current Selling Price','New Selling Price','VAT Rate','VAT %','Margin %','Pricing Notes','Product Photo','Barcode Photo','Task','Item Status','Barcode Status','Pricing Status','Store Code','Store Name','Region','Record Date','UOM','Quantity','Supplier','Supplier Code','Record Status','Tax Id','Added By','Added At','Priced By','Priced At']
       const rows = items.map(it => {
         const r = it.record || {}
         const st = sMap[it.store_id]
@@ -1687,6 +1687,8 @@ export async function onRequest(context) {
           record_status:  r.status || '',
           record_notes:   r.notes || '',
           details:        fmtDetails(r.details),
+          photo_product_url: r.photo_product_url || '',
+          photo_barcode_url: r.photo_barcode_url || '',
           cost:           it.cost ?? '',
           tax_id:         it.tax_id || '',
           current_selling_price: it.current_selling_price ?? '',
