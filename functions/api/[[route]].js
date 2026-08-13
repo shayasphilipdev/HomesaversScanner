@@ -680,12 +680,15 @@ export async function onRequest(context) {
         const ean = r?.ean_barcode == null ? '' : String(r.ean_barcode).trim()
         if (!ean || ean === '0') { skipped++; continue }
         const saleRate = r.sale_rate != null ? Number(String(r.sale_rate).replace(/[^0-9.-]/g, '')) : null
+        const cost     = r.cost      != null ? Number(String(r.cost).replace(/[^0-9.-]/g, ''))      : null
         byKey.set(ean, {
           ean_barcode:    ean,
           item_group:     r.item_group     ? String(r.item_group).trim()     : null,
           item_subgrp_id: r.item_subgrp_id ? String(r.item_subgrp_id).trim() : null,
           product_type:   r.product_type   ? String(r.product_type).trim()   : null,
           sale_rate:      isNaN(saleRate) ? null : saleRate,
+          tax_id:         r.tax_id ? String(r.tax_id).trim() : null,
+          cost:           cost != null && !isNaN(cost) ? cost : null,
           updated_at:     now
         })
       }
@@ -1047,12 +1050,15 @@ export async function onRequest(context) {
         const ean = r?.ean_barcode == null ? '' : String(r.ean_barcode).trim()
         if (!ean || ean === '0') { skipped++; continue }
         const saleRate = r.sale_rate != null ? Number(String(r.sale_rate).replace(/[^0-9.-]/g, '')) : null
+        const cost     = r.cost      != null ? Number(String(r.cost).replace(/[^0-9.-]/g, ''))      : null
         byKey.set(ean, {
           ean_barcode:    ean,
           item_group:     r.item_group     ? String(r.item_group).trim()     : null,
           item_subgrp_id: r.item_subgrp_id ? String(r.item_subgrp_id).trim() : null,
           product_type:   r.product_type   ? String(r.product_type).trim()   : null,
           sale_rate:      isNaN(saleRate) ? null : saleRate,
+          tax_id:         r.tax_id ? String(r.tax_id).trim() : null,
+          cost:           cost != null && !isNaN(cost) ? cost : null,
           updated_at:     now
         })
       }
@@ -1089,6 +1095,8 @@ export async function onRequest(context) {
         item_subgrp_id: ['ItemSubGrp_Id','item_subgrp_id','ItemSubGrpId'],
         product_type:   ['ProductType','product_type','Product_Type'],
         sale_rate:      ['SaleRate','sale_rate','Sale_Rate'],
+        tax_id:         ['Tax_Id','TaxId','tax_id'],
+        cost:           ['LandedCost','landed_cost','Cost','cost'],
       }
       const headerSet = new Set(parsed.headers)
       const fieldMap  = {}
@@ -1106,12 +1114,16 @@ export async function onRequest(context) {
         if (!ean || ean === '0') { skipped++; continue }
         const saleRaw = fieldMap.sale_rate ? row[fieldMap.sale_rate] : ''
         const saleRate = saleRaw ? Number(saleRaw.replace(/[^0-9.-]/g, '')) : null
+        const costRaw  = fieldMap.cost ? row[fieldMap.cost] : ''
+        const costNum  = costRaw ? Number(costRaw.replace(/[^0-9.-]/g, '')) : null
         byKey.set(ean, {
           ean_barcode:    ean,
           item_group:     fieldMap.item_group     ? (row[fieldMap.item_group]     || null) : null,
           item_subgrp_id: fieldMap.item_subgrp_id ? (row[fieldMap.item_subgrp_id] || null) : null,
           product_type:   fieldMap.product_type   ? (row[fieldMap.product_type]   || null) : null,
           sale_rate:      saleRate && !isNaN(saleRate) ? saleRate : null,
+          tax_id:         fieldMap.tax_id ? (row[fieldMap.tax_id] || null) : null,
+          cost:           costNum != null && !isNaN(costNum) ? costNum : null,
           updated_at:     now
         })
       }
@@ -1542,6 +1554,183 @@ export async function onRequest(context) {
       for (const f of COMP_EDITABLE) if (body[f] !== undefined) updates[f] = body[f] === '' ? null : body[f]
       if (body.distance_value !== undefined) updates.distance_value = numOrNull(body.distance_value)
       const upd = await db.update('store_competitors', { id: `eq.${id}` }, updates)
+      return json(upd[0] ?? upd)
+    }
+
+    // ── Pricing (back office only) ────────────────────────────────────────
+    // Records selected in Reports are snapshot-copied into pricing_items and
+    // priced on the Pricing page. Deleting there removes only the copy.
+    const VAT_PCT = { standard: 23, reduced: 13.5, nine: 9, zero: 0, exempted: 0 }
+    const vatPctOf = (code) => {
+      if (code == null || String(code).trim() === '') return null
+      const v = VAT_PCT[String(code).trim().toLowerCase()]
+      return v === undefined ? 9999 : v   // sentinel: unrecognised Tax_Id value
+    }
+    const marginOf = (newSp, vatCode, cost) => {
+      const sp = Number(newSp), c = Number(cost), pct = vatPctOf(vatCode)
+      if (!Number.isFinite(sp) || sp <= 0 || !Number.isFinite(c) || pct == null || pct === 9999) return null
+      const net = sp / (1 + pct / 100)
+      return Math.round(((net - c) / net) * 1000) / 10   // 1 decimal
+    }
+
+    // POST /pricing/items { record_ids: [...] } — copy selected records in.
+    if (path === '/pricing/items' && method === 'POST') {
+      if (!isBackOffice(session)) return err('Forbidden', 403)
+      const body = await request.json()
+      const ids = (Array.isArray(body.record_ids) ? body.record_ids : []).filter(id => /^[a-f0-9-]{36}$/.test(id))
+      if (!ids.length) return err('record_ids required', 400)
+
+      const records = await db.select('task_records', { select: '*', id: `in.(${ids.join(',')})` })
+      const already = await db.select('pricing_items', { select: 'task_record_id', task_record_id: `in.(${ids.join(',')})` })
+      const seen = new Set(already.map(r => r.task_record_id))
+
+      // Price-list join for cost / VAT / current price (chunked — EANs in batches).
+      const eans = [...new Set(records.map(r => r.product_barcode).filter(Boolean))]
+      const priceMap = {}
+      for (let i = 0; i < eans.length; i += 200) {
+        const chunk = eans.slice(i, i + 200)
+        const rows = await db.select('prices', { select: 'ean_barcode,sale_rate,tax_id,cost', ean_barcode: `in.(${chunk.join(',')})` })
+        for (const p of rows) priceMap[p.ean_barcode] = p
+      }
+
+      const now = new Date().toISOString()
+      const who = session.display_name || session.username || 'unknown'
+      const toInsert = []
+      for (const rec of records) {
+        if (seen.has(rec.id)) continue
+        const pr = rec.product_barcode ? priceMap[rec.product_barcode] : null
+        toInsert.push({
+          task_record_id:        rec.id,
+          store_id:              rec.store_id,
+          product_code:          rec.product_code || null,
+          product_barcode:       rec.product_barcode || null,
+          record:                rec,                        // full snapshot — survives retention purge
+          cost:                  pr?.cost ?? null,
+          tax_id:                pr?.tax_id ?? null,
+          current_selling_price: pr?.sale_rate ?? null,
+          vat_rate:              pr?.tax_id ?? null,         // pre-fill the dropdown from Tax_Id
+          pricing_status:        'to_price',
+          added_by_name:         who,
+          created_at:            now,
+          updated_at:            now
+        })
+      }
+      if (toInsert.length) await db.insert('pricing_items', toInsert)
+      return json({ added: toInsert.length, skipped: records.length - toInsert.length })
+    }
+
+    // GET /pricing/items?status=to_price|priced — the Pricing page grid.
+    if (path === '/pricing/items' && method === 'GET') {
+      if (!isBackOffice(session)) return err('Forbidden', 403)
+      const status = url.searchParams.get('status')
+      const params = { select: '*', order: 'created_at.desc' }
+      if (status && status !== 'all') params['pricing_status'] = `eq.${status}`
+      const [items, stores, taskTypes] = await Promise.all([
+        db.select('pricing_items', params),
+        db.select('stores', { select: 'id,store_code,store_name' }),
+        db.select('task_types', { select: 'code,name' })
+      ])
+      const sMap  = Object.fromEntries(stores.map(s => [s.id, s]))
+      const ttMap = Object.fromEntries(taskTypes.map(t => [t.code, t.name]))
+      return json(items.map(it => ({
+        ...it,
+        store_code:     sMap[it.store_id]?.store_code || '',
+        store_name:     sMap[it.store_id]?.store_name || '',
+        task_type_name: ttMap[it.record?.task_type] || it.record?.task_type || '',
+        details_fmt:    fmtDetails(it.record?.details)
+      })))
+    }
+
+    // GET /pricing/report?status= — flat rows for the Excel export.
+    if (path === '/pricing/report' && method === 'GET') {
+      if (!isBackOffice(session)) return err('Forbidden', 403)
+      const status = url.searchParams.get('status')
+      const params = { select: '*', order: 'created_at.desc' }
+      if (status && status !== 'all') params['pricing_status'] = `eq.${status}`
+      const [items, stores, taskTypes] = await Promise.all([
+        db.select('pricing_items', params),
+        db.select('stores', { select: 'id,store_code,store_name,region' }),
+        db.select('task_types', { select: 'code,name' })
+      ])
+      const sMap  = Object.fromEntries(stores.map(s => [s.id, s]))
+      const ttMap = Object.fromEntries(taskTypes.map(t => [t.code, t.name]))
+      const P_COLS    = ['store_code','store_name','region','task_type','record_date','barcode_no','product_barcode','product_code','description','uom','quantity','supl_id','supplier_code','item_status','barcode_status','record_status','record_notes','details','cost','tax_id','current_selling_price','new_selling_price','vat_rate','vat_pct','margin_pct','pricing_notes','pricing_status','added_by','added_at','priced_by','priced_at']
+      const P_HEADERS = ['Store Code','Store Name','Region','Task','Record Date','Product Barcode','Product Code','Scanned Code','Product Description','UOM','Quantity','Supplier','Supplier Code','Item Status','Barcode Status','Record Status','Record Notes','Details','Cost','Tax Id','Current Selling Price','New Selling Price','VAT Rate','VAT %','Margin %','Pricing Notes','Pricing Status','Added By','Added At','Priced By','Priced At']
+      const rows = items.map(it => {
+        const r = it.record || {}
+        const st = sMap[it.store_id]
+        const pct = vatPctOf(it.vat_rate)
+        return {
+          store_code:     st?.store_code || '',
+          store_name:     st?.store_name || '',
+          region:         st?.region || '',
+          task_type:      ttMap[r.task_type] || r.task_type || '',
+          record_date:    r.created_at ? fmtReportDate(r.created_at) : '',
+          barcode_no:     r.barcode_no || r.product_code || '',
+          product_barcode: it.product_barcode || '',
+          product_code:   it.product_code || '',
+          description:    r.item_name || r.description || r.product_name_label || '',
+          uom:            r.uom || '',
+          quantity:       r.quantity ?? '',
+          supl_id:        r.supl_id || '',
+          supplier_code:  r.supplier_code || '',
+          item_status:    r.item_status || '',
+          barcode_status: r.barcode_status || '',
+          record_status:  r.status || '',
+          record_notes:   r.notes || '',
+          details:        fmtDetails(r.details),
+          cost:           it.cost ?? '',
+          tax_id:         it.tax_id || '',
+          current_selling_price: it.current_selling_price ?? '',
+          new_selling_price:     it.new_selling_price ?? '',
+          vat_rate:       it.vat_rate || '',
+          vat_pct:        pct == null ? '' : pct,
+          margin_pct:     it.margin_pct ?? '',
+          pricing_notes:  it.pricing_notes || '',
+          pricing_status: it.pricing_status === 'priced' ? 'Priced' : 'To price',
+          added_by:       it.added_by_name || '',
+          added_at:       it.created_at ? fmtReportDate(it.created_at) : '',
+          priced_by:      it.priced_by_name || '',
+          priced_at:      it.priced_at ? fmtReportDate(it.priced_at) : ''
+        }
+      })
+      return json({ cols: P_COLS, headers: P_HEADERS, rows })
+    }
+
+    // PATCH (save → Priced) / DELETE (remove the copy only) a pricing item.
+    const priceItemMatch = path.match(/^\/pricing\/items\/([a-f0-9-]{36})$/)
+    if (priceItemMatch && (method === 'PATCH' || method === 'DELETE')) {
+      if (!isBackOffice(session)) return err('Forbidden', 403)
+      const id = priceItemMatch[1]
+      const existing = await db.select('pricing_items', { select: 'id,task_record_id,cost', id: `eq.${id}`, limit: '1' })
+      if (!existing.length) return err('Not found', 404)
+      if (method === 'DELETE') {
+        await db.remove('pricing_items', { id: `eq.${id}` })
+        return json({ deleted: true })
+      }
+      const body = await request.json()
+      const newSp = body.new_selling_price
+      const vat   = body.vat_rate
+      if (newSp === '' || newSp == null || isNaN(Number(newSp)) || Number(newSp) <= 0)
+        return err('New Selling Price is required', 400)
+      if (vat == null || String(vat).trim() === '')
+        return err('VAT Rate is required', 400)
+      const now = new Date().toISOString()
+      const who = session.display_name || session.username || 'unknown'
+      const upd = await db.update('pricing_items', { id: `eq.${id}` }, {
+        new_selling_price: Number(newSp),
+        vat_rate:          String(vat).trim(),
+        margin_pct:        marginOf(newSp, vat, existing[0].cost),
+        pricing_notes:     body.pricing_notes === undefined ? undefined : (body.pricing_notes || null),
+        pricing_status:    'priced',
+        priced_by_name:    who,
+        priced_at:         now,
+        updated_at:        now
+      })
+      // € flag in the Reports window — only while the original record exists.
+      if (existing[0].task_record_id) {
+        try { await db.update('task_records', { id: `eq.${existing[0].task_record_id}` }, { priced_at: now }) } catch { /* record may be purged */ }
+      }
       return json(upd[0] ?? upd)
     }
 
@@ -3004,7 +3193,7 @@ export async function onRequest(context) {
       const scope = await scopedStoreIds(db, session)
       // null = unrestricted; otherwise filter to the scope's stores.
       const params = {
-        select: 'id,task_type,store_id,supplier_name_text,product_code,product_barcode,product_name_label,actual_product_name,description,uom,quantity,notes,photo_product_url,photo_barcode_url,details,status,review_notes,reviewed_at,marked_for_deletion,completed_at,store_completed_at,cleared_at,created_at,updated_at,barcode_no,item_name,supl_id,supplier_code,item_status,barcode_status',
+        select: 'id,task_type,store_id,supplier_name_text,product_code,product_barcode,product_name_label,actual_product_name,description,uom,quantity,notes,photo_product_url,photo_barcode_url,details,status,review_notes,reviewed_at,marked_for_deletion,completed_at,store_completed_at,cleared_at,created_at,updated_at,barcode_no,item_name,supl_id,supplier_code,item_status,barcode_status,priced_at',
         order:  'created_at.desc',
         limit:  String(limit),
         offset: String(offset)

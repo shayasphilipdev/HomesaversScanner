@@ -21,6 +21,8 @@ COLUMN_MAP = {
     "ItemSubGrp_Id": "item_subgrp_id",
     "ProductType":   "product_type",
     "SaleRate":      "sale_rate",
+    "Tax_Id":        "tax_id",        # VAT code (Standard/Reduced/Nine/Zero/Exempted)
+    "LandedCost":    "cost",          # cost incl. freight+duty, ex-VAT — margin base
 }
 REQUIRED_COL = "EAN_Barcode"
 

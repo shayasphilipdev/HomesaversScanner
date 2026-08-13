@@ -286,6 +286,13 @@ export const adminUpdateSpaceEquipment = (id, updates) => request(`/admin/space-
 export const adminGetSpacePlanned      = (storeId) => request(`/admin/space-plan/planned?storeId=${storeId}`)
 export const adminSetSpacePlanned      = (store_id, equipment_id, planned_count) => request('/admin/space-plan/planned', { method: 'PATCH', body: { store_id, equipment_id, planned_count } })
 
+// ── Pricing (back office) ────────────────────────────────────────────────────
+export const sendToPricing     = (record_ids) => request('/pricing/items', { method: 'POST', body: { record_ids } })
+export const getPricingItems   = (status) => request('/pricing/items' + (status && status !== 'all' ? `?status=${status}` : ''))
+export const savePricingItem   = (id, body) => request(`/pricing/items/${id}`, { method: 'PATCH', body })
+export const deletePricingItem = (id) => request(`/pricing/items/${id}`, { method: 'DELETE' })
+export const getPricingReport  = (status) => request('/pricing/report' + (status && status !== 'all' ? `?status=${status}` : ''))
+
 // ── Competition capture ──────────────────────────────────────────────────────
 export const getCompetitors        = (storeId) => request('/competitors' + (storeId ? `?storeId=${encodeURIComponent(storeId)}` : ''))
 export const createCompetitor      = (body) => request('/competitors', { method: 'POST', body })

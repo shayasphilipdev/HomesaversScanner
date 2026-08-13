@@ -20,6 +20,8 @@ export default function Sidebar() {
   if (appConfig?.competition_enabled !== false) items.push({ to: '/competition', icon: '⚑', label: 'Competition' })
   items.push({ to: '/product-query', icon: '💬', label: 'Product Query' })
   items.push({ to: '/reports', icon: '▤', label: 'Reports' })
+  // Pricing — back-office logins only.
+  if (session.mode === 'backoffice') items.push({ to: '/pricing', icon: '€', label: 'Pricing' })
   if (canSeeAnyAdminLink(session)) {
     items.push({
       to: canAccessAdmin(session) ? '/admin/stores' : '/admin/task-templates',

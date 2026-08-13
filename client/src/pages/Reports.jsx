@@ -6,7 +6,7 @@ import {
   deleteTaskRecord, bulkDeleteTaskRecords, deleteJkMatching,
   adminListTemplates, getStoreTaskReportRows,
   getTaskRecordEvents, clearToken, getProductMaster, getProductMasterFilters,
-  getSpacePlanReport, getCompetitorReport
+  getSpacePlanReport, getCompetitorReport, sendToPricing
 } from '../lib/api.js'
 import { COMPETITION_REPORT_COLS, COMPETITION_REPORT_HEADERS } from '../lib/competitionOptions.js'
 import { TASK_FORMS } from '../lib/taskTypes.js'
@@ -627,6 +627,24 @@ function HQReports() {
     }
   }
 
+  // Copy the selected records to the Pricing page (back office only).
+  // Snapshot copies — the originals stay exactly as they are here.
+  const sendSelectedToPricing = async () => {
+    if (!selected.size) return
+    setBusy(true); setError('')
+    try {
+      const res = await sendToPricing([...selected])
+      const bits = [`${res.added} sent to Pricing`]
+      if (res.skipped) bits.push(`${res.skipped} already there`)
+      toast.success(bits.join(' · '))
+      setSelected(new Set())
+    } catch (e) {
+      setError(e.message); toast.error(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div>
       <div className="card">
@@ -728,6 +746,10 @@ function HQReports() {
               <button className="btn btn-sm btn-outline" disabled={busy} onClick={() => bulkReview('no_change_needed')}>
                 ⊘ No change needed
               </button>
+              <button className="btn btn-sm btn-outline" disabled={busy} onClick={sendSelectedToPricing}
+                title="Copy the selected records to the Pricing page (originals stay here)">
+                € Send to Pricing ({selected.size})
+              </button>
               {selectedJkIds.length > 0 && (
                 <button className="btn btn-sm" disabled={busy} onClick={() => setDeleteTarget({ ids: selectedJkIds })}
                   style={{ background: '#C0392B', color: '#fff', border: 'none', fontWeight: 600 }}>
@@ -802,7 +824,17 @@ function HQReports() {
                         )}
                         <td><strong>{TASK_FORMS[r.task_type]?.name || r.task_type}</strong></td>
                         <td>{storesById[r.store_id]?.store_name || <span className="td-muted">—</span>}</td>
-                        <td className="td-code" style={{ whiteSpace: 'nowrap' }}>{r.product_barcode || r.product_code || <span className="td-muted">—</span>}</td>
+                        <td className="td-code" style={{ whiteSpace: 'nowrap' }}>
+                          {r.product_barcode || r.product_code || <span className="td-muted">—</span>}
+                          {r.priced_at && (
+                            <span title={`Priced ${formatDT(r.priced_at)}`} style={{
+                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                              marginLeft: 6, width: 18, height: 18, borderRadius: '50%',
+                              background: '#FCF3D9', color: '#8A6D1A', border: '1px solid #E7D39A',
+                              fontSize: 11, fontWeight: 700, verticalAlign: 'middle'
+                            }}>€</span>
+                          )}
+                        </td>
                         <td>{desc || <span className="td-muted">—</span>}</td>
                         <td className="td-code">{r.barcode_no || r.product_code || ''}</td>
                         <td>

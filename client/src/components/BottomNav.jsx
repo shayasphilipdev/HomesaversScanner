@@ -19,6 +19,7 @@ export default function BottomNav() {
   items.push({ to: '/product-query', icon: '💬', label: 'Query' })
   if (canDoStoreTasks(session)) items.push({ to: '/store-tasks', icon: '☑', label: 'Tasks' })
   items.push({ to: '/reports', icon: '▤', label: 'Reports' })
+  if (session.mode === 'backoffice') items.push({ to: '/pricing', icon: '€', label: 'Pricing' })
   if (canAccessAdmin(session)) {
     items.push({ to: '/admin/stores', icon: '⚙', label: 'Admin' })
   }

@@ -26,6 +26,7 @@ import AdminReports from './pages/AdminReports.jsx'
 import AdminSuppliers from './pages/AdminSuppliers.jsx'
 import SpacePlan from './pages/SpacePlan.jsx'
 import Competition from './pages/Competition.jsx'
+import Pricing from './pages/Pricing.jsx'
 import AdminSpacePlan from './pages/AdminSpacePlan.jsx'
 import { setToken, clearToken, getAppConfig } from './lib/api.js'
 import { canDoHQTasks, STORE_ROLE_KEYS } from './lib/roles.js'
@@ -120,7 +121,7 @@ function Shell() {
   const { pathname } = useLocation()
   // Data-dense pages get a wider-but-capped, centred container (keeps aesthetic
   // margins on big screens). Space Plan is included — its grid scrolls inside.
-  const wide = pathname.startsWith('/reports') || pathname.startsWith('/dashboard') || pathname.startsWith('/manager') || pathname.startsWith('/space-plan')
+  const wide = pathname.startsWith('/reports') || pathname.startsWith('/dashboard') || pathname.startsWith('/manager') || pathname.startsWith('/space-plan') || pathname.startsWith('/pricing')
   // Store users (mode === 'store') always land on HO Tasks.
   // HQ / back-office users go by their per-account flag.
   const home = (session.mode === 'store' || canDoHQTasks(session)) ? '/tasks' : '/dashboard'
@@ -140,6 +141,7 @@ function Shell() {
             <Route path="/store-tasks"   element={<StoreTasks />} />
             <Route path="/space-plan"    element={<SpacePlan />} />
             <Route path="/competition"   element={<Competition />} />
+            <Route path="/pricing"       element={<Pricing />} />
             <Route path="/product-query" element={<ProductQuery />} />
             <Route path="/manager"       element={<ManagerDashboard />} />
             <Route path="/admin/task-templates" element={<AdminGuard mode="templates"><AdminTaskTemplates /></AdminGuard>} />
