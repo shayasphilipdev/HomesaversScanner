@@ -144,12 +144,12 @@ export default function Pricing() {
                   <th style={{ minWidth: 110 }}>Record Notes</th>
                   <th>Cost</th>
                   <th style={{ whiteSpace: 'nowrap' }}>Current SP</th>
-                  <th style={{ whiteSpace: 'nowrap' }}>New Selling Price *</th>
-                  <th style={{ whiteSpace: 'nowrap' }}>VAT Rate *</th>
-                  <th style={{ whiteSpace: 'nowrap' }}>Margin %</th>
+                  <th style={{ width: 80 }}>New Selling Price *</th>
+                  <th style={{ width: 110 }}>VAT Rate *</th>
+                  <th style={{ width: 60 }}>Margin %</th>
                   <th style={{ minWidth: 130 }}>Notes</th>
-                  <th style={{ whiteSpace: 'nowrap' }}>Product Picture</th>
-                  <th style={{ whiteSpace: 'nowrap' }}>Barcode Picture</th>
+                  <th style={{ width: 60 }}>Product Picture</th>
+                  <th style={{ width: 60 }}>Barcode Picture</th>
                   <th>Task</th>
                   <th>Item Status</th>
                   <th>Barcode Status</th>
@@ -157,8 +157,6 @@ export default function Pricing() {
                   <th></th>
                   <th>Store</th>
                   <th>Date</th>
-                  <th>UOM</th>
-                  <th>Qty</th>
                   <th>Supplier</th>
                   <th>Record Status</th>
                 </tr>
@@ -186,11 +184,11 @@ export default function Pricing() {
                           type="text" inputMode="decimal" placeholder="€"
                           value={e.new_selling_price ?? ''}
                           onChange={ev => { const v = ev.target.value; if (v === '' || /^\d*\.?\d*$/.test(v)) setEdit(it.id, 'new_selling_price', v) }}
-                          style={{ width: 90 }}
+                          style={{ width: 70 }}
                         />
                       </td>
                       <td>
-                        <select value={e.vat_rate || ''} onChange={ev => setEdit(it.id, 'vat_rate', ev.target.value)} style={{ width: 150 }}>
+                        <select value={e.vat_rate || ''} onChange={ev => setEdit(it.id, 'vat_rate', ev.target.value)} style={{ width: 110 }}>
                           <option value="">— select —</option>
                           {VAT_OPTIONS.map(o => <option key={o.code} value={o.code}>{o.code} ({o.pct}%)</option>)}
                           {e.vat_rate && !VAT_OPTIONS.some(o => o.code.toLowerCase() === String(e.vat_rate).toLowerCase()) && (
@@ -209,14 +207,14 @@ export default function Pricing() {
                           placeholder="Notes…" style={{ width: 130 }}
                         />
                       </td>
-                      <td style={{ whiteSpace: 'nowrap' }}>
+                      <td style={{ textAlign: 'center' }}>
                         {r.photo_product_url
-                          ? <a href={r.photo_product_url} target="_blank" rel="noopener noreferrer">📷 View</a>
+                          ? <a href={r.photo_product_url} target="_blank" rel="noopener noreferrer" title="View product photo" style={{ fontSize: 16 }}>📷</a>
                           : empty}
                       </td>
-                      <td style={{ whiteSpace: 'nowrap' }}>
+                      <td style={{ textAlign: 'center' }}>
                         {r.photo_barcode_url
-                          ? <a href={r.photo_barcode_url} target="_blank" rel="noopener noreferrer">📷 View</a>
+                          ? <a href={r.photo_barcode_url} target="_blank" rel="noopener noreferrer" title="View barcode photo" style={{ fontSize: 16 }}>📷</a>
                           : empty}
                       </td>
                       <td><strong>{it.task_type_name || empty}</strong></td>
@@ -240,8 +238,6 @@ export default function Pricing() {
                       </td>
                       <td style={{ whiteSpace: 'nowrap' }}>{it.store_name || empty}</td>
                       <td className="td-muted" style={{ whiteSpace: 'nowrap' }}>{fmtDT(r.created_at)}</td>
-                      <td>{r.uom || empty}</td>
-                      <td>{r.quantity ?? empty}</td>
                       <td style={{ whiteSpace: 'nowrap' }}>{[r.supl_id, r.supplier_code].filter(Boolean).join(' · ') || empty}</td>
                       <td>{r.status || empty}</td>
                     </tr>
