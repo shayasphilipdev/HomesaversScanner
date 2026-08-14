@@ -148,13 +148,13 @@ export default function Pricing() {
                   <th style={{ width: 110 }}>VAT Rate *</th>
                   <th style={{ width: 60 }}>Margin %</th>
                   <th style={{ minWidth: 130 }}>Notes</th>
+                  <th></th>
                   <th style={{ width: 60 }}>Product Picture</th>
                   <th style={{ width: 60 }}>Barcode Picture</th>
                   <th>Task</th>
                   <th>Item Status</th>
                   <th>Barcode Status</th>
                   <th>Status</th>
-                  <th></th>
                   <th>Store</th>
                   <th>Date</th>
                   <th>Supplier</th>
@@ -207,6 +207,17 @@ export default function Pricing() {
                           placeholder="Notes…" style={{ width: 130 }}
                         />
                       </td>
+                      <td>
+                        <div className="flex-row" style={{ gap: 6, whiteSpace: 'nowrap' }}>
+                          <button className="btn btn-sm btn-primary" disabled={savingId === it.id || !canSave} onClick={() => save(it)}
+                            title={canSave ? (isPriced ? 'Save changes' : 'Save and mark Priced') : 'New Selling Price and VAT Rate are required'}>
+                            {savingId === it.id ? <span className="spinner" /> : 'Save'}
+                          </button>
+                          <button className="btn btn-sm btn-outline" disabled={savingId === it.id} onClick={() => remove(it)}>
+                            Delete
+                          </button>
+                        </div>
+                      </td>
                       <td style={{ textAlign: 'center' }}>
                         {r.photo_product_url
                           ? <a href={r.photo_product_url} target="_blank" rel="noopener noreferrer" title="View product photo" style={{ fontSize: 16 }}>📷</a>
@@ -224,17 +235,6 @@ export default function Pricing() {
                         {isPriced
                           ? <span className="badge badge-completed" title={`Priced by ${it.priced_by_name || '—'} · ${fmtDT(it.priced_at)}`}>€ Priced</span>
                           : <span className="badge badge-pending">To price</span>}
-                      </td>
-                      <td>
-                        <div className="flex-row" style={{ gap: 6, whiteSpace: 'nowrap' }}>
-                          <button className="btn btn-sm btn-primary" disabled={savingId === it.id || !canSave} onClick={() => save(it)}
-                            title={canSave ? (isPriced ? 'Save changes' : 'Save and mark Priced') : 'New Selling Price and VAT Rate are required'}>
-                            {savingId === it.id ? <span className="spinner" /> : 'Save'}
-                          </button>
-                          <button className="btn btn-sm btn-outline" disabled={savingId === it.id} onClick={() => remove(it)}>
-                            Delete
-                          </button>
-                        </div>
                       </td>
                       <td style={{ whiteSpace: 'nowrap' }}>{it.store_name || empty}</td>
                       <td className="td-muted" style={{ whiteSpace: 'nowrap' }}>{fmtDT(r.created_at)}</td>
