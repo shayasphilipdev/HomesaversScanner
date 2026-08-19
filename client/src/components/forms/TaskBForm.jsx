@@ -62,13 +62,20 @@ export default function TaskBForm({ onSaved, storeId }) {
     }
 
     try {
-      setSavingStep('Uploading product photo…')
-      const p = await uploadPhoto({ file: productPhoto, slot: 'product', tempId })
-      productPath = p.path
-
-      setSavingStep('Uploading barcode photo…')
-      const b = await uploadPhoto({ file: barcodePhoto, slot: 'barcode', tempId })
-      barcodePath = b.path
+      // [TEST] Upload both photos in parallel instead of one-after-the-other —
+      // they are independent, so this roughly halves Non-Scan save time.
+      // allSettled keeps the exact orphan-cleanup semantics: whichever upload
+      // succeeded still has its path recorded for cleanup if the other fails.
+      setSavingStep('Uploading photos…')
+      const [pr, br] = await Promise.allSettled([
+        uploadPhoto({ file: productPhoto, slot: 'product', tempId }),
+        uploadPhoto({ file: barcodePhoto, slot: 'barcode', tempId }),
+      ])
+      if (pr.status === 'fulfilled') productPath = pr.value.path
+      if (br.status === 'fulfilled') barcodePath = br.value.path
+      if (pr.status === 'rejected') throw pr.reason
+      if (br.status === 'rejected') throw br.reason
+      const p = pr.value, b = br.value
 
       setSavingStep('Saving record…')
       const res = await createTaskRecord({ ...body, photo_product_url: p.url, photo_barcode_url: b.url })

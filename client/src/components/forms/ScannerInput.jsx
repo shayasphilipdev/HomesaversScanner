@@ -39,9 +39,21 @@ export default function ScannerInput({
   // that to avoid running a duplicate lookup that Enter / blur / the gun buffer
   // already triggered.
   const lastConfirmedRef = useRef('')
+  // [TEST] The barcode most recently SAVED, plus when. On Android the on-screen
+  // keyboard can re-inject that value into the field right after a save; these
+  // let us recognise that echo and swallow it instead of firing a phantom
+  // lookup or forcing a second Save tap. Focus behaviour is left untouched.
+  const lastSavedRef   = useRef('')
+  const lastSavedAtRef = useRef(0)
+  const prevValueRef   = useRef(value)
   const confirmRef = useRef(() => {})
   confirmRef.current = (code) => {
-    lastConfirmedRef.current = (code || '').trim()
+    const c = (code || '').trim()
+    // [TEST] Idempotent: Enter, the gun buffer, and blur can each fire for the
+    // same scan — only run the lookup once. lastConfirmedRef is cleared when the
+    // field empties (below), so a genuine re-scan of the same barcode still works.
+    if (c && c === lastConfirmedRef.current) return
+    lastConfirmedRef.current = c
     onConfirmRef.current?.(code)
   }
 
@@ -154,6 +166,10 @@ export default function ScannerInput({
   // so the user can freely tap Description / Notes without focus jumping back.
   useEffect(() => {
     if (value !== '') return
+    // [TEST] The field just emptied (a save or clear). Remember what was in it
+    // and when, so an Android IME re-injecting that same barcode a moment later
+    // is treated as an echo (swallowed below), not a fresh scan.
+    if (prevValueRef.current) { lastSavedRef.current = prevValueRef.current; lastSavedAtRef.current = performance.now() }
     lastConfirmedRef.current = ''
     // Auto-focus the barcode field on ALL devices (desktop + Android) so the
     // user can scan immediately without tapping the box first. On Android this
@@ -199,6 +215,16 @@ export default function ScannerInput({
   // duplicate. Manual typing simply looks up a beat after the user stops.
   useEffect(() => {
     const code = (value || '').trim()
+    // [TEST] Android IME echo: the just-saved barcode re-appearing on its own
+    // within ~800 ms of the save is not a new scan. Clear it silently — no
+    // lookup, no extra Save tap. A deliberate re-scan of the same code (later,
+    // or after a different scan) falls outside the window and looks up normally.
+    if (code && code === lastSavedRef.current && (performance.now() - lastSavedAtRef.current) < 800) {
+      onChangeRef.current('')
+      prevValueRef.current = ''
+      return
+    }
+    prevValueRef.current = value
     if (code.length < 4 || code === lastConfirmedRef.current) return
     const t = setTimeout(() => {
       if ((value || '').trim() === code && code !== lastConfirmedRef.current) confirmRef.current(code)
