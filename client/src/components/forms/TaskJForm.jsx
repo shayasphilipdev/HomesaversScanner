@@ -12,7 +12,6 @@ const EMPTY = { product_code: '' }
 export default function TaskJForm({ onSaved, storeId }) {
   const { session } = useStore()
   const [priceInfo, setPriceInfo] = useState(null)
-  const [scanKey, setScanKey] = useState(0)
 
   // After the alt-barcode row resolves, do a second lookup for the department.
   // Uses the gen/genRef forwarded from useTaskForm so a stale prices lookup
@@ -39,7 +38,6 @@ export default function TaskJForm({ onSaved, storeId }) {
   const handleReset = () => {
     t.reset()         // also increments genRef, invalidating in-flight lookups
     setPriceInfo(null)
-    setScanKey(k => k + 1)
   }
 
   const handleSubmit = async (e) => {
@@ -76,7 +74,6 @@ export default function TaskJForm({ onSaved, storeId }) {
       <div className="card-body">
         <form onSubmit={handleSubmit}>
           <ScannerInput
-            key={scanKey}
             label="Barcode *"
             value={t.form.product_code}
             onChange={t.update('product_code')}
