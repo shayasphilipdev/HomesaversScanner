@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { TASK_FORMS } from '../lib/taskTypes.js'
+import { isTestEnv, LIVE_URL, TEST_URL } from '../lib/env.js'
 import TaskAForm  from './forms/TaskAForm.jsx'
 import TaskBForm  from './forms/TaskBForm.jsx'
 import TaskCForm  from './forms/TaskCForm.jsx'
@@ -12,6 +13,28 @@ import TaskJForm  from './forms/TaskJForm.jsx'
 import TaskKForm  from './forms/TaskKForm.jsx'
 
 const REMINDER_KEY = 'hs_barcode_reminder_dismissed'
+
+// One-tap toggle between the live app and the test app. On the test build it
+// links back to live; on the live build it links to the test app. Driven by the
+// current hostname so the same code does both.
+function TestAppToggle() {
+  const test = isTestEnv()
+  return (
+    <a
+      href={test ? LIVE_URL : TEST_URL}
+      title={test ? 'Go back to the live app' : 'Open the test app'}
+      style={{
+        fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', padding: '2px 8px',
+        borderRadius: 6, textDecoration: 'none',
+        color: test ? '#0B6B2E' : '#7A1220',
+        background: test ? '#E6F4EA' : '#FBE3E6',
+        border: `1px solid ${test ? '#9BD3AC' : '#E8A6AE'}`
+      }}
+    >
+      {test ? '↩ Live App' : 'Test App ↗'}
+    </a>
+  )
+}
 
 // Top-level dispatcher: picks the right form component for the chosen task type.
 export default function TaskForm({ taskType, storeId, onSaved }) {
@@ -32,7 +55,7 @@ export default function TaskForm({ taskType, storeId, onSaved }) {
 
   const reminder = reminderDismissed ? (
     // Compact one-line toggle to bring the banner back
-    <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'flex-end' }}>
+    <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 14 }}>
       <button
         onClick={showReminder}
         style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12,
@@ -41,6 +64,7 @@ export default function TaskForm({ taskType, storeId, onSaved }) {
       >
         ⚠️ <span style={{ textDecoration: 'underline' }}>Show scan reminder</span>
       </button>
+      <TestAppToggle />
     </div>
   ) : (
     <div style={{
@@ -52,6 +76,7 @@ export default function TaskForm({ taskType, storeId, onSaved }) {
       <span style={{ flex: 1, fontSize: 13, color: '#7A5610' }}>
         Scan the product barcode only — not the shelf label (SEL).
       </span>
+      <TestAppToggle />
       <button
         onClick={hideReminder}
         style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: '#B47F1E', padding: '0 2px', lineHeight: 1 }}

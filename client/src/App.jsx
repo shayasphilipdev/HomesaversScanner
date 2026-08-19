@@ -30,6 +30,7 @@ import Pricing from './pages/Pricing.jsx'
 import AdminSpacePlan from './pages/AdminSpacePlan.jsx'
 import { setToken, clearToken, getAppConfig } from './lib/api.js'
 import { canDoHQTasks, STORE_ROLE_KEYS } from './lib/roles.js'
+import { isTestEnv } from './lib/env.js'
 
 export const StoreContext = createContext(null)
 export const useStore = () => useContext(StoreContext)
@@ -128,6 +129,14 @@ function Shell() {
 
   return (
     <div className="app">
+      {isTestEnv() && (
+        <div style={{
+          background: '#B00020', color: '#fff', textAlign: 'center',
+          fontSize: 13, fontWeight: 700, letterSpacing: '.4px', padding: '5px 8px'
+        }}>
+          ⚠ TESTING MODE — this is the TEST app, not live. Changes here are for testing only.
+        </div>
+      )}
       <Nav />
       <div className="app-body">
         <Sidebar />
