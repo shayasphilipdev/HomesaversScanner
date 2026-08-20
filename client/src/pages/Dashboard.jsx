@@ -2,6 +2,7 @@
 import { useStore } from '../App.jsx'
 import { getDashboardStats, getStores, getAreas } from '../lib/api.js'
 import { TASK_FORMS } from '../lib/taskTypes.js'
+import { downloadExcel } from '../lib/excel.js'
 import Skeleton from '../components/Skeleton.jsx'
 
 const STATUS_LABEL = {
@@ -446,16 +447,40 @@ function StoreDonutGrid({ rows, loading, allStores }) {
   const activeCount  = display.filter(s => s.is_active !== false).length
   const inactiveCount = display.filter(s => s.is_active === false).length
 
+  // Excel of the by-store data — one row per store, a column per task type in
+  // display order, worst-first (matches the chart). Built from data already
+  // loaded, so no extra request.
+  const exportStores = () => {
+    const cols    = ['store_code', 'store_name', ...STORE_BAR_TASKS.map(t => t.code), 'total']
+    const headers = ['Store Code', 'Store Name', ...STORE_BAR_TASKS.map(t => t.name), 'Total']
+    const exportRows = sortStoresWorstFirst((display || []).map(s => {
+      const { byCode, total } = storeCounts(s)
+      return { ...s, _byCode: byCode, _total: total }
+    })).map(s => {
+      const row = { store_code: s.store_code || '', store_name: s.store_name || '' }
+      for (const t of STORE_BAR_TASKS) row[t.code] = s._byCode[t.code] || 0
+      row.total = s._total
+      return row
+    })
+    const stamp = new Date().toISOString().slice(0, 10)
+    downloadExcel(`By store - ${stamp}.xlsx`, exportRows, cols, headers)
+  }
+
   return (
     <div className="card" style={{ marginBottom: 24 }}>
       <div className="card-header">
         By store
-        {!loading && display.length > 0 && (
-          <span className="chip" style={{ marginLeft: 'auto' }}>
-            <span className="chip-dot" />
-            {activeCount} active{inactiveCount > 0 ? ` · ${inactiveCount} inactive` : ''}
-          </span>
-        )}
+        <div className="flex-row" style={{ marginLeft: 'auto', gap: 8, alignItems: 'center' }}>
+          {!loading && display.length > 0 && (
+            <span className="chip">
+              <span className="chip-dot" />
+              {activeCount} active{inactiveCount > 0 ? ` · ${inactiveCount} inactive` : ''}
+            </span>
+          )}
+          {!loading && display.length > 0 && (
+            <button className="btn btn-sm btn-outline" onClick={exportStores}>↓ Excel</button>
+          )}
+        </div>
       </div>
       <div className="card-body" style={{ padding: 16 }}>
         {loading ? (
@@ -471,66 +496,91 @@ function StoreDonutGrid({ rows, loading, allStores }) {
 }
 
 // By-store performance bars — one horizontal stacked bar per store, worst
-// (fewest transactions) first, each bar split into HO Tasks (blue) and Store
-// Ops (orange) with the transaction counts shown inside. Bar length is the
+// (fewest transactions) first. Each bar is split by task type in a fixed order,
+// coloured per task, with counts shown inside the wider segments (hover any
+// segment, or use the Excel export, for exact numbers). Bar length = the
 // store's total relative to the busiest store, so under-performers read short.
-const HO_GRAD  = 'linear-gradient(90deg,#5BA8F5,#2E78D6)'
-const OPS_GRAD = 'linear-gradient(90deg,#FFB066,#F2843C)'
+const STORE_BAR_TASKS = [
+  { code: 'J', name: 'Department Check',      color: '#2E78D6' },
+  { code: 'K', name: 'Price Check',           color: '#17A2B8' },
+  { code: 'H', name: 'Stock Count',           color: '#3E9F4B' },
+  { code: 'B', name: 'Non-Scans',             color: '#F2843C' },
+  { code: 'C', name: 'Wrong Prices',          color: '#E0518D' },
+  { code: 'D', name: 'Wrong Description',      color: '#7C5CBF' },
+  { code: 'G', name: 'Promotion Error',       color: '#E0A03A' },
+  { code: 'A', name: 'UOM Errors',            color: '#D14B3D' },
+  { code: 'E', name: 'Price Marked Products', color: '#4C6EF5' },
+  { code: 'F', name: 'DRS Errors',            color: '#8A6D3B' },
+  { code: 'I', name: 'Miscellaneous',         color: '#8896A5' },
+]
+
+// A store's per-task-type counts (keyed by code) + total across those tasks.
+function storeCounts(store) {
+  const byCode = {}
+  for (const t of (store.types || [])) byCode[t.code] = (byCode[t.code] || 0) + t.count
+  const total = STORE_BAR_TASKS.reduce((a, t) => a + (byCode[t.code] || 0), 0)
+  return { byCode, total }
+}
+
+// Chart + export order: active stores worst-first (fewest transactions),
+// inactive stores last. Rows must already carry a numeric `_total`.
+function sortStoresWorstFirst(rows) {
+  return rows.slice().sort((a, b) => {
+    const ai = a.is_active === false, bi = b.is_active === false
+    if (ai !== bi) return ai ? 1 : -1
+    return a._total - b._total
+  })
+}
 
 function StoreBarList({ display }) {
-  const rows = (display || []).map(s => {
-    const types = s.types || []
-    const hoTotal  = types.filter(t => !CHECK_CODES.has(t.code)).reduce((a, t) => a + t.count, 0)
-    const opsTotal = types.filter(t =>  CHECK_CODES.has(t.code)).reduce((a, t) => a + t.count, 0)
-    return { ...s, hoTotal, opsTotal, total: hoTotal + opsTotal }
-  }).sort((a, b) => {
-    const ai = a.is_active === false, bi = b.is_active === false
-    if (ai !== bi) return ai ? 1 : -1     // inactive stores always at the bottom
-    return a.total - b.total              // least-performing (fewest transactions) first
-  })
-  const maxTotal = Math.max(1, ...rows.map(r => r.total))
+  const rows = sortStoresWorstFirst((display || []).map(s => {
+    const { byCode, total } = storeCounts(s)
+    return { ...s, _byCode: byCode, _total: total }
+  }))
+  const maxTotal = Math.max(1, ...rows.map(r => r._total))
 
   return (
     <div>
-      <div className="flex-row" style={{ gap: 16, justifyContent: 'flex-end', marginBottom: 12, fontSize: 12, color: 'var(--text-muted)' }}>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={{ width: 11, height: 11, borderRadius: 3, background: '#2E78D6' }} /> HO Tasks</span>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={{ width: 11, height: 11, borderRadius: 3, background: '#F2843C' }} /> Store Ops</span>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px', justifyContent: 'flex-end', marginBottom: 12, fontSize: 11.5, color: 'var(--text-muted)' }}>
+        {STORE_BAR_TASKS.map(t => (
+          <span key={t.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 11, height: 11, borderRadius: 3, background: t.color, flexShrink: 0 }} /> {t.name}
+          </span>
+        ))}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-        {rows.map((s, i) => <StoreBarRow key={s.id} store={s} rank={i + 1} maxTotal={maxTotal} />)}
+        {rows.map(s => <StoreBarRow key={s.id} store={s} maxTotal={maxTotal} />)}
       </div>
     </div>
   )
 }
 
-function StoreBarRow({ store, rank, maxTotal }) {
+function StoreBarRow({ store, maxTotal }) {
   const inactive = store.is_active === false
-  const { hoTotal, opsTotal, total } = store
-  const seg = (count, grad) => count > 0 ? (
-    <div style={{
-      width: `${(count / maxTotal) * 100}%`, minWidth: 28, background: grad,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      color: '#fff', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap'
-    }}>{count}</div>
-  ) : null
+  const byCode = store._byCode, total = store._total
   return (
-    <div className="flex-row" style={{ gap: 11, alignItems: 'center', opacity: inactive ? 0.5 : 1 }}>
-      <span style={{ width: 26, textAlign: 'right', fontSize: 15, fontWeight: 800, color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
-        {String(rank).padStart(2, '0')}
-      </span>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="flex-row" style={{ justifyContent: 'space-between', marginBottom: 3, gap: 8 }}>
-          <span style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {store.store_name}{inactive && <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}> (inactive)</span>}
-          </span>
-          <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
-            {total} total
-          </span>
-        </div>
-        <div style={{ height: 22, borderRadius: 999, background: 'var(--bg-soft, #E9ECF1)', overflow: 'hidden', display: 'flex' }}>
-          {seg(hoTotal, HO_GRAD)}
-          {seg(opsTotal, OPS_GRAD)}
-        </div>
+    <div style={{ opacity: inactive ? 0.5 : 1 }}>
+      <div className="flex-row" style={{ justifyContent: 'space-between', marginBottom: 3, gap: 8 }}>
+        <span style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {store.store_name}{inactive && <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}> (inactive)</span>}
+        </span>
+        <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+          {total} total
+        </span>
+      </div>
+      <div style={{ height: 22, borderRadius: 999, background: 'var(--bg-soft, #E9ECF1)', overflow: 'hidden', display: 'flex' }}>
+        {STORE_BAR_TASKS.map(t => {
+          const c = byCode[t.code] || 0
+          if (!c) return null
+          const share = c / maxTotal
+          return (
+            <div key={t.code} title={`${t.name}: ${c}`} style={{
+              width: `${share * 100}%`, background: t.color,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#fff', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden'
+            }}>{share >= 0.06 ? c : ''}</div>
+          )
+        })}
       </div>
     </div>
   )
