@@ -245,8 +245,7 @@ function ActivityChart({ byDay, loading }) {
       <div className="ac-accent" />
 
       <div className="ac-head">
-        <div className="ac-title">Activity · last 14 days</div>
-        <div className="ac-legend">
+        <div className="ac-legend" style={{ marginLeft: 'auto' }}>
           <span className="ac-leg"><span className="ac-sw ac-sw-ho" /> HO <b>{fmt(hoTotal)}</b></span>
           <span className="ac-leg"><span className="ac-sw ac-sw-ops" /> Ops <b>{fmt(opsTotal)}</b></span>
         </div>
@@ -257,7 +256,7 @@ function ActivityChart({ byDay, loading }) {
           <div className="ac-loading"><span className="spinner spinner-dark" /></div>
         ) : (
           <svg className="ac-svg" viewBox={`0 0 ${VW} ${VH}`} preserveAspectRatio="none"
-            role="img" aria-label={`Stacked bar chart of activity over the last 14 days. HO total ${fmt(hoTotal)}, Ops total ${fmt(opsTotal)}.`}>
+            role="img" aria-label={`Stacked bar chart of activity over the selected period. HO total ${fmt(hoTotal)}, Ops total ${fmt(opsTotal)}.`}>
             <defs>
               {/* HO blue: bright at top, medium blue at bottom — refined, never navy/muddy */}
               <linearGradient id="acHoGrad" x1="0" y1="0" x2="0" y2="1">
