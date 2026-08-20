@@ -245,7 +245,8 @@ function ActivityChart({ byDay, loading }) {
       <div className="ac-accent" />
 
       <div className="ac-head">
-        <div className="ac-legend" style={{ marginLeft: 'auto' }}>
+        <div className="ac-title">Activity</div>
+        <div className="ac-legend">
           <span className="ac-leg"><span className="ac-sw ac-sw-ho" /> HO <b>{fmt(hoTotal)}</b></span>
           <span className="ac-leg"><span className="ac-sw ac-sw-ops" /> Ops <b>{fmt(opsTotal)}</b></span>
         </div>
@@ -547,7 +548,7 @@ function StoreBarList({ display }) {
           </span>
         ))}
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         {rows.map(s => <StoreBarRow key={s.id} store={s} maxTotal={maxTotal} />)}
       </div>
     </div>
@@ -559,15 +560,15 @@ function StoreBarRow({ store, maxTotal }) {
   const byCode = store._byCode, total = store._total
   return (
     <div style={{ opacity: inactive ? 0.5 : 1 }}>
-      <div className="flex-row" style={{ justifyContent: 'space-between', marginBottom: 3, gap: 8 }}>
-        <span style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+      <div className="flex-row" style={{ justifyContent: 'space-between', marginBottom: 1, gap: 8 }}>
+        <span style={{ fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {store.store_name}{inactive && <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}> (inactive)</span>}
         </span>
-        <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+        <span style={{ fontSize: 11.5, color: 'var(--text-muted)', whiteSpace: 'nowrap', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
           {total} total
         </span>
       </div>
-      <div style={{ height: 22, borderRadius: 999, background: 'var(--bg-soft, #E9ECF1)', overflow: 'hidden', display: 'flex' }}>
+      <div style={{ height: 18, borderRadius: 999, background: 'var(--bg-soft, #E9ECF1)', overflow: 'hidden', display: 'flex' }}>
         {STORE_BAR_TASKS.map(t => {
           const c = byCode[t.code] || 0
           if (!c) return null
