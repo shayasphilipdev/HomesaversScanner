@@ -269,8 +269,11 @@ export const getTaskRecordEvents      = (id) => request(`/task-records/${id}/eve
 
 // ── Per-record message threads ──────────────────────────────────────────────
 export const getRecordMessages      = (id) => request(`/task-records/${id}/messages`)
-export const postRecordMessage      = (id, body, priority = 'normal', msg_type = 'query') =>
-  request(`/task-records/${id}/messages`, { method: 'POST', body: { body, priority, msg_type } })
+export const postRecordMessage      = (id, body, priority = 'normal', msg_type = 'query', photo_urls = []) =>
+  request(`/task-records/${id}/messages`, { method: 'POST', body: { body, priority, msg_type, photo_urls } })
+// Upload one message photo to the shared task-photos bucket (messages/ prefix).
+export const uploadMessagePhoto     = (file) =>
+  uploadPhoto({ file, slot: 'message', tempId: (crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`) })
 export const getUnreadMessageCount  = () => request('/task-messages/unread-count')
 export const getMessageThreads      = () => request('/task-messages/threads')
 export const markRecordMessagesRead = (id) => request(`/task-records/${id}/messages/mark-read`, { method: 'POST' })

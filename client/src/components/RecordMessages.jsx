@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { getRecordMessages, postRecordMessage, markRecordMessagesRead } from '../lib/api.js'
+import { getRecordMessages, postRecordMessage, markRecordMessagesRead, uploadMessagePhoto, deletePhoto } from '../lib/api.js'
+import { compressImage } from '../lib/photos.js'
 import { useStore } from '../App.jsx'
 
 function formatTime(iso) {
@@ -24,7 +25,10 @@ export default function RecordMessages({ recordId, onUnreadChange }) {
   const [priority, setPriority] = useState('normal')
   const [msgType, setMsgType]   = useState('query')
   const [sending, setSending]   = useState(false)
+  const [photos, setPhotos]     = useState([])     // pending attachments: [{ url, path }]
+  const [uploading, setUploading] = useState(false)
   const bottomRef = useRef(null)
+  const fileRef   = useRef(null)
 
   const load = async () => {
     setLoading(true); setError('')
@@ -50,20 +54,47 @@ export default function RecordMessages({ recordId, onUnreadChange }) {
 
   const send = async () => {
     const text = draft.trim()
-    if (!text) return
+    if (!text && !photos.length) return
     setSending(true)
     try {
-      const msg = await postRecordMessage(recordId, text, priority, msgType)
+      const msg = await postRecordMessage(recordId, text, priority, msgType, photos.map(p => p.url))
       setMsgs(prev => [...(prev || []), msg])
       setDraft('')
       setPriority('normal')
       setMsgType('query')
+      setPhotos([])
       onUnreadChange?.()
     } catch (e) {
       setError(e.message)
     } finally {
       setSending(false)
     }
+  }
+
+  // Attach photos — compress client-side, upload to the shared task-photos
+  // bucket (messages/ prefix), cap at 3 per message.
+  const addPhotos = async (fileList) => {
+    const files = Array.from(fileList || [])
+    if (!files.length) return
+    setUploading(true); setError('')
+    try {
+      for (const f of files) {
+        if (photos.length >= 3) break
+        const blob = await compressImage(f, 1600, 0.8)
+        const up   = await uploadMessagePhoto(blob)
+        setPhotos(prev => (prev.length < 3 ? [...prev, { url: up.url, path: up.path }] : prev))
+      }
+    } catch (e) {
+      setError(e.message || 'Photo upload failed')
+    } finally {
+      setUploading(false)
+      if (fileRef.current) fileRef.current.value = ''
+    }
+  }
+
+  const removePhoto = (p) => {
+    setPhotos(prev => prev.filter(x => x.url !== p.url))
+    deletePhoto(p.path).catch(() => {})
   }
 
   const handleKeyDown = (e) => {
@@ -115,7 +146,16 @@ export default function RecordMessages({ recordId, onUnreadChange }) {
                     boxShadow: '0 1px 2px rgba(0,0,0,.08)',
                     border: hiPri ? '1.5px solid #FCA5A5' : undefined
                   }}>
-                    {msg.body}
+                    {msg.body && <div style={{ whiteSpace: 'pre-wrap' }}>{msg.body}</div>}
+                    {Array.isArray(msg.photo_urls) && msg.photo_urls.length > 0 && (
+                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: msg.body ? 6 : 0 }}>
+                        {msg.photo_urls.map((u, i) => (
+                          <a key={i} href={u} target="_blank" rel="noopener noreferrer">
+                            <img src={u} alt="attachment" style={{ width: 88, height: 88, objectFit: 'cover', borderRadius: 8, display: 'block' }} />
+                          </a>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2, textAlign: mine ? 'right' : 'left' }}>
                     {msg.author_name} · {formatTime(msg.created_at)}
@@ -153,7 +193,30 @@ export default function RecordMessages({ recordId, onUnreadChange }) {
             <option value="action">Action required</option>
           </select>
         </div>
-        <div style={{ display: 'flex', gap: 6 }}>
+        {photos.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {photos.map(p => (
+              <div key={p.url} style={{ position: 'relative' }}>
+                <img src={p.url} alt="attachment" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)', display: 'block' }} />
+                <button type="button" onClick={() => removePhoto(p)} title="Remove"
+                  style={{ position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: '50%', border: 'none', background: '#DC2626', color: '#fff', fontSize: 12, lineHeight: '18px', cursor: 'pointer', padding: 0 }}>×</button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end' }}>
+          <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
+            onChange={e => addPhotos(e.target.files)} />
+          <button
+            type="button"
+            className="btn btn-outline btn-sm"
+            onClick={() => fileRef.current?.click()}
+            disabled={sending || uploading || photos.length >= 3}
+            title={photos.length >= 3 ? 'Up to 3 photos' : 'Attach photo'}
+            style={{ alignSelf: 'flex-end' }}
+          >
+            {uploading ? <span className="spinner spinner-dark" /> : '📷'}
+          </button>
           <textarea
             rows={2}
             value={draft}
@@ -166,7 +229,7 @@ export default function RecordMessages({ recordId, onUnreadChange }) {
           <button
             className="btn btn-primary btn-sm"
             onClick={send}
-            disabled={sending || !draft.trim()}
+            disabled={sending || uploading || (!draft.trim() && !photos.length)}
             style={{ alignSelf: 'flex-end' }}
           >
             {sending ? <span className="spinner" /> : 'Send'}

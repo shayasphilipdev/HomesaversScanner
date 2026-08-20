@@ -1,5 +1,5 @@
-﻿import { useState, useEffect, useCallback } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+﻿import { useState, useEffect, useCallback, useRef } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useStore } from '../App.jsx'
 import { getTaskRecords, getTaskTypes } from '../lib/api.js'
 import { useCurrentStore } from '../lib/currentStore.jsx'
@@ -35,10 +35,15 @@ export default function Tasks() {
 
   // Opened from the header message dropdown — jump to that record's thread.
   const location = useLocation()
-  const navigate = useNavigate()
+  const handledKeyRef = useRef(null)
   useEffect(() => {
     const st = location.state
-    if (st?.openRecordId) {
+    // Guard by location.key instead of consuming the state with a replace-nav.
+    // That extra navigation churned the render/load cycle and raced the thread
+    // auto-open, which is what forced the "second click". The ref stops it
+    // re-firing for the same navigation without perturbing the list load.
+    if (st?.openRecordId && handledKeyRef.current !== location.key) {
+      handledKeyRef.current = location.key
       setAutoOpenId(st.openRecordId)
       if (st.taskType) setSelectedType(st.taskType)
       // Switch to the record's store so the list actually contains it — without
@@ -46,7 +51,6 @@ export default function Tasks() {
       // that never includes the record, so the thread can't open.
       if (st.storeId) setCurrentStoreId(st.storeId)
       setFilter('all')
-      navigate('.', { replace: true, state: null })   // consume so it doesn't re-fire
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.key])
@@ -66,7 +70,9 @@ export default function Tasks() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const loadSeqRef = useRef(0)
   const load = useCallback(async () => {
+    const seq = ++loadSeqRef.current
     setLoading(true)
     try {
       const data = await getTaskRecords({
@@ -75,13 +81,14 @@ export default function Tasks() {
         status:   filter !== 'all' ? filter : undefined,
         limit:    500   // a store + task-type pair is normally tiny; one page is plenty
       })
+      if (seq !== loadSeqRef.current) return   // a newer load started (e.g. store switch) — drop stale rows
       // Backend returns { records, total, ... }; older responses were a bare
       // array, so tolerate both for a clean rolling deploy.
       setRecords(Array.isArray(data) ? data : (data?.records || []))
     } catch (e) {
       console.error(e)
     } finally {
-      setLoading(false)
+      if (seq === loadSeqRef.current) setLoading(false)
     }
   }, [currentStoreId, selectedType, filter])
 

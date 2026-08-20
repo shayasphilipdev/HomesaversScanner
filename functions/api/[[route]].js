@@ -3013,7 +3013,7 @@ export async function onRequest(context) {
       const tempId = String(form.get('tempId') || '')
 
       if (!file || !slot || !tempId) return err('file, slot, tempId required', 400)
-      if (!['product', 'barcode', 'store_task'].includes(slot)) return err('Invalid slot', 400)
+      if (!['product', 'barcode', 'store_task', 'message'].includes(slot)) return err('Invalid slot', 400)
       if (!/^[a-zA-Z0-9-]{8,64}$/.test(tempId))   return err('Invalid tempId', 400)
       // Hard cap so a giant phone-camera upload can't blow the Worker memory
       // budget. 25 MB is comfortably above a 4K JPEG / a normal PDF receipt.
@@ -3040,15 +3040,16 @@ export async function onRequest(context) {
         if (m === 'application/msword') return 'doc'
         return 'bin'
       }
-      const ext = (slot === 'product' || slot === 'barcode')
+      const ext = (slot === 'product' || slot === 'barcode' || slot === 'message')
         ? 'jpg'                                   // these are always compressed images
         : extFromMime(file.type)                  // store_task — keep the actual format
 
-      // store_task photos / files live under their own prefix so retention
+      // store_task and message photos live under their own prefix so retention
       // rules can target each kind separately if needed.
-      const objectPath = slot === 'store_task'
-        ? `store-tasks/${tempId}.${ext}`
-        : `${tempId}/${slot}.${ext}`
+      const objectPath =
+        slot === 'store_task' ? `store-tasks/${tempId}.${ext}` :
+        slot === 'message'    ? `messages/${tempId}.${ext}`    :
+        `${tempId}/${slot}.${ext}`
       const uploadUrl  = `${env.SUPABASE_URL}/storage/v1/object/task-photos/${objectPath}`
 
       const upRes = await fetch(uploadUrl, {
@@ -3520,7 +3521,7 @@ export async function onRequest(context) {
         if (!own || !scope.includes(own.store_id)) return err('Record not found or not allowed', 404)
       }
       const msgs = await db.select('task_record_messages', {
-        select:    'id,record_id,author_id,author_name,author_role,body,priority,msg_type,is_read_by_store,is_read_by_bo,created_at',
+        select:    'id,record_id,author_id,author_name,author_role,body,priority,msg_type,photo_urls,is_read_by_store,is_read_by_bo,created_at',
         record_id: `eq.${recId}`,
         order:     'created_at.asc'
       })
@@ -3536,7 +3537,13 @@ export async function onRequest(context) {
         if (!own || !scope.includes(own.store_id)) return err('Record not found or not allowed', 404)
       }
       const body = await request.json()
-      if (!body.body || !String(body.body).trim()) return err('Message body required', 400)
+      const hasText   = body.body && String(body.body).trim()
+      // Only keep valid public URLs from our own task-photos bucket, cap at 3.
+      const photoBase = `${env.SUPABASE_URL}/storage/v1/object/public/task-photos/messages/`
+      const photoUrls = (Array.isArray(body.photo_urls) ? body.photo_urls : [])
+        .filter(u => typeof u === 'string' && u.startsWith(photoBase))
+        .slice(0, 3)
+      if (!hasText && !photoUrls.length) return err('Message body or a photo required', 400)
       const VALID_PRIORITY = ['high', 'normal']
       const VALID_TYPE     = ['information', 'query', 'action']
       const inserted = await db.insert('task_record_messages', {
@@ -3544,7 +3551,8 @@ export async function onRequest(context) {
         author_id:            session.user_id || null,
         author_name:          session.display_name || session.username || 'Unknown',
         author_role:          session.role || 'unknown',
-        body:                 String(body.body).trim(),
+        body:                 hasText ? String(body.body).trim() : '',
+        photo_urls:           photoUrls,
         priority:             VALID_PRIORITY.includes(body.priority) ? body.priority : 'normal',
         msg_type:             VALID_TYPE.includes(body.msg_type) ? body.msg_type : 'query',
         // Sender's side starts read + dismissed; recipient's side starts unread + active.
