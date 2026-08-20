@@ -463,10 +463,74 @@ function StoreDonutGrid({ rows, loading, allStores }) {
         ) : !display.length ? (
           <div className="empty-state" style={{ padding: 20 }}><p style={{ fontSize: 13 }}>No records in this range yet.</p></div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(194px, 1fr))', gap: 14 }}>
-            {display.map(r => <StoreDualDonut key={r.id} store={r} inactive={r.is_active === false} />)}
-          </div>
+          <StoreBarList display={display} />
         )}
+      </div>
+    </div>
+  )
+}
+
+// By-store performance bars — one horizontal stacked bar per store, worst
+// (fewest transactions) first, each bar split into HO Tasks (blue) and Store
+// Ops (orange) with the transaction counts shown inside. Bar length is the
+// store's total relative to the busiest store, so under-performers read short.
+const HO_GRAD  = 'linear-gradient(90deg,#5BA8F5,#2E78D6)'
+const OPS_GRAD = 'linear-gradient(90deg,#FFB066,#F2843C)'
+
+function StoreBarList({ display }) {
+  const rows = (display || []).map(s => {
+    const types = s.types || []
+    const hoTotal  = types.filter(t => !CHECK_CODES.has(t.code)).reduce((a, t) => a + t.count, 0)
+    const opsTotal = types.filter(t =>  CHECK_CODES.has(t.code)).reduce((a, t) => a + t.count, 0)
+    return { ...s, hoTotal, opsTotal, total: hoTotal + opsTotal }
+  }).sort((a, b) => {
+    const ai = a.is_active === false, bi = b.is_active === false
+    if (ai !== bi) return ai ? 1 : -1     // inactive stores always at the bottom
+    return a.total - b.total              // least-performing (fewest transactions) first
+  })
+  const maxTotal = Math.max(1, ...rows.map(r => r.total))
+
+  return (
+    <div>
+      <div className="flex-row" style={{ gap: 16, justifyContent: 'flex-end', marginBottom: 12, fontSize: 12, color: 'var(--text-muted)' }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={{ width: 11, height: 11, borderRadius: 3, background: '#2E78D6' }} /> HO Tasks</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><span style={{ width: 11, height: 11, borderRadius: 3, background: '#F2843C' }} /> Store Ops</span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+        {rows.map((s, i) => <StoreBarRow key={s.id} store={s} rank={i + 1} maxTotal={maxTotal} />)}
+      </div>
+    </div>
+  )
+}
+
+function StoreBarRow({ store, rank, maxTotal }) {
+  const inactive = store.is_active === false
+  const { hoTotal, opsTotal, total } = store
+  const seg = (count, grad) => count > 0 ? (
+    <div style={{
+      width: `${(count / maxTotal) * 100}%`, minWidth: 28, background: grad,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      color: '#fff', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap'
+    }}>{count}</div>
+  ) : null
+  return (
+    <div className="flex-row" style={{ gap: 11, alignItems: 'center', opacity: inactive ? 0.5 : 1 }}>
+      <span style={{ width: 26, textAlign: 'right', fontSize: 15, fontWeight: 800, color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
+        {String(rank).padStart(2, '0')}
+      </span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="flex-row" style={{ justifyContent: 'space-between', marginBottom: 3, gap: 8 }}>
+          <span style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {store.store_name}{inactive && <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}> (inactive)</span>}
+          </span>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+            {total} total
+          </span>
+        </div>
+        <div style={{ height: 22, borderRadius: 999, background: 'var(--bg-soft, #E9ECF1)', overflow: 'hidden', display: 'flex' }}>
+          {seg(hoTotal, HO_GRAD)}
+          {seg(opsTotal, OPS_GRAD)}
+        </div>
       </div>
     </div>
   )
