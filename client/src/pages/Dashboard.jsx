@@ -152,7 +152,7 @@ export default function Dashboard() {
       <div className="dash-row dash-row--thirds">
         <TaskDonutOps    rows={stats?.by_task_type || []} loading={loading} />
         <TaskDonutChecks rows={stats?.by_task_type || []} loading={loading} />
-        {isBO && <StoresMissingDeptCheck byStore={stats?.by_store || []} allStores={stores} scopeStoreIds={scopedStoreIds} loading={loading} />}
+        {isBO && <StoresMissingDeptCheck byStore={stats?.by_store || []} allStores={stores} scopeStoreIds={scopedStoreIds} dataDays={stats?.by_day || []} loading={loading} />}
       </div>
 
       {isBO && <StoreDonutGrid rows={stats?.by_store || []} loading={loading} allStores={stores} />}
@@ -244,7 +244,7 @@ function ActivityChart({ byDay, loading, compact }) {
   const lastLabel  = days.length ? labelDate(days[days.length - 1].date) : ''
 
   return (
-    <div className="ac-card" style={compact ? { maxWidth: 640 } : undefined}>
+    <div className="ac-card">
       <div className="ac-accent" />
 
       <div className="ac-head">
@@ -494,7 +494,7 @@ function StoreDonutGrid({ rows, loading, allStores }) {
 // Active stores that have NOT recorded a Department Check (task type J) within
 // the selected period. Period-linked automatically: `byStore` comes from the
 // same stats fetch, which is scoped by the Today/Week/Month buttons up top.
-function StoresMissingDeptCheck({ byStore, allStores, scopeStoreIds, loading }) {
+function StoresMissingDeptCheck({ byStore, allStores, scopeStoreIds, dataDays, loading }) {
   const doneJ = new Set()
   for (const s of (byStore || [])) {
     if ((s.types || []).some(t => t.code === 'J' && t.count > 0)) doneJ.add(s.id)
@@ -505,11 +505,26 @@ function StoresMissingDeptCheck({ byStore, allStores, scopeStoreIds, loading }) 
     .filter(s => !doneJ.has(s.id))
     .sort((a, b) => (a.store_code || '').localeCompare(b.store_code || '', undefined, { numeric: true }))
 
+  // Actual date range of the data in view (min/max day present in the DB for
+  // the selected period), e.g. "15th Aug – 21st Aug".
+  const dates = (dataDays || []).map(d => d.date).filter(Boolean).sort()
+  const fmtDay = (iso) => {
+    const d = new Date(iso + 'T00:00:00')
+    const n = d.getDate(), v = n % 100, suf = ['th', 'st', 'nd', 'rd']
+    return `${n}${suf[(v - 20) % 10] || suf[v] || suf[0]} ${d.toLocaleDateString('en-IE', { month: 'short' })}`
+  }
+  const rangeLabel = dates.length
+    ? (dates[0] === dates[dates.length - 1] ? fmtDay(dates[0]) : `${fmtDay(dates[0])} – ${fmtDay(dates[dates.length - 1])}`)
+    : ''
+
   return (
     <div className="card">
       <div className="card-header">
-        No Department Check
-        {!loading && <span className="chip" style={{ marginLeft: 'auto' }}><span className="chip-dot" />{missing.length}</span>}
+        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          No Department Check
+          {rangeLabel && <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--text-muted)' }}> ({rangeLabel})</span>}
+        </span>
+        {!loading && <span className="chip" style={{ marginLeft: 'auto', flexShrink: 0 }}><span className="chip-dot" />{missing.length}</span>}
       </div>
       <div className="card-body" style={{ maxHeight: 300, overflowY: 'auto' }}>
         {loading ? (
