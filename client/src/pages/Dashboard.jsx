@@ -33,6 +33,20 @@ function relativeRange(key) {
   }
 }
 
+// "15th Aug – 21st Aug" from the actual data days (stats.by_day) — the real
+// min/max day present in the DB for the selected period. '' when no data;
+// single day → just that date.
+function dataRangeLabel(dataDays) {
+  const dates = (dataDays || []).map(d => d.date).filter(Boolean).sort()
+  if (!dates.length) return ''
+  const fmt = (iso) => {
+    const d = new Date(iso + 'T00:00:00')
+    const n = d.getDate(), v = n % 100, suf = ['th', 'st', 'nd', 'rd']
+    return `${n}${suf[(v - 20) % 10] || suf[v] || suf[0]} ${d.toLocaleDateString('en-IE', { month: 'short' })}`
+  }
+  return dates[0] === dates[dates.length - 1] ? fmt(dates[0]) : `${fmt(dates[0])} – ${fmt(dates[dates.length - 1])}`
+}
+
 export default function Dashboard() {
   const { session } = useStore()
   const isBO = session.mode === 'backoffice'
@@ -150,12 +164,12 @@ export default function Dashboard() {
       </div>
 
       <div className="dash-row dash-row--thirds">
-        <TaskDonutOps    rows={stats?.by_task_type || []} loading={loading} />
-        <TaskDonutChecks rows={stats?.by_task_type || []} loading={loading} />
+        <TaskDonutOps    rows={stats?.by_task_type || []} dataDays={stats?.by_day || []} loading={loading} />
+        <TaskDonutChecks rows={stats?.by_task_type || []} dataDays={stats?.by_day || []} loading={loading} />
         {isBO && <StoresMissingDeptCheck byStore={stats?.by_store || []} allStores={stores} scopeStoreIds={scopedStoreIds} dataDays={stats?.by_day || []} loading={loading} />}
       </div>
 
-      {isBO && <StoreDonutGrid rows={stats?.by_store || []} loading={loading} allStores={stores} />}
+      {isBO && <StoreDonutGrid rows={stats?.by_store || []} loading={loading} allStores={stores} dataDays={stats?.by_day || []} />}
       {!isBO && <RecentList rows={stats?.recent || []} loading={loading} isBO={isBO} />}
 
       {/* Activity — moved below the store graph and made compact (secondary info). */}
@@ -326,17 +340,17 @@ function TaskTypeBars({ rows, loading }) {
 const DONUT_COLORS = ['#0E9A52', '#12A156', '#0A7339', '#3960A8', '#B47F1E', '#C96442', '#7E57C2', '#2D7A4E', '#E07346', '#5DCAA5', '#9A6B12']
 const CHECK_CODES  = new Set(['J', 'H', 'K'])
 
-function TaskDonutOps({ rows, loading }) {
+function TaskDonutOps({ rows, dataDays, loading }) {
   const data = (rows || []).filter(r => r.count > 0 && !CHECK_CODES.has(r.code))
-  return <DonutCard title="HO Tasks" data={data} loading={loading} colorOffset={3} />
+  return <DonutCard title="HO Tasks" range={dataRangeLabel(dataDays)} data={data} loading={loading} colorOffset={3} />
 }
 
-function TaskDonutChecks({ rows, loading }) {
+function TaskDonutChecks({ rows, dataDays, loading }) {
   const data = (rows || []).filter(r => r.count > 0 && CHECK_CODES.has(r.code))
-  return <DonutCard title="Operations Task" data={data} loading={loading} colorOffset={0} />
+  return <DonutCard title="Operations Task" range={dataRangeLabel(dataDays)} data={data} loading={loading} colorOffset={0} />
 }
 
-function DonutCard({ title, data, loading, colorOffset = 0 }) {
+function DonutCard({ title, range, data, loading, colorOffset = 0 }) {
   const total = data.reduce((s, r) => s + r.count, 0)
   const cx = 80, cy = 80, rMid = 50, sw = 20
   const circ = 2 * Math.PI * rMid
@@ -349,7 +363,7 @@ function DonutCard({ title, data, loading, colorOffset = 0 }) {
   })
   return (
     <div className="card">
-      <div className="card-header">{title}</div>
+      <div className="card-header">{title}{range && <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--text-muted)' }}> ({range})</span>}</div>
       <div className="card-body">
         {loading ? (
           <div style={{ textAlign: 'center', padding: 30 }}><span className="spinner spinner-dark" /></div>
@@ -423,7 +437,7 @@ const TYPE_COLORS = {
   I: '#9A6B12', J: '#0A7339', K: '#5DCAA5',
 }
 
-function StoreDonutGrid({ rows, loading, allStores }) {
+function StoreDonutGrid({ rows, loading, allStores, dataDays }) {
   // Merge stats rows (stores with records) with the full store list so every
   // store is always shown. Inactive stores appear faded at the end.
   const merged = useMemo(() => {
@@ -465,7 +479,7 @@ function StoreDonutGrid({ rows, loading, allStores }) {
   return (
     <div className="card" style={{ marginBottom: 24 }}>
       <div className="card-header">
-        By store
+        <span>Store Performance{dataRangeLabel(dataDays) && <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--text-muted)' }}> ({dataRangeLabel(dataDays)})</span>}</span>
         <div className="flex-row" style={{ marginLeft: 'auto', gap: 8, alignItems: 'center' }}>
           {!loading && display.length > 0 && (
             <span className="chip">
@@ -505,17 +519,7 @@ function StoresMissingDeptCheck({ byStore, allStores, scopeStoreIds, dataDays, l
     .filter(s => !doneJ.has(s.id))
     .sort((a, b) => (a.store_code || '').localeCompare(b.store_code || '', undefined, { numeric: true }))
 
-  // Actual date range of the data in view (min/max day present in the DB for
-  // the selected period), e.g. "15th Aug – 21st Aug".
-  const dates = (dataDays || []).map(d => d.date).filter(Boolean).sort()
-  const fmtDay = (iso) => {
-    const d = new Date(iso + 'T00:00:00')
-    const n = d.getDate(), v = n % 100, suf = ['th', 'st', 'nd', 'rd']
-    return `${n}${suf[(v - 20) % 10] || suf[v] || suf[0]} ${d.toLocaleDateString('en-IE', { month: 'short' })}`
-  }
-  const rangeLabel = dates.length
-    ? (dates[0] === dates[dates.length - 1] ? fmtDay(dates[0]) : `${fmtDay(dates[0])} – ${fmtDay(dates[dates.length - 1])}`)
-    : ''
+  const rangeLabel = dataRangeLabel(dataDays)
 
   return (
     <div className="card">
