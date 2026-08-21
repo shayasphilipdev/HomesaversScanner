@@ -160,7 +160,7 @@ export default function Dashboard() {
           hoLabel="HO reviewed"       hoValue={hoReviewed}       hoSub={`${ho.completed} complete · ${ho.no_change_needed} no change`}
           opsLabel="Store cleared"    opsValue={ops.store_completed} opsSub="Actioned by store"
         />
-        <KpiCard loading={loading} label="Store confirmed" value={ho.store_completed} sub="Loop closed" />
+        <KpiCard loading={loading} tone="info" label="Store confirmed" value={ho.store_completed} sub="Loop closed" />
       </div>
 
       <div className="dash-row dash-row--thirds">
@@ -182,6 +182,7 @@ function KpiCard({ label, value, sub, tone, loading }) {
   const cls = ['kpi-card']
   if (tone === 'warn') cls.push('kpi-card-warn')
   if (tone === 'ok')   cls.push('kpi-card-ok')
+  if (tone === 'info') cls.push('kpi-card-info')
   return (
     <div className={cls.join(' ')}>
       <div className="kpi-label">{label}</div>

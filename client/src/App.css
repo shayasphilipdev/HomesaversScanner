@@ -951,6 +951,12 @@ tbody tr:hover { background: var(--bg-soft); }
 }
 .kpi-split-tag.ops { color: var(--hs-green-dark); }
 
+/* Non-feature split cards — soft matching tints so the whole KPI row is
+   colourful, not just the first card. Translucent colour adapts to light +
+   dark themes; the feature card overrides these (higher specificity). */
+.kpi-split-ho  { background: linear-gradient(135deg, rgba(46,120,214,0.10) 0%, rgba(46,120,214,0.20) 100%); }
+.kpi-split-ops { background: linear-gradient(135deg, rgba(14,154,82,0.10) 0%, rgba(14,154,82,0.20) 100%); }
+
 /* Feature (first card) — HO side orange, Ops side green */
 .kpi-split-feature .kpi-split-ho {
   background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
@@ -981,6 +987,12 @@ tbody tr:hover { background: var(--bg-soft); }
   border-color: #3E9F4B;
 }
 .kpi-card.kpi-card-ok   .kpi-label { color: #1d5b30; }
+/* Rich matching tint for single tiles (e.g. Store confirmed) — teal blends the
+   blue + green scheme. Translucent so it adapts to light + dark. */
+.kpi-card.kpi-card-info {
+  background: linear-gradient(135deg, rgba(23,162,184,0.12) 0%, rgba(23,162,184,0.22) 100%);
+  border-color: rgba(23,162,184,0.5);
+}
 /* Tiles are tappable links — make hover feedback obvious. */
 a.kpi-card { transition: transform 80ms ease, box-shadow 120ms ease; }
 a.kpi-card:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
