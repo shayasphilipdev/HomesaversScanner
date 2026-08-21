@@ -150,18 +150,15 @@ export default function Dashboard() {
       </div>
 
       <div className="dash-row">
-        <ActivityChart byDay={stats?.by_day || []} loading={loading} />
-        <TaskTypeBars  rows={stats?.by_task_type || []} loading={loading} />
-      </div>
-
-      <div className="dash-row dash-row--thirds">
         <TaskDonutOps    rows={stats?.by_task_type || []} loading={loading} />
         <TaskDonutChecks rows={stats?.by_task_type || []} loading={loading} />
-        <StatusBreakdown totals={totals} loading={loading} />
       </div>
 
       {isBO && <StoreDonutGrid rows={stats?.by_store || []} loading={loading} allStores={stores} />}
       {!isBO && <RecentList rows={stats?.recent || []} loading={loading} isBO={isBO} />}
+
+      {/* Activity — moved below the store graph and made compact (secondary info). */}
+      <ActivityChart byDay={stats?.by_day || []} loading={loading} compact />
     </div>
   )
 }
@@ -201,7 +198,7 @@ function SplitKpiCard({ loading, feature, hoLabel, hoValue, hoSub, opsLabel, ops
   )
 }
 
-function ActivityChart({ byDay, loading }) {
+function ActivityChart({ byDay, loading, compact }) {
   const days = Array.isArray(byDay) ? byDay : []
 
   const hoTotal  = days.reduce((s, d) => s + (d.ho_count  || 0), 0)
@@ -241,7 +238,7 @@ function ActivityChart({ byDay, loading }) {
   const lastLabel  = days.length ? labelDate(days[days.length - 1].date) : ''
 
   return (
-    <div className="ac-card">
+    <div className="ac-card" style={compact ? { maxWidth: 640 } : undefined}>
       <div className="ac-accent" />
 
       <div className="ac-head">
@@ -252,7 +249,7 @@ function ActivityChart({ byDay, loading }) {
         </div>
       </div>
 
-      <div className="ac-body">
+      <div className="ac-body" style={compact ? { height: 150 } : undefined}>
         {loading ? (
           <div className="ac-loading"><span className="spinner spinner-dark" /></div>
         ) : (
