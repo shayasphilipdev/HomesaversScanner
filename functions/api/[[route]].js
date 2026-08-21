@@ -3618,6 +3618,10 @@ export async function onRequest(context) {
         barcode_status:      body.barcode_status || null,
         status:              body.status || 'pending',
         marked_for_deletion: false,
+        // Origin tag: records saved on the test/preview site (test.* or a
+        // preview deployment) are marked 'test' so they can be identified and
+        // kept out of the real data; live-site records stay null.
+        source:              url.hostname === 'homesaversscanner.pages.dev' ? null : 'test',
         created_at:          now,
         updated_at:          now
       })
