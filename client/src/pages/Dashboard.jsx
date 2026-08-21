@@ -206,32 +206,37 @@ function ActivityChart({ byDay, loading, compact }) {
   const opsTotal = days.reduce((s, d) => s + (d.ops_count || 0), 0)
   const fmt = (n) => n.toLocaleString('en-IE')
 
-  // SVG coordinate space. Drawn with preserveAspectRatio="none" so it stretches
-  // to fill the flex body and the bars always sit on the bottom baseline (VH).
-  const VW = 1000, VH = 300, GAP = 12
-  const n = days.length || 14
-  const slot = VW / n
-  const barW = Math.max(1, slot - GAP)
+  // SVG coordinate space (preserveAspectRatio="none" stretches it to fill the
+  // flex body). Two smooth lines — HO (blue) + Ops (orange). Ops dwarfs HO
+  // (thousands of checks vs a handful of queries), so each line is scaled to
+  // its OWN peak, so both read as flowing trends; real totals are in the legend.
+  const VW = 1000, VH = 300, PAD = 26
+  const dd = days.length === 1 ? [days[0], days[0]] : days   // one day → a flat line
+  const nPts = dd.length
 
-  const HO_MIN = 6        // min visible HO (blue) height when ho_count > 0
-  const ZERO_TICK = 3     // faint flat tick on the baseline for zero days
-
-  // Stacked scale: (ho + ops) mapped into VH. HO stays a thin base because Ops dwarfs it.
-  const maxStack = Math.max(1, ...days.map(d => (d.ho_count || 0) + (d.ops_count || 0)))
-  const yScale = (v) => (v / maxStack) * VH
-
-  const bars = days.map((d, i) => {
-    const x = i * slot + GAP / 2
-    const ho = d.ho_count || 0
-    const ops = d.ops_count || 0
-    const hoH = ho > 0 ? Math.max(yScale(ho), HO_MIN) : 0
-    let opsH = ops > 0 ? yScale(ops) : 0
-    if (hoH + opsH > VH) opsH = Math.max(0, VH - hoH)   // never eat the HO base
-    const hoY  = VH - hoH        // HO is the BOTTOM block — bottom edge on baseline
-    const opsY = hoY - opsH      // Ops stacked directly on top
-    const isZero = ho === 0 && ops === 0
-    return { i, x, ho, ops, opsY, opsH, hoY, hoH, isZero }
-  })
+  const buildLine = (key) => {
+    const max = Math.max(1, ...dd.map(d => d[key] || 0))
+    const pts = dd.map((d, i) => {
+      const x = nPts <= 1 ? VW / 2 : (i / (nPts - 1)) * VW
+      const y = VH - PAD - ((d[key] || 0) / max) * (VH - 2 * PAD)
+      return [x, y]
+    })
+    if (!pts.length) return { line: '', area: '' }
+    let line = `M${pts[0][0]},${pts[0][1]}`
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[i > 0 ? i - 1 : 0]
+      const p1 = pts[i]
+      const p2 = pts[i + 1]
+      const p3 = pts[i + 2 < pts.length ? i + 2 : i + 1]
+      const c1x = p1[0] + (p2[0] - p0[0]) / 6, c1y = p1[1] + (p2[1] - p0[1]) / 6
+      const c2x = p2[0] - (p3[0] - p1[0]) / 6, c2y = p2[1] - (p3[1] - p1[1]) / 6
+      line += `C${c1x},${c1y} ${c2x},${c2y} ${p2[0]},${p2[1]}`
+    }
+    const area = `${line} L${pts[pts.length - 1][0]},${VH} L${pts[0][0]},${VH} Z`
+    return { line, area }
+  }
+  const hoLine  = buildLine('ho_count')
+  const opsLine = buildLine('ops_count')
 
   const labelDate = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-IE', { day: '2-digit', month: 'short' }) : ''
   const firstLabel = days[0] ? labelDate(days[0].date) : ''
@@ -253,40 +258,33 @@ function ActivityChart({ byDay, loading, compact }) {
       <div className="ac-body" style={compact ? { height: 150 } : undefined}>
         {loading ? (
           <div className="ac-loading"><span className="spinner spinner-dark" /></div>
+        ) : !days.length ? (
+          <div className="empty-state" style={{ padding: 16 }}><p style={{ fontSize: 13 }}>No activity in this range yet.</p></div>
         ) : (
           <svg className="ac-svg" viewBox={`0 0 ${VW} ${VH}`} preserveAspectRatio="none"
-            role="img" aria-label={`Stacked bar chart of activity over the selected period. HO total ${fmt(hoTotal)}, Ops total ${fmt(opsTotal)}.`}>
+            role="img" aria-label={`Line chart of daily activity. HO total ${fmt(hoTotal)}, Ops total ${fmt(opsTotal)}.`}>
             <defs>
-              {/* HO blue: bright at top, medium blue at bottom — refined, never navy/muddy */}
-              <linearGradient id="acHoGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stopColor="#5BA8F5" />
-                <stop offset="1" stopColor="#2E78D6" />
+              <linearGradient id="acHoLine" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0" stopColor="#5BA8F5" /><stop offset="1" stopColor="#2E78D6" />
               </linearGradient>
-              {/* Ops orange: light at top, warm amber at bottom — premium, never burnt/dark */}
-              <linearGradient id="acOpsGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stopColor="#FFB066" />
-                <stop offset="1" stopColor="#F2843C" />
+              <linearGradient id="acOpsLine" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0" stopColor="#FFB066" /><stop offset="1" stopColor="#F2843C" />
+              </linearGradient>
+              <linearGradient id="acHoFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stopColor="#2E78D6" stopOpacity="0.16" /><stop offset="1" stopColor="#2E78D6" stopOpacity="0" />
+              </linearGradient>
+              <linearGradient id="acOpsFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stopColor="#F2843C" stopOpacity="0.16" /><stop offset="1" stopColor="#F2843C" stopOpacity="0" />
               </linearGradient>
             </defs>
 
             <line x1="0" y1={VH * (1 / 3)} x2={VW} y2={VH * (1 / 3)} className="ac-grid" />
             <line x1="0" y1={VH * (2 / 3)} x2={VW} y2={VH * (2 / 3)} className="ac-grid" />
-            <line x1="0" y1={VH} x2={VW} y2={VH} className="ac-baseline" />
 
-            {bars.map((b) => b.isZero ? (
-              <rect key={b.i} x={b.x} y={VH - ZERO_TICK} width={barW} height={ZERO_TICK} rx="0" className="ac-zero" />
-            ) : (
-              <g key={b.i}>
-                {/* Ops (orange) stacked ON TOP */}
-                {b.ops > 0 && (
-                  <rect x={b.x} y={b.opsY} width={barW} height={b.opsH} rx="0" fill="url(#acOpsGrad)" />
-                )}
-                {/* HO (blue) at the BOTTOM — crisp top edge meets Ops cleanly */}
-                {b.ho > 0 && (
-                  <rect x={b.x} y={b.hoY} width={barW} height={b.hoH} rx="0" fill="url(#acHoGrad)" />
-                )}
-              </g>
-            ))}
+            {opsLine.area && <path d={opsLine.area} fill="url(#acOpsFill)" />}
+            {hoLine.area  && <path d={hoLine.area}  fill="url(#acHoFill)" />}
+            {opsLine.line && <path d={opsLine.line} fill="none" stroke="url(#acOpsLine)" strokeWidth="4" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />}
+            {hoLine.line  && <path d={hoLine.line}  fill="none" stroke="url(#acHoLine)"  strokeWidth="4" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />}
           </svg>
         )}
       </div>
