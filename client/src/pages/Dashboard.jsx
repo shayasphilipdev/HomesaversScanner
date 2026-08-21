@@ -149,9 +149,10 @@ export default function Dashboard() {
         <KpiCard loading={loading} label="Store confirmed" value={ho.store_completed} sub="Loop closed" />
       </div>
 
-      <div className="dash-row">
+      <div className="dash-row dash-row--thirds">
         <TaskDonutOps    rows={stats?.by_task_type || []} loading={loading} />
         <TaskDonutChecks rows={stats?.by_task_type || []} loading={loading} />
+        {isBO && <StoresMissingDeptCheck byStore={stats?.by_store || []} allStores={stores} scopeStoreIds={scopedStoreIds} loading={loading} />}
       </div>
 
       {isBO && <StoreDonutGrid rows={stats?.by_store || []} loading={loading} allStores={stores} />}
@@ -486,6 +487,46 @@ function StoreDonutGrid({ rows, loading, allStores }) {
           <div className="empty-state" style={{ padding: 20 }}><p style={{ fontSize: 13 }}>No records in this range yet.</p></div>
         ) : (
           <StoreBarList display={display} />
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Active stores that have NOT recorded a Department Check (task type J) within
+// the selected period. Period-linked automatically: `byStore` comes from the
+// same stats fetch, which is scoped by the Today/Week/Month buttons up top.
+function StoresMissingDeptCheck({ byStore, allStores, scopeStoreIds, loading }) {
+  const doneJ = new Set()
+  for (const s of (byStore || [])) {
+    if ((s.types || []).some(t => t.code === 'J' && t.count > 0)) doneJ.add(s.id)
+  }
+  const missing = (allStores || [])
+    .filter(s => s.is_active !== false)
+    .filter(s => !scopeStoreIds || scopeStoreIds.includes(s.id))
+    .filter(s => !doneJ.has(s.id))
+    .sort((a, b) => (a.store_code || '').localeCompare(b.store_code || '', undefined, { numeric: true }))
+
+  return (
+    <div className="card">
+      <div className="card-header">
+        No Department Check
+        {!loading && <span className="chip" style={{ marginLeft: 'auto' }}><span className="chip-dot" />{missing.length}</span>}
+      </div>
+      <div className="card-body" style={{ maxHeight: 300, overflowY: 'auto' }}>
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: 24 }}><span className="spinner spinner-dark" /></div>
+        ) : missing.length === 0 ? (
+          <div className="empty-state" style={{ padding: 20 }}><p style={{ fontSize: 13 }}>✓ Every store did a Department Check.</p></div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {missing.map(s => (
+              <div key={s.id} className="flex-row" style={{ justifyContent: 'space-between', gap: 8, fontSize: 13, padding: '4px 0', borderBottom: '1px solid var(--border-soft)' }}>
+                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.store_name}</span>
+                <span className="td-muted" style={{ flexShrink: 0, fontSize: 12 }}>{s.store_code}</span>
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </div>
