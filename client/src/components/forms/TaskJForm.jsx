@@ -85,7 +85,7 @@ export default function TaskJForm({ onSaved, storeId }) {
             readerId="reader-j"
             placeholder="Scan or type the barcode"
             inlineAction={
-              <button type="submit" className="btn btn-primary" disabled={t.saving || t.lookupLoading} style={{ whiteSpace: 'nowrap' }}>
+              <button type="submit" className="btn btn-primary" disabled={t.saving || (t.lookupLoading && navigator.onLine)} style={{ whiteSpace: 'nowrap' }}>
                 {t.saving ? <span className="spinner" /> : 'Save'}
               </button>
             }

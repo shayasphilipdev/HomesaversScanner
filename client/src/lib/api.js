@@ -102,12 +102,16 @@ export const lookupProduct = (productCode) =>
 // primary key). Returns { barcode_no, ean_barcode, item_name, supl_id,
 // supplier_code, item_status, barcode_status } or null.
 export const lookupAltBarcode = (barcode) =>
-  request(`/alt-barcodes/lookup?barcode=${encodeURIComponent(barcode)}`)
+  (typeof navigator !== 'undefined' && !navigator.onLine)
+    ? Promise.resolve(null)   // offline: don't fire a doomed request — it would hang the scan
+    : request(`/alt-barcodes/lookup?barcode=${encodeURIComponent(barcode)}`)
 
 // Look up a price row by EAN barcode.
 // Returns { ean_barcode, item_group, item_subgrp_id, product_type, sale_rate } or null.
 export const lookupPrice = (ean) =>
-  request(`/prices/lookup?ean=${encodeURIComponent(ean)}`)
+  (typeof navigator !== 'undefined' && !navigator.onLine)
+    ? Promise.resolve(null)   // offline: skip — the record queues and drain() fills price/dept on sync
+    : request(`/prices/lookup?ean=${encodeURIComponent(ean)}`)
 
 // ── Photos ──────────────────────────────────────────────────────────────────
 // Note: photo upload uses multipart/form-data so we bypass the JSON `request`.
