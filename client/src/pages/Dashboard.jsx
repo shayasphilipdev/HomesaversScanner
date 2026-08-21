@@ -207,18 +207,18 @@ function ActivityChart({ byDay, loading, compact }) {
   const fmt = (n) => n.toLocaleString('en-IE')
 
   // SVG coordinate space (preserveAspectRatio="none" stretches it to fill the
-  // flex body). Two smooth lines — HO (blue) + Ops (orange). Ops dwarfs HO
-  // (thousands of checks vs a handful of queries), so each line is scaled to
-  // its OWN peak, so both read as flowing trends; real totals are in the legend.
+  // flex body). Two smooth lines — HO (blue) + Ops (orange) — on ONE SHARED
+  // scale so the real magnitude gap shows: Ops (thousands of checks) towers,
+  // while HO (a handful of queries) sits low near the baseline.
   const VW = 1000, VH = 300, PAD = 26
   const dd = days.length === 1 ? [days[0], days[0]] : days   // one day → a flat line
   const nPts = dd.length
+  const sharedMax = Math.max(1, ...dd.map(d => Math.max(d.ho_count || 0, d.ops_count || 0)))
 
   const buildLine = (key) => {
-    const max = Math.max(1, ...dd.map(d => d[key] || 0))
     const pts = dd.map((d, i) => {
       const x = nPts <= 1 ? VW / 2 : (i / (nPts - 1)) * VW
-      const y = VH - PAD - ((d[key] || 0) / max) * (VH - 2 * PAD)
+      const y = VH - PAD - ((d[key] || 0) / sharedMax) * (VH - 2 * PAD)
       return [x, y]
     })
     if (!pts.length) return { line: '', area: '' }
