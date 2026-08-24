@@ -411,7 +411,7 @@ async function runAutoCleanup(db, env) {
 
     // 1 — Determine which records are due for deletion.
     const [recSetting] = await db.select('app_settings', { select: 'value', key: 'eq.scan_record_retention_days' })
-    const recDays   = Math.max(1, Number(recSetting?.value || 90))
+    const recDays   = Math.max(1, Number(recSetting?.value || 21))
     const recCutoff = new Date(Date.now() - recDays * 86400000).toISOString()
 
     // M19: delete the photos attached to those records BEFORE removing the rows
@@ -438,17 +438,17 @@ async function runAutoCleanup(db, env) {
     // whose records were already deleted in a previous run, plus M18: includes
     // store_task_instances.photo_url via the updated list_old_photos RPC).
     const [photoSetting] = await db.select('app_settings', { select: 'value', key: 'eq.photo_retention_days' })
-    const photoDays = Math.max(1, Number(photoSetting?.value || 7))
+    const photoDays = Math.max(1, Number(photoSetting?.value || 21))
     const oldPhotos = await db.rpc('list_old_photos', { days: photoDays })
     for (const o of (oldPhotos || [])) {
       await deleteStorageFile(o.name)
     }
 
     // 4 — Product Query board: remove questions (+ their answers + photos) older
-    // than the retention window (default 14 days). The board is a transient
+    // than the retention window (default 21 days). The board is a transient
     // "what is this product?" queue, not a long-term record.
     const [pqSetting] = await db.select('app_settings', { select: 'value', key: 'eq.product_query_retention_days' })
-    const pqDays   = Math.max(1, Number(pqSetting?.value || 14))
+    const pqDays   = Math.max(1, Number(pqSetting?.value || 21))
     const pqCutoff = new Date(Date.now() - pqDays * 86400000).toISOString()
     const doomedQ  = await db.select('product_questions', { select: 'id,photo_url', created_at: `lt.${pqCutoff}` })
     if (doomedQ.length) {
@@ -2294,7 +2294,7 @@ export async function onRequest(context) {
     if (path === '/admin/cleanup/task-records' && method === 'POST') {
       if (!isAdminRole(session)) return err('Forbidden', 403)
       const [setting] = await db.select('app_settings', { select: 'value', key: 'eq.scan_record_retention_days' })
-      const days   = Math.max(1, Number(setting?.value || 90))
+      const days   = Math.max(1, Number(setting?.value || 21))
       const cutoff = new Date(Date.now() - days * 86400000).toISOString()
       // M19: delete attached photos before removing records so nothing is orphaned.
       const storBase = `${env.SUPABASE_URL}/storage/v1/object/public/task-photos/`
@@ -2323,7 +2323,7 @@ export async function onRequest(context) {
     if (path === '/admin/cleanup/photos' && method === 'POST') {
       if (!isAdminRole(session)) return err('Forbidden', 403)
       const [setting] = await db.select('app_settings', { select: 'value', key: 'eq.photo_retention_days' })
-      const days = Math.max(1, Number(setting?.value || 7))
+      const days = Math.max(1, Number(setting?.value || 21))
 
       const old = await db.rpc('list_old_photos', { days })
       let deleted = 0, failed = 0

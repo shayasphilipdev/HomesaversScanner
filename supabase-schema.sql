@@ -52,8 +52,9 @@ CREATE TABLE IF NOT EXISTS app_settings (
 INSERT INTO app_settings (key, value) VALUES
   ('backoffice_pin_hash',         ''),     -- set via: SELECT crypt('pin', gen_salt('bf'))
   ('list_auto_close_hours',       '24'),
-  ('scan_record_retention_days',  '90'),
-  ('photo_retention_days',        '7'),
+  ('scan_record_retention_days',  '21'),
+  ('photo_retention_days',        '21'),
+  ('product_query_retention_days','21'),
   ('last_auto_cleanup_at',        '')      -- tracks the last background cleanup run
 ON CONFLICT (key) DO NOTHING;
 
