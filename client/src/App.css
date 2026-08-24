@@ -751,6 +751,24 @@ input.scan-input {
 /* ── Table ── */
 .table-wrap { overflow-x: auto; }
 
+/* Pricing grid is very wide (20+ columns). Give the table a floor width so its
+   columns don't wrap-and-cram to fit the card — that's what was hiding the
+   horizontal scrollbar. The wrapper then scrolls sideways. Cap the height and
+   pin the header so the horizontal scrollbar stays on screen instead of being
+   stranded at the bottom of a long list. */
+.pricing-scroll {
+  overflow: auto;
+  max-height: calc(100vh - 230px);
+}
+.pricing-scroll table {
+  min-width: 2000px;
+}
+.pricing-scroll thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
