@@ -769,6 +769,20 @@ input.scan-input {
   z-index: 3;
 }
 
+/* Data Sync (Admin → Settings): the sync cards in a balanced 2-up grid that
+   collapses to one column on small screens. align-items:start keeps each card
+   at its natural height (the manual-upload cards are taller than the
+   auto-sync ones), so rows don't stretch raggedly. */
+.sync-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 860px) {
+  .sync-grid { grid-template-columns: 1fr; }
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
