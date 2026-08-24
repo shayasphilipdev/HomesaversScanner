@@ -51,6 +51,24 @@ function ConvertTo-JsonArray {
   return (ConvertTo-Json -InputObject $arr -Compress)
 }
 
+# Build a cookie session from a "name=value; name2=value2" string. Windows
+# PowerShell 5.1's Invoke-RestMethod ignores a Cookie header passed via
+# -Headers, so the cookies must go through a WebRequestSession instead.
+function New-CookieSession {
+  param([string]$CookieStr, [string]$DomainHost)
+  $sess = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+  foreach ($pair in ($CookieStr -split ';')) {
+    $kv = $pair.Trim()
+    if (-not $kv) { continue }
+    $i = $kv.IndexOf('=')
+    if ($i -lt 1) { continue }
+    $name = $kv.Substring(0, $i).Trim()
+    $val  = $kv.Substring($i + 1).Trim()
+    $sess.Cookies.Add((New-Object System.Net.Cookie($name, $val, "/", $DomainHost)))
+  }
+  return $sess
+}
+
 $headers = $null
 $recordsImported = 0
 $recordsSkipped  = 0
@@ -91,7 +109,9 @@ try {
 
   # --- pull the export ---
   Write-Log "GET $SourceUrl"
-  $resp = Invoke-RestMethod -Method Get -Uri $SourceUrl -Headers @{ "Cookie" = $Cookie } -TimeoutSec 300
+  $srcHost    = ([System.Uri]$SourceUrl).Host
+  $srcSession = New-CookieSession -CookieStr $Cookie -DomainHost $srcHost
+  $resp = Invoke-RestMethod -Method Get -Uri $SourceUrl -WebSession $srcSession -TimeoutSec 300
   if (-not $resp) { throw "Empty response from source." }
   if ($null -ne $resp.success -and -not $resp.success) { throw "Source returned success=false." }
   $data = $resp.data

@@ -761,6 +761,43 @@ export async function onRequest(context) {
       return json({ ok: true })
     }
 
+    // ── CN-code master ────────────────────────────────────────────────────────
+    // Nightly full-replace list of product_prism_code values (the same value as
+    // ean_barcode in prices/alt_barcodes) from the external CN-code master.
+    // We store ONLY the code — a membership list of products in the customs /
+    // import CN-code master. The job (scripts/sync-cn-codes.ps1) calls /reset to
+    // empty the table, then posts the codes in chunks. Auth = PRODUCT_SYNC_SECRET.
+    if (path === '/cn-codes/sync/reset' && method === 'POST') {
+      if (!env.PRODUCT_SYNC_SECRET) return err('PRODUCT_SYNC_SECRET not configured', 500)
+      if ((request.headers.get('X-Sync-Secret') || '') !== env.PRODUCT_SYNC_SECRET) return err('Forbidden', 403)
+      await db.rpc('truncate_cn_code_master', {})
+      return json({ ok: true })
+    }
+
+    if (path === '/cn-codes/sync' && method === 'POST') {
+      if (!env.PRODUCT_SYNC_SECRET) return err('PRODUCT_SYNC_SECRET not configured', 500)
+      if ((request.headers.get('X-Sync-Secret') || '') !== env.PRODUCT_SYNC_SECRET) return err('Forbidden', 403)
+      const rows = await request.json()
+      if (!Array.isArray(rows)) return err('Body must be a JSON array', 400)
+      // Accept bare strings OR objects with a product_prism_code field; dedupe.
+      const seen = new Set()
+      let skipped = 0
+      for (const r of rows) {
+        const code = (typeof r === 'string' ? r : (r?.product_prism_code ?? '')).toString().trim()
+        if (!code) { skipped++; continue }
+        seen.add(code)
+      }
+      const clean = Array.from(seen, c => ({ product_prism_code: c }))
+      if (!clean.length) return json({ written: 0, skipped })
+      const upRes = await fetch(`${env.SUPABASE_URL}/rest/v1/cn_code_master?on_conflict=product_prism_code`, {
+        method: 'POST',
+        headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal,resolution=merge-duplicates' },
+        body: JSON.stringify(clean)
+      })
+      if (!upRes.ok) return err(`CN-code upsert failed: ${(await upRes.text()).slice(0, 400)}`, 400)
+      return json({ written: clean.length, skipped })
+    }
+
     // Server clock — the sync captures this BEFORE importing so it can later
     // flush rows older than the run start (skew-free, no client clock used).
     if (path === '/sync/server-time' && method === 'GET') {
@@ -1035,43 +1072,6 @@ export async function onRequest(context) {
       if (!upRes.ok) return err(`Alt-barcode upsert failed: ${(await upRes.text()).slice(0, 400)}`, 400)
       const written = await upRes.json()
       return json({ written: written.length, skipped })
-    }
-
-    // ── CN-code master ────────────────────────────────────────────────────────
-    // Nightly full-replace list of product_prism_code values (the same value as
-    // ean_barcode in prices/alt_barcodes) from the external CN-code master.
-    // We store ONLY the code — a membership list of products in the customs /
-    // import CN-code master. The job (scripts/sync-cn-codes.ps1) calls /reset to
-    // empty the table, then posts the codes in chunks. Auth = PRODUCT_SYNC_SECRET.
-    if (path === '/cn-codes/sync/reset' && method === 'POST') {
-      if (!env.PRODUCT_SYNC_SECRET) return err('PRODUCT_SYNC_SECRET not configured', 500)
-      if ((request.headers.get('X-Sync-Secret') || '') !== env.PRODUCT_SYNC_SECRET) return err('Forbidden', 403)
-      await db.rpc('truncate_cn_code_master', {})
-      return json({ ok: true })
-    }
-
-    if (path === '/cn-codes/sync' && method === 'POST') {
-      if (!env.PRODUCT_SYNC_SECRET) return err('PRODUCT_SYNC_SECRET not configured', 500)
-      if ((request.headers.get('X-Sync-Secret') || '') !== env.PRODUCT_SYNC_SECRET) return err('Forbidden', 403)
-      const rows = await request.json()
-      if (!Array.isArray(rows)) return err('Body must be a JSON array', 400)
-      // Accept bare strings OR objects with a product_prism_code field; dedupe.
-      const seen = new Set()
-      let skipped = 0
-      for (const r of rows) {
-        const code = (typeof r === 'string' ? r : (r?.product_prism_code ?? '')).toString().trim()
-        if (!code) { skipped++; continue }
-        seen.add(code)
-      }
-      const clean = Array.from(seen, c => ({ product_prism_code: c }))
-      if (!clean.length) return json({ written: 0, skipped })
-      const upRes = await fetch(`${env.SUPABASE_URL}/rest/v1/cn_code_master?on_conflict=product_prism_code`, {
-        method: 'POST',
-        headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal,resolution=merge-duplicates' },
-        body: JSON.stringify(clean)
-      })
-      if (!upRes.ok) return err(`CN-code upsert failed: ${(await upRes.text()).slice(0, 400)}`, 400)
-      return json({ written: clean.length, skipped })
     }
 
     // Admin manual import of prices rows (parsed in browser, posted as JSON).
