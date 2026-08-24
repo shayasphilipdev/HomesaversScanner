@@ -43,6 +43,15 @@ export default function TaskKForm({ onSaved, storeId }) {
     setPriceInfo(null)
   }
 
+  // Wipe the previous scan's price/description the instant a new scan starts, so
+  // a fast sweep can never save a stale price — or a blank name — against the
+  // next barcode. (triggerLookup clears lookupInfo; these form fields aren't.)
+  const handleConfirm = (code) => {
+    setPriceInfo(null)
+    t.setForm(f => ({ ...f, description: '', sale_rate: '', item_group: '' }))
+    t.triggerLookup(code)
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!t.form.product_code.trim()) return t.setError('Scan or type a barcode first.')
@@ -79,7 +88,7 @@ export default function TaskKForm({ onSaved, storeId }) {
             label="Product Barcode *"
             value={t.form.product_code}
             onChange={t.update('product_code')}
-            onConfirm={t.triggerLookup}
+            onConfirm={handleConfirm}
             lookupLoading={t.lookupLoading}
             readerId="reader-k"
             placeholder="Scan or type the barcode"
@@ -87,7 +96,7 @@ export default function TaskKForm({ onSaved, storeId }) {
               <button
                 type="submit"
                 className="btn btn-primary"
-                disabled={t.saving}
+                disabled={t.saving || (t.lookupLoading && navigator.onLine)}
                 style={{ whiteSpace: 'nowrap' }}
               >
                 {t.saving ? <span className="spinner" /> : 'Save'}

@@ -19,7 +19,9 @@ export default function TaskHForm({ onSaved, storeId }) {
 
   const triggerLookup = async (code) => {
     if (!code || code.length < 4) { setLookupInfo(null); setPriceInfo(null); return }
-    setLookupLoading(true); setPriceInfo(null)
+    // Clear the previous scan's product/price before the new lookup so a blank
+    // or stale snapshot can't be saved against the next barcode.
+    setLookupInfo(null); setPriceInfo(null); setLookupLoading(true)
     try {
       const p = await lookupAltBarcode(code)
       setLookupInfo(p || null)
@@ -100,7 +102,7 @@ export default function TaskHForm({ onSaved, storeId }) {
             <button type="button" className="btn btn-outline" onClick={() => { setForm(EMPTY); setLookupInfo(null); setPriceInfo(null); setError('') }}>
               Clear
             </button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>
+            <button type="submit" className="btn btn-primary" disabled={saving || (lookupLoading && navigator.onLine)}>
               {saving ? <><span className="spinner" /> Saving…</> : 'Save Record'}
             </button>
           </div>
