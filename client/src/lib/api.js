@@ -93,8 +93,13 @@ export const getProductMaster = ({ q = '', page = 1, filters = {} } = {}) => {
 // Distinct values for the Product Master dropdown filters.
 export const getProductMasterFilters = () => request('/product-master/filters')
 
-// B&M Reductions report (back office only). Returns { rows: [...] }.
-export const getBmReductions = () => request('/reports/bm-reductions')
+// Dead Stock report (back office only). Optional created_at range. Returns { rows: [...] }.
+export const getBmReductions = ({ from, to } = {}) => {
+  const q = new URLSearchParams()
+  if (from) q.set('from', from)
+  if (to)   q.set('to', to)
+  return request('/reports/bm-reductions' + (q.toString() ? `?${q}` : ''))
+}
 
 // ── Products master lookup ──────────────────────────────────────────────────
 

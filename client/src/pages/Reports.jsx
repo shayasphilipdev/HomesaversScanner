@@ -281,6 +281,9 @@ const BM_KEYS    = ['store_code','product_id','description','category','status',
 const BM_HEADERS = ['Store Code','Product ID','Description','Category','Status','Retail Price','QTY in Store','Auth Reduced Price']
 const BM_MAX_SHOWN = 1000   // the grid is a preview; Excel export carries everything
 const BM_EMPTY_FILTERS = { store_code: '', category: '', status: '' }
+const bmDate = d => { const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` }
+const bmToday = () => bmDate(new Date())
+const bmDefaultFrom = () => bmDate(new Date(Date.now() - 30 * 86400000))
 
 function BMReductionsReport() {
   const toast = useToast()
@@ -289,15 +292,17 @@ function BMReductionsReport() {
   const [error, setError]     = useState('')
   const [downloading, setDownloading] = useState(false)
   const [filters, setFilters] = useState(BM_EMPTY_FILTERS)
+  const [from, setFrom]       = useState(bmDefaultFrom())
+  const [to, setTo]           = useState(bmToday())
 
   const load = () => {
     setLoading(true); setError('')
-    getBmReductions()
+    getBmReductions({ from: from ? `${from}T00:00:00` : '', to: to ? `${to}T23:59:59` : '' })
       .then(d => setRows(Array.isArray(d?.rows) ? d.rows : []))
       .catch(e => { setError(e.message); setRows([]) })
       .finally(() => setLoading(false))
   }
-  useEffect(() => { load() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [])
+  useEffect(() => { load() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [from, to])
 
   // Dropdown options — distinct values present in the current result set.
   const options = useMemo(() => {
@@ -341,7 +346,11 @@ function BMReductionsReport() {
           </button>
         </div>
 
-        <div className="flex-row" style={{ gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+        <div className="flex-row" style={{ gap: 8, marginBottom: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div className="filter-field"><label>From</label>
+            <input type="date" value={from} onChange={e => setFrom(e.target.value)} /></div>
+          <div className="filter-field"><label>To</label>
+            <input type="date" value={to} onChange={e => setTo(e.target.value)} /></div>
           <FilterSelect label="Store"          value={filters.store_code} opts={options.store_code} onChange={v => setFilter('store_code', v)} />
           <FilterSelect label="Category"       value={filters.category}   opts={options.category}   onChange={v => setFilter('category', v)} />
           <FilterSelect label="Product Status" value={filters.status}     opts={options.status}     onChange={v => setFilter('status', v)} />

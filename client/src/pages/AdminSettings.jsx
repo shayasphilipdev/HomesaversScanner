@@ -463,6 +463,7 @@ function SyncDashboard({ syncRuns, onRefresh, values, toast }) {
   const altRuns      = syncRuns.filter(r => r.kind === 'alt_barcodes' || !r.kind).slice(0, 3)
   const pricesRuns   = syncRuns.filter(r => r.kind === 'prices').slice(0, 3)
   const cnRuns       = syncRuns.filter(r => r.kind === 'cn_codes').slice(0, 5)
+  const bmRuns       = syncRuns.filter(r => r.kind === 'bm_daily').slice(0, 5)
   const manifestRuns = syncRuns.filter(r => r.kind === 'manifest').slice(0, 5)
 
   return (
@@ -497,6 +498,15 @@ function SyncDashboard({ syncRuns, onRefresh, values, toast }) {
           rowsLabel="codes imported"
           footnote="Pulled automatically every night (02:45) from the CN-code master app (Task Scheduler job 'Homesavers CN Code Sync'). Full replace of product codes; red = a run failed."
           runCmd="powershell scripts\\sync-cn-codes.ps1"
+          toast={toast}
+        />
+        <SyncCard
+          title="B&M Daily File"
+          icon="📦"
+          runs={bmRuns}
+          rowsLabel="product codes"
+          footnote="Pulled automatically every night (08:15) from the latest HomeSavers_*.xlsx B&M product file (Task Scheduler job 'Homesavers B&M Daily Sync'). Full replace of ProductIDs; red = a run failed."
+          runCmd="powershell scripts\\sync-bm-daily.ps1"
           toast={toast}
         />
         <SyncCard

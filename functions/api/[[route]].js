@@ -2617,7 +2617,12 @@ export async function onRequest(context) {
     // minus anything in (B&M Daily File − CN Code Master). See report_bm_reductions().
     if (path === '/reports/bm-reductions' && method === 'GET') {
       if (!isBO) return err('Back office only', 403)
-      const rows = await db.rpc('report_bm_reductions', {})
+      const from = url.searchParams.get('from')
+      const to   = url.searchParams.get('to')
+      const rows = await db.rpc('report_bm_reductions', {
+        p_from: from ? new Date(from).toISOString() : null,
+        p_to:   to   ? new Date(to).toISOString()   : null
+      })
       return json({ rows: Array.isArray(rows) ? rows : [] })
     }
 
