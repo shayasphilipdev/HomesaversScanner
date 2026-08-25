@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
+import { isTestEnv } from '../lib/env.js'
 
-// Collapsible "How do I report …?" panel shown at the top of the HO Tasks page.
+// Collapsible "How do I report …?" panel shown at the bottom of the HO Tasks page.
 // Covers every HO task type in the order they appear in the picker. Product
 // description and supplier always auto-fill from the barcode scan, so the
 // "What to fill" column lists only what the user actively enters.
@@ -9,7 +10,7 @@ import { useState, useEffect } from 'react'
 
 const STORAGE_KEY = 'hs_ho_tasks_help_open'
 
-const TASKS = [
+const BASE_TASKS = [
   { code: 'K', name: 'Price Check',
     use: "Check or confirm a product's selling price and department.",
     fields: 'Scan barcode — description, selling price & department fill in automatically. Save.' },
@@ -40,6 +41,9 @@ const TASKS = [
   { code: 'H', name: 'Stock Count', once: true,
     use: 'Recording how many units are on the shop floor (usually when HO asks).',
     fields: 'Scan barcode · count on the shop floor · note.' },
+  { code: 'L', name: 'Expiry Date Check', testOnly: true,
+    use: 'Record the expiry date of a product and what action was taken.',
+    fields: 'Scan barcode — description fills in automatically. Enter the expiry date (DD / MM / YY boxes — auto-advance as you type). Pick an action: Reduced · Removed · Rotated · OK / In date. Date turns red if ≤ 7 days or already expired, amber if ≤ 14 days.' },
   { code: 'I', name: 'Miscellaneous', once: true,
     use: "Anything that doesn't fit the other task types — add a clear note.",
     fields: 'Scan barcode · product name as printed on the item · note.' }
@@ -49,6 +53,9 @@ export default function HoTasksHelp() {
   // Collapsed by default. Stays closed/open per browser via localStorage.
   const [open, setOpen] = useState(() => localStorage.getItem(STORAGE_KEY) === '1')
   useEffect(() => { localStorage.setItem(STORAGE_KEY, open ? '1' : '0') }, [open])
+
+  // Task L is only visible on the test app — hide it from the guide on live.
+  const tasks = isTestEnv() ? BASE_TASKS : BASE_TASKS.filter(t => !t.testOnly)
 
   return (
     <div className="card" style={{ marginBottom: 16 }}>
@@ -72,26 +79,32 @@ export default function HoTasksHelp() {
       {open && (
         <div className="card-body" style={{ paddingTop: 0 }}>
           <p className="note" style={{ marginTop: 0, marginBottom: 12, fontSize: 13 }}>
-            Pick the task type from the dropdown below, scan the barcode, fill the form, tap <strong>Save Record</strong>.
-            The product description and supplier fill in automatically on scan. Records go to Head Office for review;
-            once they come back as <strong>Completed by HO</strong>, check the till and tap <strong>✓ Clear</strong> to remove from your list.
+            Pick the task type from the tabs above, scan the barcode, fill the form, tap <strong>Save</strong>.
+            The product description and supplier fill in automatically on scan.
+            Records go to Head Office for review. HO can mark a record as{' '}
+            <strong>Completed by HQ</strong> (action taken — check the till and tap <strong>✓ Store confirmed</strong> to remove from your list)
+            or <strong>No change needed</strong> (no action required on your end).
+            If you go offline, records save locally and sync automatically when back online.
           </p>
           <div className="table-wrap">
             <table style={{ fontSize: 13 }}>
               <thead>
                 <tr>
-                  <th style={{ width: 180 }}>Task</th>
+                  <th style={{ width: 190 }}>Task</th>
                   <th>Use it when…</th>
                   <th>What to fill</th>
                 </tr>
               </thead>
               <tbody>
-                {TASKS.map(t => (
+                {tasks.map(t => (
                   <tr key={t.code}>
                     <td>
                       <strong>{t.name}</strong>
                       {t.once && (
                         <span className="note" style={{ display: 'block', fontSize: 12, marginTop: 2 }}>once-off</span>
+                      )}
+                      {t.testOnly && (
+                        <span className="note" style={{ display: 'block', fontSize: 12, marginTop: 2, color: '#B47F1E' }}>test app only</span>
                       )}
                     </td>
                     <td>{t.use}</td>
@@ -103,7 +116,8 @@ export default function HoTasksHelp() {
           </div>
           <p className="note" style={{ marginTop: 10, marginBottom: 0, fontSize: 12 }}>
             🟢 Top-right badge must show <strong>Store Login · &lt;your store&gt;</strong> before you log anything.
-            If you go offline (Wi-Fi down), records save locally and sync when you're back online.
+            For Price Check and Department Check the lookup runs automatically — if the device is offline,
+            the barcode is saved without price/department data and can be looked up by HO later.
           </p>
         </div>
       )}
