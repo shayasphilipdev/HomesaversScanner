@@ -40,7 +40,7 @@ const STATUS_LABEL = {
 
 const SUBTITLES = {
   hq:         'HO task records — error reports from stores',
-  bmreductions:'B&M Reductions — one-off / clearance B&M products from Department Check',
+  bmreductions:'Dead Stock — one-off / clearance B&M products from Department Check',
   store:      'Store tasks — operational checklist completions',
   product:    'Product Master — look up any product',
   master:     'Master reports — back-office data tables',
@@ -65,7 +65,7 @@ export default function Reports() {
         <div className="flex-row" style={{ gap: 6, flexWrap: 'wrap' }}>
           <button className={`btn btn-sm ${tab === 'hq' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('hq')}>HO records</button>
           {isBO && (
-            <button className={`btn btn-sm ${tab === 'bmreductions' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('bmreductions')}>B&amp;M Reductions</button>
+            <button className={`btn btn-sm ${tab === 'bmreductions' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('bmreductions')}>Dead Stock</button>
           )}
           <button className={`btn btn-sm ${tab === 'store' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('store')}>Store tasks</button>
           <button className={`btn btn-sm ${tab === 'product' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('product')}>Product Master</button>
@@ -271,7 +271,7 @@ async function authedFetch(url) {
   return res
 }
 
-// ── B&M Reductions ────────────────────────────────────────────────────────────
+// ── Dead Stock ────────────────────────────────────────────────────────────────
 // Back office only. Department Check scans of supplier 510001 (B&M), limited to
 // the 4 clearance/dropped product types and present in Item_Master, minus any
 // product in (B&M Daily File − CN Code Master). One row per store per product;
@@ -280,6 +280,7 @@ async function authedFetch(url) {
 const BM_KEYS    = ['store_code','product_id','description','category','status','retail_price','qty_in_store','auth_reduced_price']
 const BM_HEADERS = ['Store Code','Product ID','Description','Category','Status','Retail Price','QTY in Store','Auth Reduced Price']
 const BM_MAX_SHOWN = 1000   // the grid is a preview; Excel export carries everything
+const BM_EMPTY_FILTERS = { store_code: '', category: '', status: '' }
 
 function BMReductionsReport() {
   const toast = useToast()
@@ -287,6 +288,7 @@ function BMReductionsReport() {
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState('')
   const [downloading, setDownloading] = useState(false)
+  const [filters, setFilters] = useState(BM_EMPTY_FILTERS)
 
   const load = () => {
     setLoading(true); setError('')
@@ -297,15 +299,31 @@ function BMReductionsReport() {
   }
   useEffect(() => { load() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [])
 
-  const distinctProducts = useMemo(() => new Set(rows.map(r => r.product_id)).size, [rows])
-  const shown = rows.slice(0, BM_MAX_SHOWN)
+  // Dropdown options — distinct values present in the current result set.
+  const options = useMemo(() => {
+    const uniq = key => [...new Set(rows.map(r => r[key]).filter(Boolean))].sort()
+    return { store_code: uniq('store_code'), category: uniq('category'), status: uniq('status') }
+  }, [rows])
+
+  const filtered = useMemo(() => rows.filter(r =>
+    (!filters.store_code || r.store_code === filters.store_code) &&
+    (!filters.category   || r.category   === filters.category) &&
+    (!filters.status     || r.status     === filters.status)
+  ), [rows, filters])
+
+  const setFilter    = (k, v) => setFilters(f => ({ ...f, [k]: v }))
+  const clearFilters = () => setFilters(BM_EMPTY_FILTERS)
+  const anyFilter    = Object.values(filters).some(Boolean)
+
+  const distinctProducts = useMemo(() => new Set(filtered.map(r => r.product_id)).size, [filtered])
+  const shown = filtered.slice(0, BM_MAX_SHOWN)
 
   const exportExcel = async () => {
-    if (!rows.length) { toast.error('Nothing to export.'); return }
+    if (!filtered.length) { toast.error('Nothing to export.'); return }
     setDownloading(true)
     try {
       const stamp = new Date().toISOString().slice(0, 10)
-      await downloadExcel(`B&M Reductions - ${stamp}.xlsx`, rows, BM_KEYS, BM_HEADERS)
+      await downloadExcel(`Dead Stock - ${stamp}.xlsx`, filtered, BM_KEYS, BM_HEADERS)
     } catch (e) { toast.error(e.message) } finally { setDownloading(false) }
   }
 
@@ -315,20 +333,27 @@ function BMReductionsReport() {
         <div className="flex-row" style={{ gap: 8, marginBottom: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <span className="note" style={{ fontSize: 12 }}>
             {loading ? 'Loading…'
-              : `${rows.length.toLocaleString('en-IE')} row${rows.length !== 1 ? 's' : ''} · ${distinctProducts.toLocaleString('en-IE')} distinct product${distinctProducts !== 1 ? 's' : ''}`}
+              : `${filtered.length.toLocaleString('en-IE')} row${filtered.length !== 1 ? 's' : ''} · ${distinctProducts.toLocaleString('en-IE')} distinct product${distinctProducts !== 1 ? 's' : ''}`}
           </span>
           <button className="btn btn-sm btn-outline" style={{ marginLeft: 'auto' }} onClick={load} disabled={loading}>↻ Refresh</button>
-          <button className="btn btn-sm btn-primary" onClick={exportExcel} disabled={downloading || !rows.length}>
+          <button className="btn btn-sm btn-primary" onClick={exportExcel} disabled={downloading || !filtered.length}>
             {downloading ? <span className="spinner" /> : '↓ Excel'}
           </button>
         </div>
 
+        <div className="flex-row" style={{ gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+          <FilterSelect label="Store"          value={filters.store_code} opts={options.store_code} onChange={v => setFilter('store_code', v)} />
+          <FilterSelect label="Category"       value={filters.category}   opts={options.category}   onChange={v => setFilter('category', v)} />
+          <FilterSelect label="Product Status" value={filters.status}     opts={options.status}     onChange={v => setFilter('status', v)} />
+          {anyFilter && <button className="btn btn-sm btn-outline" onClick={clearFilters}>✕ Clear filters</button>}
+        </div>
+
         <p className="note" style={{ fontSize: 12, marginTop: 0 }}>
-          B&amp;M (supplier 510001) one-off / clearance products from Department Check, excluding items in the B&amp;M Daily File that are not in the CN Code Master. Fill in <strong>QTY in Store</strong> and <strong>Auth Reduced Price</strong> per store.
+          Dead stock — B&amp;M (supplier 510001) one-off / clearance products from Department Check, excluding items in the B&amp;M Daily File that are not in the CN Code Master. Fill in <strong>QTY in Store</strong> and <strong>Auth Reduced Price</strong> per store.
         </p>
 
         {error && <div className="login-error" style={{ marginBottom: 8 }}>{error}</div>}
-        {!loading && !rows.length && !error && <p className="note">No products match the criteria.</p>}
+        {!loading && !filtered.length && !error && <p className="note">No products match{anyFilter ? ' these filters' : ' the criteria'}.</p>}
 
         {!!shown.length && (
           <>
@@ -351,9 +376,9 @@ function BMReductionsReport() {
                 </tbody>
               </table>
             </div>
-            {rows.length > shown.length && (
+            {filtered.length > shown.length && (
               <p className="note" style={{ fontSize: 12, marginTop: 8 }}>
-                Showing the first {BM_MAX_SHOWN.toLocaleString('en-IE')} of {rows.length.toLocaleString('en-IE')} rows — use <strong>↓ Excel</strong> for the full list.
+                Showing the first {BM_MAX_SHOWN.toLocaleString('en-IE')} of {filtered.length.toLocaleString('en-IE')} rows — use <strong>↓ Excel</strong> for the full list.
               </p>
             )}
           </>
