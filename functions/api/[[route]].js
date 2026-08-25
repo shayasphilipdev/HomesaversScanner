@@ -3849,6 +3849,12 @@ export async function onRequest(context) {
       const taskTypeName = Object.fromEntries(taskTypes.map(t => [t.code, t.name]))
       const storeName    = Object.fromEntries(stores.map(s => [s.id, s.store_name]))
 
+      const daysToExpiry = (exp, createdIso) => {
+        if (!exp || !/^\d{4}-\d{2}-\d{2}$/.test(exp)) return ''
+        const e = Date.parse(exp + 'T00:00:00Z')
+        const c = Date.parse(String(createdIso || '').slice(0, 10) + 'T00:00:00Z')
+        return (isNaN(e) || isNaN(c)) ? '' : String(Math.round((e - c) / 86400000))
+      }
       const flatten = r => ({
         barcode_no:          r.barcode_no || r.product_code || '',
         product_barcode:     r.product_barcode || '',
@@ -3868,6 +3874,9 @@ export async function onRequest(context) {
         photo_product_url:   r.photo_product_url || '',
         photo_barcode_url:   r.photo_barcode_url || '',
         details:             fmtDetails(r.details),
+        expiry_date:         r.details?.expiry_date || '',
+        days_to_expiry:      daysToExpiry(r.details?.expiry_date, r.created_at),
+        action:              r.details?.action_taken || '',
         created_at:          fmtReportDate(r.created_at),
         supplier_code:        r.supplier_code || '',
         actual_product_name:  r.actual_product_name || '',
@@ -3880,8 +3889,8 @@ export async function onRequest(context) {
       // Barcode Photo, Supplier Code, Actual Product Name.
       // NB: `item_status` (the Active/Inactive flag) is headed "Item Status" so
       // it doesn't collide with the new "Product Status" = product_type column.
-      const cols    = ['barcode_no','product_barcode','item_name','selling_price','product_type','task_type','details','supl_id','item_status','barcode_status','status','created_at','store_name','uom','quantity','notes','review_notes','photo_product_url','photo_barcode_url','supplier_code','actual_product_name']
-      const headers = ['Product Barcode','Product Code','Product Description','Selling Price','Product Status','Task','Details','Supplier','Item Status','Barcode Status','Status','Date','Store','UOM','Quantity','Notes','HO Notes','Product Photo','Barcode Photo','Supplier Code','Actual Product Name']
+      const cols    = ['barcode_no','product_barcode','item_name','selling_price','product_type','task_type','details','expiry_date','days_to_expiry','action','supl_id','item_status','barcode_status','status','created_at','store_name','uom','quantity','notes','review_notes','photo_product_url','photo_barcode_url','supplier_code','actual_product_name']
+      const headers = ['Product Barcode','Product Code','Product Description','Selling Price','Product Status','Task','Details','Expiry Date','Days to Expiry','Action','Supplier','Item Status','Barcode Status','Status','Date','Store','UOM','Quantity','Notes','HO Notes','Product Photo','Barcode Photo','Supplier Code','Actual Product Name']
       const urlCols = new Set(['photo_product_url','photo_barcode_url'])
       const esc     = v => `"${String(v ?? '').replace(/"/g, '""')}"`
       const escUrl  = v => {
