@@ -798,6 +798,40 @@ export async function onRequest(context) {
       return json({ written: clean.length, skipped })
     }
 
+    // ── B&M Daily File ────────────────────────────────────────────────────────
+    // Nightly full-replace list of ProductID (= ean_barcode) from the latest
+    // HomeSavers_*.xlsx B&M product file. Same shape as the CN-code sync; feeds
+    // the B&M Reductions report. Job: scripts/sync-bm-daily.ps1.
+    if (path === '/bm-daily/sync/reset' && method === 'POST') {
+      if (!env.PRODUCT_SYNC_SECRET) return err('PRODUCT_SYNC_SECRET not configured', 500)
+      if ((request.headers.get('X-Sync-Secret') || '') !== env.PRODUCT_SYNC_SECRET) return err('Forbidden', 403)
+      await db.rpc('truncate_bm_daily_file', {})
+      return json({ ok: true })
+    }
+
+    if (path === '/bm-daily/sync' && method === 'POST') {
+      if (!env.PRODUCT_SYNC_SECRET) return err('PRODUCT_SYNC_SECRET not configured', 500)
+      if ((request.headers.get('X-Sync-Secret') || '') !== env.PRODUCT_SYNC_SECRET) return err('Forbidden', 403)
+      const rows = await request.json()
+      if (!Array.isArray(rows)) return err('Body must be a JSON array', 400)
+      const seen = new Set()
+      let skipped = 0
+      for (const r of rows) {
+        const code = (typeof r === 'string' ? r : (r?.product_id ?? '')).toString().trim()
+        if (!code) { skipped++; continue }
+        seen.add(code)
+      }
+      const clean = Array.from(seen, c => ({ product_id: c }))
+      if (!clean.length) return json({ written: 0, skipped })
+      const upRes = await fetch(`${env.SUPABASE_URL}/rest/v1/bm_daily_file?on_conflict=product_id`, {
+        method: 'POST',
+        headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal,resolution=merge-duplicates' },
+        body: JSON.stringify(clean)
+      })
+      if (!upRes.ok) return err(`B&M daily upsert failed: ${(await upRes.text()).slice(0, 400)}`, 400)
+      return json({ written: clean.length, skipped })
+    }
+
     // Server clock — the sync captures this BEFORE importing so it can later
     // flush rows older than the run start (skew-free, no client clock used).
     if (path === '/sync/server-time' && method === 'GET') {
@@ -2575,6 +2609,16 @@ export async function onRequest(context) {
       })
       if (!updated.length) return err('Instance not found', 404)
       return json(updated[0])
+    }
+
+    // GET /reports/bm-reductions — B&M Reductions report (back office only).
+    // Distinct (store, product) from Department Check scans of supplier 510001,
+    // limited to the 4 clearance/dropped product types and present in Item_Master,
+    // minus anything in (B&M Daily File − CN Code Master). See report_bm_reductions().
+    if (path === '/reports/bm-reductions' && method === 'GET') {
+      if (!isBO) return err('Back office only', 403)
+      const rows = await db.rpc('report_bm_reductions', {})
+      return json({ rows: Array.isArray(rows) ? rows : [] })
     }
 
     // GET /reports/store-tasks?from=&to=&storeId=&template_id=

@@ -6,7 +6,7 @@ import {
   deleteTaskRecord, bulkDeleteTaskRecords, deleteJkMatching,
   adminListTemplates, getStoreTaskReportRows,
   getTaskRecordEvents, clearToken, getProductMaster, getProductMasterFilters,
-  getSpacePlanReport, getCompetitorReport, sendToPricing
+  getSpacePlanReport, getCompetitorReport, sendToPricing, getBmReductions
 } from '../lib/api.js'
 import { COMPETITION_REPORT_COLS, COMPETITION_REPORT_HEADERS } from '../lib/competitionOptions.js'
 import { TASK_FORMS } from '../lib/taskTypes.js'
@@ -40,6 +40,7 @@ const STATUS_LABEL = {
 
 const SUBTITLES = {
   hq:         'HO task records — error reports from stores',
+  bmreductions:'B&M Reductions — one-off / clearance B&M products from Department Check',
   store:      'Store tasks — operational checklist completions',
   product:    'Product Master — look up any product',
   master:     'Master reports — back-office data tables',
@@ -50,6 +51,7 @@ const SUBTITLES = {
 export default function Reports() {
   const { session, appConfig } = useStore()
   const [tab, setTab] = useState('hq')
+  const isBO = session?.mode === 'backoffice'
   const showMaster = canAccessMasterReports(session)
   const showCompetition = appConfig?.competition_enabled !== false
 
@@ -62,6 +64,9 @@ export default function Reports() {
         </div>
         <div className="flex-row" style={{ gap: 6, flexWrap: 'wrap' }}>
           <button className={`btn btn-sm ${tab === 'hq' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('hq')}>HO records</button>
+          {isBO && (
+            <button className={`btn btn-sm ${tab === 'bmreductions' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('bmreductions')}>B&amp;M Reductions</button>
+          )}
           <button className={`btn btn-sm ${tab === 'store' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('store')}>Store tasks</button>
           <button className={`btn btn-sm ${tab === 'product' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('product')}>Product Master</button>
           <button className={`btn btn-sm ${tab === 'spaceplan' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('spaceplan')}>Space Plan</button>
@@ -74,6 +79,7 @@ export default function Reports() {
         </div>
       </div>
       {tab === 'hq'        && <HQReports />}
+      {tab === 'bmreductions' && isBO && <BMReductionsReport />}
       {tab === 'store'     && <StoreTaskReports />}
       {tab === 'product'   && <ProductMasterReport />}
       {tab === 'spaceplan' && <SpacePlanReport />}
@@ -263,6 +269,98 @@ async function authedFetch(url) {
   }
   if (!res.ok) throw new Error(`Server returned ${res.status}`)
   return res
+}
+
+// ── B&M Reductions ────────────────────────────────────────────────────────────
+// Back office only. Department Check scans of supplier 510001 (B&M), limited to
+// the 4 clearance/dropped product types and present in Item_Master, minus any
+// product in (B&M Daily File − CN Code Master). One row per store per product;
+// the last two columns (QTY in Store, Auth Reduced Price) are blank for stores
+// to fill in. See report_bm_reductions() / GET /reports/bm-reductions.
+const BM_KEYS    = ['store_code','product_id','description','category','status','retail_price','qty_in_store','auth_reduced_price']
+const BM_HEADERS = ['Store Code','Product ID','Description','Category','Status','Retail Price','QTY in Store','Auth Reduced Price']
+const BM_MAX_SHOWN = 1000   // the grid is a preview; Excel export carries everything
+
+function BMReductionsReport() {
+  const toast = useToast()
+  const [rows, setRows]       = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError]     = useState('')
+  const [downloading, setDownloading] = useState(false)
+
+  const load = () => {
+    setLoading(true); setError('')
+    getBmReductions()
+      .then(d => setRows(Array.isArray(d?.rows) ? d.rows : []))
+      .catch(e => { setError(e.message); setRows([]) })
+      .finally(() => setLoading(false))
+  }
+  useEffect(() => { load() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [])
+
+  const distinctProducts = useMemo(() => new Set(rows.map(r => r.product_id)).size, [rows])
+  const shown = rows.slice(0, BM_MAX_SHOWN)
+
+  const exportExcel = async () => {
+    if (!rows.length) { toast.error('Nothing to export.'); return }
+    setDownloading(true)
+    try {
+      const stamp = new Date().toISOString().slice(0, 10)
+      await downloadExcel(`B&M Reductions - ${stamp}.xlsx`, rows, BM_KEYS, BM_HEADERS)
+    } catch (e) { toast.error(e.message) } finally { setDownloading(false) }
+  }
+
+  return (
+    <div className="card">
+      <div className="card-body">
+        <div className="flex-row" style={{ gap: 8, marginBottom: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span className="note" style={{ fontSize: 12 }}>
+            {loading ? 'Loading…'
+              : `${rows.length.toLocaleString('en-IE')} row${rows.length !== 1 ? 's' : ''} · ${distinctProducts.toLocaleString('en-IE')} distinct product${distinctProducts !== 1 ? 's' : ''}`}
+          </span>
+          <button className="btn btn-sm btn-outline" style={{ marginLeft: 'auto' }} onClick={load} disabled={loading}>↻ Refresh</button>
+          <button className="btn btn-sm btn-primary" onClick={exportExcel} disabled={downloading || !rows.length}>
+            {downloading ? <span className="spinner" /> : '↓ Excel'}
+          </button>
+        </div>
+
+        <p className="note" style={{ fontSize: 12, marginTop: 0 }}>
+          B&amp;M (supplier 510001) one-off / clearance products from Department Check, excluding items in the B&amp;M Daily File that are not in the CN Code Master. Fill in <strong>QTY in Store</strong> and <strong>Auth Reduced Price</strong> per store.
+        </p>
+
+        {error && <div className="login-error" style={{ marginBottom: 8 }}>{error}</div>}
+        {!loading && !rows.length && !error && <p className="note">No products match the criteria.</p>}
+
+        {!!shown.length && (
+          <>
+            <div className="table-wrap">
+              <table style={{ fontSize: 13 }}>
+                <thead><tr>{BM_HEADERS.map(h => <th key={h} style={{ whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {shown.map((r, i) => (
+                    <tr key={i}>
+                      <td style={{ whiteSpace: 'nowrap' }}>{r.store_code}</td>
+                      <td className="td-code" style={{ whiteSpace: 'nowrap' }}>{r.product_id}</td>
+                      <td>{r.description}</td>
+                      <td>{r.category}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}>{r.status}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}>{r.retail_price != null && r.retail_price !== '' ? Number(r.retail_price).toFixed(2) : ''}</td>
+                      <td></td>
+                      <td></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {rows.length > shown.length && (
+              <p className="note" style={{ fontSize: 12, marginTop: 8 }}>
+                Showing the first {BM_MAX_SHOWN.toLocaleString('en-IE')} of {rows.length.toLocaleString('en-IE')} rows — use <strong>↓ Excel</strong> for the full list.
+              </p>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
 }
 
 function HQReports() {

@@ -93,6 +93,9 @@ export const getProductMaster = ({ q = '', page = 1, filters = {} } = {}) => {
 // Distinct values for the Product Master dropdown filters.
 export const getProductMasterFilters = () => request('/product-master/filters')
 
+// B&M Reductions report (back office only). Returns { rows: [...] }.
+export const getBmReductions = () => request('/reports/bm-reductions')
+
 // ── Products master lookup ──────────────────────────────────────────────────
 
 export const lookupProduct = (productCode) =>
