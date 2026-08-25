@@ -339,7 +339,7 @@ function TaskTypeBars({ rows, loading }) {
 
 // Donut charts — split into Ops tasks vs Check tasks.
 const DONUT_COLORS = ['#0E9A52', '#12A156', '#0A7339', '#3960A8', '#B47F1E', '#C96442', '#7E57C2', '#2D7A4E', '#E07346', '#5DCAA5', '#9A6B12']
-const CHECK_CODES  = new Set(['J', 'H', 'K'])
+const CHECK_CODES  = new Set(['J', 'H', 'K', 'L'])
 
 function TaskDonutOps({ rows, dataDays, loading }) {
   const data = (rows || []).filter(r => r.count > 0 && !CHECK_CODES.has(r.code))
