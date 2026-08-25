@@ -85,6 +85,14 @@ export default function Dashboard() {
     return null
   }, [scope, stores, isBO, unrestricted, myStoreIds])
 
+  // The stores that belong to the CURRENT scope (matches by_store), so the Store
+  // Performance grid + No-Department-Check card never list stores outside scope.
+  const scopeStores = useMemo(() => {
+    if (scopedStoreIds === null) return stores
+    const idSet = new Set(scopedStoreIds)
+    return stores.filter(s => idSet.has(s.id))
+  }, [stores, scopedStoreIds])
+
   useEffect(() => {
     const { from, to } = relativeRange(rangeKey)
     setLoading(true); setError('')
@@ -177,7 +185,7 @@ export default function Dashboard() {
         <StatusBreakdown totals={totals} loading={loading} />
       </div>
 
-      {isBO && <StoreDonutGrid rows={stats?.by_store || []} loading={loading} allStores={stores} />}
+      {isBO && <StoreDonutGrid rows={stats?.by_store || []} loading={loading} allStores={scopeStores} />}
       {!isBO && <RecentList rows={stats?.recent || []} loading={loading} isBO={isBO} />}
     </div>
   )
