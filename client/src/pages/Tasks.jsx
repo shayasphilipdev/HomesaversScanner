@@ -10,6 +10,7 @@ import CurrentStorePicker from '../components/CurrentStorePicker.jsx'
 import HoTasksHelp from '../components/HoTasksHelp.jsx'
 import { useToast } from '../components/Toast.jsx'
 import { failedCount } from '../lib/outbox.js'
+import { isTestEnv } from '../lib/env.js'
 
 export default function Tasks() {
   const { session } = useStore()
@@ -53,7 +54,9 @@ export default function Tasks() {
 
   useEffect(() => {
     getTaskTypes()
-      .then(rows => {
+      .then(all => {
+        // Expiry Date Check (L) is test-only for now — hide it on the live app.
+        const rows = isTestEnv() ? all : all.filter(t => t.code !== 'L')
         setTaskTypes(rows)
         // Store users default to Department Check (J); back office defaults to
         // the first daily task type, then whatever is first.
