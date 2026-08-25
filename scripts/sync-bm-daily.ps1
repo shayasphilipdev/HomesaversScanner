@@ -14,7 +14,9 @@
 
 [CmdletBinding()]
 param(
-  [string]$Folder      = "Y:\Supply Chain & Buying - Shared\Data\B&M Product File Excel\2026",
+  # UNC path (not the Y: mapped drive) so it also resolves when the task runs
+  # unattended / whether-logged-on-or-not, where per-user drive maps don't exist.
+  [string]$Folder      = "\\192.168.1.205\Buying Data\Supply Chain & Buying - Shared\Data\B&M Product File Excel\2026",
   [string]$FilePattern = "HomeSavers_*.xlsx",
   [string]$Sheet       = "First Sheet",
   [string]$Column      = "ProductID",
