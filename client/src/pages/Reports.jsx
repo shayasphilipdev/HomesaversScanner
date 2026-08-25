@@ -280,7 +280,7 @@ async function authedFetch(url) {
 const BM_KEYS    = ['store_code','product_id','description','category','status','retail_price','qty_in_store','auth_reduced_price']
 const BM_HEADERS = ['Store Code','Product ID','Description','Category','Status','Retail Price','QTY in Store','Auth Reduced Price']
 const BM_MAX_SHOWN = 1000   // the grid is a preview; Excel export carries everything
-const BM_EMPTY_FILTERS = { store_code: '', category: '', status: '' }
+const BM_EMPTY_FILTERS = { store_code: [], category: [], status: [] }
 const bmDate = d => { const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` }
 const bmToday = () => bmDate(new Date())
 const bmDefaultFrom = () => bmDate(new Date(Date.now() - 30 * 86400000))
@@ -288,37 +288,38 @@ const bmDefaultFrom = () => bmDate(new Date(Date.now() - 30 * 86400000))
 function BMReductionsReport() {
   const toast = useToast()
   const [rows, setRows]       = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
+  const [hasRun, setHasRun]   = useState(false)
   const [error, setError]     = useState('')
   const [downloading, setDownloading] = useState(false)
   const [filters, setFilters] = useState(BM_EMPTY_FILTERS)
   const [from, setFrom]       = useState(bmDefaultFrom())
   const [to, setTo]           = useState(bmToday())
 
-  const load = () => {
-    setLoading(true); setError('')
+  // No auto-load — the report only runs when the user clicks Run Report.
+  const runReport = () => {
+    setLoading(true); setError(''); setHasRun(true)
     getBmReductions({ from: from ? `${from}T00:00:00` : '', to: to ? `${to}T23:59:59` : '' })
       .then(d => setRows(Array.isArray(d?.rows) ? d.rows : []))
       .catch(e => { setError(e.message); setRows([]) })
       .finally(() => setLoading(false))
   }
-  useEffect(() => { load() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [from, to])
 
-  // Dropdown options — distinct values present in the current result set.
+  // Multi-select dropdown options — distinct values present in the loaded result.
   const options = useMemo(() => {
     const uniq = key => [...new Set(rows.map(r => r[key]).filter(Boolean))].sort()
     return { store_code: uniq('store_code'), category: uniq('category'), status: uniq('status') }
   }, [rows])
 
   const filtered = useMemo(() => rows.filter(r =>
-    (!filters.store_code || r.store_code === filters.store_code) &&
-    (!filters.category   || r.category   === filters.category) &&
-    (!filters.status     || r.status     === filters.status)
+    (!filters.store_code.length || filters.store_code.includes(r.store_code)) &&
+    (!filters.category.length   || filters.category.includes(r.category)) &&
+    (!filters.status.length     || filters.status.includes(r.status))
   ), [rows, filters])
 
   const setFilter    = (k, v) => setFilters(f => ({ ...f, [k]: v }))
   const clearFilters = () => setFilters(BM_EMPTY_FILTERS)
-  const anyFilter    = Object.values(filters).some(Boolean)
+  const anyFilter    = Object.values(filters).some(a => a.length)
 
   const distinctProducts = useMemo(() => new Set(filtered.map(r => r.product_id)).size, [filtered])
   const shown = filtered.slice(0, BM_MAX_SHOWN)
@@ -335,26 +336,42 @@ function BMReductionsReport() {
   return (
     <div className="card">
       <div className="card-body">
-        <div className="flex-row" style={{ gap: 8, marginBottom: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          <span className="note" style={{ fontSize: 12 }}>
-            {loading ? 'Loading…'
-              : `${filtered.length.toLocaleString('en-IE')} row${filtered.length !== 1 ? 's' : ''} · ${distinctProducts.toLocaleString('en-IE')} distinct product${distinctProducts !== 1 ? 's' : ''}`}
-          </span>
-          <button className="btn btn-sm btn-outline" style={{ marginLeft: 'auto' }} onClick={load} disabled={loading}>↻ Refresh</button>
-          <button className="btn btn-sm btn-primary" onClick={exportExcel} disabled={downloading || !filtered.length}>
-            {downloading ? <span className="spinner" /> : '↓ Excel'}
-          </button>
-        </div>
-
-        <div className="flex-row" style={{ gap: 8, marginBottom: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <div className="filter-row">
           <div className="filter-field"><label>From</label>
             <input type="date" value={from} onChange={e => setFrom(e.target.value)} /></div>
           <div className="filter-field"><label>To</label>
             <input type="date" value={to} onChange={e => setTo(e.target.value)} /></div>
-          <FilterSelect label="Store"          value={filters.store_code} opts={options.store_code} onChange={v => setFilter('store_code', v)} />
-          <FilterSelect label="Category"       value={filters.category}   opts={options.category}   onChange={v => setFilter('category', v)} />
-          <FilterSelect label="Product Status" value={filters.status}     opts={options.status}     onChange={v => setFilter('status', v)} />
+
+          <div className="filter-field filter-field--wide"><label>Store</label>
+            <MultiSelectDropdown value={filters.store_code} onChange={v => setFilter('store_code', v)}
+              options={options.store_code.map(x => ({ id: x, label: x }))} placeholder="All stores" />
+          </div>
+          <div className="filter-field filter-field--wide"><label>Category</label>
+            <MultiSelectDropdown value={filters.category} onChange={v => setFilter('category', v)}
+              options={options.category.map(x => ({ id: x, label: x }))} placeholder="All categories" />
+          </div>
+          <div className="filter-field filter-field--wide"><label>Product Status</label>
+            <MultiSelectDropdown value={filters.status} onChange={v => setFilter('status', v)}
+              options={options.status.map(x => ({ id: x, label: x }))} placeholder="All statuses" />
+          </div>
+
+          <div className="filter-field">
+            <button className="btn btn-primary" onClick={runReport} disabled={loading} style={{ whiteSpace: 'nowrap' }}>
+              {loading ? <span className="spinner" /> : '▶ Run Report'}
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-row" style={{ gap: 8, marginBottom: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span className="note" style={{ fontSize: 12 }}>
+            {!hasRun ? 'Set a date range and click Run Report.'
+              : loading ? 'Loading…'
+              : `${filtered.length.toLocaleString('en-IE')} row${filtered.length !== 1 ? 's' : ''} · ${distinctProducts.toLocaleString('en-IE')} distinct product${distinctProducts !== 1 ? 's' : ''}`}
+          </span>
           {anyFilter && <button className="btn btn-sm btn-outline" onClick={clearFilters}>✕ Clear filters</button>}
+          <button className="btn btn-sm btn-primary" style={{ marginLeft: 'auto' }} onClick={exportExcel} disabled={downloading || !filtered.length}>
+            {downloading ? <span className="spinner" /> : '↓ Excel'}
+          </button>
         </div>
 
         <p className="note" style={{ fontSize: 12, marginTop: 0 }}>
@@ -362,7 +379,7 @@ function BMReductionsReport() {
         </p>
 
         {error && <div className="login-error" style={{ marginBottom: 8 }}>{error}</div>}
-        {!loading && !filtered.length && !error && <p className="note">No products match{anyFilter ? ' these filters' : ' the criteria'}.</p>}
+        {hasRun && !loading && !filtered.length && !error && <p className="note">No products match{anyFilter ? ' these filters' : ' the criteria'}.</p>}
 
         {!!shown.length && (
           <>
@@ -473,9 +490,10 @@ function HQReports() {
   useEffect(() => {
     getTaskTypes().then(tt => {
       setTaskTypes(tt)
-      // Back office defaults to all task types EXCEPT Department Check (J) and
-      // Price Check (K) — the user can add those manually.
-      if (isBO) setTaskTypeIds(tt.map(t => t.code).filter(c => c !== 'J' && c !== 'K'))
+      // Back office defaults to all task types EXCEPT the operations checks —
+      // Department Check (J), Price Check (K), Stock Count (H), Expiry Date
+      // Check (L) — the user can add those manually.
+      if (isBO) setTaskTypeIds(tt.map(t => t.code).filter(c => !['J', 'K', 'H', 'L'].includes(c)))
     }).catch(() => setTaskTypes([]))
     // Always load stores so the Store column can show names for all users (N12).
     // The store filter UI is only shown for back-office users below.
