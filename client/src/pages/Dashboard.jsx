@@ -1,6 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../App.jsx'
 import { getDashboardStats, getStores, getAreas } from '../lib/api.js'
+import { ADMIN_ROLES } from '../lib/roles.js'
 import { TASK_FORMS } from '../lib/taskTypes.js'
 import { downloadExcel } from '../lib/excel.js'
 import Skeleton from '../components/Skeleton.jsx'
@@ -70,17 +71,34 @@ export default function Dashboard() {
     }
   }, [isBO])
 
+  // The stores/areas this user may actually see. Admins (all_stores, or an
+  // ADMIN role) are unrestricted; area managers are limited to their area(s),
+  // so the scope selector and the by-store views never list other stores.
+  const unrestricted = !!session?.all_stores || ADMIN_ROLES.includes(session?.role)
+  const myAreaSet = useMemo(() => new Set(session?.area_ids || []), [session])
+  const myStoreIds = useMemo(() => {
+    if (unrestricted) return null
+    const set = new Set(session?.store_ids || [])
+    for (const s of stores) if (s.area_id && myAreaSet.has(s.area_id)) set.add(s.id)
+    return set
+  }, [stores, myAreaSet, unrestricted, session])
+  const visibleAreas = unrestricted ? areas : areas.filter(a => myAreaSet.has(a.id))
+
   // Build the storeIds list to send to the backend based on the current scope.
+  // 'all' resolves to the user's own stores (null only when unrestricted), so a
+  // restricted user never falls back to "every store".
   const scopedStoreIds = useMemo(() => {
     if (!isBO) return null
-    if (scope === 'all') return null
+    if (scope === 'all') return unrestricted ? null : [...(myStoreIds || [])]
     if (scope.startsWith('area:')) {
       const aid = scope.slice(5)
-      return stores.filter(s => s.is_active && s.area_id === aid).map(s => s.id)
+      let ids = stores.filter(s => s.is_active && s.area_id === aid).map(s => s.id)
+      if (!unrestricted && myStoreIds) ids = ids.filter(id => myStoreIds.has(id))
+      return ids
     }
     if (scope.startsWith('store:')) return [scope.slice(6)]
     return null
-  }, [scope, stores, isBO])
+  }, [scope, stores, isBO, unrestricted, myStoreIds])
 
   useEffect(() => {
     const { from, to } = relativeRange(rangeKey)
@@ -130,13 +148,13 @@ export default function Dashboard() {
           {isBO && (
             <select value={scope} onChange={e => setScope(e.target.value)} style={{ width: 'auto', minWidth: 200, maxWidth: 260 }}>
               <option value="all">All stores in scope</option>
-              {areas.length > 0 && (
+              {visibleAreas.length > 0 && (
                 <optgroup label="By area">
-                  {areas.map(a => <option key={a.id} value={`area:${a.id}`}>Area · {a.area_name}</option>)}
+                  {visibleAreas.map(a => <option key={a.id} value={`area:${a.id}`}>Area · {a.area_name}</option>)}
                 </optgroup>
               )}
               <optgroup label="By store">
-                {stores.filter(s => s.is_active).map(s => (
+                {stores.filter(s => s.is_active && (unrestricted || (myStoreIds && myStoreIds.has(s.id)))).map(s => (
                   <option key={s.id} value={`store:${s.id}`}>{s.store_name}</option>
                 ))}
               </optgroup>
