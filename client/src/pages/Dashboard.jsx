@@ -100,6 +100,14 @@ export default function Dashboard() {
     return null
   }, [scope, stores, isBO, unrestricted, myStoreIds])
 
+  // The stores that belong to the CURRENT scope (matches by_store), so the Store
+  // Performance grid + No-Department-Check card never list stores outside scope.
+  const scopeStores = useMemo(() => {
+    if (scopedStoreIds === null) return stores
+    const idSet = new Set(scopedStoreIds)
+    return stores.filter(s => idSet.has(s.id))
+  }, [stores, scopedStoreIds])
+
   useEffect(() => {
     const { from, to } = relativeRange(rangeKey)
     setLoading(true); setError('')
@@ -184,10 +192,10 @@ export default function Dashboard() {
       <div className="dash-row dash-row--thirds">
         <TaskDonutOps    rows={stats?.by_task_type || []} dataDays={stats?.by_day || []} loading={loading} />
         <TaskDonutChecks rows={stats?.by_task_type || []} dataDays={stats?.by_day || []} loading={loading} />
-        {isBO && <StoresMissingDeptCheck byStore={stats?.by_store || []} allStores={stores} scopeStoreIds={scopedStoreIds} dataDays={stats?.by_day || []} loading={loading} />}
+        {isBO && <StoresMissingDeptCheck byStore={stats?.by_store || []} allStores={scopeStores} scopeStoreIds={scopedStoreIds} dataDays={stats?.by_day || []} loading={loading} />}
       </div>
 
-      {isBO && <StoreDonutGrid rows={stats?.by_store || []} loading={loading} allStores={stores} dataDays={stats?.by_day || []} />}
+      {isBO && <StoreDonutGrid rows={stats?.by_store || []} loading={loading} allStores={scopeStores} dataDays={stats?.by_day || []} />}
       {!isBO && <RecentList rows={stats?.recent || []} loading={loading} isBO={isBO} />}
 
       {/* Activity — moved below the store graph and made compact (secondary info). */}
