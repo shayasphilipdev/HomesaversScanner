@@ -42,7 +42,12 @@ const INPUT_BLOCKS = [
   { type: 'file',           label: 'File upload',               icon: '📎', family: 'input',
     defaults: { label: 'Attach a file', required: false, accept: '*/*' } },
   { type: 'calc',           label: 'Auto-calculated',           icon: '∑',  family: 'input',
-    defaults: { label: 'Total', required: false, operation: 'sum', source_block_ids: [] } }
+    defaults: { label: 'Total', required: false, operation: 'sum', source_block_ids: [] } },
+  // Repeatable expiry-sweep block: scan a product, enter its expiry date + units,
+  // pick a Reduce-to-Clear action (auto-suggested from days left). Adds one line
+  // per product; the answer is an array of line objects. See lib/expiry.js.
+  { type: 'expiry_sweep',   label: 'Expiry sweep (scan lines)', icon: '🔎', family: 'input',
+    defaults: { label: 'Expiry sweep', required: false, category: '' } }
 ]
 
 const DISPLAY_BLOCKS = [
