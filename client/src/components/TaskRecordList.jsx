@@ -1,10 +1,10 @@
 import { Fragment, useState, useCallback, useEffect } from 'react'
 import { updateTaskRecord, deleteTaskRecord, bulkClearTaskRecords, bulkDeleteTaskRecords } from '../lib/api.js'
 import ConfirmDeleteModal from './ConfirmDeleteModal.jsx'
+import MessagesModal from './MessagesModal.jsx'
 import { useStore } from '../App.jsx'
 import { useToast } from './Toast.jsx'
 import { TASK_FORMS } from '../lib/taskTypes.js'
-import RecordMessages from './RecordMessages.jsx'
 
 const STATUS_LABEL = {
   pending:          { label: 'Pending',          cls: 'badge-pending' },
@@ -38,20 +38,19 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [deleting, setDeleting] = useState(false)
 
-  // ── Message thread expand state ───────────────────────────────────────────
-  const [expandedMessages, setExpandedMessages] = useState(new Set())
-  const toggleMessages = (id) => setExpandedMessages(prev => {
-    const next = new Set(prev)
-    next.has(id) ? next.delete(id) : next.add(id)
-    return next
-  })
+  // ── Message thread modal state ────────────────────────────────────────────
+  // msgRecord holds the full record object whose thread is open (null = closed).
+  const [msgRecord, setMsgRecord] = useState(null)
+  const openMessages  = (rec) => setMsgRecord(rec)
+  const closeMessages = ()    => setMsgRecord(null)
   const handleUnreadChange = useCallback(() => { onUnreadChange?.() }, [onUnreadChange])
 
   // When navigated here from the header message dropdown, open that record's
   // thread (once it's present in the loaded list).
   useEffect(() => {
-    if (autoOpenId && records.some(r => r.id === autoOpenId)) {
-      setExpandedMessages(prev => prev.has(autoOpenId) ? prev : new Set(prev).add(autoOpenId))
+    if (autoOpenId) {
+      const rec = records.find(r => r.id === autoOpenId)
+      if (rec) setMsgRecord(rec)
     }
   }, [autoOpenId, records])
 
@@ -306,9 +305,9 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
                           </button>
                         )}
                         <button
-                          className={`btn-msg-toggle ${expandedMessages.has(r.id) ? 'active' : ''} ${msgCount > 0 && !expandedMessages.has(r.id) ? 'has-thread' : ''}`}
+                          className={`btn-msg-toggle ${msgRecord?.id === r.id ? 'active' : ''} ${msgCount > 0 && msgRecord?.id !== r.id ? 'has-thread' : ''}`}
                           title={msgCount > 0 ? `${msgCount} message${msgCount > 1 ? 's' : ''}` : 'Messages'}
-                          onClick={() => toggleMessages(r.id)}
+                          onClick={() => openMessages(r)}
                         >
                           💬 <span style={{ fontSize: 12 }}>Msg</span>
                           {msgCount > 0 && <span className="msg-toggle-badge">{msgCount}</span>}
@@ -329,13 +328,6 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
                       </div>
                     </td>
                   </tr>
-                  {expandedMessages.has(r.id) && (
-                    <tr>
-                      <td colSpan={showCheckCol ? 12 : 11} style={{ padding: 0, borderTop: 'none' }}>
-                        <RecordMessages recordId={r.id} onUnreadChange={handleUnreadChange} />
-                      </td>
-                    </tr>
-                  )}
                 </Fragment>
               )
             })}
@@ -349,6 +341,12 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
         busy={deleting}
         onConfirm={confirmDelete}
         onCancel={() => { if (!deleting) setDeleteTarget(null) }}
+      />
+
+      <MessagesModal
+        record={msgRecord}
+        onClose={closeMessages}
+        onUnreadChange={handleUnreadChange}
       />
     </div>
   )

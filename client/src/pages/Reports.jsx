@@ -16,7 +16,7 @@ import MultiSelectDropdown from '../components/forms/MultiSelectDropdown.jsx'
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal.jsx'
 import AdminReports from './AdminReports.jsx'
 import { canAccessMasterReports } from '../lib/roles.js'
-import RecordMessages from '../components/RecordMessages.jsx'
+import MessagesModal from '../components/MessagesModal.jsx'
 
 function toLocalInput(d) {
   const pad = n => String(n).padStart(2, '0')
@@ -463,12 +463,7 @@ function HQReports() {
   const [error, setError]             = useState('')
   // Per-row audit-history state: { [recordId]: { loading, events, err } }
   const [history, setHistory]         = useState({})
-  const [expandedMessages, setExpandedMessages] = useState(new Set())
-  const toggleMessages = (id) => setExpandedMessages(prev => {
-    const next = new Set(prev)
-    next.has(id) ? next.delete(id) : next.add(id)
-    return next
-  })
+  const [msgRecord, setMsgRecord] = useState(null)
 
   const toggleHistory = async (recordId) => {
     setHistory(h => {
@@ -1026,9 +1021,9 @@ function HQReports() {
                                 </>
                               )}
                               <button
-                                className={`btn btn-sm btn-icon ${expandedMessages.has(r.id) ? 'btn-primary' : 'btn-outline'}`}
+                                className={`btn btn-sm btn-icon ${msgRecord?.id === r.id ? 'btn-primary' : 'btn-outline'}`}
                                 title="Messages"
-                                onClick={() => toggleMessages(r.id)}
+                                onClick={() => setMsgRecord(r)}
                               >💬</button>
                               <button className="btn btn-sm btn-outline" onClick={() => toggleHistory(r.id)} title="Audit history">
                                 {history[r.id] ? '▴' : '▾'} History
@@ -1045,14 +1040,6 @@ function HQReports() {
                           </td>
                         )}
                       </tr>
-                      {/* Message thread panel */}
-                      {expandedMessages.has(r.id) && (
-                        <tr>
-                          <td colSpan={isBO ? 10 : 9} style={{ padding: 0, borderTop: 'none' }}>
-                            <RecordMessages recordId={r.id} />
-                          </td>
-                        </tr>
-                      )}
                       {/* Audit-trail panel (BO only) */}
                       {isBO && history[r.id] && (
                         <tr>
@@ -1088,6 +1075,11 @@ function HQReports() {
         dateTo={to}
         onConfirm={runDeleteAllMatching}
         onCancel={() => { if (!matchDeleting) setMatchDelete(false) }}
+      />
+
+      <MessagesModal
+        record={msgRecord}
+        onClose={() => setMsgRecord(null)}
       />
     </div>
   )
