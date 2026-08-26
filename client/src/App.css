@@ -372,7 +372,7 @@ body {
 }
 .nav-msg-menu {
   position: absolute; top: calc(100% + 8px); right: 0; z-index: 120;
-  width: 320px; max-width: calc(100vw - 16px); max-height: 60vh; overflow-y: auto;
+  width: 420px; max-width: calc(100vw - 16px); max-height: 60vh; overflow-y: auto;
   background: var(--glass-strong);
   -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
   border: 1px solid var(--glass-border); border-radius: 14px;
@@ -397,7 +397,8 @@ body {
 }
 .nav-msg-item-preview {
   font-size: 12.5px; color: var(--text-muted); margin-top: 2px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  white-space: normal; overflow: hidden;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
 }
 /* Thread item row: click area + dismiss button side by side */
 .nav-msg-item-wrap {
