@@ -2693,11 +2693,19 @@ export async function onRequest(context) {
         const t       = r.store_task_templates || {}
         const blocks  = Array.isArray(t.blocks) ? t.blocks : []
         const ans     = r.answers && typeof r.answers === 'object' ? r.answers : {}
+        // Format an answer value for a flat cell. Object values (e.g. an
+        // expiry-sweep line) become a space-joined summary; arrays (repeatable
+        // blocks) become one summary per line separated by ' | '.
+        const fmtOne = x => (x && typeof x === 'object' && !Array.isArray(x))
+          ? Object.values(x).filter(z => z !== null && z !== undefined && z !== '').join(' ')
+          : String(x ?? '')
         const labelTo = {}
         for (const b of blocks) {
           if (!b?.label) continue
           const v = ans[b.id]
-          labelTo[b.label] = Array.isArray(v) ? v.join('; ') : (v === null || v === undefined ? '' : String(v))
+          labelTo[b.label] = Array.isArray(v)
+            ? v.map(fmtOne).join(' | ')
+            : (v === null || v === undefined ? '' : (typeof v === 'object' ? fmtOne(v) : String(v)))
         }
         return {
           template:     t.title || '',
@@ -2775,6 +2783,136 @@ export async function onRequest(context) {
       }
       const rows = await db.select('store_task_instances', params)
       return json(rows)
+    }
+
+    // GET /reports/expiry-overview?from=&to=&storeId=
+    // Unified expiry / Reduce-to-Clear activity across BOTH data sources:
+    //  - HO Task M (Routine Expiry Sweep) records in task_records
+    //  - Store-Task "expiry_sweep" block lines in store_task_instances.answers
+    // Returns { rows, summary, cols, headers } for on-screen render + client xlsx.
+    if (path === '/reports/expiry-overview' && method === 'GET') {
+      if (!isBO) return err('Back office only', 403)
+
+      const EXPIRY_COLS    = ['source','store_name','date','category','barcode','description','expiry_date','days_to_expiry','units','action','markdown_pct']
+      const EXPIRY_HEADERS = ['Source','Store','Date','Category','Product Barcode','Description','Expiry Date','Days to Expiry','Units','Action','Markdown %']
+      const emptyExpirySummary = () => ({ total_lines: 0, units_reduced: 0, units_written_off: 0, lines_rotated: 0, by_action: {} })
+
+      const p        = url.searchParams
+      const from     = p.get('from')
+      const to       = p.get('to')
+      const explicit = p.get('storeId')
+      const scope    = await scopedStoreIds(db, session)
+
+      const csvL = (s) => (s || '').split(',').map(x => x.trim()).filter(x => x && x !== 'all')
+      const storesWanted = csvL(explicit)
+      let storeFilter = null   // array of ids, or null = no restriction
+      if (storesWanted.length) {
+        const allowed = scope === null ? storesWanted : storesWanted.filter(id => scope.includes(id))
+        if (!allowed.length) return json({ rows: [], summary: emptyExpirySummary(), cols: EXPIRY_COLS, headers: EXPIRY_HEADERS })
+        storeFilter = allowed
+      } else if (scope !== null) {
+        if (!scope.length) return json({ rows: [], summary: emptyExpirySummary(), cols: EXPIRY_COLS, headers: EXPIRY_HEADERS })
+        storeFilter = scope
+      }
+
+      const stores    = await db.select('stores', { select: 'id,store_name' })
+      const storeName = Object.fromEntries(stores.map(s => [s.id, s.store_name]))
+
+      // Days between an expiry date and when it was logged (as-of-entry).
+      const dnum = (exp, whenIso) => {
+        if (!exp || !/^\d{4}-\d{2}-\d{2}$/.test(exp)) return ''
+        const e = Date.parse(exp + 'T00:00:00Z')
+        const w = Date.parse(String(whenIso || '').slice(0, 10) + 'T00:00:00Z')
+        return (isNaN(e) || isNaN(w)) ? '' : Math.round((e - w) / 86400000)
+      }
+
+      const rows = []
+
+      // ── Source 1: HO Task M records ──
+      const trParams = {
+        select:    'store_id,barcode_no,product_code,item_name,description,quantity,details,created_at',
+        task_type: 'eq.M',
+        order:     'created_at.desc',
+        limit:     '20000'
+      }
+      const trRange = []
+      if (from) trRange.push(`gte.${new Date(from).toISOString()}`)
+      if (to)   trRange.push(`lte.${new Date(new Date(to).getTime() + 86399000).toISOString()}`)
+      if (trRange.length) trParams.created_at = trRange
+      if (storeFilter) trParams.store_id = storeFilter.length === 1 ? `eq.${storeFilter[0]}` : `in.(${storeFilter.join(',')})`
+      const mRows = await db.select('task_records', trParams)
+      for (const r of mRows) {
+        const d = r.details && typeof r.details === 'object' ? r.details : {}
+        rows.push({
+          source:         'HO sweep',
+          store_name:     storeName[r.store_id] || '',
+          date:           String(r.created_at || '').slice(0, 10),
+          category:       d.category || '',
+          barcode:        r.barcode_no || r.product_code || '',
+          description:    r.item_name || r.description || '',
+          expiry_date:    d.expiry_date || '',
+          days_to_expiry: d.days_to_expiry ?? dnum(d.expiry_date, r.created_at),
+          units:          r.quantity ?? '',
+          action:         d.action_taken || '',
+          markdown_pct:   d.markdown_pct ?? ''
+        })
+      }
+
+      // ── Source 2: Store-Task expiry_sweep block lines ──
+      const siParams = {
+        select: 'store_id,due_date,completed_at,status,answers,store_task_templates(category,blocks)',
+        status: 'eq.completed',
+        order:  'due_date.desc',
+        limit:  '20000'
+      }
+      const siRange = []
+      if (from) siRange.push(`gte.${new Date(from).toISOString().slice(0, 10)}`)
+      if (to)   siRange.push(`lte.${new Date(to).toISOString().slice(0, 10)}`)
+      if (siRange.length) siParams.due_date = siRange
+      if (storeFilter) siParams.store_id = storeFilter.length === 1 ? `eq.${storeFilter[0]}` : `in.(${storeFilter.join(',')})`
+      const sRows = await db.select('store_task_instances', siParams)
+      for (const inst of sRows) {
+        const t      = inst.store_task_templates || {}
+        const blocks = Array.isArray(t.blocks) ? t.blocks : []
+        const ans    = inst.answers && typeof inst.answers === 'object' ? inst.answers : {}
+        for (const b of blocks) {
+          if (b.type !== 'expiry_sweep') continue
+          const lines = Array.isArray(ans[b.id]) ? ans[b.id] : []
+          const when  = inst.completed_at || inst.due_date
+          for (const ln of lines) {
+            if (!ln || typeof ln !== 'object') continue
+            rows.push({
+              source:         'Store sweep',
+              store_name:     storeName[inst.store_id] || '',
+              date:           String(when || '').slice(0, 10),
+              category:       ln.category || b.category || t.category || '',
+              barcode:        ln.barcode || '',
+              description:    ln.description || '',
+              expiry_date:    ln.expiry_date || '',
+              days_to_expiry: ln.days_to_expiry ?? dnum(ln.expiry_date, when),
+              units:          ln.units ?? '',
+              action:         ln.action || '',
+              markdown_pct:   ln.markdown_pct ?? ''
+            })
+          }
+        }
+      }
+
+      // ── Summary by action ──
+      const summary = emptyExpirySummary()
+      for (const r of rows) {
+        summary.total_lines++
+        const u = Number(r.units) || 0
+        const a = r.action || '(none)'
+        if (!summary.by_action[a]) summary.by_action[a] = { lines: 0, units: 0 }
+        summary.by_action[a].lines++
+        summary.by_action[a].units += u
+        if (a === 'Write Off')        summary.units_written_off += u
+        else if (a.startsWith('Reduce')) summary.units_reduced += u
+        else if (a === 'Rotate')      summary.lines_rotated++
+      }
+
+      return json({ rows, summary, cols: EXPIRY_COLS, headers: EXPIRY_HEADERS })
     }
 
     // GET /store-tasks/stats?storeId=&from=&to=

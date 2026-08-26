@@ -15,6 +15,7 @@ import { useToast } from '../components/Toast.jsx'
 import MultiSelectDropdown from '../components/forms/MultiSelectDropdown.jsx'
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal.jsx'
 import AdminReports from './AdminReports.jsx'
+import ExpiryReport from './ExpiryReport.jsx'
 import { canAccessMasterReports } from '../lib/roles.js'
 import RecordMessages from '../components/RecordMessages.jsx'
 
@@ -42,6 +43,7 @@ const SUBTITLES = {
   hq:         'HO task records — error reports from stores',
   bmreductions:'Dead Stock — one-off / clearance B&M products from Department Check',
   store:      'Store tasks — operational checklist completions',
+  expiry:     'Expiry Overview — Reduce-to-Clear activity across sweeps',
   product:    'Product Master — look up any product',
   master:     'Master reports — back-office data tables',
   spaceplan:  'Space Plan — equipment counts by store and department',
@@ -68,6 +70,9 @@ export default function Reports() {
             <button className={`btn btn-sm ${tab === 'bmreductions' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('bmreductions')}>Dead Stock</button>
           )}
           <button className={`btn btn-sm ${tab === 'store' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('store')}>Store tasks</button>
+          {isBO && (
+            <button className={`btn btn-sm ${tab === 'expiry' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('expiry')}>Expiry</button>
+          )}
           <button className={`btn btn-sm ${tab === 'product' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('product')}>Product Master</button>
           <button className={`btn btn-sm ${tab === 'spaceplan' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('spaceplan')}>Space Plan</button>
           {showCompetition && (
@@ -81,6 +86,7 @@ export default function Reports() {
       {tab === 'hq'        && <HQReports />}
       {tab === 'bmreductions' && isBO && <BMReductionsReport />}
       {tab === 'store'     && <StoreTaskReports />}
+      {tab === 'expiry'    && isBO && <ExpiryReport />}
       {tab === 'product'   && <ProductMasterReport />}
       {tab === 'spaceplan' && <SpacePlanReport />}
       {tab === 'competition' && showCompetition && <CompetitionReport />}
@@ -1225,11 +1231,14 @@ function StoreTaskReports() {
                   const lines = blocks.map(b => {
                     const v = ans[b.id]
                     if (v === null || v === undefined || v === '' || (Array.isArray(v) && !v.length)) return null
+                    const fmtOne = x => (x && typeof x === 'object' && !Array.isArray(x))
+                      ? Object.values(x).filter(z => z !== null && z !== undefined && z !== '').join(' ')
+                      : String(x ?? '')
                     const display = Array.isArray(v)
-                      ? v.join(', ')
+                      ? v.map(fmtOne).join(' | ')
                       : (typeof v === 'string' && v.startsWith('http')
                           ? <a href={v} target="_blank" rel="noopener noreferrer">📎 view</a>
-                          : String(v))
+                          : (typeof v === 'object' ? fmtOne(v) : String(v)))
                     return { label: b.label, display }
                   }).filter(Boolean)
                   return (
