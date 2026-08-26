@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { BLOCK_TYPES, BLOCK_TYPE_BY_KEY, ALERT_VARIANTS, CALC_OPERATIONS, isDisplayBlock, newBlock } from '../../lib/taskBlocks.js'
+import { EXPIRY_CATEGORIES } from '../../lib/expiry.js'
 
 // Admin-side editor: a vertical list of block cards with add / remove /
 // reorder + per-block configuration. Stored verbatim in the template's
@@ -250,6 +251,20 @@ function BlockCard({ block, first, last, numericBlocks, onUpdate, onRemove, onMo
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {block.type === 'expiry_sweep' && (
+        <div className="form-group" style={{ marginTop: 8 }}>
+          <label>Category (drives the suggested Reduce-to-Clear action)</label>
+          <select value={block.category || ''} onChange={e => onUpdate({ category: e.target.value })}>
+            <option value="">— none / mixed —</option>
+            {EXPIRY_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <span className="note" style={{ fontSize: 12 }}>
+            Staff scan one line per product: barcode → expiry date → units → action.
+            The action is suggested from the days left and this category, and can be changed.
+          </span>
         </div>
       )}
 

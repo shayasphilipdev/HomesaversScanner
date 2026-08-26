@@ -3,6 +3,10 @@ import { createTaskRecord, lookupPrice } from '../../lib/api.js'
 import { useStore } from '../../App.jsx'
 import ScannerInput from './ScannerInput.jsx'
 import { useTaskForm, LookupBanner, altFields } from './useTaskForm.jsx'
+import {
+  EXPIRY_CATEGORIES, EXPIRY_ACTIONS, markdownPctFor,
+  buildDate, daysUntil, suggestAction, expiryTone,
+} from '../../lib/expiry.js'
 
 // Task M — Routine Expiry Sweep (Operations).
 // Replaces the old Expiry Date Check (L). Built for walking an aisle and
@@ -10,69 +14,10 @@ import { useTaskForm, LookupBanner, altFields } from './useTaskForm.jsx'
 // expiry → units → action → Save & next, without leaving the form. The action
 // is pre-suggested from days-to-expiry + category (Reduce to Clear ladder) and
 // can be overridden. Category and the session count persist across saves.
-
-// Sweep categories — drive the markdown trigger and the suggested action.
-const CATEGORIES = [
-  'Confectionery',
-  'Bakery / Ambient',
-  'Drinks',
-  'Grocery / Canned',
-  'Health / Pharmacy',
-  'Seasonal / Other',
-]
-
-// The Reduce to Clear action ladder. pct = markdown percentage (null = write off).
-const ACTIONS = [
-  { v: 'Rotate',     pct: 0    },
-  { v: 'Reduce 30%', pct: 30   },
-  { v: 'Reduce 50%', pct: 50   },
-  { v: 'Reduce 75%', pct: 75   },
-  { v: 'Write Off',  pct: null },
-]
+// The date rules + suggestion ladder live in lib/expiry.js (shared with the
+// scheduled Store-Task expiry-sweep block).
 
 const EMPTY = { product_code: '', units: '' }
-
-// Build YYYY-MM-DD from day/month/year strings; '' if incomplete or invalid.
-// Year takes 2 digits (26 -> 2026) or 4 (2026). Impossible dates (e.g. 31/02)
-// are rejected so a bad entry never saves.
-function buildDate(d, m, y) {
-  if (!d || !m || !y) return ''
-  const dd = Number(d), mm = Number(m)
-  let yy = Number(y)
-  if (y.length <= 2) yy = 2000 + yy
-  if (!(dd >= 1 && dd <= 31) || !(mm >= 1 && mm <= 12) || !(yy >= 2000 && yy <= 2100)) return ''
-  const dt = new Date(yy, mm - 1, dd)
-  if (dt.getFullYear() !== yy || dt.getMonth() !== mm - 1 || dt.getDate() !== dd) return ''
-  const p = n => String(n).padStart(2, '0')
-  return `${yy}-${p(mm)}-${p(dd)}`
-}
-
-function daysUntil(dateStr) {
-  if (!dateStr) return null
-  const [y, m, d] = dateStr.split('-').map(Number)
-  const exp = new Date(y, m - 1, d)
-  const today = new Date(); today.setHours(0, 0, 0, 0)
-  return Math.round((exp - today) / 86400000)
-}
-
-// First-markdown trigger by category (days-to-expiry). Bakery is shortest-dated,
-// long-life grocery/health the longest — matches the sweep cadence table.
-function firstTrigger(category) {
-  if (category === 'Bakery / Ambient') return 14
-  if (category === 'Grocery / Canned' || category === 'Health / Pharmacy') return 30
-  return 21
-}
-
-// Suggested action from days-to-expiry + category. Deeper reductions as the
-// date gets closer; write off once expired.
-function suggestAction(days, category) {
-  if (days == null) return ''
-  if (days < 0)  return 'Write Off'
-  if (days <= 6) return 'Reduce 75%'
-  if (days <= 14) return 'Reduce 50%'
-  if (days <= firstTrigger(category)) return 'Reduce 30%'
-  return 'Rotate'
-}
 
 export default function TaskMForm({ onSaved, storeId }) {
   const { session } = useStore()
@@ -127,7 +72,7 @@ export default function TaskMForm({ onSaved, storeId }) {
     if (t.form.units !== '' && (isNaN(Number(t.form.units)) || Number(t.form.units) < 0))
       return t.setError('Units must be a number (0 or more).')
 
-    const pct = ACTIONS.find(a => a.v === action)?.pct ?? null
+    const pct = markdownPctFor(action)
     const body = {
       task_type:    'M',
       store_id:     storeId || session.storeId || null,
@@ -160,11 +105,7 @@ export default function TaskMForm({ onSaved, storeId }) {
     }
   }
 
-  const tone = days == null ? null
-    : days < 0   ? { c: 'var(--red, #c0392b)', t: `Expired ${Math.abs(days)} day${Math.abs(days) !== 1 ? 's' : ''} ago` }
-    : days <= 7  ? { c: 'var(--red, #c0392b)', t: `${days} day${days !== 1 ? 's' : ''} left — short-dated` }
-    : days <= 14 ? { c: '#B47F1E',             t: `${days} days left` }
-    :              { c: '#1E7B34',             t: `${days} days left` }
+  const tone = expiryTone(days)
 
   // Big, centred, numeric-keypad boxes; auto-advance to the next box when full.
   const boxStyle = { fontSize: 24, textAlign: 'center', padding: '12px 6px', fontWeight: 600 }
@@ -189,7 +130,7 @@ export default function TaskMForm({ onSaved, storeId }) {
                 style={{ flex: 1, minWidth: 180 }}
               >
                 <option value="">— choose a category —</option>
-                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                {EXPIRY_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
               {sessionCount > 0 && (
                 <span style={{
@@ -262,7 +203,7 @@ export default function TaskMForm({ onSaved, storeId }) {
                 onChange={e => { setAction(e.target.value); setActionAuto(false) }}
               >
                 <option value="">— choose an action —</option>
-                {ACTIONS.map(a => <option key={a.v} value={a.v}>{a.v}</option>)}
+                {EXPIRY_ACTIONS.map(a => <option key={a.v} value={a.v}>{a.v}</option>)}
               </select>
             </div>
           </div>

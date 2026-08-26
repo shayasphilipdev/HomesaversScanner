@@ -1,7 +1,12 @@
-import { useEffect, useState } from 'react'
-import { uploadPhoto } from '../../lib/api.js'
+import { useEffect, useRef, useState } from 'react'
+import { uploadPhoto, lookupAltBarcode } from '../../lib/api.js'
 import { compressImage, newPhotoNamespace } from '../../lib/photos.js'
 import { isDisplayBlock, computeCalc } from '../../lib/taskBlocks.js'
+import {
+  EXPIRY_ACTIONS, markdownPctFor, buildDate, daysUntil,
+  suggestAction, expiryTone, formatDMY,
+} from '../../lib/expiry.js'
+import ScannerInput from './ScannerInput.jsx'
 
 // Renders the inputs for a single completion form built from `blocks`.
 // Parent owns the `answers` object; this component just calls onAnswer(id, value).
@@ -214,9 +219,176 @@ function BlockInput({ block, answers, value, onChange }) {
       return <UploadBlock value={value} onChange={onChange} accept={block.accept || '*/*'} />
     case 'calc':
       return <CalcBlock block={block} answers={answers} value={value} onChange={onChange} />
+    case 'expiry_sweep':
+      return <ExpirySweepBlock block={block} value={value} onChange={onChange} />
     default:
       return <div className="note">Unknown block type: {block.type}</div>
   }
+}
+
+// Repeatable expiry-sweep input. Scan a product, enter its expiry date + units,
+// pick a Reduce-to-Clear action (auto-suggested from days left), and add it as a
+// line. The block's answer is an array of line objects. One scan input is live
+// at a time (the add-line row), so a single camera readerId is enough.
+function ExpirySweepBlock({ block, value, onChange }) {
+  const lines    = Array.isArray(value) ? value : []
+  const category = block.category || ''
+
+  const [barcode, setBarcode]         = useState('')
+  const [lookupInfo, setLookupInfo]   = useState(null)
+  const [lookupLoading, setLoading]   = useState(false)
+  const [d, setD] = useState('')
+  const [m, setM] = useState('')
+  const [y, setY] = useState('')
+  const [units, setUnits]             = useState('')
+  const [action, setAction]           = useState('')
+  const [actionAuto, setActionAuto]   = useState(true)
+  const [error, setError]             = useState('')
+
+  const mRef = useRef(null)
+  const yRef = useRef(null)
+
+  const expiry    = buildDate(d, m, y)
+  const dmyDone   = d && m && y
+  const invalid   = dmyDone && !expiry
+  const days      = daysUntil(expiry)
+  const suggested = suggestAction(days, category)
+  const tone      = expiryTone(days)
+
+  useEffect(() => { if (actionAuto) setAction(suggested) }, [suggested, actionAuto])
+
+  const triggerLookup = async (code) => {
+    if (!code || code.length < 4) { setLookupInfo(null); return }
+    setLookupInfo(null); setLoading(true)
+    try { setLookupInfo(await lookupAltBarcode(code) || null) }
+    catch { /* offline / miss — the raw barcode still saves */ }
+    finally { setLoading(false) }
+  }
+
+  const resetLine = () => {
+    setBarcode(''); setLookupInfo(null)
+    setD(''); setM(''); setY(''); setUnits('')
+    setAction(''); setActionAuto(true); setError('')
+  }
+
+  const addLine = () => {
+    if (!barcode.trim())  return setError('Scan or type a barcode first.')
+    if (!expiry)          return setError(invalid ? 'That expiry date is not valid.' : 'Enter the expiry date.')
+    if (units !== '' && (isNaN(Number(units)) || Number(units) < 0))
+                          return setError('Units must be a number (0 or more).')
+    const line = {
+      barcode:        barcode.trim(),
+      description:    lookupInfo?.item_name || '',
+      item_status:    lookupInfo?.item_status || '',
+      expiry_date:    expiry,
+      days_to_expiry: days,
+      units:          units === '' ? null : Number(units),
+      action:         action || null,
+      markdown_pct:   markdownPctFor(action),
+    }
+    onChange([...lines, line])
+    resetLine()
+  }
+
+  const removeLine = (idx) => onChange(lines.filter((_, i) => i !== idx))
+
+  const boxStyle = { fontSize: 20, textAlign: 'center', padding: '8px 4px', fontWeight: 600 }
+  const onDigits = (setter, next, max) => (e) => {
+    const v = e.target.value.replace(/\D/g, '').slice(0, max)
+    setter(v)
+    if (error) setError('')
+    if (v.length === max && next?.current) next.current.focus()
+  }
+
+  return (
+    <div>
+      {category && (
+        <div className="note" style={{ fontSize: 12, marginBottom: 6 }}>
+          Category: <strong>{category}</strong>
+        </div>
+      )}
+
+      {/* Added lines */}
+      {lines.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
+          {lines.map((ln, i) => {
+            const lt = expiryTone(ln.days_to_expiry)
+            return (
+              <div key={i} className="flex-row" style={{
+                gap: 8, alignItems: 'center', padding: '6px 10px',
+                background: 'var(--surface-warm)', border: '1px solid var(--border)', borderRadius: 8
+              }}>
+                <span style={{ flex: 1, fontSize: 13, minWidth: 0 }}>
+                  <strong>{ln.description || ln.barcode}</strong>
+                  {ln.description && <span className="note" style={{ fontSize: 11 }}> · {ln.barcode}</span>}
+                  <span className="note" style={{ fontSize: 12 }}>
+                    {' '}· exp {formatDMY(ln.expiry_date)}
+                    {ln.units != null ? ` · ${ln.units}u` : ''}
+                    {ln.action ? ` · ${ln.action}` : ''}
+                  </span>
+                  {lt && <span style={{ fontSize: 11, fontWeight: 700, color: lt.c, marginLeft: 6 }}>{lt.t}</span>}
+                </span>
+                <button type="button" className="btn btn-sm btn-outline" title="Remove line"
+                  onClick={() => removeLine(i)} style={{ flexShrink: 0 }}>✕</button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Add-line row */}
+      <div style={{ border: '1px dashed var(--border)', borderRadius: 10, padding: 10 }}>
+        <ScannerInput
+          label="Scan product"
+          value={barcode}
+          onChange={v => { setBarcode(v); if (error) setError('') }}
+          onConfirm={triggerLookup}
+          lookupLoading={lookupLoading}
+          readerId={`sweep-${block.id}`}
+          placeholder="Scan or type the barcode"
+        />
+        {lookupInfo?.item_name && (
+          <div className="note" style={{ fontSize: 13, marginTop: 4 }}>
+            Product: <strong>{lookupInfo.item_name}</strong>
+          </div>
+        )}
+
+        <div className="flex-row" style={{ gap: 6, alignItems: 'center', marginTop: 8 }}>
+          <span className="note" style={{ fontSize: 12, width: 44 }}>Expiry</span>
+          <input type="text" inputMode="numeric" pattern="[0-9]*" placeholder="DD" aria-label="Day"
+            value={d} onChange={onDigits(setD, mRef, 2)} style={{ ...boxStyle, width: 56 }} autoComplete="off" />
+          <span style={{ color: 'var(--text-muted)' }}>/</span>
+          <input ref={mRef} type="text" inputMode="numeric" pattern="[0-9]*" placeholder="MM" aria-label="Month"
+            value={m} onChange={onDigits(setM, yRef, 2)} style={{ ...boxStyle, width: 56 }} autoComplete="off" />
+          <span style={{ color: 'var(--text-muted)' }}>/</span>
+          <input ref={yRef} type="text" inputMode="numeric" pattern="[0-9]*" placeholder="YY" aria-label="Year"
+            value={y} onChange={onDigits(setY, null, 4)} style={{ ...boxStyle, width: 72 }} autoComplete="off" />
+          {tone && <span style={{ fontSize: 12, fontWeight: 700, color: tone.c, marginLeft: 4 }}>{tone.t}</span>}
+        </div>
+        {invalid && <div className="note" style={{ fontSize: 12, marginTop: 4, color: 'var(--red, #c0392b)', fontWeight: 600 }}>Not a valid date.</div>}
+
+        <div className="flex-row" style={{ gap: 8, alignItems: 'flex-end', marginTop: 8, flexWrap: 'wrap' }}>
+          <div className="form-group" style={{ margin: 0, flex: '0 0 100px' }}>
+            <label style={{ fontSize: 12 }}>Units</label>
+            <input type="number" min="0" step="1" placeholder="0"
+              value={units} onChange={e => { setUnits(e.target.value); if (error) setError('') }} />
+          </div>
+          <div className="form-group" style={{ margin: 0, flex: 1, minWidth: 160 }}>
+            <label style={{ fontSize: 12 }}>
+              Action{suggested && <span className="note" style={{ fontWeight: 400 }}> — suggested: <strong style={{ color: '#B47F1E' }}>{suggested}</strong></span>}
+            </label>
+            <select value={action} onChange={e => { setAction(e.target.value); setActionAuto(false) }}>
+              <option value="">— choose an action —</option>
+              {EXPIRY_ACTIONS.map(a => <option key={a.v} value={a.v}>{a.v}</option>)}
+            </select>
+          </div>
+          <button type="button" className="btn btn-primary" onClick={addLine} style={{ flexShrink: 0 }}>＋ Add line</button>
+        </div>
+
+        {error && <div className="login-error mt-12">{error}</div>}
+      </div>
+    </div>
+  )
 }
 
 // Auto-calculated block. Re-derives its value whenever any source answer
