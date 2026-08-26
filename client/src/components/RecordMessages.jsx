@@ -13,9 +13,7 @@ const TYPE_LABEL = { information: 'Info', query: 'Query', action: 'Action' }
 const TYPE_COLOR = { information: '#3B82F6', query: '#D97706', action: '#DC2626' }
 
 // Per-record expandable message thread.
-// listMaxHeight — max-height of the scrollable message list (default 260).
-//   The MessagesModal passes 440 so the wider modal uses the extra space.
-export default function RecordMessages({ recordId, onUnreadChange, listMaxHeight = 260 }) {
+export default function RecordMessages({ recordId, onUnreadChange }) {
   const { session } = useStore()
   const isBO = session.mode === 'backoffice'
 
@@ -89,7 +87,7 @@ export default function RecordMessages({ recordId, onUnreadChange, listMaxHeight
               No messages yet. Start the conversation below.
             </div>
           )}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10, maxHeight: listMaxHeight, overflowY: 'auto' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10, maxHeight: 260, overflowY: 'auto' }}>
             {msgs.map(msg => {
               const mine     = isOwnMessage(msg)
               const hiPri    = msg.priority === 'high'
