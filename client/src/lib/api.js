@@ -367,3 +367,13 @@ export const getStoreTaskReportRows = ({ from, to, storeId, template_id } = {}) 
   if (template_id) q.set('template_id', template_id)
   return request('/reports/store-tasks/json' + (q.toString() ? `?${q}` : ''))
 }
+
+// Unified expiry / Reduce-to-Clear overview (Task M records + store-task sweep
+// lines). Returns { rows, summary, cols, headers }.
+export const getExpiryOverview = ({ from, to, storeId } = {}) => {
+  const q = new URLSearchParams()
+  if (from)    q.set('from', from)
+  if (to)      q.set('to', to)
+  if (storeId) q.set('storeId', storeId)
+  return request('/reports/expiry-overview' + (q.toString() ? `?${q}` : ''))
+}
