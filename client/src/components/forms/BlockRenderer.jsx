@@ -385,6 +385,20 @@ function ExpirySweepBlock({ block, value, onChange }) {
           <button type="button" className="btn btn-primary" onClick={addLine} style={{ flexShrink: 0 }}>＋ Add line</button>
         </div>
 
+        {/* A part-entered line lives only in this row's local state — it is NOT
+            part of the task's answers until "Add line" is tapped. Completing the
+            task with text still sitting here would silently drop that product,
+            so say so loudly. */}
+        {(barcode.trim() || d || m || y || units) && (
+          <div style={{
+            marginTop: 8, padding: '8px 10px', borderRadius: 6,
+            background: '#FFF7E0', border: '1px solid #E0A03A',
+            fontSize: 12.5, color: 'var(--text)'
+          }}>
+            ⚠️ This product isn’t added to the sweep yet — tap <strong>＋ Add line</strong> before finishing the task.
+          </div>
+        )}
+
         {error && <div className="login-error mt-12">{error}</div>}
       </div>
     </div>

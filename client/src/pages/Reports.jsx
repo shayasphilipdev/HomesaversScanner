@@ -350,7 +350,10 @@ function HQReports() {
       setTaskTypes(tt)
       // Back office defaults to all task types EXCEPT Department Check (J) and
       // Price Check (K) — the user can add those manually.
-      if (isBO) setTaskTypeIds(tt.map(t => t.code).filter(c => c !== 'J' && c !== 'K'))
+      // Routine Expiry Sweep (M) is an operations check like J/K — a sweep logs
+      // one record per product, so leaving it in the default selection floods
+      // the HO records report. The user can still add it manually.
+      if (isBO) setTaskTypeIds(tt.map(t => t.code).filter(c => c !== 'J' && c !== 'K' && c !== 'M'))
     }).catch(() => setTaskTypes([]))
     // Always load stores so the Store column can show names for all users (N12).
     // The store filter UI is only shown for back-office users below.
