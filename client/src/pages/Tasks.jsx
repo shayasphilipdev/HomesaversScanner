@@ -59,8 +59,8 @@ export default function Tasks() {
   useEffect(() => {
     getTaskTypes()
       .then(all => {
-        // Expiry Date Check (L) is test-only for now — hide it on the live app.
-        const rows = isTestEnv() ? all : all.filter(t => t.code !== 'L')
+        // Routine Expiry Sweep (M) is test-only for now — hide it on the live app.
+        const rows = isTestEnv() ? all : all.filter(t => t.code !== 'M')
         setTaskTypes(rows)
         // Store users default to Department Check (J); back office defaults to
         // the first daily task type, then whatever is first.

@@ -491,9 +491,9 @@ function HQReports() {
     getTaskTypes().then(tt => {
       setTaskTypes(tt)
       // Back office defaults to all task types EXCEPT the operations checks —
-      // Department Check (J), Price Check (K), Stock Count (H), Expiry Date
-      // Check (L) — the user can add those manually.
-      if (isBO) setTaskTypeIds(tt.map(t => t.code).filter(c => !['J', 'K', 'H', 'L'].includes(c)))
+      // Department Check (J), Price Check (K), Stock Count (H), Routine Expiry
+      // Sweep (M) — the user can add those manually.
+      if (isBO) setTaskTypeIds(tt.map(t => t.code).filter(c => !['J', 'K', 'H', 'M'].includes(c)))
     }).catch(() => setTaskTypes([]))
     // Always load stores so the Store column can show names for all users (N12).
     // The store filter UI is only shown for back-office users below.
