@@ -125,6 +125,21 @@ export default function ExpiryReport() {
         </div>
       </div>
 
+      {data?.truncated && (
+        <div style={{
+          marginTop: 16, padding: '10px 14px', borderRadius: 8,
+          background: '#FFF7E0', border: '1px solid #E0A03A',
+          display: 'flex', gap: 10, alignItems: 'flex-start'
+        }}>
+          <span aria-hidden style={{ fontSize: 16 }}>⚠️</span>
+          <span style={{ fontSize: 13, color: 'var(--text)' }}>
+            <strong>Showing the most recent {data.row_cap?.toLocaleString?.() || data.row_cap} rows only.</strong>{' '}
+            This range returned more data than one report can load, so the totals below are
+            incomplete. Narrow the date range or select fewer stores for accurate figures.
+          </span>
+        </div>
+      )}
+
       {data && (
         <>
           {/* Summary cards */}

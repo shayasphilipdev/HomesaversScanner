@@ -2827,13 +2827,18 @@ export async function onRequest(context) {
       }
 
       const rows = []
+      // Row cap per source. We ask for CAP rows and report truncation honestly
+      // rather than silently clipping the dataset — a clipped set would make the
+      // summary totals under-report with nothing on screen to say so.
+      const CAP = 20000
+      const truncated = { ho: false, store: false }
 
       // ── Source 1: HO Task M records ──
       const trParams = {
         select:    'store_id,barcode_no,product_code,item_name,description,quantity,details,created_at',
         task_type: 'eq.M',
         order:     'created_at.desc',
-        limit:     '20000'
+        limit:     String(CAP)
       }
       const trRange = []
       if (from) trRange.push(`gte.${new Date(from).toISOString()}`)
@@ -2841,6 +2846,7 @@ export async function onRequest(context) {
       if (trRange.length) trParams.created_at = trRange
       if (storeFilter) trParams.store_id = storeFilter.length === 1 ? `eq.${storeFilter[0]}` : `in.(${storeFilter.join(',')})`
       const mRows = await db.select('task_records', trParams)
+      if (mRows.length >= CAP) truncated.ho = true
       for (const r of mRows) {
         const d = r.details && typeof r.details === 'object' ? r.details : {}
         rows.push({
@@ -2859,18 +2865,32 @@ export async function onRequest(context) {
       }
 
       // ── Source 2: Store-Task expiry_sweep block lines ──
-      const siParams = {
-        select: 'store_id,due_date,completed_at,status,answers,store_task_templates(category,blocks)',
-        status: 'eq.completed',
-        order:  'due_date.desc',
-        limit:  '20000'
-      }
-      const siRange = []
-      if (from) siRange.push(`gte.${new Date(from).toISOString().slice(0, 10)}`)
-      if (to)   siRange.push(`lte.${new Date(to).toISOString().slice(0, 10)}`)
-      if (siRange.length) siParams.due_date = siRange
-      if (storeFilter) siParams.store_id = storeFilter.length === 1 ? `eq.${storeFilter[0]}` : `in.(${storeFilter.join(',')})`
-      const sRows = await db.select('store_task_instances', siParams)
+      // Narrow to templates that actually contain an expiry_sweep block first.
+      // Without this the query pulls every completed instance of every template
+      // (each carrying its answers jsonb), which is mostly rows we then throw
+      // away — and it burns the row cap on irrelevant data.
+      const allTemplates  = await db.select('store_task_templates', { select: 'id,blocks' })
+      const sweepTplIds   = allTemplates
+        .filter(t => Array.isArray(t.blocks) && t.blocks.some(b => b?.type === 'expiry_sweep'))
+        .map(t => t.id)
+
+      const sRows = sweepTplIds.length ? await (async () => {
+        const siParams = {
+          select: 'store_id,due_date,completed_at,status,answers,store_task_templates(category,blocks)',
+          status: 'eq.completed',
+          order:  'due_date.desc',
+          limit:  String(CAP)
+        }
+        siParams.template_id = sweepTplIds.length === 1 ? `eq.${sweepTplIds[0]}` : `in.(${sweepTplIds.join(',')})`
+        const siRange = []
+        if (from) siRange.push(`gte.${new Date(from).toISOString().slice(0, 10)}`)
+        if (to)   siRange.push(`lte.${new Date(to).toISOString().slice(0, 10)}`)
+        if (siRange.length) siParams.due_date = siRange
+        if (storeFilter) siParams.store_id = storeFilter.length === 1 ? `eq.${storeFilter[0]}` : `in.(${storeFilter.join(',')})`
+        return db.select('store_task_instances', siParams)
+      })() : []
+      if (sRows.length >= CAP) truncated.store = true
+
       for (const inst of sRows) {
         const t      = inst.store_task_templates || {}
         const blocks = Array.isArray(t.blocks) ? t.blocks : []
@@ -2912,7 +2932,14 @@ export async function onRequest(context) {
         else if (a === 'Rotate')      summary.lines_rotated++
       }
 
-      return json({ rows, summary, cols: EXPIRY_COLS, headers: EXPIRY_HEADERS })
+      return json({
+        rows, summary, cols: EXPIRY_COLS, headers: EXPIRY_HEADERS,
+        // true when a source hit the row cap — the client warns that the
+        // dataset (and therefore the totals) is incomplete.
+        truncated: truncated.ho || truncated.store,
+        truncated_detail: truncated,
+        row_cap: CAP
+      })
     }
 
     // GET /store-tasks/stats?storeId=&from=&to=

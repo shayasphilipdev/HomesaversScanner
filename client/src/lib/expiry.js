@@ -52,7 +52,9 @@ export function daysUntil(dateStr) {
 
 // First-markdown trigger by category (days-to-expiry). Bakery is shortest-dated,
 // long-life grocery/health the longest — matches the sweep cadence table.
-export function firstTrigger(category) {
+// Deliberately not exported: the ladder must only ever be applied via
+// suggestAction() so the cadence rules can't drift into a second copy.
+function firstTrigger(category) {
   if (category === 'Bakery / Ambient') return 14
   if (category === 'Grocery / Canned' || category === 'Health / Pharmacy') return 30
   return 21
