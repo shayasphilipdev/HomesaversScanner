@@ -41,9 +41,9 @@ const BASE_TASKS = [
   { code: 'H', name: 'Stock Count', once: true,
     use: 'Recording how many units are on the shop floor (usually when HO asks).',
     fields: 'Scan barcode · count on the shop floor · note.' },
-  { code: 'L', name: 'Expiry Date Check', testOnly: true,
-    use: 'Record the expiry date of a product and what action was taken.',
-    fields: 'Scan barcode — description fills in automatically. Enter the expiry date (DD / MM / YY boxes — auto-advance as you type). Pick an action: Reduced · Removed · Rotated · OK / In date. Date turns red if ≤ 7 days or already expired, amber if ≤ 14 days.' },
+  { code: 'M', name: 'Routine Expiry Sweep', testOnly: true,
+    use: 'Walk an aisle and log short-dated products — record expiry, units, and the Reduce to Clear action taken.',
+    fields: 'Pick the category once (it stays selected). Then for each product: scan barcode — description fills in automatically · enter the expiry date (DD / MM / YY boxes — auto-advance as you type) · units on shelf · action. The action is suggested from the days left (Rotate · Reduce 30% · Reduce 50% · Reduce 75% · Write Off) and you can change it. Date turns red if ≤ 7 days or expired, amber if ≤ 14 days. Tap Save & next to keep going.' },
   { code: 'I', name: 'Miscellaneous', once: true,
     use: "Anything that doesn't fit the other task types — add a clear note.",
     fields: 'Scan barcode · product name as printed on the item · note.' }

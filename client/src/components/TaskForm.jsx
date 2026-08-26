@@ -11,7 +11,7 @@ import TaskGForm  from './forms/TaskGForm.jsx'
 import TaskHForm  from './forms/TaskHForm.jsx'
 import TaskJForm  from './forms/TaskJForm.jsx'
 import TaskKForm  from './forms/TaskKForm.jsx'
-import TaskLForm  from './forms/TaskLForm.jsx'
+import TaskMForm  from './forms/TaskMForm.jsx'
 
 const REMINDER_KEY = 'hs_barcode_reminder_dismissed'
 
@@ -129,7 +129,7 @@ export default function TaskForm({ taskType, storeId, onSaved }) {
     case 'H': return <>{reminder}<TaskHForm storeId={storeId} onSaved={onSaved} /></>
     case 'J': return <>{reminder}<TaskJForm storeId={storeId} onSaved={onSaved} /></>
     case 'K': return <>{reminder}<TaskKForm storeId={storeId} onSaved={onSaved} /></>
-    case 'L': return <>{reminder}<TaskLForm storeId={storeId} onSaved={onSaved} /></>
+    case 'M': return <>{reminder}<TaskMForm storeId={storeId} onSaved={onSaved} /></>
     default:  return <div className="card"><div className="card-body">No form registered for {taskType}.</div></div>
   }
 }
