@@ -48,6 +48,29 @@ No secrets in the repo (`.gitignore` covers `.env`, `.dev.vars`,
 (`cd client && npm install && npm run build` → `client/dist`). The Pages
 Function `functions/api/[[route]].js` is the entire backend.
 
+### Branch rule (standing, from the user)
+
+| Branch | Builds | Purpose |
+|---|---|---|
+| `main` | Live app — https://homesaversscanner.pages.dev/ | Production, 55 stores |
+| `test` | Test app — https://test.homesaversscanner.pages.dev/ | Trying things that can't be tested on live |
+
+**The rule is one-directional:**
+
+- **Anything `main` gets, `test` gets.** Every change landed on `main` must also be
+  propagated to `test` (cherry-pick), so `test` is never behind live.
+- **Anything specific to `test` stays on `test` only.** Test-only experiments must
+  never be pushed to `main` until they are ready to go live.
+
+So `test` should always be **`main` plus whatever is still under test** — never a
+branch that is missing live features.
+
+> ⚠️ Both apps share **one** Supabase database. A schema or `task_types` change is
+> visible to live immediately, regardless of which branch's code you deployed. Ship
+> the gating code to **both** branches *before* running a migration that activates
+> something new. Task-type visibility is gated client-side via `isTestEnv()`
+> (hostname check), not by any database flag.
+
 > ⚠️ Constraints to respect (from the user, standing):
 > - Do **not** touch `C:\Scraping\PriceTracker` — a separate project.
 > - **No Supabase Auth / no RLS** — access is controlled at the application layer.
