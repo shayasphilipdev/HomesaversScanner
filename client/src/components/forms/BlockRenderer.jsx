@@ -7,6 +7,7 @@ import {
   suggestAction, expiryTone, formatDMY,
 } from '../../lib/expiry.js'
 import ScannerInput from './ScannerInput.jsx'
+import ScreenshotInput from './ScreenshotInput.jsx'
 
 // Renders the inputs for a single completion form built from `blocks`.
 // Parent owns the `answers` object; this component just calls onAnswer(id, value).
@@ -458,6 +459,8 @@ function UploadBlock({ value, onChange, accept, capture, isImage = false }) {
         onChange={e => pick(e.target.files?.[0])}
         disabled={busy}
       />
+      {/* Screenshot routes only make sense for image blocks, not file uploads. */}
+      {isImage && <ScreenshotInput compact onImage={pick} disabled={busy} />}
       {busy && <span className="note" style={{ marginLeft: 8 }}><span className="spinner spinner-dark" /> Uploading…</span>}
       {err && <div className="login-error mt-12">{err}</div>}
     </div>

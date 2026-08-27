@@ -6,6 +6,7 @@ import {
 } from '../lib/api.js'
 import { compressImage, newPhotoNamespace } from '../lib/photos.js'
 import { useToast } from '../components/Toast.jsx'
+import ScreenshotInput from '../components/forms/ScreenshotInput.jsx'
 
 // Chain-wide Product Query board.
 //   - Any signed-in user can post a question (photo + notes) or an answer.
@@ -119,6 +120,7 @@ function NewQuestionCard({ onClose, onSaved, toast }) {
             <label>Photo of the product *</label>
             {photoUrl && <img src={photoUrl} alt="" style={{ maxWidth: 200, borderRadius: 8, marginBottom: 8, display: 'block' }} />}
             <input type="file" accept="image/*" capture="environment" onChange={e => pickPhoto(e.target.files?.[0])} />
+            <ScreenshotInput compact onImage={pickPhoto} disabled={busy} />
           </div>
           <div className="form-group">
             <label>Notes (optional — what do you want to know?)</label>
@@ -276,6 +278,7 @@ function AnswerForm({ questionId, onClose, onSaved, toast }) {
         <label>Photo (optional)</label>
         {photoUrl && <img src={photoUrl} alt="" style={{ maxWidth: 120, borderRadius: 6, marginBottom: 6, display: 'block' }} />}
         <input type="file" accept="image/*" capture="environment" onChange={e => pickPhoto(e.target.files?.[0])} />
+        <ScreenshotInput compact onImage={pickPhoto} disabled={busy} />
       </div>
       {err && <div className="login-error">{err}</div>}
       <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>

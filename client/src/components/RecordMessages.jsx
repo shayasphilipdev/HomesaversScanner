@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { getRecordMessages, postRecordMessage, markRecordMessagesRead, uploadMessagePhoto, deletePhoto } from '../lib/api.js'
 import { compressImage } from '../lib/photos.js'
+import { imageFromDataTransfer } from '../lib/screenshot.js'
+import ScreenshotInput from './forms/ScreenshotInput.jsx'
 import { useStore } from '../App.jsx'
 
 function formatTime(iso) {
@@ -204,6 +206,12 @@ export default function RecordMessages({ recordId, onUnreadChange }) {
             ))}
           </div>
         )}
+        <ScreenshotInput
+          compact
+          disabled={sending || uploading || photos.length >= 3}
+          onImage={file => addPhotos([file])}
+        />
+
         <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end' }}>
           <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
             onChange={e => addPhotos(e.target.files)} />
@@ -222,6 +230,12 @@ export default function RecordMessages({ recordId, onUnreadChange }) {
             value={draft}
             onChange={e => setDraft(e.target.value)}
             onKeyDown={handleKeyDown}
+            onPaste={e => {
+              // Pasting a screenshot straight into the message box is the most
+              // natural route on a PC — attach it instead of pasting its name.
+              const img = imageFromDataTransfer(e.clipboardData)
+              if (img) { e.preventDefault(); addPhotos([img]) }
+            }}
             placeholder="Type a message… (Enter to send, Shift+Enter for new line)"
             style={{ flex: 1, resize: 'vertical', fontSize: 13, borderRadius: 6, padding: '6px 10px', border: '1px solid var(--border)' }}
             disabled={sending}
