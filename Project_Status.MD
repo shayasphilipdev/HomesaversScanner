@@ -65,6 +65,20 @@ Function `functions/api/[[route]].js` is the entire backend.
 So `test` should always be **`main` plus whatever is still under test** — never a
 branch that is missing live features.
 
+> 📌 **Current reality (2026-08-27):** the rule applies **going forward**. `test` is
+> *not* yet caught up — it is missing roughly 25 commits of live work (Dead Stock
+> report, CN-code master sync, B&M daily sync, most of the Dashboard evolution,
+> message-thread photo attachments, the pricing scroll fix, the 21-day retention
+> standardisation). Bringing it level would be `git merge main` into `test`, with
+> conflicts expected wherever the same change was already cherry-picked. The user
+> has decided to **leave this gap as-is for now** — do not "fix" it unprompted.
+> Note `git log test..main` overstates the gap (~40), because many of those commits
+> have same-content twins on `test` with different hashes from cherry-picks.
+>
+> Practical consequence: do not assume a feature present on `main` exists on `test`.
+> Check before relying on it — e.g. message-thread photo attachments exist only on
+> `main`, so screenshot paste support could not be wired into that component there.
+
 > ⚠️ Both apps share **one** Supabase database. A schema or `task_types` change is
 > visible to live immediately, regardless of which branch's code you deployed. Ship
 > the gating code to **both** branches *before* running a migration that activates
