@@ -9,7 +9,7 @@ import {
   getSpacePlanReport, getCompetitorReport, sendToPricing
 } from '../lib/api.js'
 import { COMPETITION_REPORT_COLS, COMPETITION_REPORT_HEADERS } from '../lib/competitionOptions.js'
-import { TASK_FORMS } from '../lib/taskTypes.js'
+import { TASK_FORMS, STORE_CLEARABLE } from '../lib/taskTypes.js'
 import { downloadExcel } from '../lib/excel.js'
 import { useToast } from '../components/Toast.jsx'
 import MultiSelectDropdown from '../components/forms/MultiSelectDropdown.jsx'
@@ -472,12 +472,14 @@ function HQReports() {
 
   // Selection.
   //  · Back office: select pending records to review.
-  //  · Store users: select records they're allowed to clear — J/K still pending,
-  //    plus anything HO has already reviewed (completed / no_change_needed).
+  //  · Store users: select records they're allowed to clear — J/K/M still
+  //    pending, plus anything HO has already reviewed (completed /
+  //    no_change_needed). Kept in step with STORE_CLEARABLE in lib/taskTypes.js
+  //    and with the backend bulk-clear filter.
   const pendingIds = useMemo(() => records.filter(r => r.status === 'pending').map(r => r.id), [records])
   const storeClearableIds = useMemo(() => records.filter(r =>
     r.status === 'completed' || r.status === 'no_change_needed' ||
-    ((r.task_type === 'J' || r.task_type === 'K') && r.status === 'pending')
+    (STORE_CLEARABLE.has(r.task_type) && r.status === 'pending')
   ).map(r => r.id), [records])
 
   const selectableIds  = isBO ? pendingIds : storeClearableIds

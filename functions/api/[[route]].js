@@ -3649,10 +3649,14 @@ export async function onRequest(context) {
         if (!scope.length) return json({ cleared: 0 })
         filter['store_id'] = `in.(${scope.join(',')})`
         // Store users (and area managers) may clear the same records they can
-        // clear individually: J/K still pending, plus anything HO has already
-        // reviewed (completed / no_change_needed).
+        // clear individually: J/K/M still pending, plus anything HO has already
+        // reviewed (completed / no_change_needed). M (Routine Expiry Sweep) is
+        // included because a sweep writes one record per product and raises no
+        // query for HO — keep this in step with STORE_CLEARABLE in
+        // client/src/lib/taskTypes.js. Clearing only archives the row; the
+        // permanent-delete filters below stay J/K-only on purpose.
         if (!isBO) {
-          filter['or'] = '(and(task_type.in.(J,K),status.eq.pending),status.in.(completed,no_change_needed))'
+          filter['or'] = '(and(task_type.in.(J,K,M),status.eq.pending),status.in.(completed,no_change_needed))'
         }
       }
 

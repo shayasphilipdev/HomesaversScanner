@@ -3,7 +3,7 @@ import { updateTaskRecord, deleteTaskRecord, bulkClearTaskRecords, bulkDeleteTas
 import ConfirmDeleteModal from './ConfirmDeleteModal.jsx'
 import { useStore } from '../App.jsx'
 import { useToast } from './Toast.jsx'
-import { TASK_FORMS } from '../lib/taskTypes.js'
+import { TASK_FORMS, STORE_CLEARABLE, HARD_DELETABLE } from '../lib/taskTypes.js'
 import RecordMessages from './RecordMessages.jsx'
 
 const STATUS_LABEL = {
@@ -13,9 +13,6 @@ const STATUS_LABEL = {
   store_completed:  { label: 'Store confirmed',  cls: 'badge-store-done' },
   cleared:          { label: 'Clear',            cls: 'badge-store-done' },
 }
-
-// Task types where store users can clear directly from Pending (no HO review needed).
-const STORE_CLEARABLE = new Set(['J', 'K'])
 
 function formatDT(iso) {
   if (!iso) return '—'
@@ -62,9 +59,10 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
   const clearableSet = new Set(clearableRows.map(r => r.id))
   const hasBulkClear = clearableRows.length > 0
 
-  // Rows eligible for permanent delete: every J/K (Department/Price Check) row,
-  // for every user. Selection checkboxes are shown whenever any exist.
-  const jkRows = records.filter(r => STORE_CLEARABLE.has(r.task_type))
+  // Rows the user can bulk-action: permanently delete (J/K, any user) or, store
+  // side, clear (J/K/M still pending). Kept separate — a sweep row is clearable
+  // but must never show a permanent-delete button.
+  const selectableRows = records.filter(r => HARD_DELETABLE.has(r.task_type) || clearableSet.has(r.id))
   const selectedClearableCount = [...selected].filter(id => clearableSet.has(id)).length
 
   const toggleRow = (id) => setSelected(prev => {
@@ -73,7 +71,7 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
     return next
   })
   const toggleAll = () => {
-    const ids = jkRows.map(r => r.id)
+    const ids = selectableRows.map(r => r.id)
     setSelected(prev => prev.size === ids.length ? new Set() : new Set(ids))
   }
 
@@ -183,17 +181,16 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
     )
   }
 
-  // Checkbox column shows whenever there are J/K rows (selectable for delete,
-  // and — for store users — clear).
-  const showCheckCol = jkRows.length > 0
+  // Checkbox column shows whenever there is anything the user can bulk-action.
+  const showCheckCol = selectableRows.length > 0
 
   return (
     <div className="card">
-      {/* Bulk toolbar for J/K rows: store Clear (archive) + everyone Delete (permanent). */}
-      {jkRows.length > 0 && (
+      {/* Bulk toolbar: store Clear (archive; J/K/M) + Delete (permanent; J/K only). */}
+      {selectableRows.length > 0 && (
         <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <button className="btn btn-sm btn-outline" onClick={toggleAll}>
-            {selected.size === jkRows.length && jkRows.length > 0 ? 'Deselect all' : `Select all J/K (${jkRows.length})`}
+            {selected.size === selectableRows.length && selectableRows.length > 0 ? 'Deselect all' : `Select all (${selectableRows.length})`}
           </button>
           {hasBulkClear && selectedClearableCount > 0 && (
             <button
@@ -214,7 +211,7 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
             </button>
           )}
           <span className="note" style={{ fontSize: 12 }}>
-            {hasBulkClear ? 'Clear archives the record · Delete removes it permanently.' : 'Delete removes J/K records permanently.'}
+            {hasBulkClear ? 'Clear archives the record · Delete removes it permanently.' : 'Delete removes Department / Price Check records permanently.'}
           </span>
         </div>
       )}
@@ -246,9 +243,12 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
               const reviewed = r.status === 'completed' || r.status === 'no_change_needed'
               // Store-side: J/K records can be cleared directly from pending.
               const storeCanClearNow = !isBO && STORE_CLEARABLE.has(r.task_type) && r.status === 'pending'
-              const isJK          = STORE_CLEARABLE.has(r.task_type)
-              // Every J/K row is selectable (for permanent delete; store clear too).
-              const isSelectable  = isJK
+              // Permanent delete stays J/K-only. A sweep (M) row is clearable but
+              // must NOT show a delete button — the backend rejects it for store
+              // roles, and those rows are the Expiry Overview's source data.
+              const canHardDelete = HARD_DELETABLE.has(r.task_type)
+              // Selectable = anything this user can bulk-action on this row.
+              const isSelectable  = canHardDelete || clearableSet.has(r.id)
               const msgCount      = r.message_count || 0
               // Row colour class: green = HO reviewed; amber = has messages.
               const rowClass = reviewed ? 'tr-reviewed' : msgCount > 0 ? 'tr-has-msg' : ''
@@ -314,7 +314,7 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
                           {msgCount > 0 && <span className="msg-toggle-badge">{msgCount}</span>}
                         </button>
                         {/* J/K: permanent delete for every user, behind the strong red modal. */}
-                        {isJK && (
+                        {canHardDelete && (
                           <button
                             className="btn btn-sm"
                             title="Permanently delete this record"
@@ -323,7 +323,7 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
                           >🗑 Delete</button>
                         )}
                         {/* Existing generic delete — unchanged — for non-J/K rows only. */}
-                        {!isJK && (isBO || r.status === 'store_completed') && (
+                        {!canHardDelete && (isBO || r.status === 'store_completed') && (
                           <button className="btn btn-sm btn-icon btn-outline" title="Delete" onClick={() => handleDelete(r.id)}>🗑</button>
                         )}
                       </div>
