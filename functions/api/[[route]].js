@@ -395,22 +395,6 @@ async function ensureInstancesExist(db, env, storeId, date) {
   return Array.isArray(written) ? written.length : 0
 }
 
-// CSV builder. cols = object-key names; headers = display names (same order).
-// URL_COLS = set of keys whose values should render as Excel HYPERLINK formulas.
-function toCSV(rows, cols, headers, urlCols) {
-  const esc  = v => `"${String(v ?? '').replace(/"/g, '""')}"`
-  const escUrl = v => {
-    const s = String(v ?? '').trim()
-    if (!s) return '""'
-    return `"=HYPERLINK(""${s.replace(/"/g, '""')}"",""View"")"`
-  }
-  const head = (headers || cols).map(h => esc(h)).join(',')
-  const lines = rows.map(r =>
-    cols.map(c => (urlCols && urlCols.has(c)) ? escUrl(r[c]) : esc(r[c])).join(',')
-  )
-  return [head, ...lines].join('\n') + '\n'
-}
-
 // ── Router ──────────────────────────────────────────────────────────────────
 
 // ── Auto-cleanup (C5/C6) ──────────────────────────────────────────────────
@@ -889,96 +873,6 @@ export async function onRequest(context) {
       if (!b.before) return err('before timestamp required', 400)
       const deleted = await db.rpc('flush_stale_prices', { p_before: b.before })
       return json({ deleted: typeof deleted === 'number' ? deleted : 0 })
-    }
-
-    // Service-account bulk product sync — used by the scheduled
-    // PowerShell job to push the daily product master Excel.
-    // Auth: shared secret in the X-Sync-Secret header (set as a Cloudflare
-    // Pages env var named PRODUCT_SYNC_SECRET). No JWT needed.
-    if (path === '/products/sync' && method === 'POST') {
-      if (!env.PRODUCT_SYNC_SECRET) return err('PRODUCT_SYNC_SECRET not configured', 500)
-      const provided = request.headers.get('X-Sync-Secret') || ''
-      if (provided !== env.PRODUCT_SYNC_SECRET) return err('Forbidden', 403)
-      const rows = await request.json()
-      if (!Array.isArray(rows) || !rows.length) return err('Empty payload', 400)
-
-      const now = new Date().toISOString()
-      const allSuppliers = await db.select('suppliers', { select: 'id,supplier_code,supplier_name,is_active' })
-      const supplierByName = new Map(
-        allSuppliers.filter(s => s.is_active && s.supplier_name).map(s => [s.supplier_name.trim().toLowerCase(), s.id])
-      )
-      const supplierByCode = new Map(
-        allSuppliers.filter(s => s.is_active && s.supplier_code).map(s => [s.supplier_code.trim().toLowerCase(), s.id])
-      )
-
-      // Filtering rule (user request): a product row is only synced when its
-      // supplier_code matches an active supplier in the suppliers table.
-      // Anything else is dropped, which trims the 100k-row source file down
-      // to the products we actually care about.
-      const byId = new Map()
-      let duplicates = 0
-      let skippedNoSupplier = 0
-      let skippedNoId = 0
-      for (const r of rows) {
-        if (!r?.product_id || !String(r.product_id).trim()) { skippedNoId++; continue }
-        let supplier_id = r.supplier_id && /^[a-f0-9-]{36}$/.test(r.supplier_id) ? r.supplier_id : null
-        if (!supplier_id && r.supplier_code) {
-          const key = String(r.supplier_code).trim().toLowerCase()
-          supplier_id = supplierByCode.get(key) || null
-        }
-        if (!supplier_id && r.supplier_name) {
-          const key = String(r.supplier_name).trim().toLowerCase()
-          supplier_id = supplierByName.get(key) || null
-        }
-        if (!supplier_id) { skippedNoSupplier++; continue }
-        const row = {
-          product_id:  String(r.product_id).trim(),
-          description: r.description ? String(r.description).trim() : null,
-          uom:         r.uom         ? String(r.uom).trim()         : null,
-          category:    r.category    ? String(r.category).trim()    : null,
-          supplier_id,
-          is_active:   true,
-          updated_at:  now
-        }
-        if (byId.has(row.product_id)) duplicates++
-        byId.set(row.product_id, row)
-      }
-      const clean = Array.from(byId.values())
-      if (!clean.length) return err(`No rows matched an active supplier. (received=${rows.length}, no_supplier_match=${skippedNoSupplier}, no_product_id=${skippedNoId})`, 400)
-
-      // Server-side chunking — keeps each PostgREST round-trip small enough
-      // that even an enormous file doesn't blow past the Workers payload or
-      // CPU budget. 500 rows per chunk mirrors the manual UI's chunk size.
-      const CHUNK = 500
-      let written = 0
-      for (let i = 0; i < clean.length; i += CHUNK) {
-        const slice = clean.slice(i, i + CHUNK)
-        const res = await fetch(`${env.SUPABASE_URL}/rest/v1/products?on_conflict=product_id`, {
-          method: 'POST',
-          headers: {
-            'apikey':        env.SUPABASE_ANON_KEY,
-            'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`,
-            'Content-Type':  'application/json',
-            'Prefer':        'return=representation,resolution=merge-duplicates'
-          },
-          body: JSON.stringify(slice)
-        })
-        if (!res.ok) {
-          const txt = await res.text()
-          return err(`Chunk ${i / CHUNK + 1} failed at row ${i + 1}: ${txt.slice(0, 400)} (so far written: ${written})`, 502)
-        }
-        const w = await res.json()
-        written += Array.isArray(w) ? w.length : 0
-      }
-      return json({
-        ok: true,
-        written,
-        duplicates_collapsed: duplicates,
-        received:             rows.length,
-        skipped_no_supplier:  skippedNoSupplier,
-        skipped_no_id:        skippedNoId,
-        synced_at:            now
-      })
     }
 
     // Single login flow — username + PIN. The legacy /stores/verify-pin
@@ -2916,13 +2810,12 @@ export async function onRequest(context) {
     // Unified expiry / Reduce-to-Clear activity across BOTH data sources:
     //  - HO Task M (Routine Expiry Sweep) records in task_records
     //  - Store-Task "expiry_sweep" block lines in store_task_instances.answers
-    // Returns { rows, summary, cols, headers } for on-screen render + client xlsx.
+    // Returns { rows, cols, headers } for on-screen render + client xlsx.
     if (path === '/reports/expiry-overview' && method === 'GET') {
       if (!isBO) return err('Back office only', 403)
 
       const EXPIRY_COLS    = ['source','store_name','date','category','barcode','description','expiry_date','days_to_expiry','units','action','markdown_pct']
       const EXPIRY_HEADERS = ['Source','Store','Date','Category','Product Barcode','Description','Expiry Date','Days to Expiry','Units','Action','Markdown %']
-      const emptyExpirySummary = () => ({ total_lines: 0, units_reduced: 0, units_written_off: 0, lines_rotated: 0, by_action: {} })
 
       const p        = url.searchParams
       const from     = p.get('from')
@@ -2935,10 +2828,10 @@ export async function onRequest(context) {
       let storeFilter = null   // array of ids, or null = no restriction
       if (storesWanted.length) {
         const allowed = scope === null ? storesWanted : storesWanted.filter(id => scope.includes(id))
-        if (!allowed.length) return json({ rows: [], summary: emptyExpirySummary(), cols: EXPIRY_COLS, headers: EXPIRY_HEADERS })
+        if (!allowed.length) return json({ rows: [], cols: EXPIRY_COLS, headers: EXPIRY_HEADERS })
         storeFilter = allowed
       } else if (scope !== null) {
-        if (!scope.length) return json({ rows: [], summary: emptyExpirySummary(), cols: EXPIRY_COLS, headers: EXPIRY_HEADERS })
+        if (!scope.length) return json({ rows: [], cols: EXPIRY_COLS, headers: EXPIRY_HEADERS })
         storeFilter = scope
       }
 
@@ -3045,22 +2938,11 @@ export async function onRequest(context) {
         }
       }
 
-      // ── Summary by action ──
-      const summary = emptyExpirySummary()
-      for (const r of rows) {
-        summary.total_lines++
-        const u = Number(r.units) || 0
-        const a = r.action || '(none)'
-        if (!summary.by_action[a]) summary.by_action[a] = { lines: 0, units: 0 }
-        summary.by_action[a].lines++
-        summary.by_action[a].units += u
-        if (a === 'Write Off')        summary.units_written_off += u
-        else if (a.startsWith('Reduce')) summary.units_reduced += u
-        else if (a === 'Rotate')      summary.lines_rotated++
-      }
-
+      // No summary is computed here on purpose. The report recomputes the
+      // totals client-side so they follow the on-screen category/action
+      // filters; a second server-side copy could only drift from it.
       return json({
-        rows, summary, cols: EXPIRY_COLS, headers: EXPIRY_HEADERS,
+        rows, cols: EXPIRY_COLS, headers: EXPIRY_HEADERS,
         // true when a source hit the row cap — the client warns that the
         // dataset (and therefore the totals) is incomplete.
         truncated: truncated.ho || truncated.store,
@@ -3465,25 +3347,6 @@ export async function onRequest(context) {
 
     // GET /products/lookup
     // Joins suppliers so the scan-result UI can show "Supplier: X" subtly.
-    if (path === '/products/lookup' && method === 'GET') {
-      const code = url.searchParams.get('code')
-      if (!code) return json(null)
-      const rows = await db.select('products', {
-        select: 'product_id,description,uom,supplier_id,suppliers(supplier_name)',
-        product_id: `eq.${code}`,
-        limit: '1'
-      })
-      const r = rows[0]
-      if (!r) return json(null)
-      return json({
-        product_id:    r.product_id,
-        description:   r.description,
-        uom:           r.uom,
-        supplier_id:   r.supplier_id,
-        supplier_name: r.suppliers?.supplier_name || null
-      })
-    }
-
     // GET /alt-barcodes/lookup?barcode=  — scan lookup by barcode_no.
     // Returns the item details to show in the task body after a scan.
     if (path === '/alt-barcodes/lookup' && method === 'GET') {

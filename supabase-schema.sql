@@ -218,8 +218,16 @@ CREATE INDEX IF NOT EXISTS idx_tr_created_at ON task_records (created_at);
 CREATE INDEX IF NOT EXISTS idx_tr_store_date ON task_records (store_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_tr_supplier   ON task_records (supplier_id);
 CREATE INDEX IF NOT EXISTS idx_tr_barcode_no ON task_records (barcode_no);
--- Partial index: find records with no cleared_at (i.e. still open)
-CREATE INDEX IF NOT EXISTS idx_tr_cleared_at ON task_records (cleared_at) WHERE cleared_at IS NULL;
+-- Added live for the 2026-07 data volume (~294k rows). These were missing from
+-- this file, so a rebuild came up without them and immediately re-hit the
+-- dashboard 57014 statement timeouts / lost the export's keyset pagination.
+CREATE INDEX IF NOT EXISTS idx_tr_active_store_date ON task_records (store_id, created_at) WHERE status <> 'cleared';
+CREATE INDEX IF NOT EXISTS idx_tr_active_created_at ON task_records (created_at)            WHERE status <> 'cleared';
+-- Backs keyset (seek) pagination: ROW(created_at, id) > ROW(cursor).
+CREATE INDEX IF NOT EXISTS idx_tr_created_at_id     ON task_records (created_at, id);
+-- DROPPED LIVE 2026-08-12 (never scanned, and malformed — it indexed
+-- cleared_at WHERE cleared_at IS NULL, i.e. only NULLs). Do not recreate.
+-- CREATE INDEX IF NOT EXISTS idx_tr_cleared_at ON task_records (cleared_at) WHERE cleared_at IS NULL;
 
 -- ── Task record events (audit ledger) ─────────────────────────────────────
 -- Immutable append-only log of every status transition on task_records.
@@ -239,7 +247,9 @@ CREATE TABLE IF NOT EXISTS task_record_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_tre_record ON task_record_events (record_id, at);
-CREATE INDEX IF NOT EXISTS idx_tre_user   ON task_record_events (by_user_id);
+-- DROPPED LIVE 2026-08-12 (never scanned). Recreate only if Admin -> Reports
+-- "Activity by user" filtering becomes a real workflow.
+-- CREATE INDEX IF NOT EXISTS idx_tre_user   ON task_record_events (by_user_id);
 
 -- ── Store task templates ───────────────────────────────────────────────────
 -- Back-office-authored recurring checklist tasks pushed to stores.
@@ -308,8 +318,9 @@ CREATE TABLE IF NOT EXISTS store_task_instances (
 
 CREATE INDEX IF NOT EXISTS idx_sti_store_status ON store_task_instances (store_id, status);
 CREATE INDEX IF NOT EXISTS idx_sti_due_date     ON store_task_instances (due_date);
-CREATE INDEX IF NOT EXISTS idx_sti_period       ON store_task_instances (period_key);
-CREATE INDEX IF NOT EXISTS idx_sti_completed_by ON store_task_instances (completed_by);
+-- DROPPED LIVE 2026-08-12 (never scanned). Do not recreate.
+-- CREATE INDEX IF NOT EXISTS idx_sti_period       ON store_task_instances (period_key);
+-- CREATE INDEX IF NOT EXISTS idx_sti_completed_by ON store_task_instances (completed_by);
 
 -- ── Product questions ─────────────────────────────────────────────────────
 -- Chain-wide product-query board.  Stores post a photo + notes asking other
