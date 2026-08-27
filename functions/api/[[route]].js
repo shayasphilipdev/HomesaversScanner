@@ -2555,15 +2555,34 @@ export async function onRequest(context) {
         // compliance stats are accurate. Keyed on the period, not due_date —
         // due_date is only the day the instance was generated, so a weekly task
         // raised on Monday must not be called missed on Tuesday.
-        // Best-effort — ignore errors so the page still loads.
+        //
+        // NB: this used to also set updated_at, a column store_task_instances
+        // does not have. PostgREST rejected the whole PATCH and the error was
+        // swallowed by the catch below, so nothing was EVER marked missed and
+        // compliance always read 0% missed. Do not reintroduce that field
+        // without adding the column first.
+        //
+        // Still best-effort — the task list must render even if this fails —
+        // but failures are logged now rather than vanishing silently.
+        //
+        // Bounded to the recent past on purpose. Because the update above never
+        // actually ran, every uncompleted instance ever created is still
+        // 'pending', and store_task_instances has no retention purge — so an
+        // unbounded PATCH on the first load after deploy could touch a very
+        // large backlog inside a live request. A 90-day window covers any
+        // daily/weekly/monthly period that has realistically just ended, while
+        // keeping this update small and predictable. Older rows simply stay
+        // 'pending', exactly as they are today.
+        const missedFloor = new Date(today.getTime() - 90 * 86400000).toISOString().slice(0, 10)
         await db.update('store_task_instances',
           {
             store_id: `eq.${explicit}`,
             status:   'eq.pending',
+            due_date: `gte.${missedFloor}`,
             and:      endedPeriodFilter(today)
           },
-          { status: 'missed', updated_at: new Date().toISOString() }
-        ).catch(() => {})
+          { status: 'missed' }
+        ).catch(e => console.error('mark-missed failed:', e?.message || e))
 
         const rows = await db.select('store_task_instances', {
           select: SELECT,
