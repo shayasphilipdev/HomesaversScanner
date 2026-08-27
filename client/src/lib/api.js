@@ -360,6 +360,10 @@ export const getStoreTasksToday = ({ storeId } = {}) => {
 }
 export const completeStoreTask  = (id, { photo_url, notes, answers } = {}) =>
   request(`/store-tasks/${id}/complete`, { method: 'PATCH', body: { photo_url, notes, answers } })
+// Undo a mis-tapped completion. Keeps the answers — only the completion is
+// undone — so a part-finished sweep can be carried on.
+export const reopenStoreTask    = (id, reason) =>
+  request(`/store-tasks/${id}/reopen`, { method: 'PATCH', body: { reason: reason || null } })
 export const getStoreTaskStats  = ({ from, to, storeId } = {}) => {
   const q = new URLSearchParams()
   if (from)    q.set('from', from)
