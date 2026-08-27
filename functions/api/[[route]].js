@@ -292,6 +292,37 @@ function periodKeyFor(template, date) {
     default:         return iso
   }
 }
+// The period keys that are "current" on a given date — one per frequency.
+// An instance stays open for the whole of its period, so a weekly task raised
+// on Monday is still actionable on Friday. (Before this, the task list matched
+// on due_date = today, which is the day the instance happened to be generated,
+// so anything other than a daily task vanished after one day and could never be
+// re-created — the UNIQUE (template, store, period_key) row already existed.)
+// once_off has no calendar period; it is handled separately by its key prefix.
+function currentPeriodKeys(date) {
+  const iso = date.toISOString().slice(0, 10)
+  return [iso, isoWeek(date), iso.slice(0, 7), iso.slice(0, 4)]
+}
+
+// PostgREST filter: instances a store should see today — either the instance's
+// period covers today, or it is a once-off that still has not been done.
+// Written as separate eq. terms rather than one in.(…) because a nested
+// in.(a,b,c) inside or=(…) leans on PostgREST's paren/comma parsing; this form
+// has no nested parentheses and cannot be mis-parsed.
+function openTodayFilter(date) {
+  const terms = currentPeriodKeys(date).map(k => `period_key.eq.${k}`)
+  terms.push('and(period_key.like.once*,status.eq.pending)')
+  return `(${terms.join(',')})`
+}
+
+// PostgREST filter: pending instances whose period has already ENDED, i.e. every
+// pending row that is not in one of today's periods and is not a once-off.
+function endedPeriodFilter(date) {
+  const terms = currentPeriodKeys(date).map(k => `period_key.neq.${k}`)
+  terms.push('period_key.not.like.once*')
+  return `(${terms.join(',')})`
+}
+
 function templateAppliesToStore(template, store) {
   switch (template.applies_to) {
     case 'all':    return true
@@ -2438,6 +2469,10 @@ export async function onRequest(context) {
 
         // M17: only run ensureInstancesExist if no instances exist yet today.
         // Prevents N redundant template+store DB queries on every page load.
+        // This one IS keyed on due_date deliberately — due_date records the day
+        // an instance was generated, so it answers "has the generator run for
+        // this store today?". It is not a visibility check; that is
+        // openTodayFilter() below, which works off the period instead.
         const existing = await db.select('store_task_instances', {
           select: 'id', store_id: `eq.${explicit}`, due_date: `eq.${todayIso}`, limit: '1'
         })
@@ -2445,17 +2480,24 @@ export async function onRequest(context) {
           await ensureInstancesExist(db, env, explicit, today)
         }
 
-        // M7: mark any prior-day pending instances as 'missed' so compliance
-        // stats are accurate. Best-effort — ignore errors so the page still loads.
+        // M7: mark pending instances whose period has ENDED as 'missed' so
+        // compliance stats are accurate. Keyed on the period, not due_date —
+        // due_date is only the day the instance was generated, so a weekly task
+        // raised on Monday must not be called missed on Tuesday.
+        // Best-effort — ignore errors so the page still loads.
         await db.update('store_task_instances',
-          { store_id: `eq.${explicit}`, status: 'eq.pending', due_date: `lt.${todayIso}` },
+          {
+            store_id: `eq.${explicit}`,
+            status:   'eq.pending',
+            and:      endedPeriodFilter(today)
+          },
           { status: 'missed', updated_at: new Date().toISOString() }
         ).catch(() => {})
 
         const rows = await db.select('store_task_instances', {
           select: SELECT,
           store_id: `eq.${explicit}`,
-          due_date: `eq.${todayIso}`,
+          or: openTodayFilter(today),
           order: 'created_at.asc'
         })
         const visible = rows.filter(r => templateTargetsUser(r.store_task_templates || {}, session))
@@ -2463,7 +2505,7 @@ export async function onRequest(context) {
       }
 
       // Multi-store (aggregate) view.
-      const params = { select: SELECT, due_date: `eq.${todayIso}`, order: 'created_at.asc', limit: '500' }
+      const params = { select: SELECT, or: openTodayFilter(today), order: 'created_at.asc', limit: '500' }
       if (scope !== null) {
         if (!scope.length) return json([])
         params['store_id'] = `in.(${scope.join(',')})`
