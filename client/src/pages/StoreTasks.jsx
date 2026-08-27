@@ -9,6 +9,7 @@ import BlockRenderer from '../components/forms/BlockRenderer.jsx'
 import ScreenshotInput from '../components/forms/ScreenshotInput.jsx'
 import CurrentStorePicker from '../components/CurrentStorePicker.jsx'
 import { STORE_ROLE_KEYS, canAccessTemplates } from '../lib/roles.js'
+import { readDraft, writeDraft, clearDraft, pruneDrafts } from '../lib/storeTaskDraft.js'
 
 // Quick link to the Task Templates editor — shown to template-capable roles
 // (store managers, area managers, buying roles, admin) so they can reach it
@@ -67,6 +68,10 @@ function StoreTodayView() {
   }
   useEffect(() => { load() /* eslint-disable-next-line */ }, [currentStoreId])
 
+  // Drop expired drafts once per visit so a shared tablet doesn't accumulate
+  // months of abandoned sweeps.
+  useEffect(() => { pruneDrafts() }, [])
+
   const onCompleted = (id, patch) => setItems(its => its.map(i => i.id === id ? { ...i, ...patch } : i))
 
   const remaining = items.filter(i => i.status === 'pending')
@@ -117,18 +122,47 @@ function StoreTodayView() {
 }
 
 function TaskCard({ item, toast, onCompleted }) {
+  const { session } = useStore()
   const t = item.store_task_templates || {}
   const done = item.status === 'completed'
   const blocks = Array.isArray(t.blocks) ? t.blocks : []
   const hasBlocks = blocks.length > 0
 
+  // A part-finished sweep is worth protecting: answers are only persisted by the
+  // submit below, so without this a reload loses every scan. Only ever seed from
+  // a draft for a still-pending block task — the server copy is authoritative
+  // for anything already completed.
+  const userId = session?.userId || null
+  const [answers, setAnswers] = useState(() => {
+    if (done || !hasBlocks) return item.answers || {}
+    const draft = readDraft(userId, item.id)
+    return draft || item.answers || {}
+  })
+  const [restored, setRestored] = useState(
+    () => !done && hasBlocks && !!readDraft(userId, item.id)
+  )
+  const [draftFailed, setDraftFailed] = useState(false)
+
   const [expanded, setExpanded] = useState(!done && (hasBlocks || t.requires_photo || t.requires_notes))
-  const [answers, setAnswers]   = useState(item.answers || {})
   const [photo, setPhoto]       = useState(null)
   const [photoUrl, setPhotoUrl] = useState(item.photo_url || '')
   const [notes, setNotes]       = useState(item.notes || '')
   const [busy, setBusy]         = useState(false)
   const [err, setErr]           = useState('')
+
+  // Save as the operator works. Skipped once completed so submitting does not
+  // immediately write the draft back.
+  useEffect(() => {
+    if (done || !hasBlocks) return
+    if (!answers || Object.keys(answers).length === 0) return
+    if (!writeDraft(userId, item.id, answers)) setDraftFailed(true)
+  }, [answers, done, hasBlocks, userId, item.id])
+
+  const discardDraft = () => {
+    clearDraft(userId, item.id)
+    setAnswers(item.answers || {})
+    setRestored(false)
+  }
 
   const pickPhoto = async (file) => {
     if (!file) return
@@ -155,6 +189,9 @@ function TaskCard({ item, toast, onCompleted }) {
         notes:     notes.trim() || null,
         answers:   hasBlocks ? answers : undefined
       })
+      // Submitted — the server now holds the answers, so drop the local copy.
+      clearDraft(userId, item.id)
+      setRestored(false)
       toast.success('Task completed.')
       onCompleted(item.id, { status: 'completed', completed_at: updated.completed_at, photo_url: url, notes, answers })
     } catch (e) { setErr(e.message); toast.error(e.message) } finally { setBusy(false) }
@@ -191,6 +228,37 @@ function TaskCard({ item, toast, onCompleted }) {
           <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border-soft)' }}>
             {t.instructions && (
               <p className="note" style={{ marginBottom: 10 }}>{t.instructions}</p>
+            )}
+
+            {/* Say so when work has been brought back — seeing unexplained lines
+                appear, with no way to tell whether they are genuine, is worse
+                than losing them. */}
+            {restored && (
+              <div style={{
+                marginBottom: 10, padding: '8px 12px', borderRadius: 6,
+                background: '#E8F1FB', border: '1px solid #5B8DEF',
+                display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap'
+              }}>
+                <span aria-hidden>↩️</span>
+                <span style={{ flex: 1, fontSize: 13, minWidth: 180 }}>
+                  Unfinished work from this device was restored. Carry on, or start again.
+                </span>
+                <button type="button" className="btn btn-sm btn-outline" onClick={discardDraft}>
+                  Start over
+                </button>
+              </div>
+            )}
+
+            {/* Storage unavailable (private window, storage disabled, full). The
+                task still submits — but progress is not being protected, and the
+                operator should know that before scanning 40 products. */}
+            {draftFailed && (
+              <div style={{
+                marginBottom: 10, padding: '8px 12px', borderRadius: 6,
+                background: '#FFF7E0', border: '1px solid #E0A03A', fontSize: 13
+              }}>
+                ⚠️ This device won’t save progress — finish the task in one go, or your entries could be lost.
+              </div>
             )}
 
             {hasBlocks ? (
