@@ -69,7 +69,6 @@ export const BLOCK_TYPE_BY_KEY = Object.fromEntries(BLOCK_TYPES.map(t => [t.type
 // whether to read/write from the `answers` object, and by validators to
 // know which IDs to skip when checking `required`.
 export const isDisplayBlock = (b) => BLOCK_TYPE_BY_KEY[b?.type]?.family === 'display'
-export const isInputBlock   = (b) => BLOCK_TYPE_BY_KEY[b?.type]?.family === 'input'
 
 // Available variants for the 'alert' block — keep in sync with the renderer.
 export const ALERT_VARIANTS = [

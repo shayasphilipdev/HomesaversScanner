@@ -93,10 +93,6 @@ export const getProductMaster = ({ q = '', page = 1, filters = {} } = {}) => {
 // Distinct values for the Product Master dropdown filters.
 export const getProductMasterFilters = () => request('/product-master/filters')
 
-// ── Products master lookup ──────────────────────────────────────────────────
-
-export const lookupProduct = (productCode) =>
-  request(`/products/lookup?code=${encodeURIComponent(productCode)}`)
 
 // Phase 3: scan lookup against the Alternate Barcode table (Barcode_No is the
 // primary key). Returns { barcode_no, ean_barcode, item_name, supl_id,
