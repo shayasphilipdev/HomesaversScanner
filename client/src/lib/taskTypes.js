@@ -22,6 +22,18 @@ export const TASK_FORMS = {
   I: { name: 'Miscellaneous Tasks',  implemented: true,  warning: null }
 }
 
+// Task types a store user can clear directly from Pending, with no HO review.
+// M (Routine Expiry Sweep) belongs here: a sweep writes one record per product —
+// 20-60 of them — and carries no query for HO to answer, so waiting on review
+// just buries the store's own list.
+export const STORE_CLEARABLE = new Set(['J', 'K', 'M'])
+
+// Task types ANY user may PERMANENTLY delete. Deliberately NOT M: the backend
+// delete filters only allow J/K for store roles, and sweep rows are the source
+// data behind the HO Expiry Overview report. Clearing is a reversible archive;
+// deleting is not.
+export const HARD_DELETABLE = new Set(['J', 'K'])
+
 export const FREQUENCY_LABEL = {
   daily:    'Daily',
   weekly:   'Weekly',
