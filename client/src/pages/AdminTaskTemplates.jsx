@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react'
 import { useStore } from '../App.jsx'
 import {
   adminListTemplates, adminCreateTemplate, adminUpdateTemplate, adminDeleteTemplate,
-  adminListAreas, adminListStores, adminListUsers, getLookupOptions,
+  getAreas, getStores, adminListUsers, getLookupOptions,
   adminCreateLookup
 } from '../lib/api.js'
 import { useToast } from '../components/Toast.jsx'
 import AdminNav from '../components/AdminNav.jsx'
+import { canAccessTemplates } from '../lib/roles.js'
 import BlockBuilder from '../components/forms/BlockBuilder.jsx'
 import MultiSelectDropdown from '../components/forms/MultiSelectDropdown.jsx'
 
@@ -40,12 +41,15 @@ const PRIORITY_OPTIONS = [
   { value: 'low',    label: '🟢 Low' }
 ]
 
-const TASK_CREATOR_ROLES = ['buying_manager', 'area_manager', 'buying_head', 'admin']
 
 export default function AdminTaskTemplates() {
   const { session } = useStore()
   const toast = useToast()
-  const canCreate = TASK_CREATOR_ROLES.includes(session.role) || session.mode === 'backoffice'
+  // Single source of truth, matching the backend's task-creator set. The old
+  // local list was missing store_manager (so 56 store managers hit a dead end on
+  // a page AdminGuard had already admitted them to) and its
+  // "|| session.mode === 'backoffice'" bypass admitted roles the API rejects.
+  const canCreate = canAccessTemplates(session)
 
   const [templates, setTemplates] = useState([])
   const [areas, setAreas]   = useState([])
@@ -60,7 +64,10 @@ export default function AdminTaskTemplates() {
     setLoading(true); setError('')
     try {
       const [t, a, s, u, c] = await Promise.all([
-        adminListTemplates(), adminListAreas(), adminListStores(),
+        // getAreas/getStores (not the /admin/* variants): those are admin-only,
+        // and this page is open to every task creator. They return the same
+        // id/name/code fields the scope pickers below need.
+        adminListTemplates(), getAreas(), getStores(),
         adminListUsers().catch(() => []),
         getLookupOptions({ kind: 'task_category' }).catch(() => [])
       ])
