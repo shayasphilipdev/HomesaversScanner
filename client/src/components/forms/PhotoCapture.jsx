@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { compressImage } from '../../lib/photos.js'
+import ScreenshotInput from './ScreenshotInput.jsx'
 
 // Photo capture widget.
 // - Click "Take or upload" → native file picker (camera OR gallery on phones).
@@ -15,8 +16,8 @@ export default function PhotoCapture({ label, value, onChange, required }) {
 
   const pick = () => fileRef.current?.click()
 
-  const handleFile = async (e) => {
-    const file = e.target.files?.[0]
+  // Shared by the file picker and the screenshot paste/capture routes.
+  const accept = async (file) => {
     if (!file) return
     setBusy(true); setError('')
     try {
@@ -30,9 +31,13 @@ export default function PhotoCapture({ label, value, onChange, required }) {
       setError(err.message || 'Could not process image')
     } finally {
       setBusy(false)
-      // Allow re-picking the same file
-      e.target.value = ''
     }
+  }
+
+  const handleFile = async (e) => {
+    await accept(e.target.files?.[0])
+    // Allow re-picking the same file
+    e.target.value = ''
   }
 
   const clear = () => {
@@ -68,6 +73,8 @@ export default function PhotoCapture({ label, value, onChange, required }) {
           </div>
         </div>
       )}
+      <ScreenshotInput compact onImage={accept} disabled={busy} />
+
       {error && <div className="note" style={{ color: 'var(--danger, #b00020)', fontSize: 12 }}>{error}</div>}
     </div>
   )

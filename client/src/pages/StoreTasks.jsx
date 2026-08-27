@@ -6,6 +6,7 @@ import { compressImage, newPhotoNamespace } from '../lib/photos.js'
 import { useCurrentStore } from '../lib/currentStore.jsx'
 import { useToast } from '../components/Toast.jsx'
 import BlockRenderer from '../components/forms/BlockRenderer.jsx'
+import ScreenshotInput from '../components/forms/ScreenshotInput.jsx'
 import CurrentStorePicker from '../components/CurrentStorePicker.jsx'
 import { STORE_ROLE_KEYS, canAccessTemplates } from '../lib/roles.js'
 
@@ -205,6 +206,7 @@ function TaskCard({ item, toast, onCompleted }) {
                     <label>Photo <span style={{ color: 'var(--red)' }}>*</span></label>
                     {photoUrl && <img src={photoUrl} alt="" style={{ maxWidth: 160, borderRadius: 8, marginBottom: 8, display: 'block' }} />}
                     <input type="file" accept="image/*" capture="environment" onChange={e => pickPhoto(e.target.files?.[0])} />
+                    <ScreenshotInput compact onImage={pickPhoto} disabled={busy} />
                   </div>
                 )}
                 <div className="form-group" style={{ marginBottom: 10 }}>
