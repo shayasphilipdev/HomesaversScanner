@@ -2459,7 +2459,10 @@ export async function onRequest(context) {
       const todayIso = today.toISOString().slice(0, 10)
       const explicit = url.searchParams.get('storeId')
 
-      const SELECT = 'id,template_id,store_id,period_key,due_date,status,completed_at,photo_url,notes,answers,' +
+      // completed_by is an existing column — it drives the client's "can I
+      // reopen this?" check. Deliberately does NOT include the reopen_* columns,
+      // which are new: a column missing here would 400 the entire task list.
+      const SELECT = 'id,template_id,store_id,period_key,due_date,status,completed_at,completed_by,photo_url,notes,answers,' +
         'store_task_templates(title,description,instructions,category,frequency,due_window,requires_photo,requires_notes,assigned_to_role,assigned_to_roles,assigned_to_user_ids,blocks,priority)'
 
       const scope = await scopedStoreIds(db, session)
@@ -2599,6 +2602,84 @@ export async function onRequest(context) {
       })
       if (!updated.length) return err('Instance not found', 404)
       return json(updated[0])
+    }
+
+    // PATCH /store-tasks/:id/reopen  body: { reason? }
+    // Undo a mis-tapped "Mark complete". There is otherwise no way back: the
+    // instance cannot be regenerated either, because UNIQUE (template_id,
+    // store_id, period_key) means the period's row already exists — so one early
+    // tap locks that period for everyone, and on an expiry sweep it discards a
+    // part-finished aisle.
+    //
+    // Keeps answers / notes / photo_url on purpose: preserving the part-finished
+    // work is the entire point. Only the completion is undone.
+    //
+    // NOTE: writes reopened_at / reopened_by / reopen_count / reopen_reason,
+    // added by supabase-migration-store-task-reopen.sql. If that migration has
+    // not been run this endpoint fails — deliberately the only thing that
+    // breaks, which is why those columns are NOT in the /store-tasks/today
+    // select (a missing column there would 400 the whole task list).
+    const instReopenMatch = path.match(/^\/store-tasks\/([a-f0-9-]+)\/reopen$/)
+    if (instReopenMatch && method === 'PATCH') {
+      const id   = instReopenMatch[1]
+      const body = await request.json().catch(() => ({}))
+
+      if (!userCanAccessStoreTasks(session)) return err('Store tasks disabled for this account', 403)
+      const [inst] = await db.select('store_task_instances', {
+        select: 'id,store_id,status,period_key,completed_by',
+        id: `eq.${id}`,
+        limit: '1'
+      })
+      if (!inst) return err('Instance not found', 404)
+      const scope = await scopedStoreIds(db, session)
+      if (scope !== null && !scope.includes(inst.store_id)) return err('Forbidden', 403)
+
+      if (inst.status !== 'completed') return err('Only a completed task can be reopened.', 400)
+
+      // A manager, or whoever completed it — a lone sales assistant on shift
+      // must not be stranded by their own mis-tap.
+      const isOwnCompletion = !!session.user_id && session.user_id === inst.completed_by
+      if (!isManagerRole(session) && !isOwnCompletion) {
+        return err('Only a manager, or the person who completed it, can reopen this task.', 403)
+      }
+
+      // Once the period has closed, reopening would strand the row: it drops out
+      // of openTodayFilter() and the mark-missed sweep then flips it to 'missed'
+      // where nobody can reach it.
+      const stillOpen = currentPeriodKeys(new Date()).includes(inst.period_key) ||
+                        String(inst.period_key || '').startsWith('once')
+      if (!stillOpen) return err('This task’s period has closed and can no longer be reopened.', 400)
+
+      const [existing] = await db.select('store_task_instances', {
+        select: 'reopen_count', id: `eq.${id}`, limit: '1'
+      }).catch(() => [null])
+
+      const updated = await db.update('store_task_instances', { id: `eq.${id}` }, {
+        status:        'pending',
+        completed_at:  null,
+        completed_by:  null,
+        reopened_at:   new Date().toISOString(),
+        reopened_by:   session.user_id || null,
+        reopen_count:  (Number(existing?.reopen_count) || 0) + 1,
+        reopen_reason: body.reason ? String(body.reason).trim().slice(0, 500) : null
+      })
+      if (!updated.length) return err('Instance not found', 404)
+      return json(updated[0])
+    }
+
+    // GET /reports/bm-reductions — B&M Reductions report (back office only).
+    // Distinct (store, product) from Department Check scans of supplier 510001,
+    // limited to the 4 clearance/dropped product types and present in Item_Master,
+    // minus anything in (B&M Daily File − CN Code Master). See report_bm_reductions().
+    if (path === '/reports/bm-reductions' && method === 'GET') {
+      if (!isBO) return err('Back office only', 403)
+      const from = url.searchParams.get('from')
+      const to   = url.searchParams.get('to')
+      const rows = await db.rpc('report_bm_reductions', {
+        p_from: from ? new Date(from).toISOString() : null,
+        p_to:   to   ? new Date(to).toISOString()   : null
+      })
+      return json({ rows: Array.isArray(rows) ? rows : [] })
     }
 
     // GET /reports/store-tasks?from=&to=&storeId=&template_id=

@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useStore } from '../App.jsx'
-import { getStoreTasksToday, completeStoreTask, getStoreTaskStats, uploadPhoto } from '../lib/api.js'
+import { getStoreTasksToday, completeStoreTask, reopenStoreTask, getStoreTaskStats, uploadPhoto } from '../lib/api.js'
 import { compressImage, newPhotoNamespace } from '../lib/photos.js'
 import { useCurrentStore } from '../lib/currentStore.jsx'
 import { useToast } from '../components/Toast.jsx'
 import BlockRenderer from '../components/forms/BlockRenderer.jsx'
 import ScreenshotInput from '../components/forms/ScreenshotInput.jsx'
 import CurrentStorePicker from '../components/CurrentStorePicker.jsx'
-import { STORE_ROLE_KEYS, canAccessTemplates } from '../lib/roles.js'
+import { STORE_ROLE_KEYS, canAccessTemplates, canSeeManagerDashboard } from '../lib/roles.js'
 import { readDraft, writeDraft, clearDraft, pruneDrafts } from '../lib/storeTaskDraft.js'
 
 // Quick link to the Task Templates editor — shown to template-capable roles
@@ -164,6 +164,29 @@ function TaskCard({ item, toast, onCompleted }) {
     setRestored(false)
   }
 
+  // Reopen is offered to a manager, or to whoever completed it — otherwise a
+  // lone assistant is stranded by their own mis-tap. The server enforces this
+  // properly; this only decides whether to show the button.
+  // canSeeManagerDashboard uses the same role set as the server's isManagerRole,
+  // so the button and the server gate cannot drift apart.
+  const canReopen = done && (
+    canSeeManagerDashboard(session) ||
+    (!!userId && userId === item.completed_by)
+  )
+
+  const reopen = async () => {
+    if (!confirm('Reopen this task?\n\nYour entries are kept — the task just goes back to not-done so you can finish it.')) return
+    setBusy(true); setErr('')
+    try {
+      await reopenStoreTask(item.id)
+      toast.success('Task reopened.')
+      onCompleted(item.id, { status: 'pending', completed_at: null, completed_by: null })
+      setExpanded(true)
+    } catch (e) {
+      setErr(e.message); toast.error(e.message)
+    } finally { setBusy(false) }
+  }
+
   const pickPhoto = async (file) => {
     if (!file) return
     setErr('')
@@ -220,6 +243,16 @@ function TaskCard({ item, toast, onCompleted }) {
           {!done && (
             <button className="btn btn-sm btn-outline" onClick={() => setExpanded(v => !v)}>
               {expanded ? 'Close' : 'Complete'}
+            </button>
+          )}
+          {canReopen && (
+            <button
+              className="btn btn-sm btn-outline"
+              onClick={reopen}
+              disabled={busy}
+              title="Marked complete by mistake? Your entries are kept."
+            >
+              {busy ? <span className="spinner spinner-dark" /> : '↩ Reopen'}
             </button>
           )}
         </div>
