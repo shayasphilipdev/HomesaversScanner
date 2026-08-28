@@ -182,7 +182,7 @@ function ProductMasterReport() {
         </p>
 
         {!!rows.length && (
-          <div className="table-wrap">
+          <div className="table-wrap table-wrap--tall">
             <table style={{ fontSize: 13 }}>
               <thead><tr>{PM_COLUMNS.map(c => <th key={c.key}>{c.label}</th>)}</tr></thead>
               <tbody>
@@ -795,7 +795,7 @@ function HQReports() {
             </div>
           )}
 
-          <div className="table-wrap">
+          <div className="table-wrap table-wrap--tall">
             <table>
               <thead>
                 <tr>
@@ -1085,7 +1085,7 @@ function StoreTaskReports() {
             <button className="btn btn-sm btn-outline" onClick={() => setSelected(new Set(rows.map(r => r.id)))}>✓ Select all</button>
             <button className="btn btn-sm btn-outline" onClick={() => setSelected(new Set())} disabled={!selected.size}>✕ Clear all</button>
           </div>
-          <div className="table-wrap">
+          <div className="table-wrap table-wrap--tall">
             <table>
               <thead><tr>
                 <th style={{ width: 36 }}>
@@ -1207,7 +1207,7 @@ function SpacePlanReport() {
       {rows.length > 0 && (
         <div className="card mt-20">
           <div className="card-header">{rows.length.toLocaleString('en-IE')} rows</div>
-          <div className="table-wrap">
+          <div className="table-wrap table-wrap--tall">
             <table style={{ fontSize: 13 }}>
               <thead><tr>{SP_HEADERS.map((h, i) => <th key={SP_COLS[i]}>{h}</th>)}</tr></thead>
               <tbody>
@@ -1294,7 +1294,7 @@ function CompetitionReport() {
       {rows.length > 0 && (
         <div className="card mt-20">
           <div className="card-header">{rows.length.toLocaleString('en-IE')} rows</div>
-          <div className="table-wrap">
+          <div className="table-wrap table-wrap--tall">
             <table style={{ fontSize: 13 }}>
               <thead><tr>{COMPETITION_REPORT_HEADERS.map((h, i) => <th key={COMPETITION_REPORT_COLS[i]}>{h}</th>)}</tr></thead>
               <tbody>
