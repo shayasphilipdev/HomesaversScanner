@@ -5,7 +5,7 @@ import {
   updateTaskRecord, bulkReviewTaskRecords, bulkClearTaskRecords,
   deleteTaskRecord, bulkDeleteTaskRecords, deleteJkMatching,
   adminListTemplates, getStoreTaskReportRows,
-  getTaskRecordEvents, clearToken, getProductMaster, getProductMasterFilters,
+  clearToken, getProductMaster, getProductMasterFilters,
   getSpacePlanReport, getCompetitorReport, sendToPricing
 } from '../lib/api.js'
 import { COMPETITION_REPORT_COLS, COMPETITION_REPORT_HEADERS } from '../lib/competitionOptions.js'
@@ -23,6 +23,15 @@ import RecordDetailModal from '../components/RecordDetailModal.jsx'
 function toLocalInput(d) {
   const pad = n => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+// Compact date for the report grid — the full timestamp is in the Details popup.
+function formatDMY(iso) {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (isNaN(d)) return '—'
+  const p = n => String(n).padStart(2, '0')
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${String(d.getFullYear()).slice(2)}`
 }
 
 function formatDT(iso) {
@@ -322,8 +331,6 @@ function HQReports() {
   const [downloading, setDownloading] = useState(false)
   const [busy, setBusy]               = useState(false)
   const [error, setError]             = useState('')
-  // Per-row audit-history state: { [recordId]: { loading, events, err } }
-  const [history, setHistory]         = useState({})
   const [expandedMessages, setExpandedMessages] = useState(new Set())
   const toggleMessages = (id) => setExpandedMessages(prev => {
     const next = new Set(prev)
@@ -331,22 +338,6 @@ function HQReports() {
     return next
   })
 
-  const toggleHistory = async (recordId) => {
-    setHistory(h => {
-      if (h[recordId]) {
-        const { [recordId]: _, ...rest } = h
-        return rest
-      }
-      return { ...h, [recordId]: { loading: true, events: [], err: '' } }
-    })
-    if (history[recordId]) return  // was open -> we just closed it
-    try {
-      const events = await getTaskRecordEvents(recordId)
-      setHistory(h => ({ ...h, [recordId]: { loading: false, events, err: '' } }))
-    } catch (e) {
-      setHistory(h => ({ ...h, [recordId]: { loading: false, events: [], err: e.message } }))
-    }
-  }
 
   useEffect(() => {
     getTaskTypes().then(tt => {
@@ -816,7 +807,6 @@ function HQReports() {
                   <th style={{ minWidth: 260 }}>Product Description</th>
                   <th>Product Barcode</th>
                   <th>Photos</th>
-                  <th>Status</th>
                   <th>Date</th>
                   {isBO && <th></th>}
                 </tr>
@@ -868,15 +858,7 @@ function HQReports() {
                             {!r.photo_product_url && !r.photo_barcode_url && <span className="td-muted">—</span>}
                           </div>
                         </td>
-                        <td>
-                          <span className={`badge ${status.cls}`}>{status.label}</span>
-                          {r.status === 'no_change_needed' && r.review_notes && (
-                            <div style={{ color: 'var(--red, #c0392b)', fontSize: 12.5, marginTop: 4, fontWeight: 600 }}>
-                              HO: {r.review_notes}
-                            </div>
-                          )}
-                        </td>
-                        <td className="td-muted">{formatDT(r.created_at)}</td>
+                        <td className="td-muted" style={{ whiteSpace: 'nowrap' }}>{formatDMY(r.created_at)}</td>
                         {isBO && (
                           <td>
                             <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>
@@ -900,9 +882,6 @@ function HQReports() {
                                 title="Messages"
                                 onClick={() => toggleMessages(r.id)}
                               >💬</button>
-                              <button className="btn btn-sm btn-outline" onClick={() => toggleHistory(r.id)} title="Audit history">
-                                {history[r.id] ? '▴' : '▾'} History
-                              </button>
                               {(r.task_type === 'J' || r.task_type === 'K') && (
                                 <button
                                   className="btn btn-sm"
@@ -918,16 +897,8 @@ function HQReports() {
                       {/* Message thread panel */}
                       {expandedMessages.has(r.id) && (
                         <tr>
-                          <td colSpan={isBO ? 10 : 9} style={{ padding: 0, borderTop: 'none' }}>
+                          <td colSpan={isBO ? 9 : 8} style={{ padding: 0, borderTop: 'none' }}>
                             <RecordMessages recordId={r.id} />
-                          </td>
-                        </tr>
-                      )}
-                      {/* Audit-trail panel (BO only) */}
-                      {isBO && history[r.id] && (
-                        <tr>
-                          <td colSpan={isBO ? 10 : 9} style={{ background: 'var(--surface-warm)' }}>
-                            <HistoryPanel state={history[r.id]} />
                           </td>
                         </tr>
                       )}
@@ -1313,24 +1284,3 @@ function CompetitionReport() {
 }
 
 // Audit-ledger panel shown under a record row when History is expanded.
-function HistoryPanel({ state }) {
-  if (state.loading) return <div style={{ padding: 10, fontSize: 13 }}><span className="spinner spinner-dark" /> Loading history…</div>
-  if (state.err)     return <div className="login-error" style={{ margin: 8 }}>{state.err}</div>
-  if (!state.events?.length) return <div className="note" style={{ padding: 10, fontSize: 12 }}>No history yet.</div>
-  return (
-    <div style={{ padding: '10px 14px' }}>
-      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Audit history</div>
-      <ol style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>
-        {state.events.map(ev => (
-          <li key={ev.id} style={{ marginBottom: 4 }}>
-            <strong>{ev.from_status || '—'} → {ev.to_status}</strong>
-            <span className="td-muted" style={{ marginLeft: 6 }}>
-              by {ev.by_user_name} · {new Date(ev.at).toLocaleString('en-IE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
-            </span>
-            {ev.note && <div className="note" style={{ fontSize: 12.5, marginLeft: 0 }}>“{ev.note}”</div>}
-          </li>
-        ))}
-      </ol>
-    </div>
-  )
-}

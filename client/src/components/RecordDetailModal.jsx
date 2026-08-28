@@ -245,19 +245,20 @@ export default function RecordDetailModal({ record, storeName, open, onClose }) 
               ))}
           </div>
 
-          {/* Audit history */}
-          <div style={{ marginTop: 14 }}>
-            {events === null ? <div className="note" style={{ fontSize: 12.5 }}><span className="spinner spinner-dark" /> Loading…</div>
-             : !events.length ? <div className="note" style={{ fontSize: 12.5 }}>No history yet.</div>
+          {/* Audit history — background detail, so it gets a quiet heading and
+              the smallest type in the popup. */}
+          <div style={{ marginTop: 14, paddingTop: 8, borderTop: '1px solid var(--border-soft)' }}>
+            <div className="note" style={{ fontSize: 11, fontWeight: 600, marginBottom: 4 }}>History</div>
+            {events === null ? <div className="note" style={{ fontSize: 11 }}><span className="spinner spinner-dark" /> Loading…</div>
+             : !events.length ? <div className="note" style={{ fontSize: 11 }}>No history yet.</div>
              : (
-              <ol style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>
+              <ol style={{ margin: 0, paddingLeft: 16, fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
                 {events.map(ev => (
-                  <li key={ev.id} style={{ marginBottom: 4 }}>
-                    <strong>{ev.from_status || '—'} → {ev.to_status}</strong>
-                    <span className="td-muted" style={{ marginLeft: 6 }}>
-                      by {ev.by_user_name} · {new Date(ev.at).toLocaleString('en-IE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                    {ev.note && <div className="note" style={{ fontSize: 12.5 }}>“{ev.note}”</div>}
+                  <li key={ev.id} style={{ marginBottom: 2 }}>
+                    {ev.from_status || '—'} → <strong>{ev.to_status}</strong>
+                    {' · '}{ev.by_user_name}
+                    {' · '}{new Date(ev.at).toLocaleString('en-IE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    {ev.note && <span> · “{ev.note}”</span>}
                   </li>
                 ))}
               </ol>
