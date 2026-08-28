@@ -457,6 +457,9 @@ function HQReports() {
         ? ['pending']
         : ['pending', 'no_change_needed', 'store_completed'])
   const [statusIds, setStatusIds]     = useState(defaultStatusIds)
+  // Alt-barcode snapshot status, captured when the product was scanned.
+  const [itemStatusIds, setItemStatusIds]       = useState([])
+  const [barcodeStatusIds, setBarcodeStatusIds] = useState([])
   const [stores, setStores]           = useState([])
   const [taskTypes, setTaskTypes]     = useState([])
 
@@ -511,7 +514,13 @@ function HQReports() {
       status:   statusIds.length   ? statusIds.join(',')   : undefined,
       limit:    PAGE_SIZE,
       offset,
-      filters:  { from, to }
+      // getTaskRecords only forwards recognised top-level keys; anything else
+      // has to go through `filters` to reach the query string.
+      filters:  {
+        from, to,
+        ...(itemStatusIds.length    ? { item_status:    itemStatusIds.join(',') }    : {}),
+        ...(barcodeStatusIds.length ? { barcode_status: barcodeStatusIds.join(',') } : {})
+      }
     })
   }
 
@@ -554,6 +563,8 @@ function HQReports() {
       if (taskTypeIds.length) baseParams.task_type = taskTypeIds.join(',')
       if (statusIds.length)   baseParams.status    = statusIds.join(',')
       if (statusIds.includes('cleared')) baseParams.includeCleared = '1'
+      if (itemStatusIds.length)    baseParams.item_status    = itemStatusIds.join(',')
+      if (barcodeStatusIds.length) baseParams.barcode_status = barcodeStatusIds.join(',')
 
       // The server used to assemble the whole export inside one long-lived
       // streamed response. On a large export (200k+ rows, 20-40+ internal
@@ -840,6 +851,24 @@ function HQReports() {
                   { id: 'cleared',          label: 'Clear (archived)' }
                 ]}
                 placeholder="Any status (excl. cleared)"
+              />
+            </div>
+
+            <div className="filter-field filter-field--wide"><label>Product Status</label>
+              <MultiSelectDropdown
+                value={itemStatusIds}
+                onChange={setItemStatusIds}
+                options={[{ id: 'Active', label: 'Active' }, { id: 'Inactive', label: 'Inactive' }]}
+                placeholder="Any"
+              />
+            </div>
+
+            <div className="filter-field filter-field--wide"><label>Barcode Status</label>
+              <MultiSelectDropdown
+                value={barcodeStatusIds}
+                onChange={setBarcodeStatusIds}
+                options={[{ id: 'Active', label: 'Active' }, { id: 'Inactive', label: 'Inactive' }]}
+                placeholder="Any"
               />
             </div>
 

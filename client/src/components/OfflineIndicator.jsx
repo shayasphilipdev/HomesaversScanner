@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { count as outboxCount, failedCount, drain } from '../lib/outbox.js'
+import { logEvent } from '../lib/deviceLog.js'
 import { useToast } from './Toast.jsx'
 
 // Top-nav pill.
@@ -41,18 +42,20 @@ export default function OfflineIndicator() {
       if (!navigator.onLine) { await refresh(); return }
       try {
         const res = await drain()
+        if (res?.synced || res?.failed) logEvent('sync', { synced: res?.synced || 0, failed: res?.failed || 0 })
         if (res?.synced) toast.success(`Synced ${res.synced} queued record${res.synced === 1 ? '' : 's'}.`)
       } catch (e) {
         // Sync failure should be visible -- the user has work that didn't
         // upload. The pill itself will continue to show the queue size.
+        logEvent('sync-failed', e?.message || 'unknown error')
         toast.error('Could not sync queued records: ' + (e?.message || 'unknown error'))
       } finally {
         refresh()
       }
     }
 
-    const onOnline     = () => { setOnline(true);  sync() }
-    const onOffline    = () => { setOnline(false); refresh() }
+    const onOnline     = () => { setOnline(true);  logEvent('online');  sync() }
+    const onOffline    = () => { setOnline(false); logEvent('offline'); refresh() }
     const onVisibility = () => { if (document.visibilityState === 'visible') sync() }
     const onChange     = () => refresh()
 
