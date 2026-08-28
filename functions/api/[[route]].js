@@ -4274,16 +4274,26 @@ export async function onRequest(context) {
         order:  'created_at.desc',
         limit:  '200'
       })
-      // Stamp answer counts in one batched query.
+      // Attach the answers themselves in the SAME batched query that used to
+      // count them — widening the select costs no extra round trip. The board
+      // shows every thread expanded, so without this each card would have to
+      // fetch its own answers: up to 200 concurrent Worker calls on one page
+      // load, which is exactly the request-burn pattern that caused trouble
+      // before. Field list matches GET /product-questions/:id so the client
+      // renders the same shape from either source.
       if (rows.length) {
         const ids = rows.map(r => r.id)
-        const counts = await db.select('product_question_answers', {
-          select:      'question_id',
-          question_id: `in.(${ids.join(',')})`
+        const answers = await db.select('product_question_answers', {
+          select:      'id,question_id,photo_url,notes,store_id,by_user_id,by_user_name,at',
+          question_id: `in.(${ids.join(',')})`,
+          order:       'at.asc'
         })
         const byQ = {}
-        for (const c of counts) byQ[c.question_id] = (byQ[c.question_id] || 0) + 1
-        for (const r of rows) r.answer_count = byQ[r.id] || 0
+        for (const a of answers) (byQ[a.question_id] ||= []).push(a)
+        for (const r of rows) {
+          r.answers      = byQ[r.id] || []
+          r.answer_count = r.answers.length
+        }
       }
       return json(rows)
     }
