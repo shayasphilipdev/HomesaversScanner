@@ -7,6 +7,8 @@ setlocal
 ::   run_sync.bat prices       — import latest ItemMaster_*.xlsx → prices table
 ::   run_sync.bat alt-barcodes — import latest ALT Barcode Master_*.xlsx
 ::   run_sync.bat all          — run both in sequence
+::   run_sync.bat bm-daily     — import latest B&M Product File xlsx -> bm_daily_file
+::   run_sync.bat cn-codes     — pull CN-code master -> cn_code_master
 ::   run_sync.bat server       — start local upload server (http://localhost:8765)
 ::
 :: Uses the base Python install. The .venv copy in this (untrusted) folder was
@@ -29,9 +31,11 @@ echo [%DATE% %TIME%] Starting sync: %JOB%
 if /i "%JOB%"=="prices"       goto run_prices
 if /i "%JOB%"=="alt-barcodes" goto run_alt_barcodes
 if /i "%JOB%"=="all"          goto run_all
+if /i "%JOB%"=="bm-daily"     goto run_bm_daily
+if /i "%JOB%"=="cn-codes"     goto run_cn_codes
 if /i "%JOB%"=="server"       goto run_server
 
-echo Unknown job: %JOB%. Use prices, alt-barcodes, all, or server.
+echo Unknown job: %JOB%. Use prices, alt-barcodes, bm-daily, cn-codes, all, or server.
 exit /b 1
 
 
@@ -48,6 +52,21 @@ goto end
 :run_all
 call "%~f0" prices
 call "%~f0" alt-barcodes
+goto end
+
+
+:: PowerShell jobs. Run from the DEPLOYED copy in C:\Homesavers\scripts (not
+:: %SCRIPTS_DIR%) because that is the proven path the sync has always used and
+:: it sits beside .sync-secret / logs. Quoting is kept simple here on purpose:
+:: the old scheduled tasks passed a malformed -File argument (a stray space and
+:: an unterminated quote) and failed silently every night with 0xFFFD0000.
+:run_bm_daily
+powershell -NonInteractive -ExecutionPolicy Bypass -File "C:\Homesavers\scripts\sync-bm-daily.ps1"
+goto end
+
+
+:run_cn_codes
+powershell -NonInteractive -ExecutionPolicy Bypass -File "C:\Homesavers\scripts\sync-cn-codes.ps1"
 goto end
 
 
