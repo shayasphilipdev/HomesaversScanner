@@ -212,18 +212,49 @@ function userCanAccessStoreTasks(s) { return !!s && (s.can_access_store_tasks !=
 // task_records.status (creation -> pending, HO completion, store
 // clearing, bulk reviews). Best-effort -- a write failure does not
 // abort the main operation; we just log to the Worker console.
-async function writeTaskEvent(db, { record_id, from_status, to_status, session, note }) {
+function taskEventRow({ record_id, from_status, to_status, session, note }) {
+  return {
+    record_id,
+    from_status:  from_status || null,
+    to_status,
+    by_user_id:   session?.user_id || null,
+    by_user_name: session?.display_name || session?.username || 'unknown',
+    note:         note || null
+  }
+}
+
+async function writeTaskEvent(db, args) {
   try {
-    await db.insert('task_record_events', {
-      record_id,
-      from_status:  from_status || null,
-      to_status,
-      by_user_id:   session?.user_id || null,
-      by_user_name: session?.display_name || session?.username || 'unknown',
-      note:         note || null
-    })
+    await db.insert('task_record_events', taskEventRow(args))
   } catch (e) {
     console.warn('[audit] task_record_events write failed:', e?.message || e)
+  }
+}
+
+// Bulk variant — ONE insert per chunk instead of one per record.
+//
+// The bulk review/clear handlers used to await writeTaskEvent() inside a loop,
+// so a 1,000-record clear issued 1,000 sequential subrequests. A Cloudflare
+// Worker is capped at 50 subrequests per request, so everything past the cap
+// threw — and the catch above swallowed each failure as a console.warn. The
+// status update itself succeeded (that is a single query), so records showed as
+// cleared while ~77% of their audit events were silently missing. Seen live:
+// Mullingar's 26 Aug batch logged 242 of 1,052 clears.
+//
+// Chunked so one enormous selection can't produce a single oversized payload;
+// 1,000 events now cost 2 subrequests instead of 1,000.
+async function writeTaskEvents(db, rows) {
+  if (!rows || !rows.length) return
+  const CHUNK = 500
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const slice = rows.slice(i, i + CHUNK)
+    try {
+      await db.insert('task_record_events', slice)
+    } catch (e) {
+      // Still best-effort: the audit trail must never fail the operation the
+      // user actually asked for. But log enough to notice it happening.
+      console.warn(`[audit] bulk write failed for ${slice.length} event(s):`, e?.message || e)
+    }
   }
 }
 
@@ -3379,6 +3410,10 @@ export async function onRequest(context) {
       const from      = p.get('from')
       const to        = p.get('to')
       const explicit  = p.get('storeId')
+      // Alt-barcode snapshot columns captured at scan time: whether the product
+      // and its barcode were Active/Inactive in the master when it was scanned.
+      const itemStatus    = p.get('item_status')
+      const barcodeStatus = p.get('barcode_status')
 
       // Pagination -- caps mean a single request can never blow the Worker
       // budget even at 55-store scale. Default 200 rows / max 1000.
@@ -3414,6 +3449,15 @@ export async function onRequest(context) {
       const ss = csv(status)
       if (ss.length)                       params['status'] = ss.length === 1 ? `eq.${ss[0]}` : `in.(${ss.join(',')})`
       else if (!includeCleared)            params['status'] = `neq.cleared`
+      // Product / Barcode status (Active | Inactive), matched case-insensitively
+      // because the sync has historically written both cases.
+      const isv = csv(itemStatus)
+      if (isv.length) params['item_status'] = isv.length === 1
+        ? `ilike.${isv[0]}` : `in.(${isv.join(',')})`
+      const bsv = csv(barcodeStatus)
+      if (bsv.length) params['barcode_status'] = bsv.length === 1
+        ? `ilike.${bsv[0]}` : `in.(${bsv.join(',')})`
+
       // C7: hide store-confirmed records that are pending deletion from all
       // task list views. They remain in the DB until the retention cleanup runs.
       params['marked_for_deletion'] = 'neq.true'
@@ -3489,17 +3533,15 @@ export async function onRequest(context) {
 
       const updated = await db.update('task_records', { id: `in.(${safeIds.join(',')})` }, updates)
 
-      for (const r of updated) {
-        if (preMap[r.id] !== status) {
-          await writeTaskEvent(db, {
-            record_id:   r.id,
-            from_status: preMap[r.id] || null,
-            to_status:   status,
-            session,
-            note:        review_notes || null
-          })
-        }
-      }
+      await writeTaskEvents(db, updated
+        .filter(r => preMap[r.id] !== status)
+        .map(r => taskEventRow({
+          record_id:   r.id,
+          from_status: preMap[r.id] || null,
+          to_status:   status,
+          session,
+          note:        review_notes || null
+        })))
       return json({ updated: updated.length })
     }
 
@@ -3538,11 +3580,11 @@ export async function onRequest(context) {
 
       const updated = await db.update('task_records', filter, { status: 'cleared', cleared_at: now, updated_at: now })
 
-      for (const r of updated) {
-        if (preMap[r.id] !== 'cleared') {
-          await writeTaskEvent(db, { record_id: r.id, from_status: preMap[r.id] || null, to_status: 'cleared', session, note: null })
-        }
-      }
+      await writeTaskEvents(db, updated
+        .filter(r => preMap[r.id] !== 'cleared')
+        .map(r => taskEventRow({
+          record_id: r.id, from_status: preMap[r.id] || null, to_status: 'cleared', session, note: null
+        })))
       return json({ cleared: updated.length })
     }
 
@@ -4017,13 +4059,21 @@ export async function onRequest(context) {
       // export (200k+ rows) OFFSET's later pages got slow enough to blow the
       // statement_timeout; this RPC keeps every page's cost flat regardless
       // of depth.
+      // Product / Barcode status, so the Excel export matches what the grid
+      // shows — otherwise filtering to "Inactive" on screen and hitting Excel
+      // would silently export everything.
+      const itemStatusList    = csv2(p.get('item_status'))
+      const barcodeStatusList = csv2(p.get('barcode_status'))
+
       const rpcBase = {
         p_from:            from ? new Date(from).toISOString() : null,
         p_to:              to   ? new Date(to).toISOString()   : null,
         p_store_ids:       storeIdsParam,
         p_task_types:      ttCsv.length ? ttCsv : null,
         p_statuses:        statusCsvList.length ? statusCsvList : null,
-        p_include_cleared: includeCleared
+        p_include_cleared: includeCleared,
+        p_item_statuses:    itemStatusList.length    ? itemStatusList    : null,
+        p_barcode_statuses: barcodeStatusList.length ? barcodeStatusList : null
       }
       const [stores, taskTypes] = await Promise.all([
         db.select('stores', { select: 'id,store_name' }),

@@ -2,6 +2,7 @@
 import { useStore } from '../App.jsx'
 import { useToast } from '../components/Toast.jsx'
 import { getAll, drain, remove, markRetry, resetFailed } from '../lib/outbox.js'
+import { getLog, clearLog, exportLog } from '../lib/deviceLog.js'
 import { TASK_FORMS } from '../lib/taskTypes.js'
 
 // Sync inspector. Lists everything currently queued in IndexedDB so the
@@ -166,6 +167,96 @@ export default function Sync() {
           Tip — sync runs automatically when you're online and when this app comes back to the foreground.
           Use “Sync now” if you want to push immediately.
         </p>
+      )}
+
+      <DeviceLogPanel />
+    </div>
+  )
+}
+
+// Recent activity on THIS device. Answers "what actually happened here?" when a
+// store reports missing work — whether saves reached the server, queued offline,
+// or were never attempted. Local only: never uploaded anywhere.
+function DeviceLogPanel() {
+  const toast = useToast()
+  const [open, setOpen] = useState(false)
+  const [rows, setRows] = useState([])
+
+  const refresh = () => setRows(getLog())
+  useEffect(() => { if (open) refresh() }, [open])
+
+  const LABEL = {
+    'save-ok':             ['Saved to server',     'var(--green)'],
+    'save-queued-offline': ['Saved on device only', 'var(--amber)'],
+    'save-failed':         ['Save failed',          'var(--red)'],
+    'sync':                ['Sync run',             'var(--text-muted)'],
+    'sync-failed':         ['Sync failed',          'var(--red)'],
+    online:                ['Came online',          'var(--text-muted)'],
+    offline:               ['Went offline',         'var(--amber)'],
+  }
+
+  return (
+    <div className="card mt-20">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="card-header"
+        style={{ width: '100%', textAlign: 'left', background: 'transparent', border: 0,
+                 cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}
+        aria-expanded={open}
+      >
+        <span aria-hidden>{open ? '▾' : '▸'}</span>
+        <span><strong>Activity on this device</strong></span>
+        <span className="note" style={{ marginLeft: 'auto', fontSize: 12 }}>{open ? 'Hide' : 'Show'}</span>
+      </button>
+
+      {open && (
+        <div className="card-body" style={{ paddingTop: 0 }}>
+          <p className="note" style={{ fontSize: 12, marginTop: 0 }}>
+            The last few hundred actions taken on this device. Useful if work seems to have gone
+            missing — “Saved on device only” means it never reached the server. Stored on this
+            device only and never uploaded.
+          </p>
+
+          <div className="flex-row" style={{ gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+            <button className="btn btn-sm btn-outline" onClick={refresh}>↻ Refresh</button>
+            <button className="btn btn-sm btn-outline" disabled={!rows.length}
+              onClick={async () => {
+                try { await navigator.clipboard.writeText(exportLog()); toast.success('Activity copied — you can paste it into an email.') }
+                catch { toast.error('Could not copy on this device.') }
+              }}>Copy</button>
+            <button className="btn btn-sm btn-outline" disabled={!rows.length}
+              onClick={() => { if (confirm('Clear the activity log on this device?')) { clearLog(); refresh() } }}>Clear</button>
+          </div>
+
+          {!rows.length ? (
+            <p className="note" style={{ fontSize: 12.5 }}>Nothing recorded yet on this device.</p>
+          ) : (
+            <div className="table-wrap" style={{ maxHeight: 320, overflow: 'auto' }}>
+              <table style={{ fontSize: 12 }}>
+                <thead><tr><th style={{ whiteSpace: 'nowrap' }}>When</th><th>What</th><th>Detail</th></tr></thead>
+                <tbody>
+                  {rows.map((e, i) => {
+                    const [label, colour] = LABEL[e.type] || [e.type, 'var(--text-muted)']
+                    return (
+                      <tr key={i}>
+                        <td className="td-muted" style={{ whiteSpace: 'nowrap' }}>
+                          {new Date(e.t).toLocaleString('en-IE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                        </td>
+                        <td style={{ color: colour, fontWeight: 600 }}>{label}</td>
+                        <td className="td-muted" style={{ wordBreak: 'break-word' }}>
+                          {e.d == null ? '' : typeof e.d === 'object'
+                            ? Object.entries(e.d).map(([k, v]) => `${k}: ${v}`).join(' · ')
+                            : String(e.d)}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       )}
     </div>
   )

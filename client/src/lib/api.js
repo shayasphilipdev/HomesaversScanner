@@ -157,14 +157,21 @@ export const getTaskRecords = ({ storeId, taskType, status, limit, offset, filte
 // online. Returns { queued: true, id } in that case so forms can show
 // "Saved offline" instead of "Saved".
 export const createTaskRecord = async (record) => {
+  const { logEvent } = await import('./deviceLog.js')
   try {
-    return await request('/task-records', { method: 'POST', body: record })
+    const res = await request('/task-records', { method: 'POST', body: record })
+    logEvent('save-ok', { task: record.task_type, code: record.product_code })
+    return res
   } catch (e) {
     const { isOfflineError, add: outboxAdd } = await import('./outbox.js')
     if (isOfflineError(e)) {
       const id = await outboxAdd({ kind: 'simple', body: record })
+      // The distinction that matters when a store says "I saved it and it's
+      // gone": queued locally is NOT the same as reached the server.
+      logEvent('save-queued-offline', { task: record.task_type, code: record.product_code })
       return { queued: true, id }
     }
+    logEvent('save-failed', { task: record.task_type, code: record.product_code, err: e?.message })
     throw e
   }
 }
