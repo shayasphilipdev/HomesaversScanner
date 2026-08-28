@@ -29,9 +29,30 @@ export default function StoreTasks() {
   const { session } = useStore()
   const isStoreRole    = STORE_ROLE_KEYS.includes(session.role)
   const isStoreManager = session.role === 'store_manager'
-  const [view, setView] = useState('today')
+  const isAreaManager  = session.role === 'area_manager'
+  // Area managers keep landing on the compliance rollup they see today; the
+  // per-store checklist is an opt-in tab. Store managers keep 'today'.
+  const [view, setView] = useState(session.role === 'area_manager' ? 'perf' : 'today')
 
-  // Area managers and above: store-wide compliance overview.
+  // Area managers: the same two-tab layout as a store manager, but the store
+  // picker inside StoreTodayView lets them switch between the stores in their
+  // area. The compliance rollup stays the default so their existing landing
+  // view is unchanged; the checklist is the new tab. The API already allowed
+  // this — scopedStoreIds() expands their area into store ids, so
+  // /store-tasks/today has always accepted one of their stores.
+  if (isAreaManager) {
+    return (
+      <div>
+        <div className="flex-row" style={{ gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
+          <button className={`btn btn-sm ${view === 'perf'  ? 'btn-primary' : 'btn-outline'}`} onClick={() => setView('perf')}>Store performance</button>
+          <button className={`btn btn-sm ${view === 'today' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setView('today')}>Store tasks</button>
+        </div>
+        {view === 'today' ? <StoreTodayView /> : <ManagerView />}
+      </div>
+    )
+  }
+
+  // Everyone else above shop-floor level: store-wide compliance overview.
   if (!isStoreRole) return <ManagerView />
 
   // Store managers: their store's daily tasks (default) + a performance view.
