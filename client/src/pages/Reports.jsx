@@ -18,6 +18,7 @@ import AdminReports from './AdminReports.jsx'
 import ExpiryReport from './ExpiryReport.jsx'
 import { canAccessMasterReports } from '../lib/roles.js'
 import RecordMessages from '../components/RecordMessages.jsx'
+import RecordDetailModal from '../components/RecordDetailModal.jsx'
 
 function toLocalInput(d) {
   const pad = n => String(n).padStart(2, '0')
@@ -458,6 +459,8 @@ function HQReports() {
   const [selected, setSelected]       = useState(new Set())
   // Permanent-delete confirmation (J/K only). deleteTarget = { ids:[...] } or null.
   const [deleteTarget, setDeleteTarget] = useState(null)
+  // Row whose full detail popup is open (null = closed).
+  const [detailRecord, setDetailRecord] = useState(null)
   const [deleting, setDeleting]       = useState(false)
   // "Delete ALL matching J/K" (filter-based, batched) confirmation + progress.
   const [matchDelete, setMatchDelete]   = useState(false)
@@ -1035,6 +1038,11 @@ function HQReports() {
                                 </>
                               )}
                               <button
+                                className="btn btn-sm btn-outline"
+                                title="All details for this record"
+                                onClick={() => setDetailRecord(r)}
+                              >🔍 Details</button>
+                              <button
                                 className={`btn btn-sm btn-icon ${expandedMessages.has(r.id) ? 'btn-primary' : 'btn-outline'}`}
                                 title="Messages"
                                 onClick={() => toggleMessages(r.id)}
@@ -1078,6 +1086,13 @@ function HQReports() {
           </div>
         </div>
       )}
+
+      <RecordDetailModal
+        open={!!detailRecord}
+        record={detailRecord}
+        storeName={detailRecord ? (storesById[detailRecord.store_id]?.store_name || '') : ''}
+        onClose={() => setDetailRecord(null)}
+      />
 
       <ConfirmDeleteModal
         open={!!deleteTarget}
