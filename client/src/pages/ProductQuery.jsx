@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useStore } from '../App.jsx'
 import {
-  listProductQuestions, getProductQuestion, createProductQuestion,
+  listProductQuestions, createProductQuestion,
   answerProductQuestion, closeProductQuestion, uploadPhoto
 } from '../lib/api.js'
 import { compressImage, newPhotoNamespace } from '../lib/photos.js'
@@ -20,7 +20,8 @@ export default function ProductQuery() {
   const [loading, setLoading]     = useState(true)
   const [error, setError]         = useState('')
   const [composing, setComposing] = useState(false)
-  const [openId, setOpenId]       = useState(null)   // currently expanded thread
+  // Threads render expanded; this tracks only the ones the user has collapsed.
+  const [collapsed, setCollapsed] = useState(() => new Set())
 
   const load = async () => {
     setLoading(true); setError('')
@@ -69,9 +70,18 @@ export default function ProductQuery() {
             <QuestionCard
               key={q.id}
               q={q}
-              isMine={q.created_by === session.user_id}
-              expanded={openId === q.id}
-              onToggle={() => setOpenId(openId === q.id ? null : q.id)}
+              // session.userId — NOT session.user_id, which does not exist on
+              // the client (StoreSelector writes userId). That typo made isMine
+              // permanently false, so the "Close thread" button below never
+              // rendered for anyone and threads could only vanish on the 21-day
+              // sweep. created_by is ON DELETE SET NULL, hence the !! guard.
+              isMine={!!session.userId && q.created_by === session.userId}
+              expanded={!collapsed.has(q.id)}
+              onToggle={() => setCollapsed(prev => {
+                const next = new Set(prev)
+                next.has(q.id) ? next.delete(q.id) : next.add(q.id)
+                return next
+              })}
               onChanged={load}
               toast={toast}
             />
@@ -140,19 +150,11 @@ function NewQuestionCard({ onClose, onSaved, toast }) {
 }
 
 function QuestionCard({ q, isMine, expanded, onToggle, onChanged, toast }) {
-  const [full, setFull]         = useState(null)
-  const [loading, setLoading]   = useState(false)
   const [replyOpen, setReplyOpen] = useState(false)
   const [closing, setClosing]   = useState(false)
-
-  useEffect(() => {
-    if (!expanded) { setFull(null); setReplyOpen(false); return }
-    setLoading(true)
-    getProductQuestion(q.id)
-      .then(setFull)
-      .catch(e => toast.error(e.message))
-      .finally(() => setLoading(false))
-  }, [expanded, q.id])
+  // Served by GET /product-questions itself, so an expanded board costs no
+  // extra requests.
+  const answers = q.answers || []
 
   const close = async () => {
     if (!confirm('Close this thread? It will disappear from everyone\'s view (the data is kept in the database).')) return
@@ -187,17 +189,14 @@ function QuestionCard({ q, isMine, expanded, onToggle, onChanged, toast }) {
 
       {expanded && (
         <div style={{ borderTop: '1px solid var(--border-soft)', padding: 12 }}>
-          {loading || !full ? (
-            <div style={{ textAlign: 'center', padding: 20 }}><span className="spinner spinner-dark" /></div>
-          ) : (
-            <>
+          <>
               <div style={{ marginBottom: 10, fontWeight: 600, fontSize: 13 }}>
-                Answers ({full.answers?.length || 0})
+                Answers ({answers.length})
               </div>
-              {!full.answers?.length && (
+              {!answers.length && (
                 <div className="note" style={{ fontSize: 12.5, marginBottom: 10 }}>No answers yet — be the first.</div>
               )}
-              {full.answers?.map(a => (
+              {answers.map(a => (
                 <div key={a.id} style={{ background: 'var(--surface-warm)', padding: 8, borderRadius: 6, marginBottom: 6 }}>
                   {a.photo_url && <img src={a.photo_url} alt="" style={{ maxWidth: 120, borderRadius: 6, marginBottom: 6, display: 'block' }} />}
                   <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{a.notes}</div>
@@ -222,15 +221,12 @@ function QuestionCard({ q, isMine, expanded, onToggle, onChanged, toast }) {
                   onClose={() => setReplyOpen(false)}
                   onSaved={() => {
                     setReplyOpen(false)
-                    setFull(null)
-                    getProductQuestion(q.id).then(setFull)
-                    onChanged()
+                    onChanged()   // reloads the board, answers included
                   }}
                   toast={toast}
                 />
               )}
-            </>
-          )}
+          </>
         </div>
       )}
     </div>
