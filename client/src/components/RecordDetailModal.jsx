@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { getTaskRecordEvents, getProductMaster } from '../lib/api.js'
 import { TASK_FORMS } from '../lib/taskTypes.js'
+import RecordMessages from './RecordMessages.jsx'
 
 // Everything known about one task record, in one place.
 //
@@ -49,19 +50,18 @@ const GROUPS = [
       ['marked_for_deletion', 'Marked for deletion'],
     ],
   },
-  {
-    title: 'Timestamps',
-    fields: [
-      ['created_at',         'Created'],
-      ['updated_at',         'Updated'],
-      ['reviewed_at',        'Reviewed'],
-      ['completed_at',       'Completed by HO'],
-      ['store_completed_at', 'Store confirmed'],
-      ['cleared_at',         'Cleared'],
-      ['priced_at',          'Priced'],
-      ['pricing_removed_at', 'Pricing removed'],
-    ],
-  },
+]
+
+// Rendered last, just before the history, and without a heading.
+const TIME_FIELDS = [
+  ['created_at',         'Created'],
+  ['updated_at',         'Updated'],
+  ['reviewed_at',        'Reviewed'],
+  ['completed_at',       'Completed by HO'],
+  ['store_completed_at', 'Store confirmed'],
+  ['cleared_at',         'Cleared'],
+  ['priced_at',          'Priced'],
+  ['pricing_removed_at', 'Pricing removed'],
 ]
 
 const DATE_KEYS = new Set([
@@ -175,10 +175,7 @@ export default function RecordDetailModal({ record, storeName, open, onClose }) 
               .filter(([, , v]) => showEmpty || v !== null)
             if (!rows.length) return null
             return (
-              <div key={g.title} style={{ marginTop: 14 }}>
-                <div style={{ fontWeight: 600, fontSize: 12.5, textTransform: 'uppercase', letterSpacing: .4, color: 'var(--text-muted)', marginBottom: 4 }}>
-                  {g.title}
-                </div>
+              <div key={g.title}>
                 {rows.map(([k, label, v]) => (
                   <Row key={k} label={label} value={v ?? <span className="td-muted">—</span>}
                        mono={k === 'barcode_no' || k === 'product_barcode' || k === 'product_code'} />
@@ -189,10 +186,7 @@ export default function RecordDetailModal({ record, storeName, open, onClose }) 
 
           {/* Task-specific payload — shape varies by task type. */}
           {(detailKeys.length > 0 || showEmpty) && (
-            <div style={{ marginTop: 14 }}>
-              <div style={{ fontWeight: 600, fontSize: 12.5, textTransform: 'uppercase', letterSpacing: .4, color: 'var(--text-muted)', marginBottom: 4 }}>
-                Task details
-              </div>
+            <div>
               {detailKeys.length === 0
                 ? <div className="note" style={{ fontSize: 12.5 }}>None recorded.</div>
                 : detailKeys.map(k => (
@@ -205,9 +199,6 @@ export default function RecordDetailModal({ record, storeName, open, onClose }) 
           {/* Photos */}
           {(record.photo_product_url || record.photo_barcode_url) && (
             <div style={{ marginTop: 14 }}>
-              <div style={{ fontWeight: 600, fontSize: 12.5, textTransform: 'uppercase', letterSpacing: .4, color: 'var(--text-muted)', marginBottom: 6 }}>
-                Photos
-              </div>
               <div className="flex-row" style={{ gap: 10, flexWrap: 'wrap' }}>
                 {[['Product', record.photo_product_url], ['Barcode', record.photo_barcode_url]]
                   .filter(([, u]) => u)
@@ -222,10 +213,7 @@ export default function RecordDetailModal({ record, storeName, open, onClose }) 
           )}
 
           {/* Live Product Master — not stored on the record. */}
-          <div style={{ marginTop: 14 }}>
-            <div style={{ fontWeight: 600, fontSize: 12.5, textTransform: 'uppercase', letterSpacing: .4, color: 'var(--text-muted)', marginBottom: 4 }}>
-              Product Master <span className="note" style={{ textTransform: 'none', letterSpacing: 0 }}>(current, not a snapshot)</span>
-            </div>
+          <div>
             {pmErr ? <div className="note" style={{ fontSize: 12.5 }}>Could not load — {pmErr}</div>
              : pm === null ? <div className="note" style={{ fontSize: 12.5 }}>No matching Product Master entry.</div>
              : (
@@ -240,11 +228,25 @@ export default function RecordDetailModal({ record, storeName, open, onClose }) 
             )}
           </div>
 
+          {/* The conversation on this record — same thread as the 💬 toggle in
+              the grid, so a reply can be read and written without leaving the
+              popup. */}
+          <div style={{ marginTop: 14, marginLeft: -14, marginRight: -14 }}>
+            <RecordMessages recordId={record.id} />
+          </div>
+
+          {/* Timestamps, unlabelled, immediately before the history they explain. */}
+          <div style={{ marginTop: 14 }}>
+            {TIME_FIELDS
+              .map(([k, label]) => [k, label, fmt(k, record[k])])
+              .filter(([, , v]) => showEmpty || v !== null)
+              .map(([k, label, v]) => (
+                <Row key={k} label={label} value={v ?? <span className="td-muted">—</span>} />
+              ))}
+          </div>
+
           {/* Audit history */}
           <div style={{ marginTop: 14 }}>
-            <div style={{ fontWeight: 600, fontSize: 12.5, textTransform: 'uppercase', letterSpacing: .4, color: 'var(--text-muted)', marginBottom: 4 }}>
-              History
-            </div>
             {events === null ? <div className="note" style={{ fontSize: 12.5 }}><span className="spinner spinner-dark" /> Loading…</div>
              : !events.length ? <div className="note" style={{ fontSize: 12.5 }}>No history yet.</div>
              : (

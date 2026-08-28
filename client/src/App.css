@@ -752,6 +752,28 @@ input.scan-input {
 /* ── Table ── */
 .table-wrap { overflow-x: auto; }
 
+/* Reports: a wide table inside a plain .table-wrap puts its horizontal
+   scrollbar at the very bottom of the list, so on a few hundred rows you have
+   to scroll all the way down before you can scroll sideways. Capping the height
+   keeps that scrollbar on screen at all times and pins the header while you
+   move through the rows — same technique as .pricing-scroll above.
+   max-height only engages once the table is actually taller than the cap, so
+   short result sets are unaffected. */
+.table-wrap--tall {
+  overflow: auto;
+  max-height: calc(100vh - 300px);
+}
+.table-wrap--tall thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+/* On a phone the viewport is short and the surrounding chrome eats most of it;
+   a hard cap there would leave a letterbox, so give it more room. */
+@media (max-width: 640px) {
+  .table-wrap--tall { max-height: calc(100vh - 180px); }
+}
+
 /* Pricing grid is very wide (20+ columns). Give the table a floor width so its
    columns don't wrap-and-cram to fit the card — that's what was hiding the
    horizontal scrollbar. The wrapper then scrolls sideways. Cap the height and
