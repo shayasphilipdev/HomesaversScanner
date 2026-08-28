@@ -2416,7 +2416,16 @@ export async function onRequest(context) {
           or: openTodayFilter(today),
           order: 'created_at.asc'
         })
-        const visible = rows.filter(r => templateTargetsUser(r.store_task_templates || {}, session))
+        // Store staff see only what is assigned to them. A supervising role
+        // looking at one of their stores needs that store's WHOLE checklist —
+        // filtering by assignment would hide every template aimed at, say,
+        // sales assistants and make the store look like it had less to do than
+        // it does. Scope is already enforced above: `explicit` must be inside
+        // scopedStoreIds(), so this cannot widen which stores are reachable.
+        const isStoreStaff = hasRole(session, STORE_ROLES)
+        const visible = isStoreStaff
+          ? rows.filter(r => templateTargetsUser(r.store_task_templates || {}, session))
+          : rows
         return json(visible)
       }
 
