@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { getRecordMessages, postRecordMessage, markRecordMessagesRead } from '../lib/api.js'
+import CannedReplyPicker from './forms/CannedReplyPicker.jsx'
 import { useStore } from '../App.jsx'
 
 function formatTime(iso) {
@@ -24,7 +25,8 @@ export default function RecordMessages({ recordId, onUnreadChange }) {
   const [priority, setPriority] = useState('normal')
   const [msgType, setMsgType]   = useState('query')
   const [sending, setSending]   = useState(false)
-  const bottomRef = useRef(null)
+  const bottomRef   = useRef(null)
+  const textareaRef = useRef(null)
 
   const load = async () => {
     setLoading(true); setError('')
@@ -155,12 +157,19 @@ export default function RecordMessages({ recordId, onUnreadChange }) {
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
           <textarea
+            ref={textareaRef}
             rows={2}
             value={draft}
             onChange={e => setDraft(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Type a message… (Enter to send, Shift+Enter for new line)"
             style={{ flex: 1, resize: 'vertical', fontSize: 13, borderRadius: 6, padding: '6px 10px', border: '1px solid var(--border)' }}
+            disabled={sending}
+          />
+          <CannedReplyPicker
+            textareaRef={textareaRef}
+            value={draft}
+            onChange={setDraft}
             disabled={sending}
           />
           <button
