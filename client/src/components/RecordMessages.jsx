@@ -3,6 +3,7 @@ import { getRecordMessages, postRecordMessage, markRecordMessagesRead, uploadMes
 import { compressImage } from '../lib/photos.js'
 import { imageFromDataTransfer } from '../lib/screenshot.js'
 import ScreenshotInput from './forms/ScreenshotInput.jsx'
+import CannedReplyPicker from './forms/CannedReplyPicker.jsx'
 import { useStore } from '../App.jsx'
 
 function formatTime(iso) {
@@ -29,8 +30,9 @@ export default function RecordMessages({ recordId, onUnreadChange }) {
   const [sending, setSending]   = useState(false)
   const [photos, setPhotos]     = useState([])     // pending attachments: [{ url, path }]
   const [uploading, setUploading] = useState(false)
-  const bottomRef = useRef(null)
-  const fileRef   = useRef(null)
+  const bottomRef   = useRef(null)
+  const fileRef     = useRef(null)
+  const textareaRef = useRef(null)
 
   const load = async () => {
     setLoading(true); setError('')
@@ -226,6 +228,7 @@ export default function RecordMessages({ recordId, onUnreadChange }) {
             {uploading ? <span className="spinner spinner-dark" /> : '📷'}
           </button>
           <textarea
+            ref={textareaRef}
             rows={2}
             value={draft}
             onChange={e => setDraft(e.target.value)}
@@ -238,6 +241,12 @@ export default function RecordMessages({ recordId, onUnreadChange }) {
             }}
             placeholder="Type a message… (Enter to send, Shift+Enter for new line)"
             style={{ flex: 1, resize: 'vertical', fontSize: 13, borderRadius: 6, padding: '6px 10px', border: '1px solid var(--border)' }}
+            disabled={sending}
+          />
+          <CannedReplyPicker
+            textareaRef={textareaRef}
+            value={draft}
+            onChange={setDraft}
             disabled={sending}
           />
           <button
