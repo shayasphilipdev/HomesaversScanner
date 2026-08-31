@@ -888,35 +888,14 @@ export async function onRequest(context) {
       if ((request.headers.get('X-Sync-Secret') || '') !== env.PRODUCT_SYNC_SECRET) return err('Forbidden', 403)
 
       const TYPES = ['A', 'B', 'C', 'D', 'E', 'F']
-      const PAGE  = 1000
-      const recs  = []
-      // Page past PostgREST's row cap so a large backlog is never truncated.
-      for (let offset = 0; offset < 50000; offset += PAGE) {
-        const page = await db.select('task_records', {
-          select:              'task_type,store_id,product_code,product_barcode,product_name_label,description,quantity,created_at',
-          status:              'eq.pending',
-          task_type:           `in.(${TYPES.join(',')})`,
-          marked_for_deletion: 'neq.true',
-          order:               'created_at.asc',
-          limit:               String(PAGE),
-          offset:              String(offset)
-        })
-        recs.push(...page)
-        if (page.length < PAGE) break
-      }
-
-      const stores = await db.select('stores', { select: 'id,store_code,store_name' })
-      const sMap = Object.fromEntries(stores.map(s => [s.id, s]))
-
-      const records = recs.map(r => ({
-        task_type:    r.task_type,
-        store_code:   sMap[r.store_id]?.store_code || '',
-        store_name:   sMap[r.store_id]?.store_name || '(unknown store)',
-        product_code: r.product_code || r.product_barcode || '',
-        description:  r.product_name_label || r.description || '',
-        quantity:     r.quantity ?? '',
-        created_at:   r.created_at
-      }))
+      // ONE call via aging_report_records instead of paging at 1000/page
+      // (PostgREST's db-max-rows cap) up to 50 pages -- exactly Cloudflare's
+      // Free-plan 50-subrequest-per-request ceiling. Only 40 rows today, but
+      // these records are purge-exempt so the backlog only grows, and this
+      // would eventually 502 the weekly email with no warning. An RPC's
+      // return value isn't subject to the REST row cap the way a table
+      // SELECT is, so one call is enough regardless of backlog size.
+      const records = await db.rpc('aging_report_records', { p_task_types: TYPES }) || []
 
       // Tasks created in the last 7 days (any status), per type — recent
       // activity, not aging. Includes the two check tasks (Department / Price)
@@ -2929,43 +2908,24 @@ export async function onRequest(context) {
       const explicit = p.get('storeId')
       const scope = await scopedStoreIds(db, session)
 
-      const params = {
-        select: 'store_id,status',
-        and: `(due_date.gte.${from},due_date.lte.${to})`,
-        limit: '5000'
-      }
+      const empty = () => json({ per_store: [], overall: { total: 0, completed: 0, pending: 0, missed: 0, completion_pct: 0 } })
+      let storeIds = null
       if (explicit && explicit !== 'all') {
-        if (scope !== null && !scope.includes(explicit)) {
-          return json({ per_store: [], overall: { total: 0, completed: 0, pending: 0, missed: 0, completion_pct: 0 } })
-        }
-        params['store_id'] = `eq.${explicit}`
+        if (scope !== null && !scope.includes(explicit)) return empty()
+        storeIds = [explicit]
       } else if (scope !== null) {
-        if (!scope.length) return json({ per_store: [], overall: { total: 0, completed: 0, pending: 0, missed: 0, completion_pct: 0 } })
-        params['store_id'] = `in.(${scope.join(',')})`
+        if (!scope.length) return empty()
+        storeIds = scope
       }
 
-      const rows = await db.select('store_task_instances', params)
-      const perStore = {}
-      let total = 0, completed = 0, pending = 0, missed = 0
-      for (const r of rows) {
-        total++
-        if (r.status === 'completed') completed++
-        else if (r.status === 'missed') missed++
-        else pending++
-        const k = r.store_id
-        if (!perStore[k]) perStore[k] = { store_id: k, total: 0, completed: 0, pending: 0, missed: 0 }
-        perStore[k].total++
-        perStore[k][r.status] = (perStore[k][r.status] || 0) + 1
-      }
-      // Join store names
-      const stores = await db.select('stores', { select: 'id,store_name' })
-      const nameOf = Object.fromEntries(stores.map(s => [s.id, s.store_name]))
-      const per_store = Object.values(perStore).map(s => ({
-        ...s,
-        store_name: nameOf[s.store_id] || '',
-        completion_pct: s.total ? Math.round((s.completed * 100) / s.total) : 0
-      })).sort((a, b) => b.total - a.total)
-      return json({ per_store, overall: { total, completed, pending, missed, completion_pct: total ? Math.round((completed * 100) / total) : 0 } })
+      // Aggregated server-side in Postgres (store_task_stats_agg) rather than
+      // fetched with limit:5000 and reduced in JS -- that cap silently
+      // truncated any wide-scope view once volume passed it. Verified live:
+      // the 30-day default alone is ~15,800 rows chain-wide.
+      const stats = await db.rpc('store_task_stats_agg', {
+        p_store_ids: storeIds, p_from: from, p_to: to
+      })
+      return json(stats || { per_store: [], overall: { total: 0, completed: 0, pending: 0, missed: 0, completion_pct: 0 } })
     }
 
     // GET /dashboard/stats?from=&to=&storeId=&storeIds=a,b,c
@@ -3053,138 +3013,16 @@ export async function onRequest(context) {
     if (path === '/manager/overview' && method === 'GET') {
       if (!isManagerRole(session)) return err('Forbidden', 403)
       const scope = await scopedStoreIds(db, session)
-      if (scope !== null && !scope.length) {
-        return json({ totals: { ho_today:0, ho_pending:0, ho_to_clear:0, store_completion_pct:0, photos_today:0 }, per_store: [], by_day_7: [] })
-      }
+      const empty = () => json({ totals: { ho_today:0, ho_pending:0, ho_to_clear:0, store_completion_pct:0, photos_today:0 }, per_store: [], by_day_7: [] })
+      if (scope !== null && !scope.length) return empty()
 
-      // Date helpers — today + 7-day window in UTC for the DB filters.
-      const todayUTC    = new Date(); todayUTC.setUTCHours(0,0,0,0)
-      const sevenAgo    = new Date(todayUTC.getTime() - 6 * 86400000)
-      const todayISO    = todayUTC.toISOString()
-      const sevenAgoStr = sevenAgo.toISOString().slice(0, 10)
-      const todayDate   = todayUTC.toISOString().slice(0, 10)
-
-      const storeFilter = scope === null ? null : scope
-      const inFilter    = storeFilter ? `in.(${storeFilter.join(',')})` : null
-
-      // 1) Stores in scope (for names + ordering).
-      const storeParams = { select: 'id,store_name,store_code,is_active', order: 'store_name.asc', is_active: 'eq.true' }
-      if (inFilter) storeParams['id'] = inFilter
-      const stores = await db.select('stores', storeParams)
-      if (!stores.length) {
-        return json({ totals: { ho_today:0, ho_pending:0, ho_to_clear:0, store_completion_pct:0, photos_today:0 }, per_store: [], by_day_7: [] })
-      }
-      const allStoreIds = stores.map(s => s.id)
-      const storeIdInFilter = `in.(${allStoreIds.join(',')})`
-
-      // 2) HO task_records for the last 7 days, scoped, excluding cleared.
-      const trParams = {
-        select: 'id,store_id,status,photo_product_url,photo_barcode_url,created_at',
-        store_id: storeIdInFilter,
-        created_at: `gte.${sevenAgo.toISOString()}`,
-        status: 'neq.cleared',
-        limit: '5000'
-      }
-      const taskRecords = await db.select('task_records', trParams)
-
-      // 3) Store-task instances for the last 7 days (for completion %).
-      const stiParams = {
-        select: 'id,store_id,status,due_date,completed_at,photo_url,answers',
-        store_id: storeIdInFilter,
-        due_date: `gte.${sevenAgoStr}`,
-        limit: '5000'
-      }
-      const instances = await db.select('store_task_instances', stiParams)
-
-      // ── Aggregate per store ─────────────────────────────────────────────
-      const perStore = {}
-      for (const s of stores) {
-        perStore[s.id] = {
-          store_id: s.id,
-          store_name: s.store_name,
-          store_code: s.store_code,
-          ho_today: 0,
-          ho_pending: 0,
-          ho_to_clear: 0,
-          tasks_today_total: 0,
-          tasks_today_done: 0,
-          completion_pct: 0,
-          photos_today: 0
-        }
-      }
-
-      // HO records
-      for (const r of taskRecords) {
-        const row = perStore[r.store_id]; if (!row) continue
-        const onToday = String(r.created_at).slice(0,10) === todayDate
-        if (onToday) row.ho_today += 1
-        if (r.status === 'pending')                         row.ho_pending += 1
-        if (r.status === 'completed' || r.status === 'no_change_needed') row.ho_to_clear += 1
-        if (onToday && (r.photo_product_url || r.photo_barcode_url)) row.photos_today += 1
-      }
-
-      // Store-task instances today + 7-day heatmap
-      const heatmapBuckets = {} // { store_id: { 'YYYY-MM-DD': { done, total } } }
-      for (const i of instances) {
-        const sid  = i.store_id
-        const date = i.due_date
-        if (!heatmapBuckets[sid]) heatmapBuckets[sid] = {}
-        if (!heatmapBuckets[sid][date]) heatmapBuckets[sid][date] = { done: 0, total: 0 }
-        heatmapBuckets[sid][date].total += 1
-        if (i.status === 'completed') heatmapBuckets[sid][date].done += 1
-        if (date === todayDate) {
-          const row = perStore[sid]; if (!row) continue
-          row.tasks_today_total += 1
-          if (i.status === 'completed') row.tasks_today_done += 1
-          if (i.photo_url) row.photos_today += 1
-        }
-      }
-      for (const row of Object.values(perStore)) {
-        row.completion_pct = row.tasks_today_total
-          ? Math.round((row.tasks_today_done / row.tasks_today_total) * 100)
-          : null
-      }
-
-      // ── 7-day heatmap series ──────────────────────────────────────────
-      const dayKeys = []
-      for (let i = 6; i >= 0; i--) {
-        const d = new Date(todayUTC.getTime() - i * 86400000)
-        dayKeys.push(d.toISOString().slice(0, 10))
-      }
-      const by_day_7 = Object.values(perStore).map(row => {
-        const days = dayKeys.map(d => {
-          const b = heatmapBuckets[row.store_id]?.[d]
-          if (!b || !b.total) return { date: d, pct: null }
-          return { date: d, pct: Math.round((b.done / b.total) * 100) }
-        })
-        return { store_id: row.store_id, store_name: row.store_name, days }
-      })
-
-      // ── Totals across all of the user's stores ──────────────────────
-      const totals = { ho_today: 0, ho_pending: 0, ho_to_clear: 0, photos_today: 0,
-                       tasks_today_total: 0, tasks_today_done: 0 }
-      for (const r of Object.values(perStore)) {
-        totals.ho_today          += r.ho_today
-        totals.ho_pending        += r.ho_pending
-        totals.ho_to_clear       += r.ho_to_clear
-        totals.photos_today      += r.photos_today
-        totals.tasks_today_total += r.tasks_today_total
-        totals.tasks_today_done  += r.tasks_today_done
-      }
-      totals.store_completion_pct = totals.tasks_today_total
-        ? Math.round((totals.tasks_today_done / totals.tasks_today_total) * 100)
-        : null
-
-      return json({
-        totals,
-        per_store: Object.values(perStore).sort((a,b) =>
-          // Worst first: lowest completion %, then most pending HO.
-          (a.completion_pct ?? 101) - (b.completion_pct ?? 101) ||
-          b.ho_pending - a.ho_pending
-        ),
-        by_day_7,
-        as_of: new Date().toISOString()
-      })
+      // Aggregated server-side (manager_overview RPC) instead of pulling up to
+      // 5000 task_records + 5000 store_task_instances into the Worker and
+      // reducing in JS. That cap silently truncated every KPI on this page for
+      // any multi-store view once volume passed it -- verified live: 7-day
+      // task_records volume alone is 56,235 rows chain-wide, over 11x the cap.
+      const overview = await db.rpc('manager_overview', { p_store_ids: scope })
+      return overview ? json(overview) : empty()
     }
 
     // GET /app-config — small set of client-facing flags any signed-in user
@@ -3365,31 +3203,12 @@ export async function onRequest(context) {
         } catch (_) { /* fall back to description-only search */ }
         params['or'] = `(${ors.join(',')})`
       }
-      // Default filter: only show products whose supplier is in the active
-      // suppliers table. The product_master view exposes supl_id as 'supplier',
-      // so we resolve active supplier_codes → supl_ids via alt_barcodes.
-      // If the suppliers table is empty, skip the filter (show all).
-      const activeSupps = await db.select('suppliers', {
-        select:        'supplier_code',
-        is_active:     'eq.true',
-        supplier_code: 'not.is.null'
-      })
-      if (activeSupps.length) {
-        const codes = activeSupps.map(s => s.supplier_code).filter(Boolean)
-        if (codes.length) {
-          // Map supplier_codes → supl_ids (the view column).
-          const altRows = await db.select('alt_barcodes', {
-            select:        'supl_id',
-            supplier_code: `in.(${codes.join(',')})`,
-            supl_id:       'not.is.null'
-          })
-          const suplIds = [...new Set(altRows.map(r => r.supl_id).filter(Boolean))]
-          if (suplIds.length) {
-            // Quote each value so commas inside names don't break the in.() syntax.
-            params['supplier'] = `in.(${suplIds.map(s => `"${s.replace(/"/g, '')}"` ).join(',')})`
-          }
-        }
-      }
+      // Active-supplier filtering now lives IN the product_master view itself
+      // (WHERE NOT EXISTS(suppliers) OR EXISTS(active supplier match)) --
+      // previously this ran two unbounded db.select() calls against
+      // alt_barcodes (96,971 distinct products, no default row limit) on
+      // EVERY page load just to build an IN-list. Same behaviour, computed
+      // once per query as a JOIN instead of two round trips into the Worker.
       // Exact-match dropdown filters (AND-combined). A specific supplier selection
       // overrides the active-suppliers default set above.
       for (const f of ['category', 'subcategory', 'product_type', 'supplier', 'product_status']) {
