@@ -19,6 +19,7 @@ import ExpiryReport from './ExpiryReport.jsx'
 import { canAccessMasterReports } from '../lib/roles.js'
 import RecordMessages from '../components/RecordMessages.jsx'
 import RecordDetailModal from '../components/RecordDetailModal.jsx'
+import AgeClock from '../components/AgeClock.jsx'
 
 function toLocalInput(d) {
   const pad = n => String(n).padStart(2, '0')
@@ -887,7 +888,10 @@ function HQReports() {
                             {!r.photo_product_url && !r.photo_barcode_url && <span className="td-muted">—</span>}
                           </div>
                         </td>
-                        <td className="td-muted" style={{ whiteSpace: 'nowrap' }}>{formatDMY(r.created_at)}</td>
+                        <td className="td-muted" style={{ whiteSpace: 'nowrap' }}>
+                          {formatDMY(r.created_at)}
+                          {isPending && <AgeClock at={r.created_at} style={{ marginLeft: 6 }} />}
+                        </td>
                         {isBO && (
                           <td>
                             <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>
@@ -1118,7 +1122,10 @@ function StoreTaskReports() {
                       <td><strong>{t.title || '—'}</strong>{t.category && <span className="chip" style={{ marginLeft: 6 }}>{t.category}</span>}</td>
                       <td>{storeName(r.store_id) || '—'}</td>
                       <td>{r.due_date || '—'}</td>
-                      <td><span className={'badge ' + (r.status === 'completed' ? 'badge-completed' : r.status === 'missed' ? 'badge-deleted' : 'badge-pending')}>{r.status}</span></td>
+                      <td>
+                        <span className={'badge ' + (r.status === 'completed' ? 'badge-completed' : r.status === 'missed' ? 'badge-deleted' : 'badge-pending')}>{r.status}</span>
+                        {r.status === 'pending' && <AgeClock at={r.created_at} style={{ marginLeft: 5 }} />}
+                      </td>
                       <td className="td-muted">{r.completed_at ? new Date(r.completed_at).toLocaleString('en-IE', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '—'}</td>
                       <td>{lines.length ? lines.map((l, i) => <div key={i} style={{ fontSize: 13 }}>{l.label}: {l.display}</div>) : (r.notes ? <span className="note" style={{ fontSize: 12 }}>{r.notes}</span> : <span className="td-muted">—</span>)}</td>
                     </tr>

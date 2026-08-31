@@ -5,6 +5,7 @@ import { useStore } from '../App.jsx'
 import { useToast } from './Toast.jsx'
 import { TASK_FORMS, STORE_CLEARABLE, HARD_DELETABLE } from '../lib/taskTypes.js'
 import RecordMessages from './RecordMessages.jsx'
+import AgeClock from './AgeClock.jsx'
 
 const STATUS_LABEL = {
   pending:          { label: 'Pending',          cls: 'badge-pending' },
@@ -286,7 +287,10 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
                         {!r.photo_product_url && !r.photo_barcode_url && <span className="td-muted">—</span>}
                       </div>
                     </td>
-                    <td><span className={`badge ${status.cls}`}>{status.label}</span></td>
+                    <td>
+                      <span className={`badge ${status.cls}`}>{status.label}</span>
+                      {r.status === 'pending' && <AgeClock at={r.created_at} style={{ marginLeft: 5 }} />}
+                    </td>
                     <td className="td-muted">{formatDT(r.created_at)}</td>
                     <td>
                       <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>

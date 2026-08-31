@@ -4,6 +4,7 @@ import { useToast } from '../components/Toast.jsx'
 import { downloadExcel } from '../lib/excel.js'
 import { getPricingItems, savePricingItem, deletePricingItem, getPricingReport } from '../lib/api.js'
 import { VAT_OPTIONS, vatPct, marginPct } from '../lib/pricingOptions.js'
+import AgeClock from '../components/AgeClock.jsx'
 
 // Pricing — back office only. Records sent here from Reports are priced:
 // enter New Selling Price + VAT Rate (+ optional notes), Save → Priced.
@@ -234,7 +235,13 @@ export default function Pricing() {
                       <td style={{ whiteSpace: 'nowrap' }}>
                         {isPriced
                           ? <span className="badge badge-completed" title={`Priced by ${it.priced_by_name || '—'} · ${fmtDT(it.priced_at)}`}>€ Priced</span>
-                          : <span className="badge badge-pending">To price</span>}
+                          : (
+                            <>
+                              <span className="badge badge-pending">To price</span>
+                              {/* Pricing blocks the store from selling — flag it sooner than the default 24h/72h cadence. */}
+                              <AgeClock at={it.created_at} warnHours={8} staleHours={24} style={{ marginLeft: 5 }} />
+                            </>
+                          )}
                       </td>
                       <td style={{ whiteSpace: 'nowrap' }}>{it.store_name || empty}</td>
                       <td className="td-muted" style={{ whiteSpace: 'nowrap' }}>{fmtDT(r.created_at)}</td>
