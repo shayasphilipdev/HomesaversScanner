@@ -14,6 +14,7 @@ export default function BottomNav() {
   if (canSeeManagerDashboard(session)) items.push({ to: '/manager', icon: '◑', label: 'Manager' })
   // HO Tasks comes before Store Tasks (swapped) — it's the primary store action.
   if (canDoHQTasks(session))    items.push({ to: '/tasks', icon: '✚', label: 'HO' })
+  if (canDoHQTasks(session))    items.push({ to: '/awaiting-reply', icon: '⏳', label: 'Replies' })
   items.push({ to: '/space-plan', icon: '⊞', label: 'Space Plan', accent: true })
   if (appConfig?.competition_enabled !== false) items.push({ to: '/competition', icon: '⚑', label: 'Compete' })
   items.push({ to: '/product-query', icon: '💬', label: 'Query' })

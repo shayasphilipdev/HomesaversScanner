@@ -88,6 +88,7 @@ export default function Nav() {
       <span className="nav-brand">Homesavers</span>
 
       {canDoHQTasks(session)    && <NavLink to="/tasks"       className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>HO Tasks</NavLink>}
+      {canDoHQTasks(session)    && <NavLink to="/awaiting-reply" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Awaiting Reply</NavLink>}
       {canDoStoreTasks(session) && <NavLink to="/store-tasks" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Store Tasks</NavLink>}
       <NavLink to="/space-plan" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Space Plan</NavLink>
       <NavLink to="/reports"    className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Reports</NavLink>

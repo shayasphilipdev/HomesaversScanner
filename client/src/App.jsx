@@ -26,6 +26,7 @@ import AdminSuppliers from './pages/AdminSuppliers.jsx'
 import SpacePlan from './pages/SpacePlan.jsx'
 import Competition from './pages/Competition.jsx'
 import Pricing from './pages/Pricing.jsx'
+import AwaitingReply from './pages/AwaitingReply.jsx'
 import AdminSpacePlan from './pages/AdminSpacePlan.jsx'
 import { setToken, clearToken, getAppConfig } from './lib/api.js'
 import { canDoHQTasks } from './lib/roles.js'
@@ -150,6 +151,7 @@ function Shell() {
             <Route path="/space-plan"    element={<SpacePlan />} />
             <Route path="/competition"   element={<Competition />} />
             <Route path="/pricing"       element={<Pricing />} />
+            <Route path="/awaiting-reply" element={<AwaitingReply />} />
             <Route path="/product-query" element={<ProductQuery />} />
             <Route path="/manager"       element={<ManagerDashboard />} />
             <Route path="/admin/task-templates" element={<AdminGuard mode="templates"><AdminTaskTemplates /></AdminGuard>} />

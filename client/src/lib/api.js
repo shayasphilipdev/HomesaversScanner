@@ -292,6 +292,11 @@ export const getUnreadMessageCount  = () => request('/task-messages/unread-count
 export const getMessageThreads      = () => request('/task-messages/threads')
 export const markRecordMessagesRead = (id) => request(`/task-records/${id}/messages/mark-read`, { method: 'POST' })
 export const dismissMessageThread   = (id) => request(`/task-messages/threads/${id}/dismiss`, { method: 'POST' })
+// Every unresolved thread across the user's scope, oldest last-message first,
+// each tagged with whose turn it is to reply. Powers the Awaiting Reply queue.
+export const getAwaitingReplyThreads = () => request('/task-messages/awaiting-reply')
+export const resolveRecordMessages   = (id, resolved = true) =>
+  request(`/task-records/${id}/messages/resolve`, { method: 'POST', body: { resolved } })
 
 // ── Space Plan ──────────────────────────────────────────────────────────────
 export const getSpacePlanGrid   = (storeId) => request('/space-plan/grid' + (storeId ? `?storeId=${storeId}` : ''))
