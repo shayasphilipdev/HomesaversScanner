@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { getTaskRecordEvents, getProductMaster } from '../lib/api.js'
 import { TASK_FORMS } from '../lib/taskTypes.js'
 import RecordMessages from './RecordMessages.jsx'
+import AgeClock from './AgeClock.jsx'
 
 // Everything known about one task record, in one place.
 //
@@ -241,7 +242,18 @@ export default function RecordDetailModal({ record, storeName, open, onClose }) 
               .map(([k, label]) => [k, label, fmt(k, record[k])])
               .filter(([, , v]) => showEmpty || v !== null)
               .map(([k, label, v]) => (
-                <Row key={k} label={label} value={v ?? <span className="td-muted">—</span>} />
+                <Row
+                  key={k}
+                  label={label}
+                  value={
+                    <>
+                      {v ?? <span className="td-muted">—</span>}
+                      {k === 'created_at' && record.status === 'pending' && (
+                        <AgeClock at={record.created_at} style={{ marginLeft: 8 }} />
+                      )}
+                    </>
+                  }
+                />
               ))}
           </div>
 

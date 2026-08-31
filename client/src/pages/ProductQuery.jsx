@@ -7,6 +7,7 @@ import {
 import { compressImage, newPhotoNamespace } from '../lib/photos.js'
 import { useToast } from '../components/Toast.jsx'
 import ScreenshotInput from '../components/forms/ScreenshotInput.jsx'
+import AgeClock, { ageLabel } from '../components/AgeClock.jsx'
 
 // Chain-wide Product Query board.
 //   - Any signed-in user can post a question (photo + notes) or an answer.
@@ -180,6 +181,7 @@ function QuestionCard({ q, isMine, expanded, onToggle, onChanged, toast }) {
             Asked by <strong>{q.created_by_name}</strong>
             {' · '}
             {new Date(q.created_at).toLocaleString('en-IE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+            <AgeClock at={q.created_at} style={{ marginLeft: 6 }} title={`Open ${ageLabel(q.created_at)}`} />
             {' · '}
             {q.answer_count || 0} answer{q.answer_count === 1 ? '' : 's'}
             {isMine && <span className="chip" style={{ marginLeft: 6 }}>yours</span>}

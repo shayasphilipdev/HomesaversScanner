@@ -10,6 +10,7 @@ import ScreenshotInput from '../components/forms/ScreenshotInput.jsx'
 import CurrentStorePicker from '../components/CurrentStorePicker.jsx'
 import { STORE_ROLE_KEYS, canAccessTemplates, canSeeManagerDashboard } from '../lib/roles.js'
 import { readDraft, writeDraft, clearDraft, pruneDrafts } from '../lib/storeTaskDraft.js'
+import AgeClock from '../components/AgeClock.jsx'
 
 // Quick link to the Task Templates editor — shown to template-capable roles
 // (store managers, area managers, buying roles, admin) so they can reach it
@@ -254,6 +255,8 @@ function TaskCard({ item, toast, onCompleted }) {
             <div style={{ fontWeight: 600 }}>{t.title || '(untitled)'}</div>
             {t.description && <div className="note" style={{ fontSize: 12.5, marginTop: 2 }}>{t.description}</div>}
             {t.category && <span className="chip" style={{ marginTop: 4 }}>{t.category}</span>}
+            {/* Same-day work queue — flag on a working-day cadence, not the default 24h/72h one. */}
+            {!done && <AgeClock at={item.created_at} warnHours={4} staleHours={8} style={{ marginLeft: 6 }} />}
             {t.due_window && !done && <span className="note" style={{ marginLeft: 6, fontSize: 12 }}>Due by {t.due_window}</span>}
             {done && item.completed_at && (
               <div className="note" style={{ fontSize: 12, marginTop: 4 }}>

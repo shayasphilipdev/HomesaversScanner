@@ -2437,7 +2437,7 @@ export async function onRequest(context) {
       // completed_by is an existing column — it drives the client's "can I
       // reopen this?" check. Deliberately does NOT include the reopen_* columns,
       // which are new: a column missing here would 400 the entire task list.
-      const SELECT = 'id,template_id,store_id,period_key,due_date,status,completed_at,completed_by,photo_url,notes,answers,' +
+      const SELECT = 'id,template_id,store_id,period_key,due_date,status,created_at,completed_at,completed_by,photo_url,notes,answers,' +
         'store_task_templates(title,description,instructions,category,frequency,due_window,requires_photo,requires_notes,assigned_to_role,assigned_to_roles,assigned_to_user_ids,blocks,priority)'
 
       const scope = await scopedStoreIds(db, session)
@@ -2801,7 +2801,7 @@ export async function onRequest(context) {
       if (to)   range.push(`lte.${new Date(to).toISOString().slice(0,10)}`)
 
       const params = {
-        select: 'id,template_id,store_id,period_key,due_date,status,completed_at,completed_by,answers,notes,photo_url,store_task_templates(title,category,blocks)',
+        select: 'id,template_id,store_id,period_key,due_date,status,created_at,completed_at,completed_by,answers,notes,photo_url,store_task_templates(title,category,blocks)',
         order:  'due_date.desc',
         limit:  '500'
       }
