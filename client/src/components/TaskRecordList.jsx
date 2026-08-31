@@ -336,7 +336,12 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
                   {expandedMessages.has(r.id) && (
                     <tr>
                       <td colSpan={showCheckCol ? 12 : 11} style={{ padding: 0, borderTop: 'none' }}>
-                        <RecordMessages recordId={r.id} onUnreadChange={handleUnreadChange} />
+                        <RecordMessages
+                          recordId={r.id}
+                          onUnreadChange={handleUnreadChange}
+                          resolvedAt={r.messages_resolved_at}
+                          resolvedByName={r.messages_resolved_by_name}
+                        />
                       </td>
                     </tr>
                   )}

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { getRecordMessages, postRecordMessage, markRecordMessagesRead } from '../lib/api.js'
+import { getRecordMessages, postRecordMessage, markRecordMessagesRead, resolveRecordMessages } from '../lib/api.js'
 import CannedReplyPicker from './forms/CannedReplyPicker.jsx'
 import { useStore } from '../App.jsx'
 
@@ -14,7 +14,12 @@ const TYPE_LABEL = { information: 'Info', query: 'Query', action: 'Action' }
 const TYPE_COLOR = { information: '#3B82F6', query: '#D97706', action: '#DC2626' }
 
 // Per-record expandable message thread.
-export default function RecordMessages({ recordId, onUnreadChange }) {
+//
+// resolvedAt/resolvedByName: the parent record's current resolved state (it
+// lives on task_records, not per-message — see supabase-migration-awaiting-reply.sql)
+// so the caller passes it in from the row it already has. onResolvedChange
+// lets the caller update that row locally instead of re-fetching the list.
+export default function RecordMessages({ recordId, onUnreadChange, resolvedAt, resolvedByName, onResolvedChange }) {
   const { session } = useStore()
   const isBO = session.mode === 'backoffice'
 
@@ -25,8 +30,14 @@ export default function RecordMessages({ recordId, onUnreadChange }) {
   const [priority, setPriority] = useState('normal')
   const [msgType, setMsgType]   = useState('query')
   const [sending, setSending]   = useState(false)
+  const [resolvedState, setResolvedState] = useState({ at: resolvedAt || null, by: resolvedByName || null })
+  const [resolving, setResolving] = useState(false)
   const bottomRef   = useRef(null)
   const textareaRef = useRef(null)
+
+  useEffect(() => {
+    setResolvedState({ at: resolvedAt || null, by: resolvedByName || null })
+  }, [recordId, resolvedAt, resolvedByName])
 
   const load = async () => {
     setLoading(true); setError('')
@@ -60,11 +71,33 @@ export default function RecordMessages({ recordId, onUnreadChange }) {
       setDraft('')
       setPriority('normal')
       setMsgType('query')
+      // The server reopens a resolved thread on any new message — reflect
+      // that locally rather than waiting on a re-fetch.
+      if (resolvedState.at) {
+        setResolvedState({ at: null, by: null })
+        onResolvedChange?.(null, null)
+      }
       onUnreadChange?.()
     } catch (e) {
       setError(e.message)
     } finally {
       setSending(false)
+    }
+  }
+
+  const toggleResolved = async () => {
+    const next = !resolvedState.at
+    setResolving(true)
+    try {
+      await resolveRecordMessages(recordId, next)
+      const at = next ? new Date().toISOString() : null
+      const by = next ? (session.display_name || session.username || 'You') : null
+      setResolvedState({ at, by })
+      onResolvedChange?.(at, by)
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setResolving(false)
     }
   }
 
@@ -81,6 +114,29 @@ export default function RecordMessages({ recordId, onUnreadChange }) {
     <div style={{ padding: '10px 14px', background: 'var(--bg-soft)', borderTop: '1px solid var(--border)' }}>
       {loading && <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading messages…</div>}
       {error && <div className="login-error" style={{ marginBottom: 8 }}>{error}</div>}
+
+      {msgs !== null && msgs.length > 0 && (
+        <div className="flex-row" style={{
+          justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 8,
+          padding: '5px 10px', borderRadius: 6,
+          background: resolvedState.at ? 'var(--green-soft)' : 'transparent',
+        }}>
+          <span className="note" style={{ fontSize: 12, color: resolvedState.at ? 'var(--green)' : 'var(--text-muted)' }}>
+            {resolvedState.at
+              ? `✓ Resolved by ${resolvedState.by || 'someone'} · ${formatTime(resolvedState.at)}`
+              : 'No further reply needed?'}
+          </span>
+          <button
+            type="button"
+            className="btn btn-outline btn-sm"
+            onClick={toggleResolved}
+            disabled={resolving}
+            style={{ fontSize: 11.5, padding: '2px 8px' }}
+          >
+            {resolving ? <span className="spinner spinner-dark" /> : (resolvedState.at ? 'Reopen' : 'Mark resolved')}
+          </button>
+        </div>
+      )}
 
       {msgs !== null && (
         <>

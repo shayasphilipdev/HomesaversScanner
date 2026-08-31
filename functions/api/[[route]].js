@@ -3248,7 +3248,7 @@ export async function onRequest(context) {
       const scope = await scopedStoreIds(db, session)
       // null = unrestricted; otherwise filter to the scope's stores.
       const params = {
-        select: 'id,task_type,store_id,supplier_name_text,product_code,product_barcode,product_name_label,actual_product_name,description,uom,quantity,notes,photo_product_url,photo_barcode_url,details,status,review_notes,reviewed_at,marked_for_deletion,completed_at,store_completed_at,cleared_at,created_at,updated_at,barcode_no,item_name,supl_id,supplier_code,item_status,barcode_status,priced_at,pricing_removed_at',
+        select: 'id,task_type,store_id,supplier_name_text,product_code,product_barcode,product_name_label,actual_product_name,description,uom,quantity,notes,photo_product_url,photo_barcode_url,details,status,review_notes,reviewed_at,marked_for_deletion,completed_at,store_completed_at,cleared_at,created_at,updated_at,barcode_no,item_name,supl_id,supplier_code,item_status,barcode_status,priced_at,pricing_removed_at,messages_resolved_at,messages_resolved_by_name',
         order:  'created_at.desc',
         limit:  String(limit),
         offset: String(offset)
@@ -3521,6 +3521,19 @@ export async function onRequest(context) {
       return json({ threads, unread_total })
     }
 
+    // GET /task-messages/awaiting-reply — every unresolved thread (whole
+    // scope, not just non-dismissed ones — dismiss only hides a thread from
+    // one side's own dropdown, it says nothing about whether the other side
+    // still owes a reply), each tagged with whose turn it is. Powers the
+    // Awaiting Reply queue for both HQ and store views.
+    if (path === '/task-messages/awaiting-reply' && method === 'GET') {
+      if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled for this account', 403)
+      const scope = await scopedStoreIds(db, session)
+      if (scope !== null && !scope.length) return json({ threads: [] })
+      const threads = await db.rpc('awaiting_reply_threads', { p_store_ids: scope })
+      return json({ threads: threads || [] })
+    }
+
     // POST /task-messages/threads/:recordId/dismiss — marks all messages in a
     // thread as dismissed (and read) for the current user's side, removing it
     // from the dropdown. New messages in the same thread will un-dismiss it.
@@ -3552,6 +3565,31 @@ export async function onRequest(context) {
       }
       await db.update('task_record_messages', { record_id: `eq.${recId}`, [unreadField]: 'eq.false' }, { [unreadField]: true })
       return json({ ok: true })
+    }
+
+    // POST /task-records/:id/messages/resolve  body: { resolved?: boolean }
+    // Either side can mark a thread resolved once no further reply is
+    // needed — this is what actually removes it from the Awaiting Reply
+    // queue (dismiss only hides it from one side's own dropdown). Posting a
+    // new message on an already-resolved thread reopens it automatically
+    // (see the message POST handler below), so this is mainly for "we're
+    // done here" without one more back-and-forth message.
+    const recMsgResolveMatch = path.match(/^\/task-records\/([a-f0-9-]+)\/messages\/resolve$/)
+    if (recMsgResolveMatch && method === 'POST') {
+      if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled for this account', 403)
+      const recId = recMsgResolveMatch[1]
+      const scope = await scopedStoreIds(db, session)
+      if (scope !== null) {
+        const [own] = await db.select('task_records', { select: 'store_id', id: `eq.${recId}`, limit: '1' })
+        if (!own || !scope.includes(own.store_id)) return err('Record not found or not allowed', 404)
+      }
+      const body    = await request.json().catch(() => ({}))
+      const resolve = body.resolved !== false // default true
+      const who     = session.display_name || session.username || 'Unknown'
+      await db.update('task_records', { id: `eq.${recId}` }, resolve
+        ? { messages_resolved_at: new Date().toISOString(), messages_resolved_by_name: who }
+        : { messages_resolved_at: null, messages_resolved_by_name: null })
+      return json({ ok: true, resolved: resolve })
     }
 
     const recMsgMatch = path.match(/^\/task-records\/([a-f0-9-]+)\/messages$/)
@@ -3597,6 +3635,13 @@ export async function onRequest(context) {
         is_dismissed_by_store: !isBO,
         is_dismissed_by_bo:    isBO
       })
+      // A reply on a resolved thread means it wasn't actually done — reopen
+      // it. Filtered on messages_resolved_at already being set so this is a
+      // no-op write on the (usual) still-open case.
+      await db.update('task_records',
+        { id: `eq.${recId}`, messages_resolved_at: 'not.is.null' },
+        { messages_resolved_at: null, messages_resolved_by_name: null }
+      ).catch(() => {})
       return json(inserted[0] ?? inserted, 201)
     }
 

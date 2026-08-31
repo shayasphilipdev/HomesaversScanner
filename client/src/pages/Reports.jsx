@@ -931,7 +931,11 @@ function HQReports() {
                       {expandedMessages.has(r.id) && (
                         <tr>
                           <td colSpan={isBO ? 9 : 8} style={{ padding: 0, borderTop: 'none' }}>
-                            <RecordMessages recordId={r.id} />
+                            <RecordMessages
+                              recordId={r.id}
+                              resolvedAt={r.messages_resolved_at}
+                              resolvedByName={r.messages_resolved_by_name}
+                            />
                           </td>
                         </tr>
                       )}

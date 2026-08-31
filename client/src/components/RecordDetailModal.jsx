@@ -233,7 +233,11 @@ export default function RecordDetailModal({ record, storeName, open, onClose }) 
               the grid, so a reply can be read and written without leaving the
               popup. */}
           <div style={{ marginTop: 14, marginLeft: -14, marginRight: -14 }}>
-            <RecordMessages recordId={record.id} />
+            <RecordMessages
+              recordId={record.id}
+              resolvedAt={record.messages_resolved_at}
+              resolvedByName={record.messages_resolved_by_name}
+            />
           </div>
 
           {/* Timestamps, unlabelled, immediately before the history they explain. */}
