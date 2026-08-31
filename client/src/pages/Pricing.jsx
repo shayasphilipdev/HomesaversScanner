@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react'
 import { useStore } from '../App.jsx'
 import { useToast } from '../components/Toast.jsx'
 import { downloadExcel } from '../lib/excel.js'
-import { getPricingItems, savePricingItem, deletePricingItem, getPricingReport } from '../lib/api.js'
+import { getPricingItems, savePricingItem, deletePricingItem, getPricingReport, getTaskTypes } from '../lib/api.js'
 import { VAT_OPTIONS, vatPct, marginPct } from '../lib/pricingOptions.js'
 import AgeClock from '../components/AgeClock.jsx'
+import MultiSelectDropdown from '../components/forms/MultiSelectDropdown.jsx'
 
 // Pricing — back office only. Records sent here from Reports are priced:
 // enter New Selling Price + VAT Rate (+ optional notes), Save → Priced.
@@ -22,15 +23,23 @@ export default function Pricing() {
   const [items, setItems]       = useState([])
   const [edits, setEdits]       = useState({})     // id → {new_selling_price, vat_rate, pricing_notes}
   const [statusFilter, setStatusFilter] = useState('all')
+  const [taskTypes, setTaskTypes]     = useState([])
+  const [taskTypeIds, setTaskTypeIds] = useState([])   // [] = all task types
+  const [fromDate, setFromDate]       = useState('')
+  const [toDate, setToDate]           = useState('')
   const [loading, setLoading]   = useState(true)
   const [savingId, setSavingId] = useState(null)
   const [downloading, setDownloading] = useState(false)
   const [error, setError]       = useState('')
 
-  const load = async (filter = statusFilter) => {
+  useEffect(() => { getTaskTypes().then(setTaskTypes).catch(() => setTaskTypes([])) }, [])
+
+  const filterOpts = () => ({ status: statusFilter, taskTypes: taskTypeIds, from: fromDate, to: toDate })
+
+  const load = async () => {
     setLoading(true); setError('')
     try {
-      const rows = await getPricingItems(filter)
+      const rows = await getPricingItems(filterOpts())
       // To price always on top, then by Task, newest first within a task.
       rows.sort((a, b) => {
         const pa = a.pricing_status === 'priced' ? 1 : 0
@@ -49,7 +58,7 @@ export default function Pricing() {
       }])))
     } catch (e) { setError(e.message) } finally { setLoading(false) }
   }
-  useEffect(() => { if (isBO) load() /* eslint-disable-next-line */ }, [isBO, statusFilter])
+  useEffect(() => { if (isBO) load() /* eslint-disable-next-line */ }, [isBO, statusFilter, taskTypeIds, fromDate, toDate])
 
   const setEdit = (id, k, v) => setEdits(prev => ({ ...prev, [id]: { ...prev[id], [k]: v } }))
 
@@ -78,7 +87,7 @@ export default function Pricing() {
   const exportExcel = async () => {
     setDownloading(true); setError('')
     try {
-      const { cols, headers, rows } = await getPricingReport(statusFilter)
+      const { cols, headers, rows } = await getPricingReport(filterOpts())
       if (!rows.length) { toast.error('Nothing to export for this filter.'); return }
       const stamp = new Date().toISOString().slice(0, 10)
       const suffix = statusFilter === 'all' ? '' : ` - ${statusFilter === 'priced' ? 'Priced' : 'To price'}`
@@ -109,15 +118,39 @@ export default function Pricing() {
           <div className="page-title">Pricing</div>
           <div className="page-subtitle">Price the records sent from Reports · {toPrice} to price · {priced} priced</div>
         </div>
-        <div className="flex-row" style={{ gap: 8, alignItems: 'center' }}>
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ width: 150 }}>
-            <option value="all">All statuses</option>
-            <option value="to_price">To price</option>
-            <option value="priced">Priced</option>
-          </select>
-          <button className="btn btn-sm btn-outline" onClick={exportExcel} disabled={downloading || !items.length}>
-            {downloading ? <><span className="spinner spinner-dark" /> …</> : '↓ Excel'}
-          </button>
+      </div>
+
+      <div className="card">
+        <div className="card-body">
+          <div className="filter-row">
+            <div className="filter-field"><label>Status</label>
+              <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+                <option value="all">All statuses</option>
+                <option value="to_price">To price</option>
+                <option value="priced">Priced</option>
+              </select>
+            </div>
+
+            <div className="filter-field filter-field--wide"><label>Task type</label>
+              <MultiSelectDropdown
+                value={taskTypeIds}
+                onChange={setTaskTypeIds}
+                options={taskTypes.map(t => ({ id: t.code, label: t.name }))}
+                placeholder="All task types"
+              />
+            </div>
+
+            <div className="filter-field"><label>From</label>
+              <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} /></div>
+            <div className="filter-field"><label>To</label>
+              <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} /></div>
+
+            <div className="filter-actions">
+              <button className="btn btn-sm btn-outline" onClick={exportExcel} disabled={downloading || !items.length}>
+                {downloading ? <><span className="spinner spinner-dark" /> …</> : '↓ Excel'}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 

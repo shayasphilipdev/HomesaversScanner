@@ -301,6 +301,29 @@ function fmtDetails(d) {
   return parts.join('; ')
 }
 
+// Shared by GET /pricing/items and GET /pricing/report so the on-screen grid
+// and the Excel export always agree on what "the current filter" means.
+// pricing_items has no top-level task_type/record-date columns — both live
+// inside the JSONB `record` snapshot — so this filters in JS after the fetch
+// rather than at the PostgREST layer. Fine at this table's scale (the same
+// handlers already do an unbounded fetch + JS .map() today).
+function filterPricingItems(items, { task_type, from, to } = {}) {
+  const wanted = (task_type || '').split(',').map(s => s.trim()).filter(Boolean)
+  // Explicit Z — a bare "YYYY-MM-DDTHH:MM:SS" parses in the runtime's local
+  // timezone, which happens to be UTC on Workers but shouldn't be relied on
+  // implicitly (bit this exact way in local testing under Europe/Dublin BST).
+  const fromTs = from ? new Date(`${from}T00:00:00.000Z`).getTime()   : null
+  const toTs   = to   ? new Date(`${to}T23:59:59.999Z`).getTime()     : null
+  if (!wanted.length && fromTs == null && toTs == null) return items
+  return items.filter(it => {
+    if (wanted.length && !wanted.includes(it.record?.task_type)) return false
+    const recTs = it.record?.created_at ? new Date(it.record.created_at).getTime() : null
+    if (fromTs != null && (recTs == null || recTs < fromTs)) return false
+    if (toTs   != null && (recTs == null || recTs > toTs))   return false
+    return true
+  })
+}
+
 // ── Store task period helpers (Phase 9E) ─────────────────────────────────
 // period_key formats: '2026-05-17' daily · '2026-W21' weekly ·
 // '2026-05' monthly · '2026' yearly · 'once_<template_id>' once-off.
@@ -1631,17 +1654,22 @@ export async function onRequest(context) {
       return json({ added: toInsert.length, skipped: records.length - toInsert.length })
     }
 
-    // GET /pricing/items?status=to_price|priced — the Pricing page grid.
+    // GET /pricing/items?status=to_price|priced&task_type=B,G&from=&to= — the Pricing page grid.
     if (path === '/pricing/items' && method === 'GET') {
       if (!isBackOffice(session)) return err('Forbidden', 403)
       const status = url.searchParams.get('status')
       const params = { select: '*', order: 'created_at.desc' }
       if (status && status !== 'all') params['pricing_status'] = `eq.${status}`
-      const [items, stores, taskTypes] = await Promise.all([
+      const [rawItems, stores, taskTypes] = await Promise.all([
         db.select('pricing_items', params),
         db.select('stores', { select: 'id,store_code,store_name' }),
         db.select('task_types', { select: 'code,name' })
       ])
+      const items = filterPricingItems(rawItems, {
+        task_type: url.searchParams.get('task_type'),
+        from:      url.searchParams.get('from'),
+        to:        url.searchParams.get('to')
+      })
       const sMap  = Object.fromEntries(stores.map(s => [s.id, s]))
       const ttMap = Object.fromEntries(taskTypes.map(t => [t.code, t.name]))
       return json(items.map(it => ({
@@ -1653,17 +1681,22 @@ export async function onRequest(context) {
       })))
     }
 
-    // GET /pricing/report?status= — flat rows for the Excel export.
+    // GET /pricing/report?status=&task_type=&from=&to= — flat rows for the Excel export.
     if (path === '/pricing/report' && method === 'GET') {
       if (!isBackOffice(session)) return err('Forbidden', 403)
       const status = url.searchParams.get('status')
       const params = { select: '*', order: 'created_at.desc' }
       if (status && status !== 'all') params['pricing_status'] = `eq.${status}`
-      const [items, stores, taskTypes] = await Promise.all([
+      const [rawItems, stores, taskTypes] = await Promise.all([
         db.select('pricing_items', params),
         db.select('stores', { select: 'id,store_code,store_name,region' }),
         db.select('task_types', { select: 'code,name' })
       ])
+      const items = filterPricingItems(rawItems, {
+        task_type: url.searchParams.get('task_type'),
+        from:      url.searchParams.get('from'),
+        to:        url.searchParams.get('to')
+      })
       const sMap  = Object.fromEntries(stores.map(s => [s.id, s]))
       const ttMap = Object.fromEntries(taskTypes.map(t => [t.code, t.name]))
       // Column order mirrors the Pricing page grid (user-specified), with the

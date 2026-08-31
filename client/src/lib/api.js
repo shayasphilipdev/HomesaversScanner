@@ -310,10 +310,18 @@ export const adminSetSpacePlanned      = (store_id, equipment_id, planned_count)
 
 // ── Pricing (back office) ────────────────────────────────────────────────────
 export const sendToPricing     = (record_ids) => request('/pricing/items', { method: 'POST', body: { record_ids } })
-export const getPricingItems   = (status) => request('/pricing/items' + (status && status !== 'all' ? `?status=${status}` : ''))
+const pricingQuery = ({ status, taskTypes, from, to } = {}) => {
+  const q = new URLSearchParams()
+  if (status && status !== 'all')        q.set('status', status)
+  if (Array.isArray(taskTypes) && taskTypes.length) q.set('task_type', taskTypes.join(','))
+  if (from) q.set('from', from)
+  if (to)   q.set('to', to)
+  return q.toString()
+}
+export const getPricingItems   = (opts) => request('/pricing/items'  + (pricingQuery(opts) ? `?${pricingQuery(opts)}` : ''))
 export const savePricingItem   = (id, body) => request(`/pricing/items/${id}`, { method: 'PATCH', body })
 export const deletePricingItem = (id) => request(`/pricing/items/${id}`, { method: 'DELETE' })
-export const getPricingReport  = (status) => request('/pricing/report' + (status && status !== 'all' ? `?status=${status}` : ''))
+export const getPricingReport  = (opts) => request('/pricing/report' + (pricingQuery(opts) ? `?${pricingQuery(opts)}` : ''))
 
 // ── Competition capture ──────────────────────────────────────────────────────
 export const getCompetitors        = (storeId) => request('/competitors' + (storeId ? `?storeId=${encodeURIComponent(storeId)}` : ''))
