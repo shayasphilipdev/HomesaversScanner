@@ -2521,23 +2521,25 @@ export async function onRequest(context) {
     }
 
     // POST /store-tasks/generate — manual trigger (BO / task creators).
+    // A specific store still goes through the JS lazy-generator path (bounded,
+    // a few subrequests). "all"/omitted used to loop ensureInstancesExist()
+    // over every active store — 3+ subrequests each, ~180 for 59 stores,
+    // comfortably over the Worker's 50-subrequest cap — so that case now
+    // calls the same generate_store_task_instances() RPC the nightly pg_cron
+    // job uses: one call, runs inside Postgres, no cap to hit.
     if (path === '/store-tasks/generate' && method === 'POST') {
       if (!canCreateTasks(session)) return err('Forbidden', 403)
       const b   = await request.json().catch(() => ({}))
       const day = b.date ? new Date(b.date) : new Date()
       const targetStoreId = b.storeId
 
-      let stores = []
       if (targetStoreId && targetStoreId !== 'all') {
-        stores = [{ id: targetStoreId }]
-      } else {
-        stores = await db.select('stores', { select: 'id,area_id', is_active: 'eq.true' })
+        const created = await ensureInstancesExist(db, env, targetStoreId, day)
+        return json({ created, day: day.toISOString().slice(0, 10), stores: 1 })
       }
-      let created = 0
-      for (const s of stores) {
-        created += await ensureInstancesExist(db, env, s.id, day)
-      }
-      return json({ created, day: day.toISOString().slice(0, 10), stores: stores.length })
+      const created = await db.rpc('generate_store_task_instances', { p_date: day.toISOString().slice(0, 10) })
+      const storeCount = await db.select('stores', { select: 'id', is_active: 'eq.true' })
+      return json({ created: created ?? 0, day: day.toISOString().slice(0, 10), stores: storeCount.length })
     }
 
     // PATCH /store-tasks/:id/complete  body: { photo_url?, notes?, answers? }
