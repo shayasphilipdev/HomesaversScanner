@@ -6,6 +6,7 @@ import { getPricingItems, savePricingItem, deletePricingItem, getPricingReport, 
 import { VAT_OPTIONS, vatPct, marginPct } from '../lib/pricingOptions.js'
 import AgeClock from '../components/AgeClock.jsx'
 import MultiSelectDropdown from '../components/forms/MultiSelectDropdown.jsx'
+import RecordDetailModal from '../components/RecordDetailModal.jsx'
 
 // Pricing — back office only. Records sent here from Reports are priced:
 // enter New Selling Price + VAT Rate (+ optional notes), Save → Priced.
@@ -40,6 +41,7 @@ export default function Pricing() {
   const [savingId, setSavingId] = useState(null)
   const [downloading, setDownloading] = useState(false)
   const [error, setError]       = useState('')
+  const [detail, setDetail]     = useState(null)   // { record, storeName } | null — the Details popup
 
   useEffect(() => { getTaskTypes().then(setTaskTypes).catch(() => setTaskTypes([])) }, [])
 
@@ -183,8 +185,6 @@ export default function Pricing() {
                   <th style={{ whiteSpace: 'nowrap' }}>Product Barcode</th>
                   <th style={{ whiteSpace: 'nowrap' }}>Product Code</th>
                   <th style={{ minWidth: 200 }}>Description</th>
-                  <th style={{ minWidth: 130 }}>Details</th>
-                  <th style={{ minWidth: 110 }}>Record Notes</th>
                   <th>Cost</th>
                   <th style={{ whiteSpace: 'nowrap' }}>Current SP</th>
                   <th style={{ width: 80 }}>New Selling Price *</th>
@@ -192,16 +192,7 @@ export default function Pricing() {
                   <th style={{ width: 60 }}>Margin %</th>
                   <th style={{ minWidth: 130 }}>Notes</th>
                   <th></th>
-                  <th style={{ width: 60 }}>Product Picture</th>
-                  <th style={{ width: 60 }}>Barcode Picture</th>
-                  <th>Task</th>
-                  <th>Item Status</th>
-                  <th>Barcode Status</th>
                   <th>Status</th>
-                  <th>Store</th>
-                  <th>Date</th>
-                  <th>Supplier</th>
-                  <th>Record Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -218,8 +209,6 @@ export default function Pricing() {
                       <td className="td-code" style={{ whiteSpace: 'nowrap' }}>{r.barcode_no || r.product_code || empty}</td>
                       <td className="td-code" style={{ whiteSpace: 'nowrap' }}>{it.product_barcode || empty}</td>
                       <td>{r.item_name || r.description || r.product_name_label || empty}</td>
-                      <td style={{ fontSize: 12 }}>{it.details_fmt || empty}</td>
-                      <td style={{ fontSize: 12 }}>{r.notes || empty}</td>
                       <td style={{ whiteSpace: 'nowrap' }}>{euro(it.cost) || empty}</td>
                       <td style={{ whiteSpace: 'nowrap' }}>{euro(it.current_selling_price) || empty}</td>
                       <td>
@@ -256,24 +245,16 @@ export default function Pricing() {
                             title={canSave ? (isPriced ? 'Save changes' : 'Save and mark Priced') : 'New Selling Price and VAT Rate are required'}>
                             {savingId === it.id ? <span className="spinner" /> : 'Save'}
                           </button>
+                          <button
+                            className="btn btn-sm btn-outline"
+                            title="All details for this record"
+                            onClick={() => setDetail({ record: r, storeName: it.store_name })}
+                          >🔍 Details</button>
                           <button className="btn btn-sm btn-outline" disabled={savingId === it.id} onClick={() => remove(it)}>
                             Delete
                           </button>
                         </div>
                       </td>
-                      <td style={{ textAlign: 'center' }}>
-                        {r.photo_product_url
-                          ? <a href={r.photo_product_url} target="_blank" rel="noopener noreferrer" title="View product photo" style={{ fontSize: 16 }}>📷</a>
-                          : empty}
-                      </td>
-                      <td style={{ textAlign: 'center' }}>
-                        {r.photo_barcode_url
-                          ? <a href={r.photo_barcode_url} target="_blank" rel="noopener noreferrer" title="View barcode photo" style={{ fontSize: 16 }}>📷</a>
-                          : empty}
-                      </td>
-                      <td><strong>{it.task_type_name || empty}</strong></td>
-                      <td>{r.item_status || empty}</td>
-                      <td>{r.barcode_status || empty}</td>
                       <td style={{ whiteSpace: 'nowrap' }}>
                         {isPriced
                           ? <span className="badge badge-completed" title={`Priced by ${it.priced_by_name || '—'} · ${fmtDT(it.priced_at)}`}>€ Priced</span>
@@ -285,10 +266,6 @@ export default function Pricing() {
                             </>
                           )}
                       </td>
-                      <td style={{ whiteSpace: 'nowrap' }}>{it.store_name || empty}</td>
-                      <td className="td-muted" style={{ whiteSpace: 'nowrap' }}>{fmtDT(r.created_at)}</td>
-                      <td style={{ whiteSpace: 'nowrap' }}>{[r.supl_id, r.supplier_code].filter(Boolean).join(' · ') || empty}</td>
-                      <td>{r.status || empty}</td>
                     </tr>
                   )
                 })}
@@ -297,6 +274,13 @@ export default function Pricing() {
           </div>
         </div>
       )}
+
+      <RecordDetailModal
+        open={!!detail}
+        record={detail?.record}
+        storeName={detail?.storeName || ''}
+        onClose={() => setDetail(null)}
+      />
     </div>
   )
 }
