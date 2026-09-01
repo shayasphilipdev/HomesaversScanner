@@ -222,17 +222,17 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
           <thead>
             <tr>
               {showCheckCol && <th style={{ width: 32 }}></th>}
-              <th>Task</th>
-              <th>Product Barcode</th>
-              <th>Product Code</th>
+              <th style={{ minWidth: 110 }}>Task</th>
+              <th style={{ minWidth: 110 }}>Product Barcode</th>
+              <th style={{ minWidth: 90 }}>Product Code</th>
               <th>Product Description</th>
-              <th>UOM</th>
-              <th className="td-right">Qty</th>
-              <th>Supplier</th>
-              <th>Photos</th>
-              <th>Status</th>
-              <th>Date / Time</th>
-              <th></th>
+              <th style={{ minWidth: 70 }}>UOM</th>
+              <th className="td-right" style={{ minWidth: 60 }}>Qty</th>
+              <th style={{ minWidth: 110 }}>Supplier</th>
+              <th style={{ minWidth: 110 }}>Photos</th>
+              <th style={{ minWidth: 120 }}>Status</th>
+              <th style={{ minWidth: 130 }}>Date / Time</th>
+              <th style={{ minWidth: 220 }}></th>
             </tr>
           </thead>
           <tbody>
@@ -268,31 +268,31 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
                         )}
                       </td>
                     )}
-                    <td><strong>{TASK_FORMS[r.task_type]?.name || r.task_type}</strong></td>
-                    <td className="td-code">{barcodeNo}</td>
-                    <td className="td-muted" style={{ fontSize: 12 }}>{r.product_barcode || '—'}</td>
+                    <td style={{ minWidth: 110, whiteSpace: 'nowrap' }}><strong>{TASK_FORMS[r.task_type]?.name || r.task_type}</strong></td>
+                    <td className="td-code" style={{ minWidth: 110, whiteSpace: 'nowrap' }}>{barcodeNo}</td>
+                    <td className="td-muted" style={{ fontSize: 12, minWidth: 90, whiteSpace: 'nowrap' }}>{r.product_barcode || '—'}</td>
                     <td>{description || <span className="td-muted">—</span>}</td>
-                    <td>
+                    <td style={{ minWidth: 70, whiteSpace: 'nowrap' }}>
                       {r.uom || <span className="td-muted">—</span>}
                       {r.uom === 'Eachs' && (
                         <span title="Single piece — check pack contents" role="img" aria-label="Pack-contents warning" style={{ marginLeft: 4 }}>⚠️</span>
                       )}
                     </td>
-                    <td className="td-right">{r.quantity ?? <span className="td-muted">—</span>}</td>
-                    <td>{supplier || <span className="td-muted">—</span>}</td>
-                    <td>
+                    <td className="td-right" style={{ minWidth: 60, whiteSpace: 'nowrap' }}>{r.quantity ?? <span className="td-muted">—</span>}</td>
+                    <td style={{ minWidth: 110, whiteSpace: 'nowrap' }}>{supplier || <span className="td-muted">—</span>}</td>
+                    <td style={{ minWidth: 110, whiteSpace: 'nowrap' }}>
                       <div className="flex-row" style={{ gap: 6 }}>
                         {r.photo_product_url && <a href={r.photo_product_url} target="_blank" rel="noopener noreferrer" title="Product photo">📷 product</a>}
                         {r.photo_barcode_url && <a href={r.photo_barcode_url} target="_blank" rel="noopener noreferrer" title="Barcode photo">📷 barcode</a>}
                         {!r.photo_product_url && !r.photo_barcode_url && <span className="td-muted">—</span>}
                       </div>
                     </td>
-                    <td>
+                    <td style={{ minWidth: 120, whiteSpace: 'nowrap' }}>
                       <span className={`badge ${status.cls}`}>{status.label}</span>
                       {r.status === 'pending' && <AgeClock at={r.created_at} style={{ marginLeft: 5 }} />}
                     </td>
-                    <td className="td-muted">{formatDT(r.created_at)}</td>
-                    <td>
+                    <td className="td-muted" style={{ minWidth: 130, whiteSpace: 'nowrap' }}>{formatDT(r.created_at)}</td>
+                    <td style={{ minWidth: 220, whiteSpace: 'nowrap' }}>
                       <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>
                         {isBO && r.status === 'pending' && (
                           <button className="btn btn-sm btn-primary" onClick={() => markCompleted(r.id)}>Mark complete</button>

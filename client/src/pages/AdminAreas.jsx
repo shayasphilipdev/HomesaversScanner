@@ -59,14 +59,14 @@ export default function AdminAreas() {
         <div className="card"><div className="empty-state"><p>No areas yet — add the first one above.</p></div></div>
       ) : (
         <div className="card">
-          <div className="table-wrap">
+          <div className="table-wrap table-dense">
             <table>
               <thead>
                 <tr>
-                  <th>Code</th>
+                  <th style={{ minWidth: 80 }}>Code</th>
                   <th>Name</th>
-                  <th>Status</th>
-                  <th></th>
+                  <th style={{ minWidth: 90 }}>Status</th>
+                  <th style={{ minWidth: 170 }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -163,10 +163,10 @@ function AreaRow({ area, editing, onEdit, onCancel, onSaved, toast }) {
   if (editing) {
     return (
       <tr>
-        <td><input value={form.area_code} onChange={e => setForm(f => ({ ...f, area_code: e.target.value }))} style={{ width: 90 }} /></td>
+        <td style={{ minWidth: 80, whiteSpace: 'nowrap' }}><input value={form.area_code} onChange={e => setForm(f => ({ ...f, area_code: e.target.value }))} style={{ width: 90 }} /></td>
         <td><input value={form.area_name} onChange={e => setForm(f => ({ ...f, area_name: e.target.value }))} /></td>
-        <td>{area.is_active ? <span className="badge badge-completed">Active</span> : <span className="badge badge-pending">Inactive</span>}</td>
-        <td>
+        <td style={{ minWidth: 90, whiteSpace: 'nowrap' }}>{area.is_active ? <span className="badge badge-completed">Active</span> : <span className="badge badge-pending">Inactive</span>}</td>
+        <td style={{ minWidth: 170, whiteSpace: 'nowrap' }}>
           {err && <div className="login-error" style={{ marginBottom: 6, fontSize: 12 }}>{err}</div>}
           <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>
             <button className="btn btn-sm btn-outline" onClick={onCancel} disabled={saving}>Cancel</button>
@@ -181,10 +181,10 @@ function AreaRow({ area, editing, onEdit, onCancel, onSaved, toast }) {
 
   return (
     <tr>
-      <td className="td-code">{area.area_code || <span className="td-muted">—</span>}</td>
+      <td className="td-code" style={{ minWidth: 80, whiteSpace: 'nowrap' }}>{area.area_code || <span className="td-muted">—</span>}</td>
       <td>{area.area_name}</td>
-      <td>{area.is_active ? <span className="badge badge-completed">Active</span> : <span className="badge badge-pending">Inactive</span>}</td>
-      <td>
+      <td style={{ minWidth: 90, whiteSpace: 'nowrap' }}>{area.is_active ? <span className="badge badge-completed">Active</span> : <span className="badge badge-pending">Inactive</span>}</td>
+      <td style={{ minWidth: 170, whiteSpace: 'nowrap' }}>
         <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>
           <button className="btn btn-sm btn-outline" onClick={onEdit}>Edit</button>
           <button className="btn btn-sm btn-outline" onClick={toggleActive}>

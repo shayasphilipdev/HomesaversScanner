@@ -115,10 +115,10 @@ export default function AdminSuppliers() {
             <table>
               <thead>
                 <tr>
-                  <th>Supplier Code</th>
+                  <th style={{ minWidth: 110 }}>Supplier Code</th>
                   <th>Supplier Name</th>
-                  <th>Status</th>
-                  <th></th>
+                  <th style={{ minWidth: 90 }}>Status</th>
+                  <th style={{ minWidth: 140 }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -129,14 +129,14 @@ export default function AdminSuppliers() {
                 )}
                 {filtered.map(s => (
                   <tr key={s.id}>
-                    <td className="td-code">{s.supplier_code || <span className="td-muted">—</span>}</td>
+                    <td className="td-code" style={{ minWidth: 110, whiteSpace: 'nowrap' }}>{s.supplier_code || <span className="td-muted">—</span>}</td>
                     <td>{s.supplier_name}</td>
-                    <td>
+                    <td style={{ minWidth: 90, whiteSpace: 'nowrap' }}>
                       <span className={`badge ${s.is_active ? 'badge-completed' : 'badge-pending'}`}>
                         {s.is_active ? 'Active' : 'Inactive'}
                       </span>
                     </td>
-                    <td>
+                    <td style={{ minWidth: 140, whiteSpace: 'nowrap' }}>
                       <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>
                         <button className="btn btn-sm btn-outline" onClick={() => openEdit(s)}>Edit</button>
                         <button className="btn btn-sm btn-icon btn-outline" title="Delete" onClick={() => handleDelete(s)}>🗑</button>

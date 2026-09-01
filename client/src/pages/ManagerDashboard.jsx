@@ -95,10 +95,10 @@ export default function ManagerDashboard() {
             <thead>
               <tr>
                 <th>Store</th>
-                <th className="td-right" title="HO task records logged today">HO today</th>
-                <th className="td-right" title="HO records pending review">Pending</th>
-                <th className="td-right" title="HO reviewed — waiting for store to clear">To clear</th>
-                <th className="td-right" title="Today's checklist completion">Checklist</th>
+                <th className="td-right" style={{ minWidth: 70 }} title="HO task records logged today">HO today</th>
+                <th className="td-right" style={{ minWidth: 70 }} title="HO records pending review">Pending</th>
+                <th className="td-right" style={{ minWidth: 70 }} title="HO reviewed — waiting for store to clear">To clear</th>
+                <th className="td-right" style={{ minWidth: 90 }} title="Today's checklist completion">Checklist</th>
                 {dayKeys.map((d, i) => {
                   const isToday = d === todayKey
                   const label   = new Date(d + 'T12:00:00').toLocaleDateString('en-IE', { weekday: 'short' })
@@ -129,22 +129,22 @@ export default function ManagerDashboard() {
                       <strong style={{ fontSize: 13 }}>{r.store_name}</strong>
                       {r.store_code && <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 6 }}>{r.store_code}</span>}
                     </td>
-                    <td className="td-right">
+                    <td className="td-right" style={{ minWidth: 70, whiteSpace: 'nowrap' }}>
                       {r.ho_today > 0
                         ? <strong style={{ color: 'var(--primary)' }}>{r.ho_today}</strong>
                         : <span className="td-muted">—</span>}
                     </td>
-                    <td className="td-right">
+                    <td className="td-right" style={{ minWidth: 70, whiteSpace: 'nowrap' }}>
                       {r.ho_pending > 0
                         ? <span style={{ color: '#B47F1E', fontWeight: 600 }}>{r.ho_pending}</span>
                         : <span className="td-muted">—</span>}
                     </td>
-                    <td className="td-right">
+                    <td className="td-right" style={{ minWidth: 70, whiteSpace: 'nowrap' }}>
                       {r.ho_to_clear > 0
                         ? <span style={{ color: '#3E9F4B', fontWeight: 600 }}>{r.ho_to_clear}</span>
                         : <span className="td-muted">—</span>}
                     </td>
-                    <td className="td-right">
+                    <td className="td-right" style={{ minWidth: 90, whiteSpace: 'nowrap' }}>
                       <CompletionPill pct={r.completion_pct} done={r.tasks_today_done} total={r.tasks_today_total} />
                     </td>
                     {days.map(d => (
