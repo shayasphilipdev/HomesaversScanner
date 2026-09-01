@@ -119,19 +119,19 @@ export default function AdminSpacePlan() {
           <div className="table-wrap table-dense">
             <table>
               <thead>
-                <tr><th style={{ width: 60 }}>#</th><th>Equipment</th><th>Status</th><th></th></tr>
+                <tr><th style={{ width: 60 }}>#</th><th>Equipment</th><th style={{ minWidth: 90 }}>Status</th><th style={{ minWidth: 110 }}></th></tr>
               </thead>
               <tbody>
                 {equipment.map(e => (
                   <tr key={e.id}>
                     <td className="td-muted">{e.sort_order}</td>
                     <td><strong>{e.name}</strong></td>
-                    <td>
+                    <td style={{ minWidth: 90, whiteSpace: 'nowrap' }}>
                       <span className={`badge ${e.is_active ? 'badge-completed' : 'badge-pending'}`}>
                         {e.is_active ? 'Shown' : 'Hidden'}
                       </span>
                     </td>
-                    <td>
+                    <td style={{ minWidth: 110, whiteSpace: 'nowrap' }}>
                       <div className="flex-row" style={{ justifyContent: 'flex-end' }}>
                         <button
                           className={`btn btn-sm ${e.is_active ? 'btn-outline' : 'btn-primary'}`}

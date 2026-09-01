@@ -96,9 +96,9 @@ function KindBlock({ kind, label, hint, options, taskTypes, onChange }) {
                 <tr>
                   <th>Label</th>
                   <th>Used by task types</th>
-                  <th>Sort</th>
-                  <th>Status</th>
-                  <th></th>
+                  <th style={{ minWidth: 70 }}>Sort</th>
+                  <th style={{ minWidth: 90 }}>Status</th>
+                  <th style={{ minWidth: 210 }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -223,9 +223,9 @@ function LookupRow({ option, taskTypes, editing, onEdit, onCancel, onSaved }) {
             ))}
           </div>
         </td>
-        <td><input type="number" value={sort} onChange={e => setSort(e.target.value)} style={{ width: 70 }} /></td>
-        <td>{option.is_active ? <span className="badge badge-completed">Active</span> : <span className="badge badge-pending">Inactive</span>}</td>
-        <td>
+        <td style={{ minWidth: 70, whiteSpace: 'nowrap' }}><input type="number" value={sort} onChange={e => setSort(e.target.value)} style={{ width: 70 }} /></td>
+        <td style={{ minWidth: 90, whiteSpace: 'nowrap' }}>{option.is_active ? <span className="badge badge-completed">Active</span> : <span className="badge badge-pending">Inactive</span>}</td>
+        <td style={{ minWidth: 210, whiteSpace: 'nowrap' }}>
           {err && <div className="login-error" style={{ marginBottom: 6, fontSize: 12 }}>{err}</div>}
           <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>
             <button className="btn btn-sm btn-outline" onClick={onCancel} disabled={saving}>Cancel</button>
@@ -245,9 +245,9 @@ function LookupRow({ option, taskTypes, editing, onEdit, onCancel, onSaved }) {
           {!(option.task_types || []).length && <span className="td-muted">— none —</span>}
         </div>
       </td>
-      <td>{option.sort_order}</td>
-      <td>{option.is_active ? <span className="badge badge-completed">Active</span> : <span className="badge badge-pending">Inactive</span>}</td>
-      <td>
+      <td style={{ minWidth: 70, whiteSpace: 'nowrap' }}>{option.sort_order}</td>
+      <td style={{ minWidth: 90, whiteSpace: 'nowrap' }}>{option.is_active ? <span className="badge badge-completed">Active</span> : <span className="badge badge-pending">Inactive</span>}</td>
+      <td style={{ minWidth: 210, whiteSpace: 'nowrap' }}>
         <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>
           <button className="btn btn-sm btn-outline" onClick={onEdit}>Edit</button>
           <button className="btn btn-sm btn-outline" onClick={toggleActive}>{option.is_active ? 'Deactivate' : 'Activate'}</button>
