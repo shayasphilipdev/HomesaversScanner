@@ -314,6 +314,17 @@ function ActivityChart({ byDay, loading }) {
                 )}
               </g>
             ))}
+
+            {/* One dot per day at the top of its bar, coloured by whichever
+                series (HO or Ops) was actually higher that day — the stack
+                puts Ops visually on top regardless, so this is the only way
+                to see at a glance which series actually led each day. */}
+            {bars.map((b) => (
+              <circle key={'dot' + b.i} cx={b.x + barW / 2}
+                cy={b.isZero ? VH - ZERO_TICK : (b.ops > 0 ? b.opsY : b.hoY)}
+                r="5" fill={b.ho >= b.ops ? '#2E78D6' : '#F2843C'}
+                stroke="var(--surface)" strokeWidth="1.5" />
+            ))}
           </svg>
         )}
       </div>
