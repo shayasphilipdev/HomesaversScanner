@@ -799,14 +799,38 @@ input.scan-input {
   overflow: auto;
   max-height: calc(100vh - 230px);
 }
+/* Sized to its own content, not stretched to fill the wrapper — the table
+   used to need 2000px+ across ~22 columns; trimmed down to 11, forcing that
+   width kept the same total span but spread it across far fewer cells as
+   dead space (the huge gaps between columns). */
 .pricing-scroll table {
-  min-width: 2000px;
+  width: auto;
 }
 .pricing-scroll thead th {
   position: sticky;
   top: 0;
   z-index: 3;
 }
+/* A dense editing grid, not a light reading page — every row repeats the
+   same handful of short values, so give it the same tight treatment as
+   .sp-grid rather than the generous default table padding meant for
+   longer-form report tables. */
+.pricing-scroll thead th { padding: 8px 10px; font-size: 12.5px; white-space: nowrap; }
+.pricing-scroll tbody td { padding: 5px 10px; }
+.pricing-scroll input, .pricing-scroll select {
+  min-height: 30px;
+  padding: 4px 8px;
+  font-size: 13px;
+  border-radius: 6px;
+}
+
+/* Pricing page chrome, tightened — scoped so no other page's header/card
+   spacing changes. */
+.pricing-compact .page-header { margin-bottom: 12px; }
+.pricing-compact .page-title { font-size: 22px; }
+.pricing-compact .page-subtitle { font-size: 12.5px; margin-top: 2px; }
+.pricing-compact .card-body { padding: 12px 16px; }
+.pricing-compact .card-header { padding: 8px 16px; font-size: 13px; }
 
 /* Data Sync (Admin → Settings): the sync cards in a balanced 2-up grid that
    collapses to one column on small screens. align-items:start keeps each card
