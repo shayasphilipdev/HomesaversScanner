@@ -15,6 +15,15 @@ import MultiSelectDropdown from '../components/forms/MultiSelectDropdown.jsx'
 const euro = (v) => (v == null || v === '' || isNaN(Number(v))) ? '' : `€${Number(v).toFixed(2)}`
 const fmtDT = (iso) => iso ? new Date(iso).toLocaleDateString('en-IE', { day: '2-digit', month: 'short', year: '2-digit' }) : ''
 
+// Local (not UTC) calendar date as 'YYYY-MM-DD' — what a date-picker's
+// "today" should mean to whoever is looking at the page right now.
+const isoDate = (d) => {
+  const p = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+const todayStr = () => isoDate(new Date())
+const daysAgoStr = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return isoDate(d) }
+
 export default function Pricing() {
   const { session } = useStore()
   const toast = useToast()
@@ -25,8 +34,8 @@ export default function Pricing() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [taskTypes, setTaskTypes]     = useState([])
   const [taskTypeIds, setTaskTypeIds] = useState([])   // [] = all task types
-  const [fromDate, setFromDate]       = useState('')
-  const [toDate, setToDate]           = useState('')
+  const [fromDate, setFromDate]       = useState(daysAgoStr(7))
+  const [toDate, setToDate]           = useState(todayStr())
   const [loading, setLoading]   = useState(true)
   const [savingId, setSavingId] = useState(null)
   const [downloading, setDownloading] = useState(false)
