@@ -287,14 +287,14 @@ function ActivityChart({ byDay, loading, compact }) {
     const ho  = d.ho_count  || 0
     const ops = d.ops_count || 0
     const isHo = ho >= ops
-    const y = VH - PAD - (Math.max(ho, ops) / sharedMax) * (VH - 2 * PAD)
-    return { key: d.date || i, x, y, isHo }
+    const value = Math.max(ho, ops)
+    const y = VH - PAD - (value / sharedMax) * (VH - 2 * PAD)
+    return { key: d.date || i, x, y, isHo, value }
   })
 
-  const labelDate = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-IE', { day: '2-digit', month: 'short' }) : ''
-  const firstLabel = days[0] ? labelDate(days[0].date) : ''
-  const midLabel   = days.length ? labelDate(days[Math.floor((days.length - 1) / 2)].date) : ''
-  const lastLabel  = days.length ? labelDate(days[days.length - 1].date) : ''
+  // One axis label per day (not just first/mid/last) — day-of-month only,
+  // so a full month of labels still fits without overlapping.
+  const dayNum = (s) => s ? new Date(s + 'T00:00:00').getDate() : ''
 
   return (
     <div className="ac-card">
@@ -314,44 +314,55 @@ function ActivityChart({ byDay, loading, compact }) {
         ) : !days.length ? (
           <div className="empty-state" style={{ padding: 16 }}><p style={{ fontSize: 13 }}>No activity in this range yet.</p></div>
         ) : (
-          <svg className="ac-svg" viewBox={`0 0 ${VW} ${VH}`} preserveAspectRatio="none"
-            role="img" aria-label={`Line chart of daily activity. HO total ${fmt(hoTotal)}, Ops total ${fmt(opsTotal)}.`}>
-            <defs>
-              <linearGradient id="acHoLine" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0" stopColor="#5BA8F5" /><stop offset="1" stopColor="#2E78D6" />
-              </linearGradient>
-              <linearGradient id="acOpsLine" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0" stopColor="#FFB066" /><stop offset="1" stopColor="#F2843C" />
-              </linearGradient>
-              <linearGradient id="acHoFill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stopColor="#2E78D6" stopOpacity="0.16" /><stop offset="1" stopColor="#2E78D6" stopOpacity="0" />
-              </linearGradient>
-              <linearGradient id="acOpsFill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stopColor="#F2843C" stopOpacity="0.16" /><stop offset="1" stopColor="#F2843C" stopOpacity="0" />
-              </linearGradient>
-            </defs>
+          <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+            <svg className="ac-svg" viewBox={`0 0 ${VW} ${VH}`} preserveAspectRatio="none"
+              role="img" aria-label={`Line chart of daily activity. HO total ${fmt(hoTotal)}, Ops total ${fmt(opsTotal)}.`}>
+              <defs>
+                <linearGradient id="acHoLine" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0" stopColor="#5BA8F5" /><stop offset="1" stopColor="#2E78D6" />
+                </linearGradient>
+                <linearGradient id="acOpsLine" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0" stopColor="#FFB066" /><stop offset="1" stopColor="#F2843C" />
+                </linearGradient>
+                <linearGradient id="acHoFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stopColor="#2E78D6" stopOpacity="0.16" /><stop offset="1" stopColor="#2E78D6" stopOpacity="0" />
+                </linearGradient>
+                <linearGradient id="acOpsFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stopColor="#F2843C" stopOpacity="0.16" /><stop offset="1" stopColor="#F2843C" stopOpacity="0" />
+                </linearGradient>
+              </defs>
 
-            <line x1="0" y1={VH * (1 / 3)} x2={VW} y2={VH * (1 / 3)} className="ac-grid" />
-            <line x1="0" y1={VH * (2 / 3)} x2={VW} y2={VH * (2 / 3)} className="ac-grid" />
+              <line x1="0" y1={VH * (1 / 3)} x2={VW} y2={VH * (1 / 3)} className="ac-grid" />
+              <line x1="0" y1={VH * (2 / 3)} x2={VW} y2={VH * (2 / 3)} className="ac-grid" />
 
-            {opsLine.area && <path d={opsLine.area} fill="url(#acOpsFill)" />}
-            {hoLine.area  && <path d={hoLine.area}  fill="url(#acHoFill)" />}
-            {opsLine.line && <path d={opsLine.line} fill="none" stroke="url(#acOpsLine)" strokeWidth="4" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />}
-            {hoLine.line  && <path d={hoLine.line}  fill="none" stroke="url(#acHoLine)"  strokeWidth="4" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />}
+              {opsLine.area && <path d={opsLine.area} fill="url(#acOpsFill)" />}
+              {hoLine.area  && <path d={hoLine.area}  fill="url(#acHoFill)" />}
+              {opsLine.line && <path d={opsLine.line} fill="none" stroke="url(#acOpsLine)" strokeWidth="4" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />}
+              {hoLine.line  && <path d={hoLine.line}  fill="none" stroke="url(#acHoLine)"  strokeWidth="4" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />}
 
+              {dayMarkers.map(m => (
+                <circle key={m.key} cx={m.x} cy={m.y} r="5"
+                  fill={m.isHo ? '#2E78D6' : '#F2843C'}
+                  stroke="var(--surface)" strokeWidth="1.5" />
+              ))}
+            </svg>
+
+            {/* Value labels overlaid as HTML, not SVG text — the viewBox is
+                stretched non-uniformly (preserveAspectRatio="none"), which
+                would distort glyph shapes if drawn as <text> inside it. */}
             {dayMarkers.map(m => (
-              <circle key={m.key} cx={m.x} cy={m.y} r="5"
-                fill={m.isHo ? '#2E78D6' : '#F2843C'}
-                stroke="var(--surface)" strokeWidth="1.5" />
+              <div key={m.key} className="ac-dot-label" style={{
+                left: `${(m.x / VW) * 100}%`,
+                top: `${Math.max((m.y / VH) * 100, 7)}%`,
+                color: m.isHo ? '#2E78D6' : '#F2843C'
+              }}>{fmt(m.value)}</div>
             ))}
-          </svg>
+          </div>
         )}
       </div>
 
       <div className="ac-axis">
-        <span>{firstLabel}</span>
-        <span>{midLabel}</span>
-        <span>{lastLabel}</span>
+        {dd.map((d, i) => <span key={d.date || i}>{dayNum(d.date)}</span>)}
       </div>
     </div>
   )
