@@ -594,6 +594,16 @@ body {
 /* MultiSelectDropdown trigger button — let the field control width. */
 .filter-field > div { min-width: 220px; }
 .filter-field--wide > div { min-width: 260px; }
+/* A short, fixed-vocabulary filter (e.g. a 2-option Active/Inactive) doesn't
+   need the same floor as a real multi-select — pair with the dropdown's own
+   toolbar={false}/minPanelWidth to actually shrink it, not just this field. */
+.filter-field--narrow > div { min-width: 110px; }
+
+/* Reports' filter bars (From/To + several multi-selects + Run/Excel) — the
+   default .card-body padding is sized for lighter content; a row this busy
+   reads as a "very high" band before you see any data. Opt-in per card so
+   this doesn't ripple into every other .card-body on the page. */
+.report-filter-card { padding: 14px 18px; }
 
 /* Top-of-nav capacity alert, admin only. Amber baseline, flashes red
    when the worst meter is over the critical threshold (85%). */

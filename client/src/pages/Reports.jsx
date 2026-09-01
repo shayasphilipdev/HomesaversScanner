@@ -673,7 +673,7 @@ function HQReports() {
   return (
     <div>
       <div className="card">
-        <div className="card-body">
+        <div className="card-body report-filter-card">
           <div className="filter-row">
             <div className="filter-field"><label>From</label>
               <input type="datetime-local" value={from} onChange={e => setFrom(e.target.value)} /></div>
@@ -715,21 +715,25 @@ function HQReports() {
               />
             </div>
 
-            <div className="filter-field filter-field--wide"><label>Product Status</label>
+            <div className="filter-field filter-field--narrow"><label>Product Status</label>
               <MultiSelectDropdown
                 value={itemStatusIds}
                 onChange={setItemStatusIds}
                 options={[{ id: 'Active', label: 'Active' }, { id: 'Inactive', label: 'Inactive' }]}
                 placeholder="Any"
+                toolbar={false}
+                minPanelWidth={110}
               />
             </div>
 
-            <div className="filter-field filter-field--wide"><label>Barcode Status</label>
+            <div className="filter-field filter-field--narrow"><label>Barcode Status</label>
               <MultiSelectDropdown
                 value={barcodeStatusIds}
                 onChange={setBarcodeStatusIds}
                 options={[{ id: 'Active', label: 'Active' }, { id: 'Inactive', label: 'Inactive' }]}
                 placeholder="Any"
+                toolbar={false}
+                minPanelWidth={110}
               />
             </div>
 
@@ -1054,7 +1058,7 @@ function StoreTaskReports() {
   return (
     <div>
       <div className="card">
-        <div className="card-body">
+        <div className="card-body report-filter-card">
           <div className="filter-row">
             <div className="filter-field"><label>From</label>
               <input type="date" value={from} onChange={e => setFrom(e.target.value)} /></div>
@@ -1204,7 +1208,7 @@ function SpacePlanReport() {
   return (
     <div>
       <div className="card">
-        <div className="card-body">
+        <div className="card-body report-filter-card">
           <div className="filter-row">
             {isBO && (
               <div className="filter-field filter-field--wide"><label>Stores</label>
@@ -1291,7 +1295,7 @@ function CompetitionReport() {
   return (
     <div>
       <div className="card">
-        <div className="card-body">
+        <div className="card-body report-filter-card">
           <div className="filter-row">
             {isBO && (
               <div className="filter-field filter-field--wide"><label>Stores</label>
