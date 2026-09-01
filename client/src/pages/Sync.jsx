@@ -117,14 +117,14 @@ export default function Sync() {
         </div>
       ) : (
         <div className="card">
-          <div className="table-wrap">
+          <div className="table-wrap table-dense">
             <table>
               <thead>
                 <tr>
-                  <th>Task</th>
+                  <th style={{ minWidth: 100 }}>Task</th>
                   <th>Summary</th>
-                  <th>Saved</th>
-                  <th>Status</th>
+                  <th style={{ minWidth: 110, whiteSpace: 'nowrap' }}>Saved</th>
+                  <th style={{ minWidth: 140 }}>Status</th>
                   <th></th>
                 </tr>
               </thead>
@@ -136,9 +136,9 @@ export default function Sync() {
                   const isFailed = it.status === 'failed'
                   return (
                     <tr key={it.id}>
-                      <td><strong>{meta.name || it.body?.task_type || '?'}</strong></td>
+                      <td style={{ whiteSpace: 'nowrap' }}><strong>{meta.name || it.body?.task_type || '?'}</strong></td>
                       <td>{summary}</td>
-                      <td className="td-muted">{when}</td>
+                      <td className="td-muted" style={{ whiteSpace: 'nowrap' }}>{when}</td>
                       <td>
                         {isFailed
                           ? <span className="badge badge-deleted">Needs attention · {it.attempts || 0}/5</span>
@@ -232,9 +232,13 @@ function DeviceLogPanel() {
           {!rows.length ? (
             <p className="note" style={{ fontSize: 12.5 }}>Nothing recorded yet on this device.</p>
           ) : (
-            <div className="table-wrap" style={{ maxHeight: 320, overflow: 'auto' }}>
+            <div className="table-wrap table-dense" style={{ maxHeight: 320, overflow: 'auto' }}>
               <table style={{ fontSize: 12 }}>
-                <thead><tr><th style={{ whiteSpace: 'nowrap' }}>When</th><th>What</th><th>Detail</th></tr></thead>
+                <thead><tr>
+                  <th style={{ whiteSpace: 'nowrap', minWidth: 130 }}>When</th>
+                  <th style={{ minWidth: 130 }}>What</th>
+                  <th>Detail</th>
+                </tr></thead>
                 <tbody>
                   {rows.map((e, i) => {
                     const [label, colour] = LABEL[e.type] || [e.type, 'var(--text-muted)']
