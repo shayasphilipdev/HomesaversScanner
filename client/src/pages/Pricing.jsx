@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../App.jsx'
 import { useToast } from '../components/Toast.jsx'
 import { downloadExcel } from '../lib/excel.js'
@@ -9,9 +9,12 @@ import MultiSelectDropdown from '../components/forms/MultiSelectDropdown.jsx'
 import RecordDetailModal from '../components/RecordDetailModal.jsx'
 
 // Pricing — back office only. Records sent here from Reports are priced:
-// enter New Selling Price + VAT Rate (+ optional notes), Save → Priced.
+// enter New Selling Price + VAT Rate (+ optional notes) and it autosaves →
+// Priced, 800ms after the last keystroke on that row (no Save button).
 // Margin recomputes live; empty when cost is unknown (e.g. most Non-Scans).
 // Delete removes the pricing copy only — never the original task record.
+
+const AUTOSAVE_DELAY_MS = 800
 
 const euro = (v) => (v == null || v === '' || isNaN(Number(v))) ? '' : `€${Number(v).toFixed(2)}`
 const fmtDT = (iso) => iso ? new Date(iso).toLocaleDateString('en-IE', { day: '2-digit', month: 'short', year: '2-digit' }) : ''
@@ -38,10 +41,12 @@ export default function Pricing() {
   const [fromDate, setFromDate]       = useState(daysAgoStr(7))
   const [toDate, setToDate]           = useState(todayStr())
   const [loading, setLoading]   = useState(true)
-  const [savingId, setSavingId] = useState(null)
+  const [savingIds, setSavingIds] = useState(new Set())   // ids currently mid-autosave (a Set — more than one row can be saving at once)
   const [downloading, setDownloading] = useState(false)
   const [error, setError]       = useState('')
   const [detail, setDetail]     = useState(null)   // { record, storeName } | null — the Details popup
+  // id → { it, values, timer } — pending debounced autosaves, flushed on unmount.
+  const pendingRef = useRef({})
 
   useEffect(() => { getTaskTypes().then(setTaskTypes).catch(() => setTaskTypes([])) }, [])
 
@@ -71,22 +76,63 @@ export default function Pricing() {
   }
   useEffect(() => { if (isBO) load() /* eslint-disable-next-line */ }, [isBO, statusFilter, taskTypeIds, fromDate, toDate])
 
-  const setEdit = (id, k, v) => setEdits(prev => ({ ...prev, [id]: { ...prev[id], [k]: v } }))
-
-  const save = async (it) => {
-    const e = edits[it.id] || {}
-    if (e.new_selling_price === '' || e.new_selling_price == null) { toast.error('New Selling Price is required.'); return }
-    if (!e.vat_rate) { toast.error('VAT Rate is required.'); return }
-    setSavingId(it.id)
+  // Actually calls the API. Silently does nothing until both required fields
+  // are filled — the same gate the old Save button's `disabled` enforced —
+  // so autosave never fires a premature 400 while someone's still typing the
+  // price and hasn't picked a VAT rate yet.
+  const doSave = async (it, values) => {
+    if (values.new_selling_price === '' || values.new_selling_price == null || !values.vat_rate) return
+    setSavingIds(prev => new Set(prev).add(it.id))
     try {
-      await savePricingItem(it.id, {
-        new_selling_price: e.new_selling_price,
-        vat_rate:          e.vat_rate,
-        pricing_notes:     e.pricing_notes
+      const updated = await savePricingItem(it.id, {
+        new_selling_price: values.new_selling_price,
+        vat_rate:          values.vat_rate,
+        pricing_notes:     values.pricing_notes
       })
-      toast.success(`${it.record?.item_name || it.product_barcode || 'Record'} priced.`)
-      await load()
-    } catch (err) { toast.error(err.message) } finally { setSavingId(null) }
+      // Merge the saved fields into the row in place rather than re-fetching
+      // the whole list — a full reload re-sorts (to-price rows first) and
+      // would yank a row out from under whoever's editing it the instant it
+      // flips to Priced. Sort order catches up next time the list reloads
+      // (a filter change, or reopening the page).
+      setItems(prev => prev.map(x => (x.id === it.id ? { ...x, ...updated } : x)))
+    } catch (err) {
+      toast.error(err.message)
+    } finally {
+      setSavingIds(prev => { const next = new Set(prev); next.delete(it.id); return next })
+    }
+  }
+
+  // Debounced per row — every keystroke resets that row's own timer, so
+  // typing a whole price (or tabbing through price → VAT → notes) fires ONE
+  // save 800ms after the last change, not one per keystroke.
+  const scheduleAutosave = (it, nextValues) => {
+    const existing = pendingRef.current[it.id]
+    if (existing) clearTimeout(existing.timer)
+    const timer = setTimeout(() => {
+      delete pendingRef.current[it.id]
+      doSave(it, nextValues)
+    }, AUTOSAVE_DELAY_MS)
+    pendingRef.current[it.id] = { it, values: nextValues, timer }
+  }
+
+  // Flush (not just cancel) any pending autosave on unmount — leaving the
+  // page inside the debounce window must not silently drop the last edit.
+  useEffect(() => {
+    return () => {
+      Object.values(pendingRef.current).forEach(({ timer, it, values }) => {
+        clearTimeout(timer)
+        doSave(it, values)
+      })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const setEdit = (it, k, v) => {
+    setEdits(prev => {
+      const nextRow = { ...(prev[it.id] || {}), [k]: v }
+      scheduleAutosave(it, nextRow)
+      return { ...prev, [it.id]: nextRow }
+    })
   }
 
   const remove = async (it) => {
@@ -202,7 +248,7 @@ export default function Pricing() {
                   const vp = liveVat(it)
                   const mg = liveMargin(it)
                   const isPriced = it.pricing_status === 'priced'
-                  const canSave = e.new_selling_price !== '' && e.new_selling_price != null && !!e.vat_rate
+                  const isSaving = savingIds.has(it.id)
                   const empty = <span className="td-muted">—</span>
                   return (
                     <tr key={it.id} style={isPriced ? { background: 'var(--surface-warm)' } : undefined}>
@@ -215,12 +261,12 @@ export default function Pricing() {
                         <input
                           type="text" inputMode="decimal" placeholder="€"
                           value={e.new_selling_price ?? ''}
-                          onChange={ev => { const v = ev.target.value; if (v === '' || /^\d*\.?\d*$/.test(v)) setEdit(it.id, 'new_selling_price', v) }}
+                          onChange={ev => { const v = ev.target.value; if (v === '' || /^\d*\.?\d*$/.test(v)) setEdit(it, 'new_selling_price', v) }}
                           style={{ width: 55 }}
                         />
                       </td>
                       <td>
-                        <select value={e.vat_rate || ''} onChange={ev => setEdit(it.id, 'vat_rate', ev.target.value)} title={e.vat_rate || ''} style={{ width: 85, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <select value={e.vat_rate || ''} onChange={ev => setEdit(it, 'vat_rate', ev.target.value)} title={e.vat_rate || ''} style={{ width: 85, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           <option value="">— select —</option>
                           {VAT_OPTIONS.map(o => <option key={o.code} value={o.code}>{o.code} ({o.pct}%)</option>)}
                           {e.vat_rate && !VAT_OPTIONS.some(o => o.code.toLowerCase() === String(e.vat_rate).toLowerCase()) && (
@@ -235,23 +281,24 @@ export default function Pricing() {
                       <td>
                         <input
                           type="text" value={e.pricing_notes ?? ''}
-                          onChange={ev => setEdit(it.id, 'pricing_notes', ev.target.value)}
+                          onChange={ev => setEdit(it, 'pricing_notes', ev.target.value)}
                           title={e.pricing_notes || ''}
                           placeholder="Notes…" style={{ width: 90 }}
                         />
                       </td>
                       <td>
-                        <div className="flex-row" style={{ gap: 6, whiteSpace: 'nowrap' }}>
-                          <button className="btn btn-sm btn-primary" disabled={savingId === it.id || !canSave} onClick={() => save(it)}
-                            title={canSave ? (isPriced ? 'Save changes' : 'Save and mark Priced') : 'New Selling Price and VAT Rate are required'}>
-                            {savingId === it.id ? <span className="spinner" /> : 'Save'}
-                          </button>
+                        <div className="flex-row" style={{ gap: 6, whiteSpace: 'nowrap', alignItems: 'center' }}>
+                          {isSaving && (
+                            <span className="note" style={{ fontSize: 11.5, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <span className="spinner spinner-dark" /> Saving…
+                            </span>
+                          )}
                           <button
                             className="btn btn-sm btn-outline"
                             title="All details for this record"
                             onClick={() => setDetail({ record: r, storeName: it.store_name })}
                           >🔍 Details</button>
-                          <button className="btn btn-sm btn-outline" disabled={savingId === it.id} onClick={() => remove(it)}>
+                          <button className="btn btn-sm btn-outline" disabled={isSaving} onClick={() => remove(it)}>
                             Delete
                           </button>
                         </div>
