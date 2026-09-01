@@ -851,12 +851,19 @@ input.scan-input {
   overflow: auto;
   max-height: calc(100vh - 230px);
 }
-/* Sized to its own content, not stretched to fill the wrapper — the table
-   used to need 2000px+ across ~22 columns; trimmed down to 11, forcing that
-   width kept the same total span but spread it across far fewer cells as
-   dead space (the huge gaps between columns). */
+/* The table used to need 2000px+ across ~22 columns; trimmed down to 11,
+   forcing that width kept the same total span but spread it across far
+   fewer cells as dead space (huge gaps between every column). Switching to
+   width:auto fixed that, but for a short result set it just left the same
+   dead space as one big trailing block after the last column instead — the
+   card still fills its full-width container regardless of table content.
+   table-layout: fixed + every column pinned to an explicit width EXCEPT
+   Description (still just its old minWidth floor) routes any actual leftover
+   space into Description specifically, the one column built to absorb it,
+   instead of it showing up as unstyled dead space anywhere else. */
 .pricing-scroll table {
-  width: auto;
+  width: 100%;
+  table-layout: fixed;
 }
 .pricing-scroll thead th {
   position: sticky;

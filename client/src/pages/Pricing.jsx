@@ -228,17 +228,17 @@ export default function Pricing() {
             <table style={{ fontSize: 13 }}>
               <thead>
                 <tr>
-                  <th style={{ whiteSpace: 'nowrap' }}>Product Barcode</th>
-                  <th style={{ whiteSpace: 'nowrap' }}>Product Code</th>
+                  <th style={{ whiteSpace: 'nowrap', width: 130 }}>Product Barcode</th>
+                  <th style={{ whiteSpace: 'nowrap', width: 130 }}>Product Code</th>
                   <th style={{ minWidth: 180 }}>Description</th>
                   <th style={{ width: 70 }}>Cost</th>
                   <th style={{ whiteSpace: 'nowrap', width: 70 }}>Current SP</th>
-                  <th style={{ width: 70 }}>New Selling Price *</th>
+                  <th style={{ width: 70, whiteSpace: 'normal', lineHeight: 1.25 }}>New Selling Price *</th>
                   <th style={{ width: 130 }}>VAT Rate *</th>
-                  <th style={{ width: 55 }}>Margin %</th>
+                  <th style={{ width: 55, whiteSpace: 'normal', lineHeight: 1.25 }}>Margin %</th>
                   <th style={{ width: 75 }}>Notes</th>
-                  <th></th>
-                  <th>Status</th>
+                  <th style={{ width: 170 }}></th>
+                  <th style={{ width: 150 }}>Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -286,7 +286,7 @@ export default function Pricing() {
                           placeholder="Notes…" style={{ width: 75, background: '#fff', color: '#1a1a1a' }}
                         />
                       </td>
-                      <td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
                         <div className="flex-row" style={{ gap: 6, whiteSpace: 'nowrap', alignItems: 'center' }}>
                           {isSaving && (
                             <span className="note" style={{ fontSize: 11.5, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
