@@ -778,6 +778,16 @@ input.scan-input {
 /* ── Table ── */
 .table-wrap { overflow-x: auto; }
 
+/* Reusable dense-grid treatment for any repeated-row table that doesn't need
+   .pricing-scroll's or .table-wrap--tall's own extra behaviour (sticky
+   header, a forced height cap) — just the tighter padding/font a table
+   showing many similar rows at once needs, instead of the generic default
+   sized for lighter, less repetitive content. Opt in with
+   className="table-wrap table-dense" (stacks with .table-wrap--tall too). */
+.table-dense table    { font-size: 13px; }
+.table-dense thead th { padding: 8px 10px; }
+.table-dense tbody td { padding: 6px 10px; }
+
 /* Reports: a wide table inside a plain .table-wrap puts its horizontal
    scrollbar at the very bottom of the list, so on a few hundred rows you have
    to scroll all the way down before you can scroll sideways. Capping the height

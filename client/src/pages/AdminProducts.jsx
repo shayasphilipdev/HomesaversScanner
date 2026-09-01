@@ -98,27 +98,27 @@ export default function AdminProducts() {
           ) : !data.length ? (
             <div className="empty-state"><p>No rows. Has the sync run yet?</p></div>
           ) : (
-            <div className="table-wrap">
-              <table style={{ fontSize: 13 }}>
+            <div className="table-wrap table-dense">
+              <table>
                 <thead><tr>
-                  <th>Barcode No</th>
-                  <th>EAN</th>
+                  <th style={{ minWidth: 110 }}>Barcode No</th>
+                  <th style={{ minWidth: 110 }}>EAN</th>
                   <th>Item name</th>
-                  <th>Supplier</th>
-                  <th>Code</th>
-                  <th>Product</th>
-                  <th>Barcode</th>
+                  <th style={{ minWidth: 100 }}>Supplier</th>
+                  <th style={{ minWidth: 90 }}>Code</th>
+                  <th style={{ minWidth: 90 }}>Product</th>
+                  <th style={{ minWidth: 90 }}>Barcode</th>
                 </tr></thead>
                 <tbody>
                   {data.map(r => (
                     <tr key={r.id}>
-                      <td className="td-code">{r.barcode_no}</td>
-                      <td className="td-muted">{r.ean_barcode || '—'}</td>
+                      <td className="td-code" style={{ whiteSpace: 'nowrap' }}>{r.barcode_no}</td>
+                      <td className="td-muted" style={{ whiteSpace: 'nowrap' }}>{r.ean_barcode || '—'}</td>
                       <td>{r.item_name || '—'}</td>
-                      <td>{r.supl_id || '—'}</td>
-                      <td className="td-muted">{r.supplier_code || '—'}</td>
-                      <td><StatusPill value={r.item_status} /></td>
-                      <td><StatusPill value={r.barcode_status} /></td>
+                      <td style={{ whiteSpace: 'nowrap' }}>{r.supl_id || '—'}</td>
+                      <td className="td-muted" style={{ whiteSpace: 'nowrap' }}>{r.supplier_code || '—'}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}><StatusPill value={r.item_status} /></td>
+                      <td style={{ whiteSpace: 'nowrap' }}><StatusPill value={r.barcode_status} /></td>
                     </tr>
                   ))}
                 </tbody>
