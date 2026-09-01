@@ -169,7 +169,7 @@ export default function Pricing() {
   const liveMargin = (it) => marginPct((edits[it.id] || {}).new_selling_price, (edits[it.id] || {}).vat_rate, it.cost)
 
   return (
-    <div>
+    <div className="pricing-compact">
       <div className="page-header">
         <div>
           <div className="page-title">Pricing</div>
@@ -229,14 +229,14 @@ export default function Pricing() {
               <thead>
                 <tr>
                   <th style={{ whiteSpace: 'nowrap' }}>Product Barcode</th>
-                  <th style={{ whiteSpace: 'nowrap' }}>Product Code</th>
-                  <th style={{ minWidth: 200 }}>Description</th>
-                  <th>Cost</th>
-                  <th style={{ whiteSpace: 'nowrap' }}>Current SP</th>
-                  <th style={{ width: 80 }}>New Selling Price *</th>
-                  <th style={{ width: 110 }}>VAT Rate *</th>
-                  <th style={{ width: 60 }}>Margin %</th>
-                  <th style={{ minWidth: 130 }}>Notes</th>
+                  <th style={{ whiteSpace: 'nowrap', width: 85 }}>Product Code</th>
+                  <th style={{ minWidth: 180 }}>Description</th>
+                  <th style={{ width: 70 }}>Cost</th>
+                  <th style={{ whiteSpace: 'nowrap', width: 70 }}>Current SP</th>
+                  <th style={{ width: 70 }}>New Selling Price *</th>
+                  <th style={{ width: 75 }}>VAT Rate *</th>
+                  <th style={{ width: 55 }}>Margin %</th>
+                  <th style={{ width: 75 }}>Notes</th>
                   <th></th>
                   <th>Status</th>
                 </tr>
@@ -255,18 +255,18 @@ export default function Pricing() {
                       <td className="td-code" style={{ whiteSpace: 'nowrap' }}>{r.barcode_no || r.product_code || empty}</td>
                       <td className="td-code" title={it.product_barcode || ''} style={{ whiteSpace: 'nowrap', maxWidth: 85, overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.product_barcode || empty}</td>
                       <td>{r.item_name || r.description || r.product_name_label || empty}</td>
-                      <td style={{ whiteSpace: 'nowrap' }}>{euro(it.cost) || empty}</td>
-                      <td style={{ whiteSpace: 'nowrap' }}>{euro(it.current_selling_price) || empty}</td>
+                      <td style={{ whiteSpace: 'nowrap', maxWidth: 70, overflow: 'hidden', textOverflow: 'ellipsis' }}>{euro(it.cost) || empty}</td>
+                      <td style={{ whiteSpace: 'nowrap', maxWidth: 70, overflow: 'hidden', textOverflow: 'ellipsis' }}>{euro(it.current_selling_price) || empty}</td>
                       <td>
                         <input
                           type="text" inputMode="decimal" placeholder="€"
                           value={e.new_selling_price ?? ''}
                           onChange={ev => { const v = ev.target.value; if (v === '' || /^\d*\.?\d*$/.test(v)) setEdit(it, 'new_selling_price', v) }}
-                          style={{ width: 55 }}
+                          style={{ width: 65 }}
                         />
                       </td>
                       <td>
-                        <select value={e.vat_rate || ''} onChange={ev => setEdit(it, 'vat_rate', ev.target.value)} title={e.vat_rate || ''} style={{ width: 85, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <select value={e.vat_rate || ''} onChange={ev => setEdit(it, 'vat_rate', ev.target.value)} title={e.vat_rate || ''} style={{ width: 75, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           <option value="">— select —</option>
                           {VAT_OPTIONS.map(o => <option key={o.code} value={o.code}>{o.code} ({o.pct}%)</option>)}
                           {e.vat_rate && !VAT_OPTIONS.some(o => o.code.toLowerCase() === String(e.vat_rate).toLowerCase()) && (
@@ -275,7 +275,7 @@ export default function Pricing() {
                         </select>
                         {vp === 9999 && <div className="note" style={{ fontSize: 11, color: 'var(--red, #c0392b)' }}>Unknown rate: 9999</div>}
                       </td>
-                      <td style={{ whiteSpace: 'nowrap', fontWeight: 600, maxWidth: 45, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <td style={{ whiteSpace: 'nowrap', fontWeight: 600, maxWidth: 55, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {mg == null ? empty : `${mg}%`}
                       </td>
                       <td>
@@ -283,7 +283,7 @@ export default function Pricing() {
                           type="text" value={e.pricing_notes ?? ''}
                           onChange={ev => setEdit(it, 'pricing_notes', ev.target.value)}
                           title={e.pricing_notes || ''}
-                          placeholder="Notes…" style={{ width: 90 }}
+                          placeholder="Notes…" style={{ width: 75 }}
                         />
                       </td>
                       <td>
