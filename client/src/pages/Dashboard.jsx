@@ -264,9 +264,19 @@ function ActivityChart({ byDay, loading }) {
     return { i, x, ho, ops, opsY, opsH, hoY, hoH, isZero, isHo, value }
   })
 
-  // One axis label per day (not just first/mid/last) — day-of-month only,
-  // so a full month of labels still fits without overlapping.
+  // One axis label per day (not just first/mid/last). Bare day number, EXCEPT
+  // the very first day and any day the month actually changes on (e.g. "31
+  // Aug" → "1 Sep") — those get the month name too, so a 30-day range that
+  // crosses a boundary never reads as two unrelated "1"s. Every label
+  // spelling out the month would just be redundant clutter for a range that
+  // mostly sits inside one month.
   const dayNum = (s) => s ? new Date(s + 'T00:00:00').getDate() : ''
+  const monthShort = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-IE', { month: 'short' }) : ''
+  const dayLabel = (s, prevS) => {
+    const num = dayNum(s)
+    if (!prevS || monthShort(s) !== monthShort(prevS)) return `${num} ${monthShort(s)}`
+    return num
+  }
 
   return (
     <div className="ac-card">
@@ -346,7 +356,7 @@ function ActivityChart({ byDay, loading }) {
       </div>
 
       <div className="ac-axis">
-        {days.map((d, i) => <span key={d.date || i}>{dayNum(d.date)}</span>)}
+        {days.map((d, i) => <span key={d.date || i}>{dayLabel(d.date, days[i - 1]?.date)}</span>)}
       </div>
     </div>
   )
