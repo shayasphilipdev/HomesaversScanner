@@ -88,3 +88,13 @@ export const COMPETITION_REPORT_HEADERS = [
   'Price vs Us', 'Threat', 'Setting', 'Details', 'Collected By', 'Collected At',
   'Updated By', 'Last Updated',
 ]
+// minWidth per column, parallel to the two arrays above — a floor so the
+// mostly-short columns don't stretch unevenly across the report's width,
+// never a cap (nothing here is truncated). 'details' has none: it's the
+// one genuinely free-text column, left to absorb whatever's left over.
+export const COMPETITION_REPORT_MIN_WIDTHS = [
+  90, 140, 90, 130, 90, 90,
+  100, 80, 70, 90, 90, 70,
+  90, 80, 90, undefined, 110, 120,
+  110, 120,
+]

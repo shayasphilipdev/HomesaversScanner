@@ -790,6 +790,14 @@ input.scan-input {
   .table-wrap--tall { max-height: calc(100vh - 180px); }
 }
 
+/* These 6 report tables are dense, repeated-row grids too — the same shape
+   of problem .pricing-scroll and .sp-grid were built to fix, just never
+   applied here. One rule for all six instead of a font-size choice repeated
+   (and, on two of the six, forgotten) on every individual <table> tag. */
+.table-wrap--tall table    { font-size: 13px; }
+.table-wrap--tall thead th { padding: 8px 10px; }
+.table-wrap--tall tbody td { padding: 6px 10px; }
+
 /* Pricing grid is very wide (20+ columns). Give the table a floor width so its
    columns don't wrap-and-cram to fit the card — that's what was hiding the
    horizontal scrollbar. The wrapper then scrolls sideways. Cap the height and

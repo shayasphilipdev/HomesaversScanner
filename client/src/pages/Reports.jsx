@@ -8,7 +8,7 @@ import {
   clearToken, getProductMaster, getProductMasterFilters,
   getSpacePlanReport, getCompetitorReport, sendToPricing, getBmReductions
 } from '../lib/api.js'
-import { COMPETITION_REPORT_COLS, COMPETITION_REPORT_HEADERS } from '../lib/competitionOptions.js'
+import { COMPETITION_REPORT_COLS, COMPETITION_REPORT_HEADERS, COMPETITION_REPORT_MIN_WIDTHS } from '../lib/competitionOptions.js'
 import { TASK_FORMS, STORE_CLEARABLE } from '../lib/taskTypes.js'
 import { downloadExcel } from '../lib/excel.js'
 import { useToast } from '../components/Toast.jsx'
@@ -109,17 +109,20 @@ export default function Reports() {
 // Product Master — searchable product lookup for every user. Backed by the
 // product_master materialized view (alt_barcodes + prices). View-only: search
 // by code / barcode / description / category / subcategory. No export.
+// minWidth, not width/maxWidth — a floor so short values (most rows) don't
+// stretch the column, but never a cap that could cut off a longer one
+// (a code or a name that happens to run long stays fully visible).
 const PM_COLUMNS = [
-  { key: 'product_code',        label: 'Product Code' },
-  { key: 'product_description', label: 'Product Description' },
-  { key: 'selling_price',       label: 'Selling Price', get: r => r.selling_price != null && r.selling_price !== '' ? `€${Number(r.selling_price).toFixed(2)}` : '' },
-  { key: 'category',            label: 'Category' },
-  { key: 'subcategory',         label: 'Subcategory' },
-  { key: 'product_barcode',     label: 'Product Barcode' },
-  { key: 'product_status',      label: 'Product Status' },
-  { key: 'barcode_status',      label: 'Barcode Status' },
-  { key: 'product_type',        label: 'Product Type' },
-  { key: 'supplier',            label: 'Supplier' }
+  { key: 'product_code',        label: 'Product Code',        minWidth: 110 },
+  { key: 'product_description', label: 'Product Description' },  // flexible — absorbs leftover width
+  { key: 'selling_price',       label: 'Selling Price',       minWidth: 90,  get: r => r.selling_price != null && r.selling_price !== '' ? `€${Number(r.selling_price).toFixed(2)}` : '' },
+  { key: 'category',            label: 'Category',            minWidth: 110 },
+  { key: 'subcategory',         label: 'Subcategory',         minWidth: 110 },
+  { key: 'product_barcode',     label: 'Product Barcode',     minWidth: 110 },
+  { key: 'product_status',      label: 'Product Status',      minWidth: 90 },
+  { key: 'barcode_status',      label: 'Barcode Status',      minWidth: 90 },
+  { key: 'product_type',        label: 'Product Type',        minWidth: 100 },
+  { key: 'supplier',            label: 'Supplier',            minWidth: 110 }
 ]
 
 const EMPTY_FILTERS = { category: '', subcategory: '', product_type: '', supplier: '', product_status: '' }
@@ -198,12 +201,16 @@ function ProductMasterReport() {
 
         {!!rows.length && (
           <div className="table-wrap table-wrap--tall">
-            <table style={{ fontSize: 13 }}>
-              <thead><tr>{PM_COLUMNS.map(c => <th key={c.key}>{c.label}</th>)}</tr></thead>
+            <table>
+              <thead><tr>{PM_COLUMNS.map(c => <th key={c.key} style={c.minWidth ? { minWidth: c.minWidth } : undefined}>{c.label}</th>)}</tr></thead>
               <tbody>
                 {rows.map((r, i) => (
                   <tr key={i}>
-                    {PM_COLUMNS.map(c => <td key={c.key}>{c.get ? c.get(r) : (r[c.key] ?? '')}</td>)}
+                    {PM_COLUMNS.map(c => (
+                      <td key={c.key} style={c.minWidth ? { whiteSpace: 'nowrap' } : undefined}>
+                        {c.get ? c.get(r) : (r[c.key] ?? '')}
+                      </td>
+                    ))}
                   </tr>
                 ))}
               </tbody>
@@ -265,7 +272,7 @@ function Pager({ page, pages, onGo, disabled }) {
         <input type="number" min="1" max={pages} value={jump}
           onChange={e => setJump(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && doJump()}
-          placeholder="Go to" style={{ width: 72, fontSize: 13 }} />
+          placeholder="Go to" style={{ width: 72, fontSize: 13, minHeight: 32, padding: '4px 8px' }} />
         <button className="btn btn-sm btn-outline" onClick={doJump} disabled={disabled}>Go</button>
       </span>
     </div>
@@ -296,6 +303,10 @@ async function authedFetch(url) {
 // to fill in. See report_bm_reductions() / GET /reports/bm-reductions.
 const BM_KEYS    = ['store_code','product_id','description','category','status','retail_price','qty_in_store','auth_reduced_price']
 const BM_HEADERS = ['Store Code','Product ID','Description','Category','Status','Retail Price','QTY in Store','Auth Reduced Price']
+// minWidth per column, parallel to BM_HEADERS — a floor so short/blank columns
+// don't stretch, never a cap (Description has none: it's free text and should
+// absorb whatever's left).
+const BM_MIN_WIDTHS = [100, 110, undefined, 110, 90, 100, 100, 140]
 const BM_MAX_SHOWN = 1000   // the grid is a preview; Excel export carries everything
 const BM_EMPTY_FILTERS = { store_code: [], category: [], status: [] }
 const bmDate = d => { const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` }
@@ -401,8 +412,8 @@ function BMReductionsReport() {
         {!!shown.length && (
           <>
             <div className="table-wrap table-wrap--tall">
-              <table style={{ fontSize: 13 }}>
-                <thead><tr>{BM_HEADERS.map(h => <th key={h} style={{ whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
+              <table>
+                <thead><tr>{BM_HEADERS.map((h, i) => <th key={h} style={{ whiteSpace: 'nowrap', minWidth: BM_MIN_WIDTHS[i] }}>{h}</th>)}</tr></thead>
                 <tbody>
                   {shown.map((r, i) => (
                     <tr key={i}>
@@ -978,13 +989,13 @@ function HQReports() {
                       />
                     </th>
                   )}
-                  <th>Task</th>
+                  <th style={{ minWidth: 110 }}>Task</th>
                   <th style={{ minWidth: 200 }}>Store</th>
-                  <th style={{ whiteSpace: 'nowrap' }}>Product Id</th>
+                  <th style={{ whiteSpace: 'nowrap', width: 130 }}>Product Id</th>
                   <th style={{ minWidth: 260 }}>Product Description</th>
-                  <th>Product Barcode</th>
-                  <th>Photos</th>
-                  <th>Date</th>
+                  <th style={{ width: 110 }}>Product Barcode</th>
+                  <th style={{ width: 140 }}>Photos</th>
+                  <th style={{ whiteSpace: 'nowrap', width: 110 }}>Date</th>
                   {isBO && <th></th>}
                 </tr>
               </thead>
@@ -1246,8 +1257,12 @@ function StoreTaskReports() {
                 <th style={{ width: 36 }}>
                   <input type="checkbox" checked={allSelected} onChange={toggleAll} title="Select all rows" />
                 </th>
-                <th>Template</th><th>Store</th><th>Due</th><th>Status</th>
-                <th>Completed at</th><th>Block answers</th>
+                <th style={{ minWidth: 160 }}>Template</th>
+                <th style={{ minWidth: 150 }}>Store</th>
+                <th style={{ width: 100, whiteSpace: 'nowrap' }}>Due</th>
+                <th style={{ width: 130 }}>Status</th>
+                <th style={{ width: 140, whiteSpace: 'nowrap' }}>Completed at</th>
+                <th style={{ minWidth: 200 }}>Block answers</th>
               </tr></thead>
               <tbody>
                 {rows.map(r => {
@@ -1272,12 +1287,12 @@ function StoreTaskReports() {
                       <td><input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleOne(r.id)} /></td>
                       <td><strong>{t.title || '—'}</strong>{t.category && <span className="chip" style={{ marginLeft: 6 }}>{t.category}</span>}</td>
                       <td>{storeName(r.store_id) || '—'}</td>
-                      <td>{r.due_date || '—'}</td>
-                      <td>
+                      <td style={{ whiteSpace: 'nowrap' }}>{r.due_date || '—'}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
                         <span className={'badge ' + (r.status === 'completed' ? 'badge-completed' : r.status === 'missed' ? 'badge-deleted' : 'badge-pending')}>{r.status}</span>
                         {r.status === 'pending' && <AgeClock at={r.created_at} style={{ marginLeft: 5 }} />}
                       </td>
-                      <td className="td-muted">{r.completed_at ? new Date(r.completed_at).toLocaleString('en-IE', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '—'}</td>
+                      <td className="td-muted" style={{ whiteSpace: 'nowrap' }}>{r.completed_at ? new Date(r.completed_at).toLocaleString('en-IE', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '—'}</td>
                       <td>{lines.length ? lines.map((l, i) => <div key={i} style={{ fontSize: 13 }}>{l.label}: {l.display}</div>) : (r.notes ? <span className="note" style={{ fontSize: 12 }}>{r.notes}</span> : <span className="td-muted">—</span>)}</td>
                     </tr>
                   )
@@ -1294,6 +1309,9 @@ function StoreTaskReports() {
 // ── Space Plan report ────────────────────────────────────────────────────
 const SP_COLS    = ['store_code','store_name','equipment','subcategory','planned_count','category','audited_count','equipment_audited_total','equipment_variance','last_count_date']
 const SP_HEADERS = ['Store Code','Store Name','Equipment','Subcategory','Planned','Category','Audited (dept)','Audited Total','Variance','Last Count']
+// minWidth per column, parallel to SP_COLS/SP_HEADERS — a floor, never a cap.
+// 'equipment' has none: it's the descriptive column, left to absorb leftover width.
+const SP_MIN_WIDTHS = [100, 150, undefined, 110, 80, 110, 90, 90, 90, 100]
 
 function SpacePlanReport() {
   const { session } = useStore()
@@ -1366,12 +1384,12 @@ function SpacePlanReport() {
         <div className="card mt-20">
           <div className="card-header">{rows.length.toLocaleString('en-IE')} rows</div>
           <div className="table-wrap table-wrap--tall">
-            <table style={{ fontSize: 13 }}>
-              <thead><tr>{SP_HEADERS.map((h, i) => <th key={SP_COLS[i]}>{h}</th>)}</tr></thead>
+            <table>
+              <thead><tr>{SP_HEADERS.map((h, i) => <th key={SP_COLS[i]} style={SP_MIN_WIDTHS[i] ? { minWidth: SP_MIN_WIDTHS[i] } : undefined}>{h}</th>)}</tr></thead>
               <tbody>
                 {rows.map((r, i) => (
                   <tr key={i}>
-                    {SP_COLS.map(c => <td key={c}>{r[c] ?? ''}</td>)}
+                    {SP_COLS.map((c, j) => <td key={c} style={SP_MIN_WIDTHS[j] ? { whiteSpace: 'nowrap' } : undefined}>{r[c] ?? ''}</td>)}
                   </tr>
                 ))}
               </tbody>
@@ -1453,12 +1471,12 @@ function CompetitionReport() {
         <div className="card mt-20">
           <div className="card-header">{rows.length.toLocaleString('en-IE')} rows</div>
           <div className="table-wrap table-wrap--tall">
-            <table style={{ fontSize: 13 }}>
-              <thead><tr>{COMPETITION_REPORT_HEADERS.map((h, i) => <th key={COMPETITION_REPORT_COLS[i]}>{h}</th>)}</tr></thead>
+            <table>
+              <thead><tr>{COMPETITION_REPORT_HEADERS.map((h, i) => <th key={COMPETITION_REPORT_COLS[i]} style={COMPETITION_REPORT_MIN_WIDTHS[i] ? { minWidth: COMPETITION_REPORT_MIN_WIDTHS[i] } : undefined}>{h}</th>)}</tr></thead>
               <tbody>
                 {rows.map((r, i) => (
                   <tr key={i}>
-                    {COMPETITION_REPORT_COLS.map(c => <td key={c}>{r[c] ?? ''}</td>)}
+                    {COMPETITION_REPORT_COLS.map((c, j) => <td key={c} style={COMPETITION_REPORT_MIN_WIDTHS[j] ? { whiteSpace: 'nowrap' } : undefined}>{r[c] ?? ''}</td>)}
                   </tr>
                 ))}
               </tbody>
