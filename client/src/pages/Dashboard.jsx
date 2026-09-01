@@ -244,7 +244,9 @@ function ActivityChart({ byDay, loading }) {
   const ZERO_TICK = 3     // faint flat tick on the baseline for zero days
 
   // Stacked scale: (ho + ops) mapped into VH. HO stays a thin base because Ops dwarfs it.
-  const maxStack = Math.max(1, ...days.map(d => (d.ho_count || 0) + (d.ops_count || 0)))
+  // Scaled up 15% beyond the real max so the tallest bar's value label always
+  // has headroom above it instead of butting against the card's clipped edge.
+  const maxStack = Math.max(1, ...days.map(d => (d.ho_count || 0) + (d.ops_count || 0))) * 1.15
   const yScale = (v) => (v / maxStack) * VH
 
   const bars = days.map((d, i) => {
@@ -257,13 +259,14 @@ function ActivityChart({ byDay, loading }) {
     const hoY  = VH - hoH        // HO is the BOTTOM block — bottom edge on baseline
     const opsY = hoY - opsH      // Ops stacked directly on top
     const isZero = ho === 0 && ops === 0
-    return { i, x, ho, ops, opsY, opsH, hoY, hoH, isZero }
+    const isHo = ho >= ops
+    const value = Math.max(ho, ops)
+    return { i, x, ho, ops, opsY, opsH, hoY, hoH, isZero, isHo, value }
   })
 
-  const labelDate = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-IE', { day: '2-digit', month: 'short' }) : ''
-  const firstLabel = days[0] ? labelDate(days[0].date) : ''
-  const midLabel   = days.length ? labelDate(days[Math.floor((days.length - 1) / 2)].date) : ''
-  const lastLabel  = days.length ? labelDate(days[days.length - 1].date) : ''
+  // One axis label per day (not just first/mid/last) — day-of-month only,
+  // so a full month of labels still fits without overlapping.
+  const dayNum = (s) => s ? new Date(s + 'T00:00:00').getDate() : ''
 
   return (
     <div className="ac-card">
@@ -281,58 +284,69 @@ function ActivityChart({ byDay, loading }) {
         {loading ? (
           <div className="ac-loading"><span className="spinner spinner-dark" /></div>
         ) : (
-          <svg className="ac-svg" viewBox={`0 0 ${VW} ${VH}`} preserveAspectRatio="none"
-            role="img" aria-label={`Stacked bar chart of activity over the last 14 days. HO total ${fmt(hoTotal)}, Ops total ${fmt(opsTotal)}.`}>
-            <defs>
-              {/* HO blue: bright at top, medium blue at bottom — refined, never navy/muddy */}
-              <linearGradient id="acHoGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stopColor="#5BA8F5" />
-                <stop offset="1" stopColor="#2E78D6" />
-              </linearGradient>
-              {/* Ops orange: light at top, warm amber at bottom — premium, never burnt/dark */}
-              <linearGradient id="acOpsGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stopColor="#FFB066" />
-                <stop offset="1" stopColor="#F2843C" />
-              </linearGradient>
-            </defs>
+          <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+            <svg className="ac-svg" viewBox={`0 0 ${VW} ${VH}`} preserveAspectRatio="none"
+              role="img" aria-label={`Stacked bar chart of activity over the last 14 days. HO total ${fmt(hoTotal)}, Ops total ${fmt(opsTotal)}.`}>
+              <defs>
+                {/* HO blue: bright at top, medium blue at bottom — refined, never navy/muddy */}
+                <linearGradient id="acHoGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stopColor="#5BA8F5" />
+                  <stop offset="1" stopColor="#2E78D6" />
+                </linearGradient>
+                {/* Ops orange: light at top, warm amber at bottom — premium, never burnt/dark */}
+                <linearGradient id="acOpsGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stopColor="#FFB066" />
+                  <stop offset="1" stopColor="#F2843C" />
+                </linearGradient>
+              </defs>
 
-            <line x1="0" y1={VH * (1 / 3)} x2={VW} y2={VH * (1 / 3)} className="ac-grid" />
-            <line x1="0" y1={VH * (2 / 3)} x2={VW} y2={VH * (2 / 3)} className="ac-grid" />
-            <line x1="0" y1={VH} x2={VW} y2={VH} className="ac-baseline" />
+              <line x1="0" y1={VH * (1 / 3)} x2={VW} y2={VH * (1 / 3)} className="ac-grid" />
+              <line x1="0" y1={VH * (2 / 3)} x2={VW} y2={VH * (2 / 3)} className="ac-grid" />
+              <line x1="0" y1={VH} x2={VW} y2={VH} className="ac-baseline" />
 
-            {bars.map((b) => b.isZero ? (
-              <rect key={b.i} x={b.x} y={VH - ZERO_TICK} width={barW} height={ZERO_TICK} rx="0" className="ac-zero" />
-            ) : (
-              <g key={b.i}>
-                {/* Ops (orange) stacked ON TOP */}
-                {b.ops > 0 && (
-                  <rect x={b.x} y={b.opsY} width={barW} height={b.opsH} rx="0" fill="url(#acOpsGrad)" />
-                )}
-                {/* HO (blue) at the BOTTOM — crisp top edge meets Ops cleanly */}
-                {b.ho > 0 && (
-                  <rect x={b.x} y={b.hoY} width={barW} height={b.hoH} rx="0" fill="url(#acHoGrad)" />
-                )}
-              </g>
-            ))}
+              {bars.map((b) => b.isZero ? (
+                <rect key={b.i} x={b.x} y={VH - ZERO_TICK} width={barW} height={ZERO_TICK} rx="0" className="ac-zero" />
+              ) : (
+                <g key={b.i}>
+                  {/* Ops (orange) stacked ON TOP */}
+                  {b.ops > 0 && (
+                    <rect x={b.x} y={b.opsY} width={barW} height={b.opsH} rx="0" fill="url(#acOpsGrad)" />
+                  )}
+                  {/* HO (blue) at the BOTTOM — crisp top edge meets Ops cleanly */}
+                  {b.ho > 0 && (
+                    <rect x={b.x} y={b.hoY} width={barW} height={b.hoH} rx="0" fill="url(#acHoGrad)" />
+                  )}
+                </g>
+              ))}
 
-            {/* One dot per day at the top of its bar, coloured by whichever
-                series (HO or Ops) was actually higher that day — the stack
-                puts Ops visually on top regardless, so this is the only way
-                to see at a glance which series actually led each day. */}
+              {/* One dot per day at the top of its bar, coloured by whichever
+                  series (HO or Ops) was actually higher that day — the stack
+                  puts Ops visually on top regardless, so this is the only way
+                  to see at a glance which series actually led each day. */}
+              {bars.map((b) => (
+                <circle key={'dot' + b.i} cx={b.x + barW / 2}
+                  cy={b.isZero ? VH - ZERO_TICK : (b.ops > 0 ? b.opsY : b.hoY)}
+                  r="5" fill={b.isHo ? '#2E78D6' : '#F2843C'}
+                  stroke="var(--surface)" strokeWidth="1.5" />
+              ))}
+            </svg>
+
+            {/* Value labels overlaid as HTML, not SVG text — the viewBox is
+                stretched non-uniformly (preserveAspectRatio="none"), which
+                would distort glyph shapes if drawn as <text> inside it. */}
             {bars.map((b) => (
-              <circle key={'dot' + b.i} cx={b.x + barW / 2}
-                cy={b.isZero ? VH - ZERO_TICK : (b.ops > 0 ? b.opsY : b.hoY)}
-                r="5" fill={b.ho >= b.ops ? '#2E78D6' : '#F2843C'}
-                stroke="var(--surface)" strokeWidth="1.5" />
+              <div key={'label' + b.i} className="ac-dot-label" style={{
+                left: `${((b.x + barW / 2) / VW) * 100}%`,
+                top: `${Math.max(((b.isZero ? VH - ZERO_TICK : (b.ops > 0 ? b.opsY : b.hoY)) / VH) * 100, 7)}%`,
+                color: b.isHo ? '#2E78D6' : '#F2843C'
+              }}>{b.isZero ? 0 : fmt(b.value)}</div>
             ))}
-          </svg>
+          </div>
         )}
       </div>
 
       <div className="ac-axis">
-        <span>{firstLabel}</span>
-        <span>{midLabel}</span>
-        <span>{lastLabel}</span>
+        {days.map((d, i) => <span key={d.date || i}>{dayNum(d.date)}</span>)}
       </div>
     </div>
   )

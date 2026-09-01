@@ -1208,7 +1208,7 @@ a.kpi-card:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
   flex: 1 1 auto;
   display: flex;
   align-items: flex-end;
-  padding: 8px 14px 0;
+  padding: 20px 14px 0;
   min-height: 0;
 }
 .ac-svg { width: 100%; height: 100%; display: block; }
@@ -1218,15 +1218,35 @@ a.kpi-card:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
 }
 .ac-baseline { stroke: var(--border-soft); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .ac-zero { fill: var(--text-muted); opacity: 0.28; }
+/* Per-day value label sitting above/at its dot — plain HTML positioned by
+   percentage over the chart, not SVG text (see the comment where it's
+   rendered for why). The halo keeps it legible over the line/area fill. */
+.ac-dot-label {
+  position: absolute;
+  transform: translate(-50%, -135%);
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  text-shadow:
+    0 0 3px var(--surface), 0 0 3px var(--surface),
+    0 0 3px var(--surface), 0 0 3px var(--surface);
+}
 .ac-axis {
   flex: 0 0 auto;
   display: flex;
   justify-content: space-between;
+  gap: 2px;
   padding: 8px 18px 14px;
-  font-size: 11px;
+  font-size: 10px;
   font-variant-numeric: tabular-nums;
   color: var(--text-muted);
+  overflow: hidden;
 }
+.ac-axis span { flex: 1 1 0; text-align: center; white-space: nowrap; }
+.ac-axis span:first-child { text-align: left; }
+.ac-axis span:last-child  { text-align: right; }
 .ac-loading { margin: auto; padding: 30px; }
 
 .dash-row {
