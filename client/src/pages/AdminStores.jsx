@@ -71,15 +71,15 @@ export default function AdminStores() {
         <div className="card"><div className="empty-state"><p>No stores yet — add your first one above.</p></div></div>
       ) : (
         <div className="card">
-          <div className="table-wrap">
+          <div className="table-wrap table-dense">
             <table>
               <thead>
                 <tr>
-                  <th>Code</th>
+                  <th style={{ minWidth: 80 }}>Code</th>
                   <th>Name</th>
                   <th>Area</th>
-                  <th>Status</th>
-                  <th></th>
+                  <th style={{ minWidth: 90 }}>Status</th>
+                  <th style={{ minWidth: 170 }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -202,7 +202,7 @@ function StoreRow({ store, areas = [], editing, onEdit, onCancelEdit, onSaved })
   if (editing) {
     return (
       <tr>
-        <td><input value={form.store_code} onChange={e => setForm(f => ({ ...f, store_code: e.target.value }))} style={{ width: 90 }} /></td>
+        <td style={{ minWidth: 80, whiteSpace: 'nowrap' }}><input value={form.store_code} onChange={e => setForm(f => ({ ...f, store_code: e.target.value }))} style={{ width: 90 }} /></td>
         <td><input value={form.store_name} onChange={e => setForm(f => ({ ...f, store_name: e.target.value }))} /></td>
         <td>
           <select value={form.area_id} onChange={e => setForm(f => ({ ...f, area_id: e.target.value }))}>
@@ -212,8 +212,8 @@ function StoreRow({ store, areas = [], editing, onEdit, onCancelEdit, onSaved })
             ))}
           </select>
         </td>
-        <td>{store.is_active ? <span className="badge badge-completed">Active</span> : <span className="badge badge-pending">Inactive</span>}</td>
-        <td>
+        <td style={{ minWidth: 90, whiteSpace: 'nowrap' }}>{store.is_active ? <span className="badge badge-completed">Active</span> : <span className="badge badge-pending">Inactive</span>}</td>
+        <td style={{ minWidth: 170, whiteSpace: 'nowrap' }}>
           {err && <div className="login-error" style={{ marginBottom: 6, fontSize: 12 }}>{err}</div>}
           <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>
             <button className="btn btn-sm btn-outline" onClick={onCancelEdit} disabled={saving}>Cancel</button>
@@ -228,11 +228,11 @@ function StoreRow({ store, areas = [], editing, onEdit, onCancelEdit, onSaved })
 
   return (
     <tr>
-      <td className="td-code">{store.store_code}</td>
+      <td className="td-code" style={{ minWidth: 80, whiteSpace: 'nowrap' }}>{store.store_code}</td>
       <td>{store.store_name}</td>
       <td>{areaName(store.area_id) || store.region || <span className="td-muted">—</span>}</td>
-      <td>{store.is_active ? <span className="badge badge-completed">Active</span> : <span className="badge badge-pending">Inactive</span>}</td>
-      <td>
+      <td style={{ minWidth: 90, whiteSpace: 'nowrap' }}>{store.is_active ? <span className="badge badge-completed">Active</span> : <span className="badge badge-pending">Inactive</span>}</td>
+      <td style={{ minWidth: 170, whiteSpace: 'nowrap' }}>
         <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>
           <button className="btn btn-sm btn-outline" onClick={onEdit}>Edit</button>
           <button className="btn btn-sm btn-outline" onClick={toggleActive}>

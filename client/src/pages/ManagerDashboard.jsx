@@ -90,7 +90,7 @@ export default function ManagerDashboard() {
             <HeatLegend />
           </div>
         </div>
-        <div className="table-wrap">
+        <div className="table-wrap table-dense">
           <table>
             <thead>
               <tr>

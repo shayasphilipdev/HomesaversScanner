@@ -217,7 +217,7 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
         </div>
       )}
 
-      <div className="table-wrap">
+      <div className="table-wrap table-dense">
         <table>
           <thead>
             <tr>

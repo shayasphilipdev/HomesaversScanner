@@ -787,6 +787,15 @@ input.scan-input {
 .table-dense table    { font-size: 13px; }
 .table-dense thead th { padding: 8px 10px; }
 .table-dense tbody td { padding: 6px 10px; }
+/* Edit-mode rows in admin lists drop a plain <input>/<select> straight into a
+   <td> — at the full default 42px form-control height that towers over the
+   text/badge cells beside it in every other row. Same fix as .pricing-scroll's
+   inputs, so a dense table's edit row matches its own read-only rows instead
+   of ballooning back out to normal-form size. Inline padding on a specific
+   input (e.g. a hand-sized numeric box) still wins over this, as normal. */
+.table-dense input, .table-dense select {
+  min-height: 30px; padding: 4px 8px; font-size: 13px; border-radius: 6px;
+}
 
 /* Reports: a wide table inside a plain .table-wrap puts its horizontal
    scrollbar at the very bottom of the list, so on a few hundred rows you have
