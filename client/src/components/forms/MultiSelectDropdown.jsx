@@ -151,22 +151,27 @@ export default function MultiSelectDropdown({
           </div>
           ) : (
           <div style={{
-            display: 'flex', gap: 6, padding: 8,
+            display: 'flex', flexDirection: 'column', gap: 6, padding: 8,
             borderBottom: '1px solid var(--border-soft)', position: 'sticky', top: 0,
             background: 'var(--surface)'
           }}>
-            <button type="button" className="btn btn-sm btn-outline" onClick={selectAll}>
-              ✓ Select all{q ? ` (filtered, ${filtered.length})` : ''}
-            </button>
-            {q && (
-              <button type="button" className="btn btn-sm btn-outline" onClick={selectEvery} title="Select every option, including those hidden by the search filter">
-                ✓ Select every ({options.length})
+            {/* Select-all/Clear-all share the row and shrink to fit; Done gets
+                its own full-width line below so it never gets crowded out or
+                clipped at a narrow panel width. */}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <button type="button" className="btn btn-sm btn-outline" onClick={selectAll} style={{ flex: 1 }}>
+                ✓ Select all{q ? ` (${filtered.length})` : ''}
               </button>
-            )}
-            <button type="button" className="btn btn-sm btn-outline" onClick={clearAll}>
-              ✕ Clear all
-            </button>
-            <button type="button" className="btn btn-sm btn-primary" onClick={() => setOpen(false)} style={{ marginLeft: 'auto' }}>
+              {q && (
+                <button type="button" className="btn btn-sm btn-outline" onClick={selectEvery} title="Select every option, including those hidden by the search filter" style={{ flex: 1 }}>
+                  ✓ Every ({options.length})
+                </button>
+              )}
+              <button type="button" className="btn btn-sm btn-outline" onClick={clearAll} style={{ flex: 1 }}>
+                ✕ Clear all
+              </button>
+            </div>
+            <button type="button" className="btn btn-sm btn-primary" onClick={() => setOpen(false)}>
               Done
             </button>
           </div>

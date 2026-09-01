@@ -279,6 +279,18 @@ function ActivityChart({ byDay, loading, compact }) {
   const hoLine  = buildLine('ho_count')
   const opsLine = buildLine('ops_count')
 
+  // One dot per day, on top of the smoothed curves, at whichever series (HO
+  // or Ops) was higher that day — so every individual day's peak is still
+  // visible even though the lines themselves are curve-smoothed.
+  const dayMarkers = dd.map((d, i) => {
+    const x   = nPts <= 1 ? VW / 2 : (i / (nPts - 1)) * VW
+    const ho  = d.ho_count  || 0
+    const ops = d.ops_count || 0
+    const isHo = ho >= ops
+    const y = VH - PAD - (Math.max(ho, ops) / sharedMax) * (VH - 2 * PAD)
+    return { key: d.date || i, x, y, isHo }
+  })
+
   const labelDate = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-IE', { day: '2-digit', month: 'short' }) : ''
   const firstLabel = days[0] ? labelDate(days[0].date) : ''
   const midLabel   = days.length ? labelDate(days[Math.floor((days.length - 1) / 2)].date) : ''
@@ -326,6 +338,12 @@ function ActivityChart({ byDay, loading, compact }) {
             {hoLine.area  && <path d={hoLine.area}  fill="url(#acHoFill)" />}
             {opsLine.line && <path d={opsLine.line} fill="none" stroke="url(#acOpsLine)" strokeWidth="4" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />}
             {hoLine.line  && <path d={hoLine.line}  fill="none" stroke="url(#acHoLine)"  strokeWidth="4" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />}
+
+            {dayMarkers.map(m => (
+              <circle key={m.key} cx={m.x} cy={m.y} r="5"
+                fill={m.isHo ? '#2E78D6' : '#F2843C'}
+                stroke="var(--surface)" strokeWidth="1.5" />
+            ))}
           </svg>
         )}
       </div>

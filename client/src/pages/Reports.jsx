@@ -383,9 +383,12 @@ function BMReductionsReport() {
               options={options.status.map(x => ({ id: x, label: x }))} placeholder="All statuses" />
           </div>
 
-          <div className="filter-field">
-            <button className="btn btn-primary" onClick={runReport} disabled={loading} style={{ whiteSpace: 'nowrap' }}>
-              {loading ? <span className="spinner" /> : '▶ Run Report'}
+          <div className="filter-actions">
+            <button className="btn btn-sm btn-primary" onClick={runReport} disabled={loading}>
+              {loading ? <><span className="spinner" /> Loading…</> : '▶ Run Report'}
+            </button>
+            <button className="btn btn-sm btn-outline" onClick={exportExcel} disabled={downloading || !filtered.length}>
+              {downloading ? <><span className="spinner spinner-dark" /> Preparing…</> : '↓ Excel'}
             </button>
           </div>
         </div>
@@ -397,9 +400,6 @@ function BMReductionsReport() {
               : `${filtered.length.toLocaleString('en-IE')} row${filtered.length !== 1 ? 's' : ''} · ${distinctProducts.toLocaleString('en-IE')} distinct product${distinctProducts !== 1 ? 's' : ''}`}
           </span>
           {anyFilter && <button className="btn btn-sm btn-outline" onClick={clearFilters}>✕ Clear filters</button>}
-          <button className="btn btn-sm btn-primary" style={{ marginLeft: 'auto' }} onClick={exportExcel} disabled={downloading || !filtered.length}>
-            {downloading ? <span className="spinner" /> : '↓ Excel'}
-          </button>
         </div>
 
         <p className="note" style={{ fontSize: 12, marginTop: 0 }}>

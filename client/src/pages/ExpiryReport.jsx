@@ -84,7 +84,7 @@ export default function ExpiryReport() {
   return (
     <div>
       <div className="card">
-        <div className="card-body">
+        <div className="card-body report-filter-card">
           <div className="filter-row">
             <div className="filter-field"><label>From</label>
               <input type="date" value={from} onChange={e => setFrom(e.target.value)} /></div>
