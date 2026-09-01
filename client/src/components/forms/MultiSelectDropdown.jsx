@@ -18,10 +18,21 @@ import { createPortal } from 'react-dom'
 //   searchable:   force search input on/off (default: auto when 8+ options)
 //   single:       single-select mode — renders radios, hides Select-all,
 //                 and CLOSES the panel as soon as one option is picked.
+//   toolbar:      show the Select-all/Clear-all/Done row (default true).
+//                 Set false for a short, fixed-vocabulary filter (e.g. a
+//                 2-option Active/Inactive) where there's nothing "select
+//                 all" saves you a click on — closes on outside click/Escape
+//                 instead, same as any other native multi-select.
+//   minPanelWidth: floor width (px) for the open panel and, since the
+//                 trigger button fills its container, effectively for the
+//                 closed control too (default 220, matching .filter-field's
+//                 own default floor — lower it alongside toolbar={false}
+//                 for a field that doesn't need the room).
 export default function MultiSelectDropdown({
   value, onChange, options,
   placeholder = 'Nothing selected',
-  searchable, single = false
+  searchable, single = false,
+  toolbar = true, minPanelWidth = 220
 }) {
   const ids = Array.isArray(value) ? value : []
   const [open, setOpen] = useState(false)
@@ -119,14 +130,16 @@ export default function MultiSelectDropdown({
           // Portalled to document.body + position:fixed so NO ancestor's
           // overflow / backdrop-filter / transform can clip or re-anchor it.
           position: 'fixed', top: rect.top, left: rect.left,
-          width: Math.max(rect.width, 220),
+          width: Math.max(rect.width, minPanelWidth),
           background: 'var(--surface)', border: '1px solid var(--border)',
           borderRadius: 10, boxShadow: 'var(--shadow-md)',
           maxHeight: 'min(360px, 60vh)', overflow: 'auto',
           zIndex: 4000
         }}>
-          {/* Toolbar — single-select needs only a Clear; no Select-all. */}
-          {single ? (
+          {/* Toolbar — single-select needs only a Clear; no Select-all.
+              Skipped entirely when toolbar={false} (a short, fixed list
+              where there's nothing a toolbar row would save you). */}
+          {toolbar && (single ? (
           <div style={{
             display: 'flex', gap: 6, padding: 8,
             borderBottom: '1px solid var(--border-soft)', position: 'sticky', top: 0,
@@ -157,7 +170,7 @@ export default function MultiSelectDropdown({
               Done
             </button>
           </div>
-          )}
+          ))}
 
           {showSearch && (
             <div style={{ padding: 8, borderBottom: '1px solid var(--border-soft)' }}>

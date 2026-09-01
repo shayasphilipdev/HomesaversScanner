@@ -234,7 +234,7 @@ export default function Pricing() {
                   <th style={{ width: 70 }}>Cost</th>
                   <th style={{ whiteSpace: 'nowrap', width: 70 }}>Current SP</th>
                   <th style={{ width: 70 }}>New Selling Price *</th>
-                  <th style={{ width: 75 }}>VAT Rate *</th>
+                  <th style={{ width: 130 }}>VAT Rate *</th>
                   <th style={{ width: 55 }}>Margin %</th>
                   <th style={{ width: 75 }}>Notes</th>
                   <th></th>
@@ -262,11 +262,11 @@ export default function Pricing() {
                           type="text" inputMode="decimal" placeholder="€"
                           value={e.new_selling_price ?? ''}
                           onChange={ev => { const v = ev.target.value; if (v === '' || /^\d*\.?\d*$/.test(v)) setEdit(it, 'new_selling_price', v) }}
-                          style={{ width: 65 }}
+                          style={{ width: 65, background: '#fff', color: '#1a1a1a' }}
                         />
                       </td>
                       <td>
-                        <select value={e.vat_rate || ''} onChange={ev => setEdit(it, 'vat_rate', ev.target.value)} title={e.vat_rate || ''} style={{ width: 75, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <select value={e.vat_rate || ''} onChange={ev => setEdit(it, 'vat_rate', ev.target.value)} title={e.vat_rate || ''} style={{ width: 130, background: '#fff', color: '#1a1a1a' }}>
                           <option value="">— select —</option>
                           {VAT_OPTIONS.map(o => <option key={o.code} value={o.code}>{o.code} ({o.pct}%)</option>)}
                           {e.vat_rate && !VAT_OPTIONS.some(o => o.code.toLowerCase() === String(e.vat_rate).toLowerCase()) && (
@@ -283,7 +283,7 @@ export default function Pricing() {
                           type="text" value={e.pricing_notes ?? ''}
                           onChange={ev => setEdit(it, 'pricing_notes', ev.target.value)}
                           title={e.pricing_notes || ''}
-                          placeholder="Notes…" style={{ width: 75 }}
+                          placeholder="Notes…" style={{ width: 75, background: '#fff', color: '#1a1a1a' }}
                         />
                       </td>
                       <td>
