@@ -398,27 +398,27 @@ function ManagerView() {
         <div className="card"><div className="empty-state"><p>No store tasks in this range yet.</p></div></div>
       ) : (
         <div className="card">
-          <div className="table-wrap">
+          <div className="table-wrap table-dense">
             <table>
               <thead>
                 <tr>
                   <th>Store</th>
-                  <th className="td-right">Total</th>
-                  <th className="td-right">Completed</th>
-                  <th className="td-right">Pending</th>
-                  <th className="td-right">Missed</th>
-                  <th className="td-right">% complete</th>
+                  <th className="td-right" style={{ minWidth: 70 }}>Total</th>
+                  <th className="td-right" style={{ minWidth: 90 }}>Completed</th>
+                  <th className="td-right" style={{ minWidth: 80 }}>Pending</th>
+                  <th className="td-right" style={{ minWidth: 80 }}>Missed</th>
+                  <th className="td-right" style={{ minWidth: 90 }}>% complete</th>
                 </tr>
               </thead>
               <tbody>
                 {stats.per_store.map(s => (
                   <tr key={s.store_id}>
                     <td>{s.store_name || s.store_id}</td>
-                    <td className="td-right">{s.total}</td>
-                    <td className="td-right">{s.completed || 0}</td>
-                    <td className="td-right">{s.pending || 0}</td>
-                    <td className="td-right">{s.missed || 0}</td>
-                    <td className="td-right"><strong>{s.completion_pct}%</strong></td>
+                    <td className="td-right" style={{ minWidth: 70, whiteSpace: 'nowrap' }}>{s.total}</td>
+                    <td className="td-right" style={{ minWidth: 90, whiteSpace: 'nowrap' }}>{s.completed || 0}</td>
+                    <td className="td-right" style={{ minWidth: 80, whiteSpace: 'nowrap' }}>{s.pending || 0}</td>
+                    <td className="td-right" style={{ minWidth: 80, whiteSpace: 'nowrap' }}>{s.missed || 0}</td>
+                    <td className="td-right" style={{ minWidth: 90, whiteSpace: 'nowrap' }}><strong>{s.completion_pct}%</strong></td>
                   </tr>
                 ))}
               </tbody>

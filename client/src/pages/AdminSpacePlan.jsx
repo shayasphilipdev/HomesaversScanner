@@ -116,7 +116,7 @@ export default function AdminSpacePlan() {
         {loading ? (
           <div className="card-body" style={{ textAlign: 'center', padding: 30 }}><span className="spinner spinner-dark" /></div>
         ) : (
-          <div className="table-wrap">
+          <div className="table-wrap table-dense">
             <table>
               <thead>
                 <tr><th style={{ width: 60 }}>#</th><th>Equipment</th><th>Status</th><th></th></tr>
@@ -177,7 +177,7 @@ export default function AdminSpacePlan() {
           ) : plannedLoading ? (
             <div style={{ textAlign: 'center', padding: 24 }}><span className="spinner spinner-dark" /></div>
           ) : (
-            <div className="table-wrap">
+            <div className="table-wrap table-dense">
               <table>
                 <thead>
                   <tr><th>Equipment</th><th className="td-right" style={{ width: 160 }}>Planned count</th></tr>
@@ -197,7 +197,8 @@ export default function AdminSpacePlan() {
                           placeholder="0"
                           style={{
                             width: 110, textAlign: 'right', padding: '6px 8px', borderRadius: 6,
-                            border: dirty.has(e.id) ? '1px solid var(--primary)' : '1px solid var(--border)'
+                            border: dirty.has(e.id) ? '1px solid var(--primary)' : '1px solid var(--border)',
+                            minHeight: 30, fontSize: 13
                           }}
                         />
                       </td>

@@ -78,16 +78,16 @@ export default function AdminUsers() {
         <div className="card"><div className="empty-state"><p>No users yet.</p></div></div>
       ) : (
         <div className="card">
-          <div className="table-wrap">
+          <div className="table-wrap table-dense">
             <table>
               <thead>
                 <tr>
-                  <th>Username</th>
+                  <th style={{ minWidth: 110 }}>Username</th>
                   <th>Name</th>
                   <th>Role</th>
                   <th>Store / Areas</th>
-                  <th>Status</th>
-                  <th></th>
+                  <th style={{ minWidth: 90 }}>Status</th>
+                  <th style={{ minWidth: 210 }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -268,7 +268,7 @@ function UserRow({ user, stores, areas, editing, resettingPin, onEdit, onCancelE
   if (editing) {
     return (
       <tr>
-        <td><input value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value }))} style={{ width: 110 }} /></td>
+        <td style={{ minWidth: 110, whiteSpace: 'nowrap' }}><input value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value }))} style={{ width: 110 }} /></td>
         <td><input value={form.display_name} onChange={e => setForm(f => ({ ...f, display_name: e.target.value }))} /></td>
         <td>
           <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value, store_id: '', area_ids: [] }))}>
@@ -296,8 +296,8 @@ function UserRow({ user, stores, areas, editing, resettingPin, onEdit, onCancelE
             </div>
           )}
         </td>
-        <td>{user.is_active ? <span className="badge badge-completed">Active</span> : <span className="badge badge-pending">Inactive</span>}</td>
-        <td>
+        <td style={{ minWidth: 90, whiteSpace: 'nowrap' }}>{user.is_active ? <span className="badge badge-completed">Active</span> : <span className="badge badge-pending">Inactive</span>}</td>
+        <td style={{ minWidth: 210, whiteSpace: 'nowrap' }}>
           {err && <div className="login-error" style={{ marginBottom: 6, fontSize: 12 }}>{err}</div>}
           <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>
             <button className="btn btn-sm btn-outline" onClick={onCancelEdit} disabled={saving}>Cancel</button>
@@ -313,12 +313,12 @@ function UserRow({ user, stores, areas, editing, resettingPin, onEdit, onCancelE
   if (resettingPin) {
     return (
       <tr>
-        <td className="td-code">{user.username}</td>
+        <td className="td-code" style={{ minWidth: 110, whiteSpace: 'nowrap' }}>{user.username}</td>
         <td>{user.display_name}</td>
         <td>{ROLE_LABELS[user.role] || user.role}</td>
         <td>{storeName || areaNames.join(', ') || <span className="td-muted">—</span>}</td>
-        <td>{user.is_active ? <span className="badge badge-completed">Active</span> : <span className="badge badge-pending">Inactive</span>}</td>
-        <td>
+        <td style={{ minWidth: 90, whiteSpace: 'nowrap' }}>{user.is_active ? <span className="badge badge-completed">Active</span> : <span className="badge badge-pending">Inactive</span>}</td>
+        <td style={{ minWidth: 210, whiteSpace: 'nowrap' }}>
           {err && <div className="login-error" style={{ marginBottom: 6, fontSize: 12 }}>{err}</div>}
           <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>
             <input type="text" value={newPin} onChange={e => setNewPin(e.target.value)} placeholder="New PIN" style={{ width: 120 }} />
@@ -334,12 +334,12 @@ function UserRow({ user, stores, areas, editing, resettingPin, onEdit, onCancelE
 
   return (
     <tr>
-      <td className="td-code">{user.username}</td>
+      <td className="td-code" style={{ minWidth: 110, whiteSpace: 'nowrap' }}>{user.username}</td>
       <td>{user.display_name}</td>
       <td>{ROLE_LABELS[user.role] || user.role}</td>
       <td>{storeName || areaNames.join(', ') || <span className="td-muted">—</span>}</td>
-      <td>{user.is_active ? <span className="badge badge-completed">Active</span> : <span className="badge badge-pending">Inactive</span>}</td>
-      <td>
+      <td style={{ minWidth: 90, whiteSpace: 'nowrap' }}>{user.is_active ? <span className="badge badge-completed">Active</span> : <span className="badge badge-pending">Inactive</span>}</td>
+      <td style={{ minWidth: 210, whiteSpace: 'nowrap' }}>
         <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>
           <button className="btn btn-sm btn-outline" onClick={onEdit}>Edit</button>
           <button className="btn btn-sm btn-outline" onClick={onResetPin}>Reset PIN</button>

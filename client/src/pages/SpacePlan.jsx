@@ -229,7 +229,7 @@ export default function SpacePlan() {
             <div className="card mb-12">
               <div className="card-header">Equipment Variance</div>
               <div className="table-wrap">
-                <table className="sp-grid">
+                <table className="sp-grid sp-count-grid">
                   <thead>
                     <tr>
                       <th>Equipment</th>

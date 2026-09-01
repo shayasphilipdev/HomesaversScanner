@@ -90,7 +90,7 @@ function KindBlock({ kind, label, hint, options, taskTypes, onChange }) {
         {!options.length ? (
           <div className="empty-state"><p>No options yet — add the first one above.</p></div>
         ) : (
-          <div className="table-wrap">
+          <div className="table-wrap table-dense">
             <table>
               <thead>
                 <tr>

@@ -111,11 +111,11 @@ function ReportShell({ title, filters, columns, rows, loading, error, csvName, s
           <div className="card-header">{title} · {rows.length.toLocaleString('en-IE')} row{rows.length === 1 ? '' : 's'}</div>
           <div className="table-wrap">
             <table>
-              <thead><tr>{columns.map(c => <th key={c.key} className={c.right ? 'td-right' : ''}>{c.label}</th>)}</tr></thead>
+              <thead><tr>{columns.map(c => <th key={c.key} className={c.right ? 'td-right' : ''} style={c.width ? { minWidth: c.width } : undefined}>{c.label}</th>)}</tr></thead>
               <tbody>
                 {rows.map((r, i) => (
                   <tr key={r.id || i}>
-                    {columns.map(c => <td key={c.key} className={c.right ? 'td-right' : ''}>{c.render ? c.render(r) : (typeof c.get === 'function' ? c.get(r) : r[c.key]) || <span className="td-muted">—</span>}</td>)}
+                    {columns.map(c => <td key={c.key} className={c.right ? 'td-right' : ''} style={c.width ? { minWidth: c.width, whiteSpace: 'nowrap' } : undefined}>{c.render ? c.render(r) : (typeof c.get === 'function' ? c.get(r) : r[c.key]) || <span className="td-muted">—</span>}</td>)}
                   </tr>
                 ))}
               </tbody>
@@ -166,19 +166,19 @@ function EmployeesReport() {
   const roleOptions = useMemo(() => Array.from(new Set(data.map(u => u.role))).sort().map(r => ({ id: r, label: r })), [data])
 
   const columns = [
-    { key: 'username',      label: 'Username' },
+    { key: 'username',      label: 'Username', width: 100 },
     { key: 'display_name',  label: 'Name' },
-    { key: 'role',          label: 'Role' },
+    { key: 'role',          label: 'Role', width: 130 },
     { key: 'scope',         label: 'Scope', get: u => scopeOf(u) },
-    { key: 'ho',            label: 'HO',     get: u => u.can_access_hq_tasks    !== false ? 'yes' : 'no' },
-    { key: 'st',            label: 'Store',  get: u => u.can_access_store_tasks !== false ? 'yes' : 'no' },
+    { key: 'ho',            label: 'HO',     get: u => u.can_access_hq_tasks    !== false ? 'yes' : 'no', width: 55 },
+    { key: 'st',            label: 'Store',  get: u => u.can_access_store_tasks !== false ? 'yes' : 'no', width: 65 },
     { key: 'email',         label: 'Email' },
-    { key: 'phone',         label: 'Phone' },
-    { key: 'department',    label: 'Dept' },
-    { key: 'employee_code', label: 'Empl code' },
-    { key: 'start_date',    label: 'Start',     get: u => u.start_date || '' },
-    { key: 'is_active',     label: 'Active',    get: u => u.is_active ? 'yes' : 'no' },
-    { key: 'created_at',    label: 'Created',   get: u => (u.created_at || '').slice(0, 10) }
+    { key: 'phone',         label: 'Phone', width: 110 },
+    { key: 'department',    label: 'Dept', width: 100 },
+    { key: 'employee_code', label: 'Empl code', width: 90 },
+    { key: 'start_date',    label: 'Start',     get: u => u.start_date || '', width: 90 },
+    { key: 'is_active',     label: 'Active',    get: u => u.is_active ? 'yes' : 'no', width: 70 },
+    { key: 'created_at',    label: 'Created',   get: u => (u.created_at || '').slice(0, 10), width: 90 }
   ]
 
   return (
@@ -235,11 +235,11 @@ function ActivityReport() {
   }, [data])
 
   const columns = [
-    { key: 'at',           label: 'When',      get: e => new Date(e.at).toLocaleString('en-IE', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) },
-    { key: 'by_user_name', label: 'Who' },
-    { key: 'from_status',  label: 'From' },
-    { key: 'to_status',    label: 'To' },
-    { key: 'record_id',    label: 'Record',    render: e => <code style={{ fontSize: 11 }}>{e.record_id.slice(0,8)}…</code> },
+    { key: 'at',           label: 'When',      get: e => new Date(e.at).toLocaleString('en-IE', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }), width: 130 },
+    { key: 'by_user_name', label: 'Who', width: 110 },
+    { key: 'from_status',  label: 'From', width: 90 },
+    { key: 'to_status',    label: 'To', width: 90 },
+    { key: 'record_id',    label: 'Record',    render: e => <code style={{ fontSize: 11 }}>{e.record_id.slice(0,8)}…</code>, width: 90 },
     { key: 'note',         label: 'Note' }
   ]
 
@@ -298,11 +298,11 @@ function StoresReport() {
   }), [data, areaIds, active])
 
   const columns = [
-    { key: 'store_code', label: 'Code' },
+    { key: 'store_code', label: 'Code', width: 80 },
     { key: 'store_name', label: 'Name' },
-    { key: 'area_id',    label: 'Area',    get: s => areaName(s.area_id) },
-    { key: 'is_active',  label: 'Active',  get: s => s.is_active ? 'yes' : 'no' },
-    { key: 'created_at', label: 'Created', get: s => (s.created_at || '').slice(0, 10) }
+    { key: 'area_id',    label: 'Area',    get: s => areaName(s.area_id), width: 120 },
+    { key: 'is_active',  label: 'Active',  get: s => s.is_active ? 'yes' : 'no', width: 70 },
+    { key: 'created_at', label: 'Created', get: s => (s.created_at || '').slice(0, 10), width: 90 }
   ]
 
   return (
@@ -348,11 +348,11 @@ function AreasReport() {
   const storeCount = (areaId) => stores.filter(s => s.area_id === areaId && s.is_active).length
 
   const columns = [
-    { key: 'area_code',   label: 'Code' },
+    { key: 'area_code',   label: 'Code', width: 80 },
     { key: 'area_name',   label: 'Name' },
-    { key: 'stores',      label: 'Stores', right: true, get: a => storeCount(a.id) },
-    { key: 'is_active',   label: 'Active', get: a => a.is_active ? 'yes' : 'no' },
-    { key: 'created_at',  label: 'Created', get: a => (a.created_at || '').slice(0, 10) }
+    { key: 'stores',      label: 'Stores', right: true, get: a => storeCount(a.id), width: 70 },
+    { key: 'is_active',   label: 'Active', get: a => a.is_active ? 'yes' : 'no', width: 70 },
+    { key: 'created_at',  label: 'Created', get: a => (a.created_at || '').slice(0, 10), width: 90 }
   ]
 
   return (
@@ -392,13 +392,13 @@ function TemplatesReport() {
 
   const columns = [
     { key: 'title',            label: 'Title' },
-    { key: 'category',         label: 'Category' },
-    { key: 'frequency',        label: 'Frequency' },
-    { key: 'applies_to',       label: 'Scope' },
-    { key: 'assigned_to_role', label: 'Role' },
-    { key: 'blocks',           label: 'Blocks', right: true, get: t => (t.blocks || []).length },
-    { key: 'is_active',        label: 'Active', get: t => t.is_active ? 'yes' : 'no' },
-    { key: 'updated_at',       label: 'Updated', get: t => (t.updated_at || '').slice(0, 10) }
+    { key: 'category',         label: 'Category', width: 120 },
+    { key: 'frequency',        label: 'Frequency', width: 100 },
+    { key: 'applies_to',       label: 'Scope', width: 100 },
+    { key: 'assigned_to_role', label: 'Role', width: 150 },
+    { key: 'blocks',           label: 'Blocks', right: true, get: t => (t.blocks || []).length, width: 70 },
+    { key: 'is_active',        label: 'Active', get: t => t.is_active ? 'yes' : 'no', width: 70 },
+    { key: 'updated_at',       label: 'Updated', get: t => (t.updated_at || '').slice(0, 10), width: 90 }
   ]
 
   return (
@@ -449,16 +449,16 @@ function ProductsReport() {
   const handleSearch = () => { setQ(draftQ); load(draftQ) }
 
   const columns = [
-    { key: 'barcode_no',    label: 'Product Barcode' },
-    { key: 'ean_barcode',   label: 'Product Code (EAN)' },
+    { key: 'barcode_no',    label: 'Product Barcode', width: 130 },
+    { key: 'ean_barcode',   label: 'Product Code (EAN)', width: 140 },
     { key: 'item_name',     label: 'Product Description' },
-    { key: 'supl_id',       label: 'Supplier ID' },
-    { key: 'supplier_code', label: 'Supplier Code' },
-    { key: 'item_status',   label: 'Product Status' },
-    { key: 'barcode_status',label: 'Barcode Status' },
-    { key: 'uom',           label: 'UOM' },
-    { key: 'category',      label: 'Category' },
-    { key: 'updated_at',    label: 'Updated', get: r => (r.updated_at || '').slice(0, 10) }
+    { key: 'supl_id',       label: 'Supplier ID', width: 100 },
+    { key: 'supplier_code', label: 'Supplier Code', width: 110 },
+    { key: 'item_status',   label: 'Product Status', width: 110 },
+    { key: 'barcode_status',label: 'Barcode Status', width: 110 },
+    { key: 'uom',           label: 'UOM', width: 70 },
+    { key: 'category',      label: 'Category', width: 100 },
+    { key: 'updated_at',    label: 'Updated', get: r => (r.updated_at || '').slice(0, 10), width: 90 }
   ]
 
   return (
@@ -515,12 +515,12 @@ function PricesReport() {
   const handleSearch = () => { setQ(draftQ); load(draftQ) }
 
   const columns = [
-    { key: 'ean_barcode',    label: 'EAN Barcode' },
-    { key: 'item_group',     label: 'Item Group' },
-    { key: 'item_subgrp_id', label: 'Sub-group' },
-    { key: 'product_type',   label: 'Product Type' },
-    { key: 'sale_rate',      label: 'Sale Rate' },
-    { key: 'updated_at',     label: 'Updated', get: r => (r.updated_at || '').slice(0, 10) }
+    { key: 'ean_barcode',    label: 'EAN Barcode', width: 130 },
+    { key: 'item_group',     label: 'Item Group', width: 110 },
+    { key: 'item_subgrp_id', label: 'Sub-group', width: 90 },
+    { key: 'product_type',   label: 'Product Type', width: 110 },
+    { key: 'sale_rate',      label: 'Sale Rate', width: 90 },
+    { key: 'updated_at',     label: 'Updated', get: r => (r.updated_at || '').slice(0, 10), width: 90 }
   ]
 
   return (
@@ -568,11 +568,11 @@ function LookupsReport() {
   const rows = useMemo(() => data.filter(l => !kinds.length || kinds.includes(l.kind)), [data, kinds])
 
   const columns = [
-    { key: 'kind',       label: 'Kind' },
+    { key: 'kind',       label: 'Kind', width: 110 },
     { key: 'label',      label: 'Label' },
-    { key: 'sort_order', label: 'Order', right: true },
+    { key: 'sort_order', label: 'Order', right: true, width: 70 },
     { key: 'task_types', label: 'Task types', get: l => (l.task_types || []).map(c => TASK_FORMS[c]?.name || c).join(', ') },
-    { key: 'is_active',  label: 'Active', get: l => l.is_active ? 'yes' : 'no' }
+    { key: 'is_active',  label: 'Active', get: l => l.is_active ? 'yes' : 'no', width: 70 }
   ]
 
   return (

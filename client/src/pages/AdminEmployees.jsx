@@ -85,17 +85,17 @@ export default function AdminEmployees() {
         </div></div>
       ) : (
         <div className="card">
-          <div className="table-wrap">
+          <div className="table-wrap table-dense">
             <table>
               <thead>
                 <tr>
                   <th>Name</th>
-                  <th>Username</th>
+                  <th style={{ minWidth: 90 }}>Username</th>
                   <th>Role</th>
                   <th>Scope</th>
-                  <th>HO / Store</th>
-                  <th>Status</th>
-                  <th></th>
+                  <th style={{ minWidth: 100 }}>HO / Store</th>
+                  <th style={{ minWidth: 90 }}>Status</th>
+                  <th style={{ minWidth: 180 }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -106,16 +106,16 @@ export default function AdminEmployees() {
                       {e.employee_code && <span className="td-muted" style={{ marginLeft: 6, fontSize: 12 }}>#{e.employee_code}</span>}
                       {e.department && <div className="td-muted" style={{ fontSize: 12 }}>{e.department}</div>}
                     </td>
-                    <td className="td-code">{e.username}</td>
+                    <td className="td-code" style={{ minWidth: 90, whiteSpace: 'nowrap' }}>{e.username}</td>
                     <td><span className="chip">{roleLabel(e.role)}</span></td>
                     <td>{describeScope(e, stores, areas)}</td>
-                    <td>
+                    <td style={{ minWidth: 100, whiteSpace: 'nowrap' }}>
                       {e.can_access_hq_tasks    !== false && <span className="chip" style={{ marginRight: 4 }}>HO</span>}
                       {e.can_access_store_tasks !== false && <span className="chip">Store</span>}
                       {e.can_access_hq_tasks === false && e.can_access_store_tasks === false && <span className="td-muted">—</span>}
                     </td>
-                    <td>{e.is_active ? <span className="badge badge-completed">Active</span> : <span className="badge badge-pending">Inactive</span>}</td>
-                    <td>
+                    <td style={{ minWidth: 90, whiteSpace: 'nowrap' }}>{e.is_active ? <span className="badge badge-completed">Active</span> : <span className="badge badge-pending">Inactive</span>}</td>
+                    <td style={{ minWidth: 180, whiteSpace: 'nowrap' }}>
                       {pinResetId === e.id ? (
                         <PinResetInline id={e.id} onCancel={() => setPinResetId(null)} onDone={() => { setPinResetId(null); load() }} toast={toast} />
                       ) : (
