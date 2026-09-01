@@ -229,7 +229,7 @@ export default function Pricing() {
               <thead>
                 <tr>
                   <th style={{ whiteSpace: 'nowrap' }}>Product Barcode</th>
-                  <th style={{ whiteSpace: 'nowrap', width: 85 }}>Product Code</th>
+                  <th style={{ whiteSpace: 'nowrap' }}>Product Code</th>
                   <th style={{ minWidth: 180 }}>Description</th>
                   <th style={{ width: 70 }}>Cost</th>
                   <th style={{ whiteSpace: 'nowrap', width: 70 }}>Current SP</th>
@@ -253,7 +253,7 @@ export default function Pricing() {
                   return (
                     <tr key={it.id} style={isPriced ? { background: 'var(--surface-warm)' } : undefined}>
                       <td className="td-code" style={{ whiteSpace: 'nowrap' }}>{r.barcode_no || r.product_code || empty}</td>
-                      <td className="td-code" title={it.product_barcode || ''} style={{ whiteSpace: 'nowrap', maxWidth: 85, overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.product_barcode || empty}</td>
+                      <td className="td-code" style={{ whiteSpace: 'nowrap' }}>{it.product_barcode || empty}</td>
                       <td>{r.item_name || r.description || r.product_name_label || empty}</td>
                       <td style={{ whiteSpace: 'nowrap', maxWidth: 70, overflow: 'hidden', textOverflow: 'ellipsis' }}>{euro(it.cost) || empty}</td>
                       <td style={{ whiteSpace: 'nowrap', maxWidth: 70, overflow: 'hidden', textOverflow: 'ellipsis' }}>{euro(it.current_selling_price) || empty}</td>
