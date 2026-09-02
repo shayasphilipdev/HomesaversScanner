@@ -119,10 +119,16 @@ export default function Dashboard() {
           <div className="page-title">Welcome back</div>
           <div className="page-subtitle">{isBO ? `Showing: ${scopeLabel}` : "Here's how your scanner activity is looking"}</div>
         </div>
-        <div className="flex-row" style={{ gap: 6, flexWrap: 'wrap' }}>
+        {/* .header-controls sizes the picker's dropdown/date fields and the scope
+            select to the .btn-sm quick buttons, so the strip stays one row.
+            maxWidth is still inline here because it depends on the content:
+            a width:auto select grows to its widest option, and store names
+            are long enough to push the row onto a second line. */}
+        <div className="header-controls">
           <DateRangePicker variant="buttons" value={range} onChange={setRange} />
           {isBO && (
-            <select value={scope} onChange={e => setScope(e.target.value)} style={{ width: 'auto', minWidth: 200, maxWidth: 260 }}>
+            <select value={scope} onChange={e => setScope(e.target.value)}
+                    title="Store scope" style={{ maxWidth: 240 }}>
               <option value="all">All stores in scope</option>
               {visibleAreas.length > 0 && (
                 <optgroup label="By area">

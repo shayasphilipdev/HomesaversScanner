@@ -6,6 +6,9 @@ import { PRESETS, PRESET_LABELS, rangeLabel } from '../lib/dateRange.js'
 //     preset is "custom". Built for the Dashboard's .page-header, so it reuses
 //     the same markup vocabulary as the scope <select> already sitting beside
 //     it (btn btn-sm, plain <select>) rather than introducing a new one.
+//     Sizing comes from .header-controls in App.css — the caller supplies that
+//     wrapper, so the picker and the scope dropdown beside it match without
+//     either of them carrying its own inline widths.
 //
 //   variant="field" — the same controls wrapped as .filter-field so it drops
 //     into the .filter-row that the report pages already use. Nothing consumes
@@ -29,7 +32,7 @@ export default function DateRangePicker({
       value={preset || 'last_30'}
       onChange={e => onChange({ preset: e.target.value })}
       aria-label="Date range"
-      style={{ width: 'auto', minWidth: 150 }}
+      title="Date range"
     >
       {PRESETS.map(k => <option key={k} value={k}>{PRESET_LABELS[k]}</option>)}
     </select>
@@ -47,8 +50,11 @@ export default function DateRangePicker({
   )
 
   if (variant === 'buttons') {
+    // No wrapper div: the caller's .header-controls is already the flex row, so
+    // nesting one here would let the picker wrap as a block and put the two
+    // date fields on a line of their own.
     return (
-      <div className={`flex-row ${className}`} style={{ gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+      <>
         {quick.map(k => (
           <button
             key={k}
@@ -59,8 +65,8 @@ export default function DateRangePicker({
           </button>
         ))}
         {presetSelect}
-        {isCustom && <>{fromInput}{toInput}</>}
-      </div>
+        {isCustom && <>{fromInput}<span className="hc-sep" aria-hidden="true">&ndash;</span>{toInput}</>}
+      </>
     )
   }
 
