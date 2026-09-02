@@ -6,7 +6,7 @@ import { TASK_FORMS } from '../lib/taskTypes.js'
 import { downloadExcel } from '../lib/excel.js'
 import Skeleton from '../components/Skeleton.jsx'
 import DateRangePicker from '../components/DateRangePicker.jsx'
-import { useDateRange } from '../lib/dateRange.js'
+import { useDateRange, addDays } from '../lib/dateRange.js'
 
 const STATUS_LABEL = {
   pending:          'Pending',
@@ -137,10 +137,16 @@ export default function Dashboard() {
           <div className="page-title">Welcome back</div>
           <div className="page-subtitle">{isBO ? `Showing: ${scopeLabel}` : "Here's how your scanner activity is looking"}</div>
         </div>
-        <div className="flex-row" style={{ gap: 6, flexWrap: 'wrap' }}>
+        {/* .header-controls sizes the picker's dropdown/date fields and the scope
+            select to the .btn-sm quick buttons, so the strip stays one row.
+            maxWidth is still inline here because it depends on the content:
+            a width:auto select grows to its widest option, and store names
+            are long enough to push the row onto a second line. */}
+        <div className="header-controls">
           <DateRangePicker variant="buttons" value={range} onChange={setRange} />
           {isBO && (
-            <select value={scope} onChange={e => setScope(e.target.value)} style={{ width: 'auto', minWidth: 200, maxWidth: 260 }}>
+            <select value={scope} onChange={e => setScope(e.target.value)}
+                    title="Store scope" style={{ maxWidth: 240 }}>
               <option value="all">All stores in scope</option>
               {visibleAreas.length > 0 && (
                 <optgroup label="By area">
@@ -585,6 +591,14 @@ function StoresMissingDeptCheck({ deptCheck, allStores, scopeStoreIds, statsFrom
     .sort((a, b) => (a.store_code || '').localeCompare(b.store_code || '', undefined, { numeric: true }))
 
   const days = deptCheck?.days || 7
+  // Show the window as real dates, the same as every other card header, rather
+  // than making the reader work out what "last 7 days" covers. Derived from the
+  // server's own `from` + `days` so the label can never disagree with the data
+  // it describes — the window is computed in UTC server-side, and the client's
+  // idea of "today" can differ from the database's at the day boundary.
+  const winLabel = deptCheck?.from
+    ? dataRangeLabel(null, deptCheck.from, addDays(deptCheck.from, days - 1))
+    : `last ${days} days`
   // Statistics only start the day the rollup was deployed. Until the window is
   // fully covered, say so rather than letting a partial history read as
   // chain-wide non-compliance.
@@ -593,9 +607,13 @@ function StoresMissingDeptCheck({ deptCheck, allStores, scopeStoreIds, statsFrom
   return (
     <div className="card">
       <div className="card-header">
-        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {/* Wraps rather than ellipsis-truncating: the dates are the point of the
+            header, and on a narrow card an ellipsis would eat exactly them.
+            The range itself stays nowrap so it never breaks mid-span. */}
+        <span style={{ minWidth: 0 }}
+              title={`Last ${days} days. This card has its own fixed window and does not follow the date range above.`}>
           No Department Check
-          <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--text-muted)' }}> (last {days} days)</span>
+          <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}> ({winLabel})</span>
         </span>
         {!loading && <span className="chip" style={{ marginLeft: 'auto', flexShrink: 0 }}><span className="chip-dot" />{missing.length}</span>}
       </div>

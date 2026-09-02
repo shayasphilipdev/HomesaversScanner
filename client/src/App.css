@@ -1633,3 +1633,35 @@ a.kpi-card:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
   .kpi-split-side .kpi-sub   { font-size: 11px; margin-top: 4px; line-height: 1.3; }
   .kpi-split-tag { font-size: 8.5px; margin-bottom: 3px; }
 }
+
+/* ── Compact page-header control strip ──
+   The global input/select rule is built for forms: width:100%, 42px tall,
+   16px. Dropped into a .page-header beside .btn-sm quick buttons (32px/13px)
+   that reads as three different sizes stacked up, and `width:100%` made the
+   two custom-range date fields span the entire header on rows of their own —
+   the filter strip ended up taller than the KPI cards it filters.
+
+   Pin every control in here to the .btn-sm metrics so the whole thing reads as
+   one strip. Selects are width:auto (they size to their widest option, so cap
+   the store list with an inline max-width where it's used). */
+.header-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.header-controls select,
+.header-controls input[type="date"] {
+  width: auto;
+  min-height: 32px;
+  padding: 5px 10px;
+  font-size: 13px;
+  border-radius: 8px;
+}
+.header-controls input[type="date"] { width: 140px; flex: 0 0 auto; }
+.header-controls .hc-sep { color: var(--text-muted); font-size: 12px; }
+
+/* Phones: .btn-sm grows to 38px and inputs must stay at 16px to stop iOS
+   zooming the page on focus, so follow that here instead of keeping the
+   desktop metrics. */
+@media (max-width: 600px) {
+  .header-controls { width: 100%; }
+  .header-controls select,
+  .header-controls input[type="date"] { font-size: 16px; min-height: 38px; }
+  .header-controls input[type="date"] { width: auto; flex: 1 1 130px; }
+}
