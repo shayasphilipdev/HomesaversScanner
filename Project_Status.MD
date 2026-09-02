@@ -5,7 +5,7 @@ fresh Claude session opening this repo cold, **read this file first** — it has
 the architecture, data model, every module, recent changes, known issues, and
 the project memory all in one place.
 
-*Last updated: 2026-07-31.*
+*Last updated: 2026-09-02.*
 
 ---
 
@@ -314,6 +314,15 @@ below.)
 - `product_questions` / `product_question_answers` — the Product Query board.
 - `sync_runs` — history of data-sync / generation jobs (shown in Admin → Settings).
 - `app_settings` — key/value (`backoffice_pin_hash`, retention days, etc.).
+- `task_stats_daily` (added 2026-09-02) — **per-day statistics only, no records.**
+  One row per `(day, store_id, task_type)` with `records · pending · completed ·
+  no_change_needed · store_completed · cleared · photos`. PK `(day, store_id,
+  task_type)`, no FKs (deliberate — `task_records.store_id` is ON DELETE SET
+  NULL, and orphans fold into an all-zeros sentinel uuid). Written nightly at
+  01:30 UTC by `rollup_task_stats_daily()`, **before** the 02:00 purge; kept 180
+  days by `purge_task_stats_daily()` at 02:10. ~25 rows/day (~8,000 records
+  compress ~300:1) — 64 kB for the first week, ~1.6 MB expected at 6 months.
+  This is what makes dashboard history survive the record purge; see §11.
 
 ---
 
@@ -337,12 +346,21 @@ below.)
   (`report_task_records_page`, still server-streamed, unused by the current
   UI) is kept working for any direct link. Also "Master Reports" (Product
   Master, lookups) for admin/buying_manager.
-- **Dashboard** (`/dashboard`): KPI cards, 14-day activity chart, by-task-type
-  bars, **HO task allocation donut**, **status breakdown** card, by-store (BO),
-  recent activity (shows product description, not code). Stats via the
-  `dashboard_stats` Postgres RPC (`work_mem='32MB'` set on the function itself
-  since 2026-07-31 — eliminates a disk-spill sort at current row counts; see
-  §12 for the recurring-timeout issue that isn't fully resolved).
+- **Dashboard** (`/dashboard`): KPI cards, activity chart over a **selectable
+  range**, by-task-type bars, **HO task allocation donut**, **status breakdown**
+  card, by-store (BO), recent activity (shows product description, not code).
+  Range picker (`components/DateRangePicker.jsx` + `lib/dateRange.js`, added
+  2026-09-02): today · yesterday · this/last week · last 7 · this/last month ·
+  last 30/90 · last 6 months · custom, defaulting to `last_30` (identical to the
+  old rolling "This month" button). The chart buckets by day / week / month
+  automatically from the range length — the Worker's old hardcoded 14-day fill
+  loop is gone. Stats via the `dashboard_stats_v2` RPC, which reads
+  `task_stats_daily` for past days and live `task_records` for today, so the
+  numbers survive the nightly purge (§11, 2026-09-02). `work_mem='32MB'` is set
+  on the function itself (since 2026-07-31 — eliminates a disk-spill sort; see
+  §12 for the recurring-timeout issue that isn't fully resolved). The
+  "No Department Check" card uses its own fixed 7-day window, not the picker.
+  `dashboard_stats` (v1) is still deployed unchanged as the rollback target.
 - **Space Plan** (`/space-plan`, admin `/admin/space-plan`): per-store grid,
   Equipment Variance summary (planned vs audited total), auto-save, Excel
   export. PRIMARY BAYS renders subcategory sub-rows (mobile: collapsible). Admin
@@ -487,6 +505,69 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 ---
 
 ## 11. Recent work
+
+### 2026-09-02 — Dashboard statistics survive the purge; richer date ranges
+
+**The bug.** Every dashboard number was computed live from `task_records`, which
+is a rolling window: `purge_old_task_records()` deletes rows older than
+`scan_record_retention_days` (**live value 21**, not the 14 quoted in older notes)
+where `task_type IN ('J','K') OR status <> 'pending'` — so Department Check (J)
+and Price Check (K) go after 21 days *regardless of status*. Any range longer
+than that was computed over data that no longer existed, so "No Department
+Check" listed stores that had done one. Confirmed on live: zero J records older
+than 25 days.
+
+**`task_stats_daily`** (`supabase-migration-stats-rollup.sql`) — counts only, no
+records; see §5 for the shape. Two rules in one UPSERT are what make it work:
+`records`/`photos` use `GREATEST(old, new)` so they can never shrink (immune to
+the purge *and* to manual bulk deletes), while the status columns are mirrored
+so `pending → completed` transitions are still tracked. Statuses are columns
+rather than part of the key precisely so those two rules can coexist — with
+status in the key, a transition would force a decrement, and a decrementing job
+is a mirror of the source, which is what would let a delete erase history.
+Recompute window is 7 days, clamped at run time to `retention - 3` with
+`GREATEST()` as a second, independent safety.
+
+**`dashboard_stats_v2`** (`supabase-migration-dashboard-stats-v2.sql`) — reads
+the rollup for past days, live `task_records` for today, **and live records for
+any past day the rollup does not cover** (pre-deployment history, or a night the
+job failed). That third arm is not optional: without it the 30-day view dropped
+from 135,769 to 47,305 on deploy day. Verified byte-equal to v1 across 7/30/90-day
+ranges. v1 is left deployed untouched — rollback is one string in
+`functions/api/[[route]].js`.
+
+Also fixed here:
+- **The Worker's 14-day `by_day` cap is gone.** It silently discarded days 15-30
+  of a 30-day range and made longer ranges impossible to chart. Bucketing is now
+  day/week/month chosen by range length, gap-filled in SQL (the Worker has a
+  10 ms CPU budget and must not loop 180 days in JS).
+- **`stores_missing_dept_check_v2`** — same shape and semantics, reads the rollup
+  *and* live records, so the weekly aging email stays correct if the window is
+  widened or retention shortened. Output identical today (7 < 21).
+- **The No-Department-Check card no longer follows the range picker** — it always
+  asks "last 7 days", which is the actionable signal and matches the email. Over
+  a 6-month range the old behaviour would have reported everyone compliant.
+- **Latent duplicate-React-key bug in `ActivityChart`**, exposed by this work:
+  `dd` duplicates the sole point on a one-day range to draw a flat line while
+  keying by date. Unreachable before (the Worker always returned exactly 14
+  days); reachable the moment "Today" existed, and it left stale axis labels
+  behind. Keys are index-qualified now.
+
+**Client:** new `lib/dateRange.js` (presets: today · yesterday · this/last week ·
+last 7 · this/last month · last 30/90 · last 6 months · custom) and
+`components/DateRangePicker.jsx`. It states the local-vs-UTC convention in one
+place for the first time — calendar maths on the local clock, boundaries emitted
+as UTC day edges, which also matters for correctness because the rollup is
+day-grained. Dashboard only for now; the seven copy-pasted date helpers on the
+report pages are a deliberate follow-up (three compute "today" in UTC and three
+locally, so converting them will shift some defaults by a day).
+
+**Known limits, by design:** statistics start the day this shipped — there is no
+real history before it, and the UI says so rather than drawing a fake flatline.
+Once a day leaves the recompute window its status split is frozen, so on long
+ranges "Pending review" stops matching a live query (`records` itself stays
+correct). `rebuild_task_stats_daily(from, to)` is the escape hatch and refuses
+any day whose source is already purged.
 
 ### 2026-07-31 — Data volume: purge, dashboard/report performance, Cloudflare limits
 

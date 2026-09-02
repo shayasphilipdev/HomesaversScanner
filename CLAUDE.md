@@ -79,6 +79,13 @@ Admin Products page: supplier dropdown in product edit form; CSV bulk-upsert acc
 ### Phase 9 additions
 `areas` · `users` · `store_task_templates` · `store_task_instances`
 
+### Statistics (2026-09-02)
+`task_stats_daily` — per-day COUNTS only, never records: one row per
+`(day, store_id, task_type)`. Rolled up nightly at 01:30 UTC *before* the 02:00
+record purge and kept 180 days, so dashboard history outlives `task_records`
+(which still purges at 21 days, unchanged). Read via `dashboard_stats_v2`.
+See `supabase-migration-stats-rollup.sql` and Project_Status.MD §11.
+
 #### products change
 ```sql
 ALTER TABLE products ADD COLUMN IF NOT EXISTS supplier_id uuid REFERENCES suppliers(id) ON DELETE SET NULL;

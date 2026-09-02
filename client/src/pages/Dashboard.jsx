@@ -5,6 +5,8 @@ import { ADMIN_ROLES } from '../lib/roles.js'
 import { TASK_FORMS } from '../lib/taskTypes.js'
 import { downloadExcel } from '../lib/excel.js'
 import Skeleton from '../components/Skeleton.jsx'
+import DateRangePicker from '../components/DateRangePicker.jsx'
+import { useDateRange } from '../lib/dateRange.js'
 
 const STATUS_LABEL = {
   pending:          'Pending',
@@ -13,38 +15,24 @@ const STATUS_LABEL = {
   store_completed:  'Store confirmed'
 }
 
-const RANGES = [
-  { key: 'today', label: 'Today',     days: 0  },
-  { key: 'week',  label: 'This week', days: 7  },
-  { key: 'month', label: 'This month',days: 30 }
-]
+// Date presets, the local/UTC convention and the range->bucket rule all live in
+// lib/dateRange.js now (shared, and the single place that convention is stated).
 
-function startOfDay(d) { const x = new Date(d); x.setHours(0,0,0,0); return x }
-function toIso(d)      { return d.toISOString() }
-
-function relativeRange(key) {
-  const now = new Date()
-  switch (key) {
-    case 'today':
-      return { from: toIso(startOfDay(now)), to: toIso(now) }
-    case 'week':
-      return { from: toIso(startOfDay(new Date(now - 7  * 86400000))), to: toIso(now) }
-    default:
-      return { from: toIso(startOfDay(new Date(now - 30 * 86400000))), to: toIso(now) }
-  }
-}
-
-// "15th Aug – 21st Aug" from the actual data days (stats.by_day) — the real
-// min/max day present in the DB for the selected period. '' when no data;
-// single day → just that date.
-function dataRangeLabel(dataDays) {
-  const dates = (dataDays || []).map(d => d.date).filter(Boolean).sort()
-  if (!dates.length) return ''
+// "15th Aug – 21st Aug". Prefers the RPC's data_from/data_to (the real first and
+// last day that actually had activity); falls back to scanning by_day for older
+// responses. Note by_day is gap-filled, so its own min/max is the whole selected
+// window rather than the days with data — hence the preference.
+function dataRangeLabel(dataDays, dataFrom, dataTo) {
   const fmt = (iso) => {
     const d = new Date(iso + 'T00:00:00')
     const n = d.getDate(), v = n % 100, suf = ['th', 'st', 'nd', 'rd']
     return `${n}${suf[(v - 20) % 10] || suf[v] || suf[0]} ${d.toLocaleDateString('en-IE', { month: 'short' })}`
   }
+  if (dataFrom && dataTo) {
+    return dataFrom === dataTo ? fmt(dataFrom) : `${fmt(dataFrom)} – ${fmt(dataTo)}`
+  }
+  const dates = (dataDays || []).map(d => d.date).filter(Boolean).sort()
+  if (!dates.length) return ''
   return dates[0] === dates[dates.length - 1] ? fmt(dates[0]) : `${fmt(dates[0])} – ${fmt(dates[dates.length - 1])}`
 }
 
@@ -52,7 +40,10 @@ export default function Dashboard() {
   const { session } = useStore()
   const isBO = session.mode === 'backoffice'
 
-  const [rangeKey, setRangeKey]     = useState('month')
+  // last_30 is the rolling 30 days the old "This month" button used, so no
+  // number moves on the day this ships. Calendar 'this_month' is a preset now;
+  // switching the default to it should be a separate, announced change.
+  const { range, setRange, params, bucket } = useDateRange('last_30')
   // scope is encoded as a single string:
   //   'all'              → all stores in user scope
   //   'area:<area_id>'   → all stores in that area (intersected with user scope)
@@ -109,9 +100,8 @@ export default function Dashboard() {
   }, [stores, scopedStoreIds])
 
   useEffect(() => {
-    const { from, to } = relativeRange(rangeKey)
     setLoading(true); setError('')
-    const args = { from, to }
+    const args = { ...params, bucket }
     if (isBO) {
       if (Array.isArray(scopedStoreIds) && scopedStoreIds.length) args.storeIds = scopedStoreIds
       // null = all stores in user scope (no filter)
@@ -120,7 +110,7 @@ export default function Dashboard() {
       .then(setStats)
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
-  }, [rangeKey, scope, scopedStoreIds, isBO])
+  }, [params.from, params.to, bucket, scope, scopedStoreIds, isBO])
 
   const totals = stats?.totals   || { all: 0, pending: 0, completed: 0, no_change_needed: 0, store_completed: 0 }
   const ho     = stats?.ho_totals  || { all: 0, pending: 0, completed: 0, no_change_needed: 0, store_completed: 0 }
@@ -148,11 +138,7 @@ export default function Dashboard() {
           <div className="page-subtitle">{isBO ? `Showing: ${scopeLabel}` : "Here's how your scanner activity is looking"}</div>
         </div>
         <div className="flex-row" style={{ gap: 6, flexWrap: 'wrap' }}>
-          {RANGES.map(r => (
-            <button key={r.key} className={`btn btn-sm ${rangeKey === r.key ? 'btn-primary' : 'btn-outline'}`} onClick={() => setRangeKey(r.key)}>
-              {r.label}
-            </button>
-          ))}
+          <DateRangePicker variant="buttons" value={range} onChange={setRange} />
           {isBO && (
             <select value={scope} onChange={e => setScope(e.target.value)} style={{ width: 'auto', minWidth: 200, maxWidth: 260 }}>
               <option value="all">All stores in scope</option>
@@ -190,12 +176,12 @@ export default function Dashboard() {
       </div>
 
       <div className="dash-row dash-row--thirds">
-        <TaskDonutOps    rows={stats?.by_task_type || []} dataDays={stats?.by_day || []} loading={loading} />
-        <TaskDonutChecks rows={stats?.by_task_type || []} dataDays={stats?.by_day || []} loading={loading} />
-        {isBO && <StoresMissingDeptCheck byStore={stats?.by_store || []} allStores={scopeStores} scopeStoreIds={scopedStoreIds} dataDays={stats?.by_day || []} loading={loading} />}
+        <TaskDonutOps    rows={stats?.by_task_type || []} dataDays={stats?.by_day || []} dataFrom={stats?.data_from} dataTo={stats?.data_to} loading={loading} />
+        <TaskDonutChecks rows={stats?.by_task_type || []} dataDays={stats?.by_day || []} dataFrom={stats?.data_from} dataTo={stats?.data_to} loading={loading} />
+        {isBO && <StoresMissingDeptCheck deptCheck={stats?.dept_check_7d} allStores={scopeStores} scopeStoreIds={scopedStoreIds} statsFrom={stats?.stats_from} loading={loading} />}
       </div>
 
-      {isBO && <StoreDonutGrid rows={stats?.by_store || []} loading={loading} allStores={scopeStores} dataDays={stats?.by_day || []} />}
+      {isBO && <StoreDonutGrid rows={stats?.by_store || []} loading={loading} allStores={scopeStores} dataDays={stats?.by_day || []} dataFrom={stats?.data_from} dataTo={stats?.data_to} />}
       {!isBO && <RecentList rows={stats?.recent || []} loading={loading} isBO={isBO} />}
 
       {/* Activity — moved below the store graph and made compact (secondary info). */}
@@ -289,7 +275,9 @@ function ActivityChart({ byDay, loading, compact }) {
     const isHo = ho >= ops
     const value = Math.max(ho, ops)
     const y = VH - PAD - (value / sharedMax) * (VH - 2 * PAD)
-    return { key: d.date || i, x, y, isHo, value }
+    // Index-qualified: dd duplicates the single point on a one-day range to
+    // draw a flat line, so the date alone is not a unique React key.
+    return { key: `${d.date || ''}-${i}`, x, y, isHo, value }
   })
 
   // One axis label per day (not just first/mid/last). Bare day number, EXCEPT
@@ -372,7 +360,12 @@ function ActivityChart({ byDay, loading, compact }) {
       </div>
 
       <div className="ac-axis">
-        {dd.map((d, i) => <span key={d.date || i}>{dayLabel(d.date, dd[i - 1]?.date)}</span>)}
+        {/* The RPC sends a ready-made label per bucket ("04 Sep" / "Wk 01 Sep" /
+            "Sep 2026") because the bucket size varies with the selected range.
+            dayLabel is the fallback for a day-bucketed response without one. */}
+        {dd.map((d, i) => (
+          <span key={`${d.date || ''}-${i}`}>{d.label || dayLabel(d.date, dd[i - 1]?.date)}</span>
+        ))}
       </div>
     </div>
   )
@@ -406,14 +399,14 @@ function TaskTypeBars({ rows, loading }) {
 const DONUT_COLORS = ['#0E9A52', '#12A156', '#0A7339', '#3960A8', '#B47F1E', '#C96442', '#7E57C2', '#2D7A4E', '#E07346', '#5DCAA5', '#9A6B12']
 const CHECK_CODES  = new Set(['J', 'H', 'K', 'M'])
 
-function TaskDonutOps({ rows, dataDays, loading }) {
+function TaskDonutOps({ rows, dataDays, dataFrom, dataTo, loading }) {
   const data = (rows || []).filter(r => r.count > 0 && !CHECK_CODES.has(r.code))
-  return <DonutCard title="HO Tasks" range={dataRangeLabel(dataDays)} data={data} loading={loading} colorOffset={3} />
+  return <DonutCard title="HO Tasks" range={dataRangeLabel(dataDays, dataFrom, dataTo)} data={data} loading={loading} colorOffset={3} />
 }
 
-function TaskDonutChecks({ rows, dataDays, loading }) {
+function TaskDonutChecks({ rows, dataDays, dataFrom, dataTo, loading }) {
   const data = (rows || []).filter(r => r.count > 0 && CHECK_CODES.has(r.code))
-  return <DonutCard title="Operations Task" range={dataRangeLabel(dataDays)} data={data} loading={loading} colorOffset={0} />
+  return <DonutCard title="Operations Task" range={dataRangeLabel(dataDays, dataFrom, dataTo)} data={data} loading={loading} colorOffset={0} />
 }
 
 function DonutCard({ title, range, data, loading, colorOffset = 0 }) {
@@ -503,7 +496,7 @@ const TYPE_COLORS = {
   I: '#9A6B12', J: '#0A7339', K: '#5DCAA5',
 }
 
-function StoreDonutGrid({ rows, loading, allStores, dataDays }) {
+function StoreDonutGrid({ rows, loading, allStores, dataDays, dataFrom, dataTo }) {
   // Merge stats rows (stores with records) with the full store list so every
   // store is always shown. Inactive stores appear faded at the end.
   const merged = useMemo(() => {
@@ -545,7 +538,7 @@ function StoreDonutGrid({ rows, loading, allStores, dataDays }) {
   return (
     <div className="card" style={{ marginBottom: 24 }}>
       <div className="card-header">
-        <span>Store Performance{dataRangeLabel(dataDays) && <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--text-muted)' }}> ({dataRangeLabel(dataDays)})</span>}</span>
+        <span>Store Performance{dataRangeLabel(dataDays, dataFrom, dataTo) && <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--text-muted)' }}> ({dataRangeLabel(dataDays, dataFrom, dataTo)})</span>}</span>
         <div className="flex-row" style={{ marginLeft: 'auto', gap: 8, alignItems: 'center' }}>
           {!loading && display.length > 0 && (
             <span className="chip">
@@ -571,32 +564,47 @@ function StoreDonutGrid({ rows, loading, allStores, dataDays }) {
   )
 }
 
-// Active stores that have NOT recorded a Department Check (task type J) within
-// the selected period. Period-linked automatically: `byStore` comes from the
-// same stats fetch, which is scoped by the Today/Week/Month buttons up top.
-function StoresMissingDeptCheck({ byStore, allStores, scopeStoreIds, dataDays, loading }) {
-  const doneJ = new Set()
-  for (const s of (byStore || [])) {
-    if ((s.types || []).some(t => t.code === 'J' && t.count > 0)) doneJ.add(s.id)
-  }
+// Active stores that have NOT recorded a Department Check (task type J) in the
+// last 7 days.
+//
+// This card deliberately does NOT follow the range picker. Over a long range
+// almost every store has done one eventually, which makes the card read as "all
+// clear" and useless; a fixed recent window is the actionable compliance signal,
+// and it matches what the weekly aging email already reports.
+//
+// `deptCheck.store_ids` is the set of stores that DID one, computed server-side
+// from task_stats_daily (+ live records for today), so it survives the nightly
+// purge that deletes J records after the retention window regardless of status.
+// That purge is why this card used to list compliant stores.
+function StoresMissingDeptCheck({ deptCheck, allStores, scopeStoreIds, statsFrom, loading }) {
+  const doneJ = new Set(deptCheck?.store_ids || [])
   const missing = (allStores || [])
     .filter(s => s.is_active !== false)
     .filter(s => !scopeStoreIds || scopeStoreIds.includes(s.id))
     .filter(s => !doneJ.has(s.id))
     .sort((a, b) => (a.store_code || '').localeCompare(b.store_code || '', undefined, { numeric: true }))
 
-  const rangeLabel = dataRangeLabel(dataDays)
+  const days = deptCheck?.days || 7
+  // Statistics only start the day the rollup was deployed. Until the window is
+  // fully covered, say so rather than letting a partial history read as
+  // chain-wide non-compliance.
+  const partial = statsFrom && deptCheck?.from && statsFrom > deptCheck.from
 
   return (
     <div className="card">
       <div className="card-header">
         <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           No Department Check
-          {rangeLabel && <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--text-muted)' }}> ({rangeLabel})</span>}
+          <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--text-muted)' }}> (last {days} days)</span>
         </span>
         {!loading && <span className="chip" style={{ marginLeft: 'auto', flexShrink: 0 }}><span className="chip-dot" />{missing.length}</span>}
       </div>
       <div className="card-body" style={{ maxHeight: 300, overflowY: 'auto' }}>
+        {partial && !loading && (
+          <p className="note" style={{ fontSize: 11.5, marginTop: 0, marginBottom: 8 }}>
+            Statistics start {statsFrom} — earlier days in this window are not covered yet.
+          </p>
+        )}
         {loading ? (
           <div style={{ textAlign: 'center', padding: 24 }}><span className="spinner spinner-dark" /></div>
         ) : missing.length === 0 ? (
