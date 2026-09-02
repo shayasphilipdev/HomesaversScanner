@@ -932,7 +932,10 @@ export async function onRequest(context) {
 
       // Active stores with NO Department Check (J) in the last 7 full days before
       // today (excludes the report-generation day). Computed server-side.
-      const missing = await db.rpc('stores_missing_dept_check', { p_days: 7 })
+      // v2 reads task_stats_daily (and live records as a fallback), so this
+      // stays correct if the window is ever widened past the retention period
+      // or retention is shortened. Same {store_code, store_name} shape.
+      const missing = await db.rpc('stores_missing_dept_check_v2', { p_days: 7 })
       const stores_no_dept_check = (missing || []).map(m => ({ store_code: m.store_code, store_name: m.store_name }))
 
       return json({ now: new Date().toISOString(), total: records.length, records, created_last7, stores_no_dept_check })
@@ -2968,10 +2971,11 @@ export async function onRequest(context) {
       const p = url.searchParams
       const from = p.get('from')
       const to   = p.get('to')
+      const bucket = p.get('bucket') || 'auto'   // day | week | month | auto
       const explicit = p.get('storeId')
       const multi    = (p.get('storeIds') || '').split(',').map(s => s.trim()).filter(Boolean)
       const scope = await scopedStoreIds(db, session)
-      const empty = () => json({ totals: { all: 0, pending: 0, completed: 0, no_change_needed: 0, store_completed: 0 }, ho_totals: { all: 0, pending: 0, completed: 0, no_change_needed: 0, store_completed: 0 }, ops_totals: { all: 0, pending: 0, store_completed: 0 }, by_task_type: [], by_store: [], by_day: [], recent: [] })
+      const empty = () => json({ totals: { all: 0, pending: 0, completed: 0, no_change_needed: 0, store_completed: 0 }, ho_totals: { all: 0, pending: 0, completed: 0, no_change_needed: 0, store_completed: 0 }, ops_totals: { all: 0, pending: 0, store_completed: 0 }, by_task_type: [], by_store: [], by_day: [], recent: [], bucket: 'day', stats_from: null, data_from: null, data_to: null, dept_check_7d: { days: 7, from: null, store_ids: [] } })
 
       // Resolve which store_ids the SQL should see (null = no scope filter,
       // [] = nothing accessible, [...] = explicit set).
@@ -3006,7 +3010,13 @@ export async function onRequest(context) {
       // Push all the heavy aggregation into Postgres -- the RPC returns a
       // single JSON blob with totals, by_task_type, by_store, by_day, recent.
       // Saves a 5000-row Worker fetch on every dashboard load.
-      const rpcRes = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/dashboard_stats`, {
+      //
+      // v2 reads task_stats_daily for every day before today and live
+      // task_records for today, so the numbers survive the nightly purge that
+      // deletes J/K after scan_record_retention_days regardless of status.
+      // See supabase-migration-dashboard-stats-v2.sql. v1 is still deployed
+      // untouched -- reverting is this one string.
+      const rpcRes = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/dashboard_stats_v2`, {
         method: 'POST',
         headers: {
           'apikey':        env.SUPABASE_ANON_KEY,
@@ -3016,7 +3026,8 @@ export async function onRequest(context) {
         body: JSON.stringify({
           p_from:      from ? new Date(from).toISOString() : null,
           p_to:        to   ? new Date(to).toISOString()   : null,
-          p_store_ids: storeIds
+          p_store_ids: storeIds,
+          p_bucket:    bucket
         })
       })
       if (!rpcRes.ok) {
@@ -3024,17 +3035,10 @@ export async function onRequest(context) {
       }
       const stats = await rpcRes.json()
 
-      // RPC's by_day only includes days that had records -- fill the
-      // missing days so the chart shows a continuous 14-day window.
-      const today = new Date(); today.setHours(0, 0, 0, 0)
-      const byDay = Object.fromEntries((stats.by_day || []).map(d => [d.date, d]))
-      const filled = []
-      for (let i = 13; i >= 0; i--) {
-        const d = new Date(today.getTime() - i * 86400000).toISOString().slice(0, 10)
-        const row = byDay[d]
-        filled.push({ date: d, count: row?.count || 0, ho_count: row?.ho_count || 0, ops_count: row?.ops_count || 0 })
-      }
-      stats.by_day = filled
+      // by_day arrives already bucketed (day/week/month by range length) and
+      // gap-filled by the RPC. The old 14-day fill loop that used to live here
+      // was a hard cap: it silently discarded days 15-30 of a 30-day range and
+      // made any longer range impossible to chart.
       // Hide by_store for non-BO -- only HO needs the per-store split.
       if (!isBO) stats.by_store = []
       return json(stats)

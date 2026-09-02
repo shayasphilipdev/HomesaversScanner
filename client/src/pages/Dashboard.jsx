@@ -4,6 +4,8 @@ import { getDashboardStats, getStores, getAreas } from '../lib/api.js'
 import { ADMIN_ROLES } from '../lib/roles.js'
 import { TASK_FORMS } from '../lib/taskTypes.js'
 import Skeleton from '../components/Skeleton.jsx'
+import DateRangePicker from '../components/DateRangePicker.jsx'
+import { useDateRange } from '../lib/dateRange.js'
 
 const STATUS_LABEL = {
   pending:          'Pending',
@@ -12,32 +14,18 @@ const STATUS_LABEL = {
   store_completed:  'Store confirmed'
 }
 
-const RANGES = [
-  { key: 'today', label: 'Today',     days: 0  },
-  { key: 'week',  label: 'This week', days: 7  },
-  { key: 'month', label: 'This month',days: 30 }
-]
-
-function startOfDay(d) { const x = new Date(d); x.setHours(0,0,0,0); return x }
-function toIso(d)      { return d.toISOString() }
-
-function relativeRange(key) {
-  const now = new Date()
-  switch (key) {
-    case 'today':
-      return { from: toIso(startOfDay(now)), to: toIso(now) }
-    case 'week':
-      return { from: toIso(startOfDay(new Date(now - 7  * 86400000))), to: toIso(now) }
-    default:
-      return { from: toIso(startOfDay(new Date(now - 30 * 86400000))), to: toIso(now) }
-  }
-}
+// Date presets, the local/UTC convention and the range->bucket rule all live in
+// lib/dateRange.js now (shared, and the single place that convention is stated).
+// The old startOfDay/toIso/relativeRange helpers are gone with them.
 
 export default function Dashboard() {
   const { session } = useStore()
   const isBO = session.mode === 'backoffice'
 
-  const [rangeKey, setRangeKey]     = useState('month')
+  // last_30 is the rolling 30 days the old "This month" button used, so no
+  // number moves on the day this ships. Calendar 'this_month' is a preset now;
+  // switching the default to it should be a separate, announced change.
+  const { range, setRange, params, bucket } = useDateRange('last_30')
   // scope is encoded as a single string:
   //   'all'              → all stores in user scope
   //   'area:<area_id>'   → all stores in that area (intersected with user scope)
@@ -94,9 +82,8 @@ export default function Dashboard() {
   }, [stores, scopedStoreIds])
 
   useEffect(() => {
-    const { from, to } = relativeRange(rangeKey)
     setLoading(true); setError('')
-    const args = { from, to }
+    const args = { ...params, bucket }
     if (isBO) {
       if (Array.isArray(scopedStoreIds) && scopedStoreIds.length) args.storeIds = scopedStoreIds
       // null = all stores in user scope (no filter)
@@ -105,7 +92,7 @@ export default function Dashboard() {
       .then(setStats)
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
-  }, [rangeKey, scope, scopedStoreIds, isBO])
+  }, [params.from, params.to, bucket, scope, scopedStoreIds, isBO])
 
   const totals = stats?.totals   || { all: 0, pending: 0, completed: 0, no_change_needed: 0, store_completed: 0 }
   const ho     = stats?.ho_totals  || { all: 0, pending: 0, completed: 0, no_change_needed: 0, store_completed: 0 }
@@ -133,11 +120,7 @@ export default function Dashboard() {
           <div className="page-subtitle">{isBO ? `Showing: ${scopeLabel}` : "Here's how your scanner activity is looking"}</div>
         </div>
         <div className="flex-row" style={{ gap: 6, flexWrap: 'wrap' }}>
-          {RANGES.map(r => (
-            <button key={r.key} className={`btn btn-sm ${rangeKey === r.key ? 'btn-primary' : 'btn-outline'}`} onClick={() => setRangeKey(r.key)}>
-              {r.label}
-            </button>
-          ))}
+          <DateRangePicker variant="buttons" value={range} onChange={setRange} />
           {isBO && (
             <select value={scope} onChange={e => setScope(e.target.value)} style={{ width: 'auto', minWidth: 200, maxWidth: 260 }}>
               <option value="all">All stores in scope</option>
@@ -356,7 +339,14 @@ function ActivityChart({ byDay, loading }) {
       </div>
 
       <div className="ac-axis">
-        {days.map((d, i) => <span key={d.date || i}>{dayLabel(d.date, days[i - 1]?.date)}</span>)}
+        {/* The RPC now sends a ready-made label per bucket ("04 Sep" /
+            "Wk 01 Sep" / "Sep 2026") because the bucket size varies with the
+            selected range. dayLabel is the fallback for a day-bucketed
+            response that has no label. Key is index-qualified because a
+            one-day range can repeat a date. */}
+        {days.map((d, i) => (
+          <span key={`${d.date || ''}-${i}`}>{d.label || dayLabel(d.date, days[i - 1]?.date)}</span>
+        ))}
       </div>
     </div>
   )

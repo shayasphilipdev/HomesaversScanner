@@ -146,6 +146,16 @@ const KEY_META = {
     label: 'Photo retention (days)',
     hint:  'Photos older than this can be removed via the cleanup button below.'
   },
+  stats_rollup_retention_days: {
+    section: 'Retention',
+    label: 'Dashboard statistics retention (days)',
+    hint:  'How long the per-day dashboard statistics (task_stats_daily) are kept — counts only, no records. Default 180 (6 months). These survive the record cleanup above, which is what keeps long-range dashboard reports accurate.'
+  },
+  stats_rollup_window_days: {
+    section: 'Retention',
+    label: 'Statistics recompute window (days)',
+    hint:  'How many past days the nightly statistics job recalculates, so late status changes are picked up. Must stay below Scan record retention — it is clamped automatically to (retention − 3), because recomputing a day whose records are already deleted would zero that day.'
+  },
   // ── Capacity ───────────────────────────────────────────────────────────
   capacity_db_limit_bytes: {
     section: 'Capacity',
