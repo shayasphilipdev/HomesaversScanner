@@ -636,7 +636,12 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .capacity-alert--crit { animation: none; }
 }
-.filter-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+/* Run report / Excel sit at the END of the filter row, not flung to the far
+   right edge. margin-left:auto opened a ~450px dead gap between the last
+   filter and the buttons on a wide screen, which read as a broken layout
+   rather than as alignment. A slightly wider left margin than the row's own
+   gap is enough to separate them as their own group. */
+.filter-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-left: 10px; }
 /* Run report / Excel / Search — any button riding along in a filter row
    otherwise sits at .btn-sm's normal 32px against the fields' 38px, which
    reads as short and floating once the row no longer has to wrap onto its

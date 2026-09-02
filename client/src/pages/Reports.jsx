@@ -1000,7 +1000,7 @@ function HQReports() {
                   <th style={{ width: 110 }}>Product Barcode</th>
                   <th style={{ width: 140 }}>Photos</th>
                   <th style={{ whiteSpace: 'nowrap', width: 110 }}>Date</th>
-                  {isBO && <th></th>}
+                  <th style={{ width: isBO ? 300 : 110 }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -1054,45 +1054,50 @@ function HQReports() {
                           {formatDMY(r.created_at)}
                           {isPending && <AgeClock at={r.created_at} style={{ marginLeft: 6 }} />}
                         </td>
-                        {isBO && (
-                          <td>
-                            <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>
-                              {isPending && (
-                                <>
-                                  <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => reviewOne(r.id, 'completed')}>
-                                    Complete
-                                  </button>
-                                  <button className="btn btn-sm btn-outline" disabled={busy} onClick={() => reviewOne(r.id, 'no_change_needed')}>
-                                    No change
-                                  </button>
-                                </>
-                              )}
-                              <button
-                                className="btn btn-sm btn-outline"
-                                title="All details for this record"
-                                onClick={() => setDetailRecord(r)}
-                              >🔍 Details</button>
+                        {/* Details is for every user - a store needs to see the
+                            full record it logged just as much as HO does. The
+                            review, message-toggle and delete controls stay
+                            back-office only; the popup carries its own message
+                            thread, so the store still gets the conversation. */}
+                        <td>
+                          <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>
+                            {isBO && isPending && (
+                              <>
+                                <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => reviewOne(r.id, 'completed')}>
+                                  Complete
+                                </button>
+                                <button className="btn btn-sm btn-outline" disabled={busy} onClick={() => reviewOne(r.id, 'no_change_needed')}>
+                                  No change
+                                </button>
+                              </>
+                            )}
+                            <button
+                              className="btn btn-sm btn-outline"
+                              title="All details for this record"
+                              onClick={() => setDetailRecord(r)}
+                            >🔍 Details</button>
+                            {isBO && (
                               <button
                                 className={`btn btn-sm btn-icon ${expandedMessages.has(r.id) ? 'btn-primary' : 'btn-outline'}`}
                                 title="Messages"
                                 onClick={() => toggleMessages(r.id)}
                               >💬</button>
-                              {(r.task_type === 'J' || r.task_type === 'K') && (
-                                <button
-                                  className="btn btn-sm"
-                                  title="Permanently delete this record"
-                                  onClick={() => setDeleteTarget({ ids: [r.id] })}
-                                  style={{ background: '#C0392B', color: '#fff', border: 'none', fontWeight: 600 }}
-                                >🗑</button>
-                              )}
-                            </div>
-                          </td>
-                        )}
+                            )}
+                            {isBO && (r.task_type === 'J' || r.task_type === 'K') && (
+                              <button
+                                className="btn btn-sm"
+                                title="Permanently delete this record"
+                                onClick={() => setDeleteTarget({ ids: [r.id] })}
+                                style={{ background: '#C0392B', color: '#fff', border: 'none', fontWeight: 600 }}
+                              >🗑</button>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                       {/* Message thread panel */}
                       {expandedMessages.has(r.id) && (
                         <tr>
-                          <td colSpan={isBO ? 9 : 8} style={{ padding: 0, borderTop: 'none' }}>
+                          <td colSpan={(showCheckCol ? 1 : 0) + 8} style={{ padding: 0, borderTop: 'none' }}>
                             <RecordMessages
                               recordId={r.id}
                               resolvedAt={r.messages_resolved_at}
@@ -1114,6 +1119,7 @@ function HQReports() {
         open={!!detailRecord}
         record={detailRecord}
         storeName={detailRecord ? (storesById[detailRecord.store_id]?.store_name || '') : ''}
+        showInternal={isBO}
         onClose={() => setDetailRecord(null)}
       />
 

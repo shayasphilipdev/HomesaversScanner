@@ -12,7 +12,9 @@ import AgeClock from './AgeClock.jsx'
 // its task-specific details blob, the live Product Master entry for the same
 // barcode, and the audit history.
 //
-// Props: record (a row already loaded by the report), storeName, open, onClose.
+// Props: record (a row already loaded by the report), storeName, open, onClose,
+// showInternal (default true; pass false for a store-side user to drop the
+// head-office-only fields - see isInternal below).
 
 // Field label + optional formatter, grouped the way someone reads a record
 // rather than the order the columns happen to sit in the table.
@@ -46,12 +48,21 @@ const GROUPS = [
     fields: [
       ['status',              'Status'],
       ['notes',               'Notes'],
-      ['review_notes',        'HO Notes'],
-      ['source',              'Source'],
-      ['marked_for_deletion', 'Marked for deletion'],
+      ['review_notes',        'HO Notes',            true],
+      ['source',              'Source',              true],
+      ['marked_for_deletion', 'Marked for deletion', true],
     ],
   },
 ]
+
+// Third element of a field tuple = head-office only. These three are the only
+// fields in this popup a store has never been shown anywhere else in the app:
+// review_notes is HO's own commentary on the record, and source /
+// marked_for_deletion are internal plumbing. Everything else here the store
+// can already see - on the record itself, or on the Product Master tab, which
+// is open to every role - so this is the whole of the restriction rather than
+// a blanket "hide things from stores".
+const isInternal = (f) => f[2] === true
 
 // Rendered last, just before the history, and without a heading.
 const TIME_FIELDS = [
@@ -99,7 +110,7 @@ function Row({ label, value, mono }) {
   )
 }
 
-export default function RecordDetailModal({ record, storeName, open, onClose }) {
+export default function RecordDetailModal({ record, storeName, open, onClose, showInternal = true }) {
   const [showEmpty, setShowEmpty] = useState(false)
   const [events, setEvents]       = useState(null)
   const [pm, setPm]               = useState(null)
@@ -172,6 +183,7 @@ export default function RecordDetailModal({ record, storeName, open, onClose }) 
 
           {GROUPS.map(g => {
             const rows = g.fields
+              .filter(f => showInternal || !isInternal(f))
               .map(([k, label]) => [k, label, fmt(k, record[k])])
               .filter(([, , v]) => showEmpty || v !== null)
             if (!rows.length) return null
