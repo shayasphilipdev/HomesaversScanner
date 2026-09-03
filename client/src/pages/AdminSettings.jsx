@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useStore } from '../App.jsx'
 import {
   adminGetSettings, adminUpdateSettings,
   adminCleanupPhotos, adminCleanupTaskRecords, adminGetCapacity, adminListSyncRuns,
-  adminUploadExcel, adminGetCloudflareUsage
+  adminUploadExcel, adminGetCloudflareUsage, localUploadServerUp
 } from '../lib/api.js'
 import AdminNav from '../components/AdminNav.jsx'
 import { useToast } from '../components/Toast.jsx'
@@ -597,6 +597,13 @@ function SyncCard({ title, icon, runs, sheetDefault, endpoint, syncCmd, toast, r
       <div style={{ padding: '10px 16px 14px', borderTop: '1px solid var(--border)' }}>
         {endpoint ? (
           <>
+            {/* A card can have BOTH: the footnote explains the nightly job,
+                the upload is the manual path. B&M has both; before this it
+                could only show one, so adding upload would have hidden how the
+                automatic sync works. */}
+            {footnote && (
+              <p className="note" style={{ fontSize: 11, marginTop: 0, marginBottom: 10 }}>{footnote}</p>
+            )}
             <div style={{ fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>
               Manual upload
             </div>
@@ -690,9 +697,22 @@ function ExcelImportCard({ sheetDefault, endpoint, toast }) {
   const [uploading, setUploading] = useState(false)
   const [result,    setResult]    = useState(null)
   const [error,     setError]     = useState('')
+  // null = still checking. The upload goes to a Python server running on this
+  // PC, so it can simply be down - and it was, silently, for a long time (an
+  // ASCII crash on startup). Probe it up front rather than letting someone
+  // pick a 20 MB file and only then be told.
+  const [serverUp,  setServerUp]  = useState(null)
   const fileInputRef = useRef(null)
 
   useEffect(() => { setSheetVal(sheetDefault || '1') }, [sheetDefault])
+
+  const probe = useCallback(() => {
+    let alive = true
+    setServerUp(null)
+    localUploadServerUp().then(up => { if (alive) setServerUp(up) })
+    return () => { alive = false }
+  }, [])
+  useEffect(probe, [probe])
 
   const handleUpload = async () => {
     if (!file || uploading) return
@@ -703,12 +723,24 @@ function ExcelImportCard({ sheetDefault, endpoint, toast }) {
       toast.success(`Import done — ${res.written} written, ${res.skipped} skipped.`)
       setFile(null)
       if (fileInputRef.current) fileInputRef.current.value = ''
-    } catch (e) { setError(e.message); toast.error(e.message) }
+    } catch (e) { setError(e.message); toast.error(e.message); probe() }
     finally { setUploading(false) }
   }
 
   return (
     <div>
+      {serverUp === false && (
+        <div className="note" style={{
+          fontSize: 11.5, marginBottom: 8, padding: '6px 9px', borderRadius: 6,
+          background: '#FFF4E5', border: '1px solid #E0A03A', color: '#8a5a14'
+        }}>
+          Upload server is not running on this PC, so manual upload is
+          unavailable. Start it with{' '}
+          <code style={{ fontSize: 11 }}>scripts\run_sync.bat server</code>, then{' '}
+          <button className="btn btn-sm btn-outline" style={{ minHeight: 22, padding: '1px 7px', fontSize: 11 }}
+                  onClick={probe}>re-check</button>.
+        </div>
+      )}
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: '6px 10px', marginBottom: 6 }}>
         <div>
           <label style={{ fontSize: 11, display: 'block', marginBottom: 2, color: '#888' }}>Sheet</label>
@@ -721,7 +753,7 @@ function ExcelImportCard({ sheetDefault, endpoint, toast }) {
             onChange={e => { setFile(e.target.files?.[0] || null); setError(''); setResult(null) }}
             style={{ fontSize: 12, width: '100%' }} />
         </div>
-        <button className="btn btn-primary btn-sm" onClick={handleUpload} disabled={!file || uploading}>
+        <button className="btn btn-primary btn-sm" onClick={handleUpload} disabled={!file || uploading || serverUp === false}>
           {uploading ? <><span className="spinner" /> Uploading…</> : 'Upload'}
         </button>
       </div>
