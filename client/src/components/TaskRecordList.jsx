@@ -22,7 +22,7 @@ function formatDT(iso) {
     + ' ' + d.toLocaleTimeString('en-IE', { hour: '2-digit', minute: '2-digit' })
 }
 
-export default function TaskRecordList({ records, loading, onRefresh, onOptimisticRemove, onUnreadChange, autoOpenId }) {
+export default function TaskRecordList({ records, loading, onRefresh, onOptimisticRemove, onUnreadChange, autoOpenId, showBulkToolbar = true }) {
   const { session } = useStore()
   const toast = useToast()
   // Area managers get store-side clear UI (J/K bulk-clear) despite being in backoffice mode.
@@ -182,13 +182,17 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
     )
   }
 
-  // Checkbox column shows whenever there is anything the user can bulk-action.
-  const showCheckCol = selectableRows.length > 0
+  // Checkbox column shows whenever there is anything the user can bulk-action
+  // AND the caller wants the bulk toolbar at all (store-mode HO Tasks turns
+  // this off — Select all / Clear selected / Delete selected duplicate what
+  // Reports -> HO records already offers against these same records; the
+  // per-row Clear/Delete/Messages buttons below are untouched by this flag).
+  const showCheckCol = showBulkToolbar && selectableRows.length > 0
 
   return (
     <div className="card">
       {/* Bulk toolbar: store Clear (archive; J/K/M) + Delete (permanent; J/K only). */}
-      {selectableRows.length > 0 && (
+      {showBulkToolbar && selectableRows.length > 0 && (
         <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <button className="btn btn-sm btn-outline" onClick={toggleAll}>
             {selected.size === selectableRows.length && selectableRows.length > 0 ? 'Deselect all' : `Select all (${selectableRows.length})`}
