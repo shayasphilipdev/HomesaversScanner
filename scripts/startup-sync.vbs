@@ -6,6 +6,14 @@
 Dim WshShell
 Set WshShell = CreateObject("WScript.Shell")
 
+' Local upload server for the admin page's Manual Upload buttons
+' (http://localhost:8765). Started FIRST and non-blocking (the False argument),
+' because it never exits — it serves until logoff. It had no autostart at all
+' before, so it was only ever running if someone had run
+' "run_sync.bat server" by hand since the last reboot, which is half the reason
+' Manual Upload appeared to be broken.
+WshShell.Run "cmd /c ""C:\Scraping\homesavers-scanner\scripts\run_sync.bat"" server", 0, False
+
 ' Wait 3 minutes after login for network share to be ready
 WScript.Sleep 180000
 

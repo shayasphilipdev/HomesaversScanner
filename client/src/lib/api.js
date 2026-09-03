@@ -251,28 +251,50 @@ export const adminListSyncRuns         = () => request('/admin/sync-runs')
 export const adminImportAltBarcodes    = (rows) => request('/alt-barcodes/import', { method: 'POST', body: rows })
 export const adminImportPrices         = (rows) => request('/prices/import',        { method: 'POST', body: rows })
 
-// Server-side Excel upload — browser sends raw .xlsx, server parses with SheetJS
-// Upload via local Python server (http://localhost:8765).
-// Python parses with pandas/openpyxl — the only approach that handles
-// large VRS Excel files. Modern browsers allow HTTPS→localhost HTTP calls.
+// Manual Excel upload goes to the LOCAL Python server on 8765, not to
+// Cloudflare: pandas/openpyxl is the only thing that copes with the 20 MB /
+// 227k-row VRS workbooks, and the sync secret stays on the PC instead of in the
+// browser. Chrome allows an HTTPS page to call http://localhost (it counts as a
+// trustworthy origin), and the server sends the CORS + Private Network headers.
+export const LOCAL_UPLOAD_ORIGIN = 'http://localhost:8765'
+
+// Cloudflare-style endpoint -> local server path. An explicit map, because the
+// old chained .replace() silently produced a 404 path for any card whose
+// endpoint it did not know about, which is a confusing way to fail.
+const LOCAL_UPLOAD_PATHS = {
+  '/alt-barcodes/upload-excel': '/upload-alt-barcodes',
+  '/prices/upload-excel':       '/upload-prices',
+  '/bm-daily/upload-excel':     '/upload-bm-daily'
+}
+
+const LOCAL_SERVER_HINT =
+  'Local upload server is not running. Start it with: ' +
+  'C:\\Scraping\\homesavers-scanner\\scripts\\run_sync.bat server'
+
+// Readiness probe, so the admin page can say the server is down BEFORE someone
+// picks a file and clicks Upload. Never throws - returns true/false.
+export async function localUploadServerUp() {
+  try {
+    const res = await fetch(`${LOCAL_UPLOAD_ORIGIN}/health`, { method: 'GET' })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
 export async function adminUploadExcel(endpoint, file, sheet) {
   const s = encodeURIComponent(sheet || '1')
-  // Map Cloudflare endpoint path → local server path
-  const localPath = endpoint.replace('/upload-excel', '')
-    .replace('/prices', '/upload-prices')
-    .replace('/alt-barcodes', '/upload-alt-barcodes')
+  const localPath = LOCAL_UPLOAD_PATHS[endpoint]
+  if (!localPath) throw new Error(`No local upload route for "${endpoint}"`)
   let res
   try {
-    res = await fetch(`http://localhost:8765${localPath}?sheet=${s}`, {
+    res = await fetch(`${LOCAL_UPLOAD_ORIGIN}${localPath}?sheet=${s}`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/octet-stream' },
       body:    file
     })
   } catch {
-    throw new Error(
-      'Local upload server is not running. ' +
-      'Start it with: C:\\Scraping\\homesavers-scanner\\scripts\\run_sync.bat server'
-    )
+    throw new Error(LOCAL_SERVER_HINT)
   }
   const data = await res.json()
   if (!res.ok) throw new Error(data.error || `Upload failed (${res.status})`)

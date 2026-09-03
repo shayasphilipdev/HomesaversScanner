@@ -14,10 +14,20 @@ import json
 import os
 import pathlib
 import sys
-import urllib.request
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pandas as pd
+import requests
+
+# HTTP goes through `requests`, NOT urllib.request. urllib verifies against the
+# OpenSSL default store (C:\Program Files\Common Files\SSL/cert.pem on this
+# machine), which contains an expired root, so every call failed with
+# CERTIFICATE_VERIFY_FAILED - the second reason manual uploads never worked.
+# `requests` uses the certifi bundle and is what every other script here already
+# uses, so this keeps the whole scripts/ folder on one HTTP stack.
+TIMEOUT_SHORT = 30
+TIMEOUT_LONG  = 300
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -53,36 +63,44 @@ def _safe_float(val):
 def _record_run(kind: str, file_name: str, imported: int, skipped: int, status: str, secret: str):
     """Record this run to /api/sync-runs so it shows in Settings -> Data Sync."""
     try:
-        req = urllib.request.Request(
+        requests.post(
             f"{BASE_URL}/api/sync-runs",
-            data=json.dumps({
+            json={
                 "kind": kind, "file_name": file_name,
                 "records_imported": imported, "records_skipped": skipped,
                 "status": status,
-            }).encode("utf-8"),
-            headers={"Content-Type": "application/json", "X-Sync-Secret": secret},
-            method="POST",
-        )
-        urllib.request.urlopen(req, timeout=30).read()
+            },
+            headers={"X-Sync-Secret": secret},
+            timeout=TIMEOUT_SHORT,
+        ).raise_for_status()
     except Exception as e:
         print(f"[upload-server] could not record run: {e}", flush=True)
 
 
 def _post_chunks(api_path: str, rows: list, secret: str) -> dict:
     written = skipped = 0
+    total_chunks = (len(rows) + CHUNK_SIZE - 1) // CHUNK_SIZE
     for i in range(0, len(rows), CHUNK_SIZE):
         chunk = rows[i:i + CHUNK_SIZE]
-        body  = json.dumps(chunk).encode("utf-8")
-        req   = urllib.request.Request(
+        n     = i // CHUNK_SIZE + 1
+        resp  = requests.post(
             f"{BASE_URL}/api{api_path}",
-            data=body,
-            headers={"Content-Type": "application/json", "X-Sync-Secret": secret},
-            method="POST",
+            json=chunk,
+            headers={"X-Sync-Secret": secret},
+            timeout=TIMEOUT_LONG,
         )
-        with urllib.request.urlopen(req, timeout=300) as resp:
-            r = json.loads(resp.read())
-            written  += int(r.get("written", 0))
-            skipped  += int(r.get("skipped", 0))
+        if not resp.ok:
+            # Surface the server's own message: a 400 here is usually a real
+            # explanation (wrong column, bad ON CONFLICT target), and burying
+            # it behind a generic HTTPError wastes the diagnosis.
+            raise RuntimeError(
+                "chunk %d/%d failed (HTTP %d): %s"
+                % (n, total_chunks, resp.status_code, resp.text[:300]))
+        r = resp.json()
+        written += int(r.get("written", 0))
+        skipped += int(r.get("skipped", 0))
+        print("[upload-server] chunk %d/%d written=%s skipped=%s"
+              % (n, total_chunks, r.get("written"), r.get("skipped")), flush=True)
     return {"written": written, "skipped": skipped}
 
 
@@ -133,13 +151,49 @@ def _build_alt_barcode_rows(df: pd.DataFrame) -> tuple[list, int]:
     return rows, skipped
 
 
+def _build_bm_daily_rows(df: pd.DataFrame) -> tuple[list, int]:
+    """B&M daily file: one column of ProductIDs, everything else ignored.
+
+    Column aliases match sync-bm-daily.ps1 so the same workbook works for both
+    the nightly job and a manual upload.
+    """
+    aliases = ("productid", "product id", "product_id", "productcode", "product_code")
+    col = None
+    for c in df.columns:
+        if str(c).strip().lower().replace("_", "").replace(" ", "") in (
+                "productid", "productcode"):
+            col = c
+            break
+    if col is None:
+        for c in df.columns:
+            if str(c).strip().lower() in aliases:
+                col = c
+                break
+    if col is None:
+        raise ValueError(
+            "ProductID column not found. Columns: %s"
+            % ", ".join(str(c) for c in list(df.columns)[:12]))
+
+    rows, skipped, seen = [], 0, set()
+    for val in df[col]:
+        code = _safe_str(val)
+        if not code or code == "0":
+            skipped += 1
+            continue
+        if code in seen:
+            continue
+        seen.add(code)
+        rows.append({"product_id": code})
+    return rows, skipped
+
+
 # ── HTTP handler ──────────────────────────────────────────────────────────────
 
 class Handler(BaseHTTPRequestHandler):
 
     def _cors(self):
         self.send_header("Access-Control-Allow-Origin",          ALLOWED_ORIGIN)
-        self.send_header("Access-Control-Allow-Methods",         "POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods",         "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers",         "Content-Type, Authorization, X-Sheet")
         self.send_header("Access-Control-Allow-Private-Network", "true")  # Chrome Private Network Access
 
@@ -148,9 +202,18 @@ class Handler(BaseHTTPRequestHandler):
         self._cors()
         self.end_headers()
 
+    def do_GET(self):
+        # Readiness probe. The admin page calls this before showing the upload
+        # controls, so "server not running" is visible up front instead of only
+        # after picking a file and clicking Upload.
+        if self.path.split("?")[0] == "/health":
+            self._json(200, {"ok": True, "service": "homesavers-upload-server"})
+        else:
+            self._json(404, {"error": "Unknown path"})
+
     def do_POST(self):
         path = self.path.split("?")[0]
-        if path not in ("/upload-prices", "/upload-alt-barcodes"):
+        if path not in ("/upload-prices", "/upload-alt-barcodes", "/upload-bm-daily"):
             self._json(404, {"error": f"Unknown path: {path}"})
             return
 
@@ -175,10 +238,20 @@ class Handler(BaseHTTPRequestHandler):
                 df = pd.read_excel(buf, sheet_name=0, dtype=str, engine="openpyxl")
             df.columns = df.columns.str.strip()
 
+            reset_path = None
             if path == "/upload-prices":
                 rows, skipped = _build_prices_rows(df)
                 api_path = "/prices/sync"
                 kind     = "prices"
+            elif path == "/upload-bm-daily":
+                rows, skipped = _build_bm_daily_rows(df)
+                api_path = "/bm-daily/sync"
+                kind     = "bm_daily"
+                # bm_daily_file is a full-replace table, same as the nightly
+                # job. Reset only AFTER a successful parse that produced rows
+                # (guarded below), so a wrong or empty workbook can never empty
+                # the table.
+                reset_path = "/bm-daily/sync/reset"
             else:
                 rows, skipped = _build_alt_barcode_rows(df)
                 api_path = "/alt-barcodes/sync"
@@ -188,15 +261,20 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(400, {"error": "No valid rows found in file."})
                 return
 
+            if reset_path:
+                rr = requests.post(f"{BASE_URL}/api{reset_path}", json={},
+                                   headers={"X-Sync-Secret": secret},
+                                   timeout=120)
+                rr.raise_for_status()
+
             result = _post_chunks(api_path, rows, secret)
             result["total_rows"] = len(df)
             result["skipped"]    = result.get("skipped", 0) + skipped
             _record_run(kind, "Manual upload", result["written"], result["skipped"], "ok", secret)
             try:
-                urllib.request.urlopen(urllib.request.Request(
-                    f"{BASE_URL}/api/product-master/refresh", data=b"{}",
-                    headers={"Content-Type": "application/json", "X-Sync-Secret": secret},
-                    method="POST"), timeout=120).read()
+                requests.post(f"{BASE_URL}/api/product-master/refresh", json={},
+                              headers={"X-Sync-Secret": secret},
+                              timeout=120).raise_for_status()
             except Exception as e:
                 print(f"[upload-server] product-master refresh failed: {e}", flush=True)
             self._json(200, result)
@@ -217,17 +295,20 @@ class Handler(BaseHTTPRequestHandler):
         print(f"[upload-server] {fmt % args}", flush=True)
 
 
-# ── Missing import fix ────────────────────────────────────────────────────────
-import urllib.parse
-
-
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     server = HTTPServer(("localhost", PORT), Handler)
-    print(f"[upload-server] Listening on http://localhost:{PORT}", flush=True)
-    print(f"[upload-server] POST /upload-prices        → prices table", flush=True)
-    print(f"[upload-server] POST /upload-alt-barcodes  → alt_barcodes table", flush=True)
+    # ASCII only. These lines used a "->" arrow character, and a Windows
+    # console is cp1252, so printing them raised UnicodeEncodeError *before*
+    # serve_forever() was ever reached: the server announced "Listening", died
+    # on the next line, and every manual upload in the admin page failed with
+    # "Local upload server is not running". Keep console output ASCII.
+    print("[upload-server] Listening on http://localhost:%d" % PORT, flush=True)
+    print("[upload-server] GET  /health               -> readiness probe", flush=True)
+    print("[upload-server] POST /upload-prices        -> prices table", flush=True)
+    print("[upload-server] POST /upload-alt-barcodes  -> alt_barcodes table", flush=True)
+    print("[upload-server] POST /upload-bm-daily      -> bm_daily_file table", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
