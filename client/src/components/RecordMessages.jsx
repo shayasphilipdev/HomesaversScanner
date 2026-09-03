@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { getRecordMessages, postRecordMessage, markRecordMessagesRead, resolveRecordMessages } from '../lib/api.js'
 import CannedReplyPicker from './forms/CannedReplyPicker.jsx'
 import { useStore } from '../App.jsx'
+import { canReviewHQRecords } from '../lib/roles.js'
 
 function formatTime(iso) {
   if (!iso) return ''
@@ -22,6 +23,14 @@ const TYPE_COLOR = { information: '#3B82F6', query: '#D97706', action: '#DC2626'
 export default function RecordMessages({ recordId, onUnreadChange, resolvedAt, resolvedByName, onResolvedChange }) {
   const { session } = useStore()
   const isBO = session.mode === 'backoffice'
+  // Canned replies are head-office reply templates ("VRS is investigating…"),
+  // so the picker is limited to the roles that actually answer these threads.
+  // Deliberately NOT `isBO`: area_manager logs in with mode 'backoffice' too
+  // (see STORE_ROLES/BO_ROLES in functions/api/[[route]].js), so isBO would
+  // still hand the list to an area manager. canReviewHQRecords is the HQ
+  // reviewer set - support_admin, buying_manager, buying_head, admin - which
+  // is exactly who is meant to have it.
+  const showCanned = canReviewHQRecords(session)
 
   const [msgs, setMsgs]         = useState(null)
   const [loading, setLoading]   = useState(false)
@@ -222,12 +231,14 @@ export default function RecordMessages({ recordId, onUnreadChange, resolvedAt, r
             style={{ flex: 1, resize: 'vertical', fontSize: 13, borderRadius: 6, padding: '6px 10px', border: '1px solid var(--border)' }}
             disabled={sending}
           />
-          <CannedReplyPicker
-            textareaRef={textareaRef}
-            value={draft}
-            onChange={setDraft}
-            disabled={sending}
-          />
+          {showCanned && (
+            <CannedReplyPicker
+              textareaRef={textareaRef}
+              value={draft}
+              onChange={setDraft}
+              disabled={sending}
+            />
+          )}
           <button
             className="btn btn-primary btn-sm"
             onClick={send}
