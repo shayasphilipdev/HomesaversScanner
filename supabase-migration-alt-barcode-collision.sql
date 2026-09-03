@@ -87,7 +87,14 @@ COMMENT ON CONSTRAINT alt_barcodes_barcode_ean_key ON public.alt_barcodes IS
 
 
 -- ── STEP 2 — drop the old key (run AFTER the Worker is deployed) ────────────
--- ALTER TABLE public.alt_barcodes DROP CONSTRAINT alt_barcodes_barcode_no_key;
+ALTER TABLE public.alt_barcodes DROP CONSTRAINT IF EXISTS alt_barcodes_barcode_no_key;
+
+-- APPLIED 2026-09-03. STEP 1 ran, the Worker deployed (confirmed via
+-- GET /api/ping -> rev "2026-09-03-alt-barcode-key"), then STEP 2 ran, then the
+-- 274 missing rows were backfilled from that day's file rather than re-running
+-- the whole sync, so the live 211,863 rows were never truncated during trading
+-- hours. Result: 212,137 rows / 97,216 distinct EANs / 0 duplicate pairs /
+-- 0 EANs without an is_primary row (44 before) / all 96 reported examples present.
 
 
 -- ── STEP 3 — verify ─────────────────────────────────────────────────────────

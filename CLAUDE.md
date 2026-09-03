@@ -79,6 +79,25 @@ Admin Products page: supplier dropdown in product edit form; CSV bulk-upsert acc
 ### Phase 9 additions
 `areas` · `users` · `store_task_templates` · `store_task_instances`
 
+### Product master keys (2026-09-03)
+`alt_barcodes` is keyed on **`(barcode_no, ean_barcode)`**, not `barcode_no`.
+A barcode can belong to two different products (273 do in the current master);
+keying on the barcode alone silently overwrote one of them and 89 products
+disappeared from every lookup. The constraint is `UNIQUE NULLS NOT DISTINCT` —
+`ean_barcode` is nullable and two NULLs would otherwise never conflict, so the
+nightly upsert would insert a fresh duplicate every night.
+
+Consequences to keep in mind when touching this table:
+- every `alt_barcodes` upsert must use `on_conflict=barcode_no,ean_barcode`
+- a barcode lookup can return **more than one row**; order by
+  `barcode_status.asc` so the Active product wins
+- schema changes here have to straddle the deploy (add the new key, deploy,
+  drop the old) because `ON CONFLICT` errors without a matching index, and the
+  nightly sync truncates before it uploads
+
+`GET /api/ping` returns `rev: API_REVISION` (public, no login) so you can check
+which build is live before letting an unattended job depend on it.
+
 ### Statistics (2026-09-02)
 `task_stats_daily` — per-day COUNTS only, never records: one row per
 `(day, store_id, task_type)`. Rolled up nightly at 01:30 UTC *before* the 02:00
