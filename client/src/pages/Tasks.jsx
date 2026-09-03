@@ -207,16 +207,20 @@ export default function Tasks() {
         </div>
       )}
 
-      {/* Full table + per-row Clear/Delete/Messages, same as back office —
-          only the bulk checkbox/Select-all toolbar drops for store mode
-          (see showBulkToolbar in TaskRecordList): that duplicated Reports ->
-          HO records against the same records, the table itself did not. */}
+      {/* Same table/columns as back office — store mode drops both the bulk
+          checkbox/Select-all toolbar AND the per-row Clear/Msg/Delete column
+          (see showBulkToolbar/showRowActions in TaskRecordList). Those
+          actions stay reachable at Reports -> HO records against the same
+          records; a Nav message-notification deep link still opens a
+          thread here even with the Msg button gone (see the comment by
+          expandedMessages in TaskRecordList). */}
       <TaskRecordList
         records={records}
         loading={loading}
         onRefresh={load}
         autoOpenId={autoOpenId}
         showBulkToolbar={isBO}
+        showRowActions={isBO}
         onOptimisticRemove={(id) => setRecords(rs => rs.filter(r => r.id !== id))}
       />
 

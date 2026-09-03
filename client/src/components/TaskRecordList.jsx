@@ -22,7 +22,7 @@ function formatDT(iso) {
     + ' ' + d.toLocaleTimeString('en-IE', { hour: '2-digit', minute: '2-digit' })
 }
 
-export default function TaskRecordList({ records, loading, onRefresh, onOptimisticRemove, onUnreadChange, autoOpenId, showBulkToolbar = true }) {
+export default function TaskRecordList({ records, loading, onRefresh, onOptimisticRemove, onUnreadChange, autoOpenId, showBulkToolbar = true, showRowActions = true }) {
   const { session } = useStore()
   const toast = useToast()
   // Area managers get store-side clear UI (J/K bulk-clear) despite being in backoffice mode.
@@ -236,7 +236,7 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
               <th style={{ minWidth: 110 }}>Photos</th>
               <th style={{ minWidth: 120 }}>Status</th>
               <th style={{ minWidth: 130 }}>Date / Time</th>
-              <th style={{ minWidth: 220 }}></th>
+              {showRowActions && <th style={{ minWidth: 220 }}></th>}
             </tr>
           </thead>
           <tbody>
@@ -296,50 +296,57 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
                       {r.status === 'pending' && <AgeClock at={r.created_at} style={{ marginLeft: 5 }} />}
                     </td>
                     <td className="td-muted" style={{ minWidth: 130, whiteSpace: 'nowrap' }}>{formatDT(r.created_at)}</td>
-                    <td style={{ minWidth: 220, whiteSpace: 'nowrap' }}>
-                      <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>
-                        {isBO && r.status === 'pending' && (
-                          <button className="btn btn-sm btn-primary" onClick={() => markCompleted(r.id)}>Mark complete</button>
-                        )}
-                        {/* Store: clear HO-reviewed records (standard flow) */}
-                        {!isBO && reviewed && (
-                          <button className="btn btn-sm btn-primary" onClick={() => markCleared(r.id)} title="PO actioned — clear from list">
-                            ✓ Clear
-                          </button>
-                        )}
-                        {/* Store: clear J/K directly from pending (no HO review needed) */}
-                        {storeCanClearNow && (
-                          <button className="btn btn-sm btn-primary" onClick={() => markCleared(r.id)} title="Mark as actioned — clear from list">
-                            ✓ Clear
-                          </button>
-                        )}
-                        <button
-                          className={`btn-msg-toggle ${expandedMessages.has(r.id) ? 'active' : ''} ${msgCount > 0 && !expandedMessages.has(r.id) ? 'has-thread' : ''}`}
-                          title={msgCount > 0 ? `${msgCount} message${msgCount > 1 ? 's' : ''}` : 'Messages'}
-                          onClick={() => toggleMessages(r.id)}
-                        >
-                          💬 <span style={{ fontSize: 12 }}>Msg</span>
-                          {msgCount > 0 && <span className="msg-toggle-badge">{msgCount}</span>}
-                        </button>
-                        {/* J/K: permanent delete for every user, behind the strong red modal. */}
-                        {canHardDelete && (
+                    {showRowActions && (
+                      <td style={{ minWidth: 220, whiteSpace: 'nowrap' }}>
+                        <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>
+                          {isBO && r.status === 'pending' && (
+                            <button className="btn btn-sm btn-primary" onClick={() => markCompleted(r.id)}>Mark complete</button>
+                          )}
+                          {/* Store: clear HO-reviewed records (standard flow) */}
+                          {!isBO && reviewed && (
+                            <button className="btn btn-sm btn-primary" onClick={() => markCleared(r.id)} title="PO actioned — clear from list">
+                              ✓ Clear
+                            </button>
+                          )}
+                          {/* Store: clear J/K directly from pending (no HO review needed) */}
+                          {storeCanClearNow && (
+                            <button className="btn btn-sm btn-primary" onClick={() => markCleared(r.id)} title="Mark as actioned — clear from list">
+                              ✓ Clear
+                            </button>
+                          )}
                           <button
-                            className="btn btn-sm"
-                            title="Permanently delete this record"
-                            onClick={() => setDeleteTarget({ ids: [r.id] })}
-                            style={{ background: '#C0392B', color: '#fff', border: 'none', fontWeight: 600 }}
-                          >🗑 Delete</button>
-                        )}
-                        {/* Existing generic delete — unchanged — for non-J/K rows only. */}
-                        {!canHardDelete && (isBO || r.status === 'store_completed') && (
-                          <button className="btn btn-sm btn-icon btn-outline" title="Delete" onClick={() => handleDelete(r.id)}>🗑</button>
-                        )}
-                      </div>
-                    </td>
+                            className={`btn-msg-toggle ${expandedMessages.has(r.id) ? 'active' : ''} ${msgCount > 0 && !expandedMessages.has(r.id) ? 'has-thread' : ''}`}
+                            title={msgCount > 0 ? `${msgCount} message${msgCount > 1 ? 's' : ''}` : 'Messages'}
+                            onClick={() => toggleMessages(r.id)}
+                          >
+                            💬 <span style={{ fontSize: 12 }}>Msg</span>
+                            {msgCount > 0 && <span className="msg-toggle-badge">{msgCount}</span>}
+                          </button>
+                          {/* J/K: permanent delete for every user, behind the strong red modal. */}
+                          {canHardDelete && (
+                            <button
+                              className="btn btn-sm"
+                              title="Permanently delete this record"
+                              onClick={() => setDeleteTarget({ ids: [r.id] })}
+                              style={{ background: '#C0392B', color: '#fff', border: 'none', fontWeight: 600 }}
+                            >🗑 Delete</button>
+                          )}
+                          {/* Existing generic delete — unchanged — for non-J/K rows only. */}
+                          {!canHardDelete && (isBO || r.status === 'store_completed') && (
+                            <button className="btn btn-sm btn-icon btn-outline" title="Delete" onClick={() => handleDelete(r.id)}>🗑</button>
+                          )}
+                        </div>
+                      </td>
+                    )}
                   </tr>
+                  {/* Reachable even with showRowActions=false: a Nav message
+                      notification adds straight to expandedMessages (see the
+                      autoOpenId effect above) without going through this
+                      row's own Msg button, so a deep link still opens the
+                      thread even though the button itself is gone. */}
                   {expandedMessages.has(r.id) && (
                     <tr>
-                      <td colSpan={showCheckCol ? 12 : 11} style={{ padding: 0, borderTop: 'none' }}>
+                      <td colSpan={(showCheckCol ? 1 : 0) + 10 + (showRowActions ? 1 : 0)} style={{ padding: 0, borderTop: 'none' }}>
                         <RecordMessages
                           recordId={r.id}
                           onUnreadChange={handleUnreadChange}
