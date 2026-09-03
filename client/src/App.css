@@ -247,7 +247,6 @@ body {
 }
 .nav-context-dot.is-ho    { background: var(--primary); }
 .nav-context-dot.is-store { background: var(--green); }
-.nav-context-store { font-weight: 500; opacity: .9; }
 @media (max-width: 720px) { .nav-context-chip { display: none; } }
 
 .nav-store-badge {

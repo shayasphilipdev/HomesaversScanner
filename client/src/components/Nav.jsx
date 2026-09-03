@@ -3,7 +3,6 @@ import { useState, useEffect, useRef } from 'react'
 import { useStore } from '../App.jsx'
 import { resolvedTheme, setTheme } from '../lib/theme.js'
 import { canAccessAdmin, canDoHQTasks, canDoStoreTasks, STORE_ROLE_KEYS, roleLabel } from '../lib/roles.js'
-import { useCurrentStore } from '../lib/currentStore.jsx'
 import { getMessageThreads, dismissMessageThread } from '../lib/api.js'
 import { TASK_FORMS } from '../lib/taskTypes.js'
 import OfflineIndicator from './OfflineIndicator.jsx'
@@ -12,7 +11,6 @@ import CapacityAlert from './CapacityAlert.jsx'
 export default function Nav() {
   const { session, logout } = useStore()
   const navigate = useNavigate()
-  const { currentStoreId, scopedStores } = useCurrentStore()
   const [theme, setLocalTheme] = useState(resolvedTheme())
 
   const [threads, setThreads]   = useState([])
@@ -81,7 +79,6 @@ export default function Nav() {
 
   const isStoreRole = STORE_ROLE_KEYS.includes(session.role)
   const contextLabel = isStoreRole ? 'Store Login' : 'Head Office Login'
-  const currentStore = scopedStores.find(s => s.id === currentStoreId)
 
   return (
     <nav className="nav">
@@ -142,10 +139,14 @@ export default function Nav() {
       <OfflineIndicator />
       <CapacityAlert />
 
+      {/* Just the login mode — no working-store suffix. That value is a
+          per-page pick (CurrentStorePicker, HO Tasks/Store Tasks/Space Plan/
+          Competition), not something this global, every-page nav bar should
+          echo; showing it here read as if the whole session were pinned to
+          one store. */}
       <span className="nav-context-chip" title={`Signed in as ${roleLabel(session.role)}`}>
         <span className={`nav-context-dot ${isStoreRole ? 'is-store' : 'is-ho'}`} />
         {contextLabel}
-        {currentStore && <span className="nav-context-store"> · {currentStore.store_name}</span>}
       </span>
 
       <span className="nav-store-badge" title={`Role: ${roleLabel(session.role)}`}>
