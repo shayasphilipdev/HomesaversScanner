@@ -704,7 +704,7 @@ export async function onRequest(context) {
         // the file, 89 products silently dropped. They no longer collide, so
         // the Active-preference below now only settles a true duplicate (same
         // barcode AND same product), which is what it was always meant to do.
-        const key = `${bno} ${ean ?? ''}`
+        const key = `${bno}\u0000${ean ?? ''}`
         const prev = byKey.get(key)
         if (prev && prev.barcode_status === 'Active' && bcStatus !== 'Active') { skipped++; continue }
         if (prev && bcStatus !== 'Active' && prev.barcode_status !== 'Active') { skipped++; continue }
@@ -1067,7 +1067,7 @@ export async function onRequest(context) {
         const bcStatus = normStatus(r.barcode_status)
         // Keyed on (barcode_no, ean_barcode) to match the table -- see the
         // longer note in /alt-barcodes/sync above.
-        const key = `${bno} ${ean ?? ''}`
+        const key = `${bno}\u0000${ean ?? ''}`
         const prev = byKey.get(key)
         if (prev && prev.barcode_status === 'Active' && bcStatus !== 'Active') { skipped++; continue }
         if (prev && bcStatus !== 'Active' && prev.barcode_status !== 'Active') { skipped++; continue }
@@ -1236,7 +1236,7 @@ export async function onRequest(context) {
         }
         // Keyed on (barcode_no, ean_barcode) to match the table -- see the
         // longer note in /alt-barcodes/sync above.
-        byKey.set(`${bc} ${record.ean_barcode || ''}`, record)
+        byKey.set(`${bc}\u0000${record.ean_barcode || ''}`, record)
       }
       const clean = Array.from(byKey.values())
       if (!clean.length) return json({ written: 0, skipped })
