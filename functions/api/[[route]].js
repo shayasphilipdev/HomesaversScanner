@@ -686,15 +686,21 @@ export async function onRequest(context) {
       for (const r of rows) {
         const bno = r?.barcode_no == null ? '' : String(r.barcode_no).trim()
         if (!bno || bno === '0') { skipped++; continue }   // barcode_no must be a real value
+        const ean = r.ean_barcode ? String(r.ean_barcode).trim() : null
         const bcStatus = normStatus(r.barcode_status)
-        // Dedup within the chunk on barcode_no: if we already kept an Active
-        // barcode for this code, do NOT let a later Inactive row overwrite it.
-        const prev = byKey.get(bno)
+        // Dedup within the chunk on (barcode_no, ean_barcode) -- the table's
+        // key. Keying on barcode_no alone made two DIFFERENT products that
+        // share a barcode fight each other, and one lost: 273 such barcodes in
+        // the file, 89 products silently dropped. They no longer collide, so
+        // the Active-preference below now only settles a true duplicate (same
+        // barcode AND same product), which is what it was always meant to do.
+        const key = `${bno} ${ean ?? ''}`
+        const prev = byKey.get(key)
         if (prev && prev.barcode_status === 'Active' && bcStatus !== 'Active') { skipped++; continue }
         if (prev && bcStatus !== 'Active' && prev.barcode_status !== 'Active') { skipped++; continue }
-        byKey.set(bno, {
+        byKey.set(key, {
           barcode_no:     bno,
-          ean_barcode:    r.ean_barcode    ? String(r.ean_barcode).trim()    : null,
+          ean_barcode:    ean,
           item_name:      r.item_name      ? String(r.item_name).trim()      : null,
           supl_id:        r.supl_id        ? String(r.supl_id).trim()        : null,
           supplier_code:  r.supplier_code  ? String(r.supplier_code).trim()  : null,
@@ -708,7 +714,7 @@ export async function onRequest(context) {
       const clean = Array.from(byKey.values())
       if (!clean.length) return json({ written: 0, skipped })
 
-      const upRes = await fetch(`${env.SUPABASE_URL}/rest/v1/alt_barcodes?on_conflict=barcode_no`, {
+      const upRes = await fetch(`${env.SUPABASE_URL}/rest/v1/alt_barcodes?on_conflict=barcode_no,ean_barcode`, {
         method: 'POST',
         headers: {
           'apikey':        env.SUPABASE_ANON_KEY,
@@ -1047,13 +1053,17 @@ export async function onRequest(context) {
       for (const r of rows) {
         const bno = r?.barcode_no == null ? '' : String(r.barcode_no).trim()
         if (!bno || bno === '0') { skipped++; continue }
+        const ean = r.ean_barcode ? String(r.ean_barcode).trim() : null
         const bcStatus = normStatus(r.barcode_status)
-        const prev = byKey.get(bno)
+        // Keyed on (barcode_no, ean_barcode) to match the table -- see the
+        // longer note in /alt-barcodes/sync above.
+        const key = `${bno} ${ean ?? ''}`
+        const prev = byKey.get(key)
         if (prev && prev.barcode_status === 'Active' && bcStatus !== 'Active') { skipped++; continue }
         if (prev && bcStatus !== 'Active' && prev.barcode_status !== 'Active') { skipped++; continue }
-        byKey.set(bno, {
+        byKey.set(key, {
           barcode_no:     bno,
-          ean_barcode:    r.ean_barcode    ? String(r.ean_barcode).trim()    : null,
+          ean_barcode:    ean,
           item_name:      r.item_name      ? String(r.item_name).trim()      : null,
           supl_id:        r.supl_id        ? String(r.supl_id).trim()        : null,
           supplier_code:  r.supplier_code  ? String(r.supplier_code).trim()  : null,
@@ -1066,7 +1076,7 @@ export async function onRequest(context) {
       }
       const clean = Array.from(byKey.values())
       if (!clean.length) return json({ written: 0, skipped })
-      const upRes = await fetch(`${env.SUPABASE_URL}/rest/v1/alt_barcodes?on_conflict=barcode_no`, {
+      const upRes = await fetch(`${env.SUPABASE_URL}/rest/v1/alt_barcodes?on_conflict=barcode_no,ean_barcode`, {
         method: 'POST',
         headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation,resolution=merge-duplicates' },
         body: JSON.stringify(clean)
@@ -1214,11 +1224,13 @@ export async function onRequest(context) {
         for (const f of ['ean_barcode','item_name','supl_id','supplier_code','item_status','barcode_status']) {
           if (fieldMap[f]) { const v = (row[fieldMap[f]] || '').trim(); if (v) record[f] = v }
         }
-        byKey.set(bc, record)
+        // Keyed on (barcode_no, ean_barcode) to match the table -- see the
+        // longer note in /alt-barcodes/sync above.
+        byKey.set(`${bc} ${record.ean_barcode || ''}`, record)
       }
       const clean = Array.from(byKey.values())
       if (!clean.length) return json({ written: 0, skipped })
-      const upRes = await fetch(`${env.SUPABASE_URL}/rest/v1/alt_barcodes?on_conflict=barcode_no`, {
+      const upRes = await fetch(`${env.SUPABASE_URL}/rest/v1/alt_barcodes?on_conflict=barcode_no,ean_barcode`, {
         method: 'POST',
         headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation,resolution=merge-duplicates' },
         body: JSON.stringify(clean)
@@ -3281,9 +3293,19 @@ export async function onRequest(context) {
     if (path === '/alt-barcodes/lookup' && method === 'GET') {
       const barcode = url.searchParams.get('barcode')
       if (!barcode) return json(null)
+      // A barcode can belong to more than one product (273 in the current
+      // master), so this is no longer guaranteed to be a single row. Order so
+      // the ACTIVE one wins: 'Active' sorts before 'Inactive', and PostgREST
+      // leaves nulls last. Checked against the whole master -- every shared
+      // barcode is exactly one Active + one Inactive, so this never has to
+      // break a genuine tie. item_status is the tiebreaker if that ever
+      // changes; without the ordering, `limit 1` would return whichever row
+      // Postgres happened to hand back and a scan could resolve to a
+      // discontinued product.
       const rows = await db.select('alt_barcodes', {
         select: 'barcode_no,ean_barcode,item_name,supl_id,supplier_code,item_status,barcode_status',
         barcode_no: `eq.${String(barcode).trim()}`,
+        order: 'barcode_status.asc,item_status.asc',
         limit: '1'
       })
       return json(rows[0] || null)

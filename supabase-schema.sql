@@ -130,9 +130,15 @@ CREATE INDEX IF NOT EXISTS idx_lookup_kind ON lookup_options (kind, is_active);
 -- ── Alt barcodes (product master) ─────────────────────────────────────────
 -- Bulk-synced daily by a PowerShell job from the central product Excel.
 -- ~207 k rows.  barcode_no is the primary lookup key.
+-- KEY: (barcode_no, ean_barcode), NOT barcode_no alone. A barcode can belong to
+-- two different products (273 in the current master), and keying on the barcode
+-- alone silently dropped one of them -- 89 products vanished from every lookup.
+-- NULLS NOT DISTINCT because ean_barcode is nullable and two NULLs would
+-- otherwise never conflict, so the nightly upsert would duplicate them for ever.
+-- See supabase-migration-alt-barcode-collision.sql.
 CREATE TABLE IF NOT EXISTS alt_barcodes (
   id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  barcode_no     text UNIQUE NOT NULL,                  -- the barcode scanned in store
+  barcode_no     text NOT NULL,                         -- the barcode scanned in store
   ean_barcode    text,                                  -- EAN-13 / secondary barcode
   item_name      text,
   supl_id        text,                                  -- supplier internal ID
@@ -141,6 +147,12 @@ CREATE TABLE IF NOT EXISTS alt_barcodes (
   barcode_status text,                                  -- 'Active' | 'Inactive'
   updated_at     timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE alt_barcodes
+  DROP CONSTRAINT IF EXISTS alt_barcodes_barcode_no_key;
+ALTER TABLE alt_barcodes
+  ADD CONSTRAINT alt_barcodes_barcode_ean_key
+  UNIQUE NULLS NOT DISTINCT (barcode_no, ean_barcode);
 
 CREATE INDEX IF NOT EXISTS idx_altbc_ean ON alt_barcodes (ean_barcode);
 
