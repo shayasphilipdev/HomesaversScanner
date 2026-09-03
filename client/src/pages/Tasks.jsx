@@ -6,6 +6,7 @@ import { useCurrentStore } from '../lib/currentStore.jsx'
 import TaskTypePicker from '../components/TaskTypePicker.jsx'
 import TaskForm from '../components/TaskForm.jsx'
 import TaskRecordList from '../components/TaskRecordList.jsx'
+import ScanHistoryList from '../components/ScanHistoryList.jsx'
 import CurrentStorePicker from '../components/CurrentStorePicker.jsx'
 import HoTasksHelp from '../components/HoTasksHelp.jsx'
 import { useToast } from '../components/Toast.jsx'
@@ -123,6 +124,11 @@ export default function Tasks() {
         <span className="note" style={{ fontSize: 12 }}>
           {records.length} record{records.length !== 1 ? 's' : ''}
         </span>
+        {/* Store mode has no filter row to carry a Refresh button any more
+            (see below) — a small icon here is all the space it costs. */}
+        {!isBO && (
+          <button className="btn btn-sm btn-icon btn-outline" style={{ marginLeft: 'auto' }} onClick={load} title="Refresh">↻</button>
+        )}
       </div>
 
       <TaskTypePicker taskTypes={taskTypes} selected={selectedType} onSelect={setSelectedType} />
@@ -158,43 +164,56 @@ export default function Tasks() {
         </div></div>
       )}
 
-      <div className="flex-row" style={{ marginBottom: 16, flexWrap: 'wrap', gap: 6 }}>
-        {[
-          { key: 'all',              label: 'All' },
-          { key: 'pending',          label: 'Pending' },
-          { key: 'completed',        label: 'HO completed' },
-          { key: 'no_change_needed', label: 'No change needed' },
-          { key: 'store_completed',  label: 'Store confirmed' },
-        ].map(tab => (
-          <button
-            key={tab.key}
-            className={`btn btn-sm ${filter === tab.key ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => setFilter(tab.key)}
-          >
-            {tab.label}
-            <span style={{
-              marginLeft: 4,
-              background: filter === tab.key ? 'rgba(255,255,255,.22)' : 'var(--bg-soft)',
-              color: filter === tab.key ? '#fff' : 'var(--text-muted)',
-              borderRadius: 20, padding: '0 7px', fontSize: 11
-            }}>
-              {filterCounts[tab.key]}
-            </span>
+      {/* Status filtering + bulk review are a back-office desktop workflow —
+          a store login never sees this row at all. Every action it would
+          otherwise reach here (clear, permanently delete J/K) already exists
+          in Reports -> HO records against the same records, so store users
+          lose a duplicate path, not a capability. */}
+      {isBO && (
+        <div className="flex-row" style={{ marginBottom: 16, flexWrap: 'wrap', gap: 6 }}>
+          {[
+            { key: 'all',              label: 'All' },
+            { key: 'pending',          label: 'Pending' },
+            { key: 'completed',        label: 'HO completed' },
+            { key: 'no_change_needed', label: 'No change needed' },
+            { key: 'store_completed',  label: 'Store confirmed' },
+          ].map(tab => (
+            <button
+              key={tab.key}
+              className={`btn btn-sm ${filter === tab.key ? 'btn-primary' : 'btn-outline'}`}
+              onClick={() => setFilter(tab.key)}
+            >
+              {tab.label}
+              <span style={{
+                marginLeft: 4,
+                background: filter === tab.key ? 'rgba(255,255,255,.22)' : 'var(--bg-soft)',
+                color: filter === tab.key ? '#fff' : 'var(--text-muted)',
+                borderRadius: 20, padding: '0 7px', fontSize: 11
+              }}>
+                {filterCounts[tab.key]}
+              </span>
+            </button>
+          ))}
+
+          <button className="btn btn-sm btn-outline" style={{ marginLeft: 'auto' }} onClick={load}>
+            ↻ Refresh
           </button>
-        ))}
+        </div>
+      )}
 
-        <button className="btn btn-sm btn-outline" style={{ marginLeft: 'auto' }} onClick={load}>
-          ↻ Refresh
-        </button>
-      </div>
-
-      <TaskRecordList
-        records={records}
-        loading={loading}
-        onRefresh={load}
-        autoOpenId={autoOpenId}
-        onOptimisticRemove={(id) => setRecords(rs => rs.filter(r => r.id !== id))}
-      />
+      {isBO ? (
+        <TaskRecordList
+          records={records}
+          loading={loading}
+          onRefresh={load}
+          autoOpenId={autoOpenId}
+          onOptimisticRemove={(id) => setRecords(rs => rs.filter(r => r.id !== id))}
+        />
+      ) : (
+        // Records already arrive newest-first (server: created_at.desc; a
+        // fresh scan is prepended locally in onSaved below) — nothing to sort.
+        <ScanHistoryList records={records} loading={loading} autoOpenId={autoOpenId} />
+      )}
 
       {/* Quick guide moved to the bottom — reference material, not something
           that should push the scan field down the screen. */}

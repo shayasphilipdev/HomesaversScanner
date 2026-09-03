@@ -935,6 +935,10 @@ tbody td {
 tbody tr:last-child td { border-bottom: none; }
 tbody tr:hover { background: var(--bg-soft); }
 
+/* ScanHistoryList (store-mode HO Tasks) — the whole row is the tap target
+   for the detail popup, since the list carries no per-row buttons at all. */
+.scan-history-row { cursor: pointer; }
+
 .td-code   {
   font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
   font-weight: 500;
