@@ -6,7 +6,6 @@ import { useCurrentStore } from '../lib/currentStore.jsx'
 import TaskTypePicker from '../components/TaskTypePicker.jsx'
 import TaskForm from '../components/TaskForm.jsx'
 import TaskRecordList from '../components/TaskRecordList.jsx'
-import ScanHistoryList from '../components/ScanHistoryList.jsx'
 import CurrentStorePicker from '../components/CurrentStorePicker.jsx'
 import HoTasksHelp from '../components/HoTasksHelp.jsx'
 import { useToast } from '../components/Toast.jsx'
@@ -201,19 +200,18 @@ export default function Tasks() {
         </div>
       )}
 
-      {isBO ? (
-        <TaskRecordList
-          records={records}
-          loading={loading}
-          onRefresh={load}
-          autoOpenId={autoOpenId}
-          onOptimisticRemove={(id) => setRecords(rs => rs.filter(r => r.id !== id))}
-        />
-      ) : (
-        // Records already arrive newest-first (server: created_at.desc; a
-        // fresh scan is prepended locally in onSaved below) — nothing to sort.
-        <ScanHistoryList records={records} loading={loading} autoOpenId={autoOpenId} />
-      )}
+      {/* Full table + per-row Clear/Delete/Messages, same as back office —
+          only the bulk checkbox/Select-all toolbar drops for store mode
+          (see showBulkToolbar in TaskRecordList): that duplicated Reports ->
+          HO records against the same records, the table itself did not. */}
+      <TaskRecordList
+        records={records}
+        loading={loading}
+        onRefresh={load}
+        autoOpenId={autoOpenId}
+        showBulkToolbar={isBO}
+        onOptimisticRemove={(id) => setRecords(rs => rs.filter(r => r.id !== id))}
+      />
 
       {/* Quick guide moved to the bottom — reference material, not something
           that should push the scan field down the screen. */}
