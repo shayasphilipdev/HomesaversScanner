@@ -148,6 +148,10 @@ async function authenticate(request, env) {
 // Role keys: sales_assistant · supervisor · assistant_store_manager ·
 // store_manager · area_manager · support_admin · buying_manager ·
 // buying_head · admin.
+// Bumped by hand when a deploy needs to be verifiable from outside; returned
+// by the public GET /ping so `curl .../api/ping` says which build is live.
+const API_REVISION   = '2026-09-03-alt-barcode-key'
+
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
 const ADMIN_ROLES    = ['admin', 'buying_manager', 'buying_head']
@@ -612,7 +616,13 @@ export async function onRequest(context) {
     if (path === '/ping' && method === 'GET') {
       // Touch the DB so Supabase counts it as activity.
       await db.select('app_settings', { select: 'key', limit: '1' })
-      return json({ ok: true, ts: new Date().toISOString() })
+      // `rev` answers "which build is actually live?" from outside, without a
+      // login. There was no way to tell before, and it matters whenever a
+      // schema change has to straddle a deploy: the alt_barcodes key swap left
+      // a window where old code against the new schema would have truncated
+      // the product master at 06:30 and then failed every chunk. Bump this
+      // whenever a deploy has to be confirmed before something unattended runs.
+      return json({ ok: true, ts: new Date().toISOString(), rev: API_REVISION })
     }
 
     if (path === '/stores' && method === 'GET') {
