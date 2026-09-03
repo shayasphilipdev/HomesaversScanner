@@ -9,7 +9,7 @@ import {
   getSpacePlanReport, getCompetitorReport, sendToPricing
 } from '../lib/api.js'
 import { COMPETITION_REPORT_COLS, COMPETITION_REPORT_HEADERS, COMPETITION_REPORT_MIN_WIDTHS } from '../lib/competitionOptions.js'
-import { TASK_FORMS, STORE_CLEARABLE } from '../lib/taskTypes.js'
+import { TASK_FORMS, STORE_CLEARABLE, HARD_DELETABLE } from '../lib/taskTypes.js'
 import { downloadExcel } from '../lib/excel.js'
 import { useToast } from '../components/Toast.jsx'
 import MultiSelectDropdown from '../components/forms/MultiSelectDropdown.jsx'
@@ -652,6 +652,25 @@ function HQReports() {
     }
   }
 
+  // Per-row equivalent of bulkClear, for the phone-app row button — selecting
+  // a checkbox just to clear one record is a lot of taps on a small screen.
+  // Same optimistic-remove-then-sync shape as bulkClear, just for one id.
+  const clearOne = async (id) => {
+    setRecords(rs => rs.filter(r => r.id !== id))
+    setTotal(t => Math.max(0, t - 1))
+    toast.success('Record cleared.')
+
+    setBusy(true); setError('')
+    try {
+      await bulkClearTaskRecords([id])
+    } catch (e) {
+      setError(e.message); toast.error(`Reverted — ${e.message}`)
+      runReport()
+    } finally {
+      setBusy(false)
+    }
+  }
+
   // Copy the selected records to the Pricing page (back office only).
   // Snapshot copies — the originals stay exactly as they are here.
   const sendSelectedToPricing = async () => {
@@ -849,7 +868,7 @@ function HQReports() {
                   <th style={{ width: 110 }}>Product Barcode</th>
                   <th style={{ width: 140 }}>Photos</th>
                   <th style={{ whiteSpace: 'nowrap', width: 110 }}>Date</th>
-                  <th style={{ width: isBO ? 300 : 110 }}></th>
+                  <th style={{ width: isBO ? 300 : 220 }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -858,6 +877,11 @@ function HQReports() {
                   const isPending = r.status === 'pending'
                   const isSelectable = selectableSet.has(r.id)
                   const desc = r.item_name || r.description || r.product_name_label || ''
+                  // Store-side per-row Clear — same two paths as the old
+                  // TaskRecordList row: HO already reviewed it, or it's a
+                  // J/K/M row a store can clear straight from pending.
+                  const reviewed = r.status === 'completed' || r.status === 'no_change_needed'
+                  const storeCanClearNow = !isBO && STORE_CLEARABLE.has(r.task_type) && isPending
                   return (
                     <Fragment key={r.id}>
                       <tr>
@@ -903,11 +927,16 @@ function HQReports() {
                           {formatDMY(r.created_at)}
                           {isPending && <AgeClock at={r.created_at} style={{ marginLeft: 6 }} />}
                         </td>
-                        {/* Details is for every user - a store needs to see the
-                            full record it logged just as much as HO does. The
-                            review, message-toggle and delete controls stay
-                            back-office only; the popup carries its own message
-                            thread, so the store still gets the conversation. */}
+                        {/* Details, Messages and (J/K) Delete are for every
+                            user — a store needs the same look at its own
+                            record, the same conversation, and the same
+                            permanent-delete escape hatch HO has. Clear is the
+                            phone-app equivalent of the bulk "Clear selected"
+                            above, one row at a time. Complete/No-change stay
+                            back-office only — that review step is HO's alone.
+                            The Canned-reply picker inside Messages is gated
+                            by role, not by page, so it still never reaches a
+                            store login here. */}
                         <td>
                           <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>
                             {isBO && isPending && (
@@ -925,14 +954,18 @@ function HQReports() {
                               title="All details for this record"
                               onClick={() => setDetailRecord(r)}
                             >🔍 Details</button>
-                            {isBO && (
-                              <button
-                                className={`btn btn-sm btn-icon ${expandedMessages.has(r.id) ? 'btn-primary' : 'btn-outline'}`}
-                                title="Messages"
-                                onClick={() => toggleMessages(r.id)}
-                              >💬</button>
+                            {!isBO && (reviewed || storeCanClearNow) && (
+                              <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => clearOne(r.id)}
+                                title={reviewed ? 'PO actioned — clear from list' : 'Mark as actioned — clear from list'}>
+                                ✓ Clear
+                              </button>
                             )}
-                            {isBO && (r.task_type === 'J' || r.task_type === 'K') && (
+                            <button
+                              className={`btn btn-sm btn-icon ${expandedMessages.has(r.id) ? 'btn-primary' : 'btn-outline'}`}
+                              title="Messages"
+                              onClick={() => toggleMessages(r.id)}
+                            >💬</button>
+                            {HARD_DELETABLE.has(r.task_type) && (
                               <button
                                 className="btn btn-sm"
                                 title="Permanently delete this record"
