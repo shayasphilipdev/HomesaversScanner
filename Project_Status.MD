@@ -268,6 +268,11 @@ below.)
 **Product data** (read-only master, synced from VRS Excel)
 - `alt_barcodes` — `barcode_no (scanned key) · ean_barcode · item_name ·
   supl_id · supplier_code · item_status · barcode_status · is_primary · …`.
+  **Key is `(barcode_no, ean_barcode)`, not `barcode_no`** — a barcode can belong
+  to two different products (273 do), and keying on the barcode alone silently
+  dropped one of them. `UNIQUE NULLS NOT DISTINCT`, because two NULL eans would
+  otherwise never conflict and the nightly upsert would duplicate them for ever.
+  See `supabase-migration-alt-barcode-collision.sql`.
 - `prices` — `ean_barcode · item_group · item_subgrp_id · product_type · sale_rate`.
 - `product_master` (**view**) — joins alt_barcodes + prices, one row per
   primary barcode. Columns: `product_code(=ean) · product_description · selling_price ·
@@ -505,6 +510,62 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 ---
 
 ## 11. Recent work
+
+### 2026-09-03 — alt_barcodes stopped losing products to shared barcodes
+
+**The bug.** `alt_barcodes.barcode_no` was `UNIQUE`, but a barcode in the ALT
+Barcode Master can legitimately belong to two different products — 273 do:
+
+    EAN 01-01-351-00  KETTLE CHIPS S&VIN 130G   barcode 5017764128128
+    EAN 01-01-070-00  KETTLE 130G S/S BALSAMIC  barcode 5017764128128
+
+Only one row per barcode could exist, so one product was silently overwritten
+and disappeared from every `ean_barcode` lookup, and from Product Master.
+
+**Which one survived was arbitrary.** The "prefer the Active barcode" rule in
+`/alt-barcodes/sync` only applies inside one 2,000-row chunk; across chunks it
+is a plain merge-duplicates upsert where the later chunk wins. The sync sorts
+its payload by `ean_barcode`, so two products sharing a barcode land in
+different chunks and the winner is decided by **alphabetical EAN order**.
+Sometimes the discontinued product won and the live one vanished.
+
+**Measured** by replaying the real sync against the real file. The replay
+reproduced production exactly — 212,109 prepared → 211,957 written → 211,834
+rows → 97,106 distinct EANs, all four matching — then predicted 89 lost EANs:
+89 predicted, 89 actually missing, zero false positives. Reproduced again the
+next day against that day's file (211,863 rows / 97,128 EANs, both exact).
+
+**Not all of the gap was this bug.** prices had 3,321 EANs with no
+`alt_barcodes` row: **89** this collision, **664** whose every row in the file
+has a blank `Barcode_No` (dropped by design — the sync needs a barcode; one for
+the file owner), **2,568** simply absent from the ALT Barcode Master.
+
+**The fix.** `UNIQUE NULLS NOT DISTINCT (barcode_no, ean_barcode)`; all three
+upserts `on_conflict=barcode_no,ean_barcode`; all three chunk-dedup maps keyed
+to match; `/alt-barcodes/lookup` ordered `barcode_status.asc,item_status.asc`
+so a shared barcode resolves to the **Active** product instead of whichever row
+Postgres happened to return. Safe because every shared barcode is exactly one
+Active + one Inactive — checked across the whole master, so it never has to
+break a genuine tie.
+
+**Live after backfilling the 274 missing rows:** 212,137 rows, 97,216 distinct
+EANs (+88 products), 0 duplicate pairs, and **0 EANs left without an
+`is_primary` row (44 before)** — those were invisible in Product Master even
+though the product was in the table. All 96 reported examples present.
+
+**Two things worth keeping.**
+
+- The migration is deliberately **two steps that straddle the deploy** — add
+  the new key, deploy, drop the old one. `ON CONFLICT` errors outright without
+  a matching index, so there is no single moment where old-code/new-schema or
+  new-code/old-schema are both valid. The nightly sync **truncates before it
+  uploads**, so the wrong order at 06:30 would have emptied the product master
+  and then failed every chunk, unattended.
+- Because of that, `GET /api/ping` (already public) now returns
+  `rev: API_REVISION`, so `curl` says which build is live without a login.
+  Bump `API_REVISION` by hand whenever a deploy has to be confirmed before
+  something unattended depends on it.
+
 
 ### 2026-09-02 — Dashboard statistics survive the purge; richer date ranges
 
