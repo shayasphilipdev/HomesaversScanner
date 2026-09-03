@@ -1466,7 +1466,25 @@ a.kpi-card:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* ── Bottom navigation (phones only) ── */
+/* ── Bottom navigation (phones only) ──
+   Two things used to make this look uneven, independent of the icon glyphs:
+
+   1. ICON MISALIGNMENT. `.bottom-nav-link` centred its whole icon+label block
+      vertically (flex column + justify-content:center). "Space Plan" wraps to
+      two lines while every other label is one line, so that one tab's block
+      was taller than its neighbours' — centering a taller block in the same
+      row pushes its icon down relative to the single-line tabs beside it.
+      Fixed below by giving the icon its own fixed-height slot at the TOP of
+      the tab (icon-slot's height never changes) and letting only the label
+      grow underneath it — every icon now sits at the same y-position no
+      matter how many lines its label takes.
+
+   2. UNBOUNDED SQUEEZE. Up to 11 items can appear (admin: Home, Manager, HO,
+      Replies, Space Plan, Compete, Query, Tasks, Reports, Pricing, Admin) —
+      well past the ~5 destinations bottom-nav guidelines call the practical
+      max, and `flex:1` on every item divided that many ways into slivers.
+      Below, each item gets a real minimum width and the bar scrolls
+      horizontally once they no longer fit, rather than shrinking forever. */
 .bottom-nav {
   display: none;
   position: fixed;
@@ -1478,37 +1496,56 @@ a.kpi-card:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
   z-index: 90;
   padding-bottom: env(safe-area-inset-bottom, 0px);
   box-shadow: 0 -4px 16px rgba(0,0,0,.05);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;                  /* Firefox */
 }
+.bottom-nav::-webkit-scrollbar { display: none; }   /* Chrome/Safari */
 
 .bottom-nav-link {
-  flex: 1;
+  flex: 1 0 64px;
+  min-width: 64px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 2px;
-  padding: 8px 4px;
+  gap: 3px;
+  padding: 7px 4px 8px;
   text-decoration: none;
   color: var(--text-muted);
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 500;
   min-height: 56px;
+  position: relative;
 }
 .bottom-nav-link.active { color: var(--primary); }
-/* Center every glyph in a fixed box so differing unicode metrics all align. */
-.bottom-nav-icon {
-  font-size: 20px; line-height: 1; height: 22px;
-  display: inline-flex; align-items: center; justify-content: center;
-}
-.bottom-nav-label { letter-spacing: .1px; }
 
-/* Space Plan: bold, green-gradient icon so it stands out and aligns cleanly. */
-.bottom-nav-link--accent .bottom-nav-label { font-weight: 700; }
-.bottom-nav-link--accent .bottom-nav-icon {
-  font-size: 22px; font-weight: 700;
-  background: linear-gradient(135deg, #3457D6 0%, #13245A 100%);
-  -webkit-background-clip: text; background-clip: text;
-  -webkit-text-fill-color: transparent; color: transparent;
+/* Fixed-height row the icon always sits in, regardless of label length. */
+.bottom-nav-icon-slot {
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* The active pill sits behind the icon, inside its own slot, so it never
+   shifts the label below it. */
+.bottom-nav-link.active .bottom-nav-icon-slot {
+  background: var(--primary-tint);
+  border-radius: 999px;
+  width: 44px;
+}
+.bottom-nav-icon { display: inline-flex; }
+.bottom-nav-icon svg { width: 22px; height: 22px; }
+/* Pricing's "€" has no SVG (currency symbols are plain text everywhere,
+   never emoji) — match the SVGs' box so it doesn't sit smaller/off-centre. */
+.bottom-nav-icon--glyph { font-size: 19px; font-weight: 600; width: 22px; height: 22px; align-items: center; justify-content: center; }
+
+.bottom-nav-label {
+  letter-spacing: .1px;
+  text-align: center;
+  line-height: 1.15;
+  /* Reserve room for a 2-line label ("Space Plan") without the 1-line labels
+     around it collapsing to a shorter box — every tab is the same height. */
+  min-height: 2.3em;
 }
 
 @media (max-width: 720px) {
