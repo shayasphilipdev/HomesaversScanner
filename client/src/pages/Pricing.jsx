@@ -237,8 +237,12 @@ export default function Pricing() {
                   <th style={{ whiteSpace: 'nowrap', width: 140 }}>VAT Rate *</th>
                   <th style={{ whiteSpace: 'nowrap', width: 80 }}>Margin %</th>
                   <th style={{ width: 95 }}>Notes</th>
-                  <th style={{ width: 170 }}></th>
+                  <th style={{ width: 120 }}></th>
                   <th style={{ width: 150 }}>Status</th>
+                  {/* Delete lives in its own trailing column, away from Details —
+                      users were misclicking Delete instead of Details when both
+                      buttons sat side by side in one cell. */}
+                  <th style={{ width: 90 }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -298,9 +302,6 @@ export default function Pricing() {
                             title="All details for this record"
                             onClick={() => setDetail({ record: r, storeName: it.store_name })}
                           >🔍 Details</button>
-                          <button className="btn btn-sm btn-outline" disabled={isSaving} onClick={() => remove(it)}>
-                            Delete
-                          </button>
                         </div>
                       </td>
                       <td style={{ whiteSpace: 'nowrap' }}>
@@ -313,6 +314,15 @@ export default function Pricing() {
                               <AgeClock at={it.created_at} warnHours={8} staleHours={24} style={{ marginLeft: 5 }} />
                             </>
                           )}
+                      </td>
+                      {/* Delete sits alone at the true end of the row, one full
+                          column away from Details and Status — the previous
+                          layout put it right beside Details, and rows scanned
+                          left-to-right were landing a misclick on Delete. */}
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        <button className="btn btn-sm btn-outline" disabled={isSaving} onClick={() => remove(it)}>
+                          Delete
+                        </button>
                       </td>
                     </tr>
                   )
