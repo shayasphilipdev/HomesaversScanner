@@ -151,6 +151,12 @@ async function authenticate(request, env) {
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
 const ADMIN_ROLES    = ['admin', 'buying_manager', 'buying_head']
+// The head-office roles that review and answer HO task records. ADMIN_ROLES
+// plus support_admin, whose whole job is that queue. Mirrors
+// TASK_REVIEWER_ROLES in client/src/lib/roles.js (kept in sync by hand).
+// Note this is NOT BO_ROLES: area_manager is a back-office login but is not a
+// reviewer, so anything reviewer-only must use this list.
+const REVIEWER_ROLES = [...ADMIN_ROLES, 'support_admin']
 // Manager dashboard — anyone above shop-floor level. Same set as BO_ROLES
 // plus store_manager + assistant_store_manager so an in-store manager can
 // see their own store's rollup on their phone.
@@ -166,6 +172,7 @@ function hasRole(s, allowed) {
 
 function isBackOffice(s)   { return hasRole(s, BO_ROLES) }
 function isAdminRole(s)    { return hasRole(s, ADMIN_ROLES) }
+function isReviewerRole(s) { return hasRole(s, REVIEWER_ROLES) }
 function isManagerRole(s)  { return hasRole(s, MANAGER_ROLES) }
 // Strict "admin" role only — used for top-of-stack stats like the capacity
 // meters that buying_manager (also in ADMIN_ROLES) shouldn't see.
@@ -3165,6 +3172,11 @@ export async function onRequest(context) {
       const kind     = url.searchParams.get('kind')
       const taskType = url.searchParams.get('task_type')
       if (!kind) return err('kind required', 400)
+      // Every other kind here is a shared pick-list (reason codes, categories)
+      // that store users legitimately need. canned_reply is different: it is
+      // head-office reply text, so it follows the same rule as the picker that
+      // renders it and hiding the button is not the only thing guarding it.
+      if (kind === 'canned_reply' && !isReviewerRole(session)) return err('Forbidden', 403)
       const params = { select: 'id,kind,label,task_types,sort_order,is_active', kind: `eq.${kind}`, is_active: 'eq.true', order: 'sort_order.asc' }
       if (taskType) params['task_types'] = `cs.{${taskType}}`  // array contains
       const rows = await db.select('lookup_options', params)
