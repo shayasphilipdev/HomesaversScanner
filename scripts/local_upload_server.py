@@ -34,8 +34,32 @@ TIMEOUT_LONG  = 300
 PORT         = 8765
 BASE_URL     = "https://homesaversscanner.pages.dev"
 SECRET_FILE  = r"C:\Homesavers\.sync-secret"
+LOG_FILE     = r"C:\Homesavers\logs\upload-server.log"
 CHUNK_SIZE   = 2000
 ALLOWED_ORIGIN = "https://homesaversscanner.pages.dev"
+
+
+def _log(msg: str) -> None:
+    """Write to the log file, and to the console only if there is one.
+
+    Everything used to go through bare print(). A Windows console is cp1252, so
+    a single non-ASCII character raised UnicodeEncodeError and killed the
+    server outright - which is exactly how this process died on its own startup
+    banner, before serve_forever() was ever reached. Logging must not be able
+    to take the server down, and it has to work with no console at all, because
+    the scheduled task runs it windowless under pythonw.exe.
+    """
+    line = "[upload-server] %s" % msg
+    try:
+        os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+        with open(LOG_FILE, "a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+    except Exception:
+        pass
+    try:
+        print(line)
+    except Exception:
+        pass
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -74,7 +98,7 @@ def _record_run(kind: str, file_name: str, imported: int, skipped: int, status: 
             timeout=TIMEOUT_SHORT,
         ).raise_for_status()
     except Exception as e:
-        print(f"[upload-server] could not record run: {e}", flush=True)
+        _log(f"could not record run: {e}")
 
 
 def _post_chunks(api_path: str, rows: list, secret: str) -> dict:
@@ -99,8 +123,7 @@ def _post_chunks(api_path: str, rows: list, secret: str) -> dict:
         r = resp.json()
         written += int(r.get("written", 0))
         skipped += int(r.get("skipped", 0))
-        print("[upload-server] chunk %d/%d written=%s skipped=%s"
-              % (n, total_chunks, r.get("written"), r.get("skipped")), flush=True)
+        _log("chunk %d/%d written=%s skipped=%s" % (n, total_chunks, r.get("written"), r.get("skipped")))
     return {"written": written, "skipped": skipped}
 
 
@@ -276,7 +299,7 @@ class Handler(BaseHTTPRequestHandler):
                               headers={"X-Sync-Secret": secret},
                               timeout=120).raise_for_status()
             except Exception as e:
-                print(f"[upload-server] product-master refresh failed: {e}", flush=True)
+                _log(f"product-master refresh failed: {e}")
             self._json(200, result)
 
         except Exception as exc:
@@ -292,7 +315,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def log_message(self, fmt, *args):
-        print(f"[upload-server] {fmt % args}", flush=True)
+        _log(f"{fmt % args}")
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
@@ -304,12 +327,12 @@ if __name__ == "__main__":
     # serve_forever() was ever reached: the server announced "Listening", died
     # on the next line, and every manual upload in the admin page failed with
     # "Local upload server is not running". Keep console output ASCII.
-    print("[upload-server] Listening on http://localhost:%d" % PORT, flush=True)
-    print("[upload-server] GET  /health               -> readiness probe", flush=True)
-    print("[upload-server] POST /upload-prices        -> prices table", flush=True)
-    print("[upload-server] POST /upload-alt-barcodes  -> alt_barcodes table", flush=True)
-    print("[upload-server] POST /upload-bm-daily      -> bm_daily_file table", flush=True)
+    _log("Listening on http://localhost:%d" % PORT)
+    _log("GET  /health               -> readiness probe")
+    _log("POST /upload-prices        -> prices table")
+    _log("POST /upload-alt-barcodes  -> alt_barcodes table")
+    _log("POST /upload-bm-daily      -> bm_daily_file table")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("[upload-server] Stopped.")
+        _log("Stopped.")
