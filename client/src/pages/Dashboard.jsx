@@ -22,10 +22,11 @@ export default function Dashboard() {
   const { session } = useStore()
   const isBO = session.mode === 'backoffice'
 
-  // last_30 is the rolling 30 days the old "This month" button used, so no
-  // number moves on the day this ships. Calendar 'this_month' is a preset now;
-  // switching the default to it should be a separate, announced change.
-  const { range, setRange, params, bucket } = useDateRange('last_30')
+  // Default is a rolling week — the quick "Today / This week / This month /
+  // Last 30 days" buttons that used to sit beside the picker are gone (they
+  // just duplicated whichever preset the dropdown already showed), so the
+  // dropdown's own default is now the only thing setting the opening view.
+  const { range, setRange, params, bucket } = useDateRange('last_7')
   // scope is encoded as a single string:
   //   'all'              → all stores in user scope
   //   'area:<area_id>'   → all stores in that area (intersected with user scope)
@@ -119,8 +120,8 @@ export default function Dashboard() {
           <div className="page-title">Welcome back</div>
           <div className="page-subtitle">{isBO ? `Showing: ${scopeLabel}` : "Here's how your scanner activity is looking"}</div>
         </div>
-        {/* .header-controls sizes the picker's dropdown/date fields and the scope
-            select to the .btn-sm quick buttons, so the strip stays one row.
+        {/* .header-controls sizes the picker's dropdown/date fields and the
+            scope select to one common height, so the strip stays one row.
             maxWidth is still inline here because it depends on the content:
             a width:auto select grows to its widest option, and store names
             are long enough to push the row onto a second line. */}

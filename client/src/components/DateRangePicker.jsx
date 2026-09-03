@@ -2,13 +2,21 @@ import { PRESETS, PRESET_LABELS, rangeLabel } from '../lib/dateRange.js'
 
 // Shared date-range control. Two shapes, same state:
 //
-//   variant="buttons" — quick buttons + a preset <select> + From/To when the
-//     preset is "custom". Built for the Dashboard's .page-header, so it reuses
-//     the same markup vocabulary as the scope <select> already sitting beside
-//     it (btn btn-sm, plain <select>) rather than introducing a new one.
-//     Sizing comes from .header-controls in App.css — the caller supplies that
-//     wrapper, so the picker and the scope dropdown beside it match without
-//     either of them carrying its own inline widths.
+//   variant="buttons" — the preset <select> (every PRESETS entry, so this is
+//     the only control needed) + From/To when the preset is "custom". Built
+//     for the Dashboard's .page-header, so it reuses the same markup
+//     vocabulary as the scope <select> already sitting beside it (plain
+//     <select>) rather than introducing a new one. Sizing comes from
+//     .header-controls in App.css — the caller supplies that wrapper, so the
+//     picker and the scope dropdown beside it match without either of them
+//     carrying its own inline widths.
+//
+//     Used to also render a row of quick buttons (Today / This week / ...)
+//     ahead of the dropdown. Dropped: with every preset already in the
+//     dropdown, the buttons just duplicated whichever one was already
+//     selected — visible in the header as two controls both reading
+//     "Last 30 days" side by side — without adding a choice the dropdown
+//     didn't already offer.
 //
 //   variant="field" — the same controls wrapped as .filter-field so it drops
 //     into the .filter-row that the report pages already use. Nothing consumes
@@ -21,7 +29,6 @@ export default function DateRangePicker({
   value,
   onChange,
   variant = 'field',
-  quick = ['today', 'this_week', 'this_month', 'last_30'],
   className = ''
 }) {
   const { preset, fromDay, toDay } = value || {}
@@ -29,7 +36,7 @@ export default function DateRangePicker({
 
   const presetSelect = (
     <select
-      value={preset || 'last_30'}
+      value={preset || 'last_7'}
       onChange={e => onChange({ preset: e.target.value })}
       aria-label="Date range"
       title="Date range"
@@ -55,15 +62,6 @@ export default function DateRangePicker({
     // date fields on a line of their own.
     return (
       <>
-        {quick.map(k => (
-          <button
-            key={k}
-            className={`btn btn-sm ${preset === k ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => onChange({ preset: k })}
-          >
-            {PRESET_LABELS[k]}
-          </button>
-        ))}
         {presetSelect}
         {isCustom && <>{fromInput}<span className="hc-sep" aria-hidden="true">&ndash;</span>{toInput}</>}
       </>
