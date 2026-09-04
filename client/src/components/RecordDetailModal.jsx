@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { getTaskRecordEvents, getProductMaster } from '../lib/api.js'
+import { getTaskRecordEvents, getProductMaster, updateTaskRecord } from '../lib/api.js'
 import { TASK_FORMS } from '../lib/taskTypes.js'
+import { useToast } from './Toast.jsx'
 import RecordMessages from './RecordMessages.jsx'
 import AgeClock from './AgeClock.jsx'
 
@@ -48,21 +49,74 @@ const GROUPS = [
     fields: [
       ['status',              'Status'],
       ['notes',               'Notes'],
-      ['review_notes',        'HO Notes',            true],
       ['source',              'Source',              true],
       ['marked_for_deletion', 'Marked for deletion', true],
     ],
   },
 ]
 
-// Third element of a field tuple = head-office only. These three are the only
-// fields in this popup a store has never been shown anywhere else in the app:
-// review_notes is HO's own commentary on the record, and source /
-// marked_for_deletion are internal plumbing. Everything else here the store
-// can already see - on the record itself, or on the Product Master tab, which
-// is open to every role - so this is the whole of the restriction rather than
-// a blanket "hide things from stores".
+// Third element of a field tuple = head-office only. Source and
+// marked_for_deletion are internal plumbing, and are the only fields left in
+// this generic list a store has never been shown anywhere else in the app.
+// review_notes (Backoffice Comments) used to be a third read-only entry here
+// too, but it's now the one field on this record someone actually writes to,
+// so it gets its own editable section below instead of a plain Row - see
+// BackofficeComments.
 const isInternal = (f) => f[2] === true
+
+// Backoffice Comments (task_records.review_notes) — an internal note a
+// back-office user can leave on a record; a store login never sees this
+// section exist (showInternal is false for them, same flag that already hid
+// the field when it was read-only) and the server enforces the same rule
+// independently on both the read and the write side, so this isn't the only
+// thing standing between a store login and the field.
+//
+// Explicit Save rather than the debounced autosave Pricing's grid uses: this
+// sits inside a modal someone can close mid-thought, and a save firing after
+// the popup is already gone would silently lose or misattribute the edit.
+function BackofficeComments({ record, onUpdated }) {
+  const toast = useToast()
+  const [value, setValue]     = useState(record.review_notes || '')
+  const [saving, setSaving]   = useState(false)
+  const dirty = value !== (record.review_notes || '')
+
+  // The modal is reused across records without unmounting (Reports/Pricing
+  // just swap the `record` prop), so the draft has to reset per record.
+  useEffect(() => { setValue(record.review_notes || '') }, [record.id])
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      await updateTaskRecord(record.id, { review_notes: value || null })
+      onUpdated?.(record.id, { review_notes: value || null })
+      toast.success('Comment saved.')
+    } catch (e) {
+      toast.error(e.message || 'Could not save the comment')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 14, paddingTop: 10, borderTop: '1px solid var(--border-soft)' }}>
+      <div className="note" style={{ fontSize: 11, fontWeight: 600, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '.03em' }}>
+        Backoffice Comments
+      </div>
+      <textarea
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        placeholder="Internal note for back office — never shown to the store…"
+        rows={3}
+        style={{ width: '100%', resize: 'vertical', fontSize: 13, fontFamily: 'inherit' }}
+      />
+      <div className="flex-row" style={{ justifyContent: 'flex-end', marginTop: 6 }}>
+        <button className="btn btn-sm btn-primary" disabled={!dirty || saving} onClick={save}>
+          {saving ? <><span className="spinner" /> Saving…</> : 'Save comment'}
+        </button>
+      </div>
+    </div>
+  )
+}
 
 // Rendered last, just before the history, and without a heading.
 const TIME_FIELDS = [
@@ -110,7 +164,7 @@ function Row({ label, value, mono }) {
   )
 }
 
-export default function RecordDetailModal({ record, storeName, open, onClose, showInternal = true }) {
+export default function RecordDetailModal({ record, storeName, open, onClose, showInternal = true, onUpdated }) {
   const [showEmpty, setShowEmpty] = useState(false)
   const [events, setEvents]       = useState(null)
   const [pm, setPm]               = useState(null)
@@ -196,6 +250,8 @@ export default function RecordDetailModal({ record, storeName, open, onClose, sh
               </div>
             )
           })}
+
+          {showInternal && <BackofficeComments record={record} onUpdated={onUpdated} />}
 
           {/* Task-specific payload — shape varies by task type. */}
           {(detailKeys.length > 0 || showEmpty) && (

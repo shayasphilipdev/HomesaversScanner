@@ -3382,7 +3382,13 @@ export async function onRequest(context) {
         // supplier_code). Old free-text supplier kept as a fallback for rows
         // created before Phase 3.
         supplier_name:  r.supl_id || r.supplier_name_text || null,
-        message_count:  msgCountMap[r.id] || 0
+        message_count:  msgCountMap[r.id] || 0,
+        // Backoffice Comments — strip from the payload itself for a store
+        // login, not just from what the UI chooses to render. select: '...'
+        // above still asks Postgres for it (removing it there would need two
+        // parallel queries for no real benefit at this row count), so this is
+        // the actual enforcement point on the read side.
+        ...(isBO ? {} : { review_notes: undefined })
       }))
       return json({
         records:  flat,
@@ -3808,6 +3814,12 @@ export async function onRequest(context) {
         if (!scope.length) return err('Record not found or not allowed', 404)
         filter['store_id'] = `in.(${scope.join(',')})`
       }
+      // Backoffice Comments (review_notes) — internal-only, never visible to a
+      // store login (RecordDetailModal's showInternal already hides it client
+      // side). Enforced here too: this endpoint takes an unfiltered `updates`
+      // body, so without this a store session could still write it with a
+      // direct API call even though no button ever offers one.
+      if (!isBO) delete updates.review_notes
       // If the back office is moving the record to a reviewed status,
       // stamp reviewed_at automatically so the UI doesn't have to.
       if (isBO && (updates.status === 'completed' || updates.status === 'no_change_needed') && !updates.reviewed_at) {
@@ -4056,8 +4068,17 @@ export async function onRequest(context) {
       // Barcode Photo, Supplier Code, Actual Product Name.
       // NB: `item_status` (the Active/Inactive flag) is headed "Item Status" so
       // it doesn't collide with the new "Product Status" = product_type column.
-      const cols    = ['barcode_no','product_barcode','item_name','selling_price','product_type','task_type','details','expiry_date','days_to_expiry','action','supl_id','item_status','barcode_status','status','created_at','store_name','uom','quantity','notes','review_notes','photo_product_url','photo_barcode_url','supplier_code','actual_product_name']
-      const headers = ['Product Barcode','Product Code','Product Description','Selling Price','Product Status','Task','Details','Expiry Date','Days to Expiry','Action','Supplier','Item Status','Barcode Status','Status','Date','Store','UOM','Quantity','Notes','HO Notes','Product Photo','Barcode Photo','Supplier Code','Actual Product Name']
+      let cols    = ['barcode_no','product_barcode','item_name','selling_price','product_type','task_type','details','expiry_date','days_to_expiry','action','supl_id','item_status','barcode_status','status','created_at','store_name','uom','quantity','notes','review_notes','photo_product_url','photo_barcode_url','supplier_code','actual_product_name']
+      let headers = ['Product Barcode','Product Code','Product Description','Selling Price','Product Status','Task','Details','Expiry Date','Days to Expiry','Action','Supplier','Item Status','Barcode Status','Status','Date','Store','UOM','Quantity','Notes','HO Notes','Product Photo','Barcode Photo','Supplier Code','Actual Product Name']
+      // Backoffice Comments (review_notes / "HO Notes") — this export is
+      // reachable by any HQ-task session, store logins included, so drop the
+      // column entirely for them rather than just leaving it blank (which
+      // would still confirm the field exists).
+      if (!isBO) {
+        const i = cols.indexOf('review_notes')
+        cols = cols.filter(c => c !== 'review_notes')
+        headers = headers.filter((_, hi) => hi !== i)
+      }
       const urlCols = new Set(['photo_product_url','photo_barcode_url'])
       const esc     = v => `"${String(v ?? '').replace(/"/g, '""')}"`
       const escUrl  = v => {

@@ -1003,6 +1003,14 @@ function HQReports() {
         storeName={detailRecord ? (storesById[detailRecord.store_id]?.store_name || '') : ''}
         showInternal={isBO}
         onClose={() => setDetailRecord(null)}
+        // Backoffice Comments is saved from inside the popup — merge the new
+        // value into the grid's own row too, so it isn't only reflected until
+        // the next full report run, and reopening this same row's Details
+        // shows what was just saved instead of the stale copy.
+        onUpdated={(id, patch) => {
+          setRecords(rs => rs.map(r => r.id === id ? { ...r, ...patch } : r))
+          setDetailRecord(r => r && r.id === id ? { ...r, ...patch } : r)
+        }}
       />
 
       <ConfirmDeleteModal
