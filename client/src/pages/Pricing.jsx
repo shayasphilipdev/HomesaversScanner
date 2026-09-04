@@ -338,6 +338,16 @@ export default function Pricing() {
         record={detail?.record}
         storeName={detail?.storeName || ''}
         onClose={() => setDetail(null)}
+        // Backoffice Comments lives on the underlying task record, one level
+        // inside each pricing item (it.record) — merge into that nested
+        // object so reopening the same row's Details shows what was just
+        // saved instead of the stale copy.
+        onUpdated={(id, patch) => {
+          setItems(its => its.map(it => it.record?.id === id
+            ? { ...it, record: { ...it.record, ...patch } }
+            : it))
+          setDetail(d => d && d.record?.id === id ? { ...d, record: { ...d.record, ...patch } } : d)
+        }}
       />
     </div>
   )
