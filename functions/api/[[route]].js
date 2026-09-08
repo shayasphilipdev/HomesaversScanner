@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-03-backoffice-comments'
+const API_REVISION   = '2026-09-08-dept-check-range'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -3075,7 +3075,7 @@ export async function onRequest(context) {
       const explicit = p.get('storeId')
       const multi    = (p.get('storeIds') || '').split(',').map(s => s.trim()).filter(Boolean)
       const scope = await scopedStoreIds(db, session)
-      const empty = () => json({ totals: { all: 0, pending: 0, completed: 0, no_change_needed: 0, store_completed: 0 }, ho_totals: { all: 0, pending: 0, completed: 0, no_change_needed: 0, store_completed: 0 }, ops_totals: { all: 0, pending: 0, store_completed: 0 }, by_task_type: [], by_store: [], by_day: [], recent: [], bucket: 'day', stats_from: null, data_from: null, data_to: null, dept_check_7d: { days: 7, from: null, store_ids: [] } })
+      const empty = () => json({ totals: { all: 0, pending: 0, completed: 0, no_change_needed: 0, store_completed: 0 }, ho_totals: { all: 0, pending: 0, completed: 0, no_change_needed: 0, store_completed: 0 }, ops_totals: { all: 0, pending: 0, store_completed: 0 }, by_task_type: [], by_store: [], by_day: [], recent: [], bucket: 'day', stats_from: null, data_from: null, data_to: null, dept_check_range: { days: 7, from: null, to: null, store_ids: [] } })
 
       // Resolve which store_ids the SQL should see (null = no scope filter,
       // [] = nothing accessible, [...] = explicit set).

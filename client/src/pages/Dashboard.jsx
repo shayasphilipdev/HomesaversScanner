@@ -185,7 +185,7 @@ export default function Dashboard() {
       <div className="dash-row dash-row--thirds">
         <TaskDonutOps    rows={stats?.by_task_type || []} dataDays={stats?.by_day || []} dataFrom={stats?.data_from} dataTo={stats?.data_to} loading={loading} />
         <TaskDonutChecks rows={stats?.by_task_type || []} dataDays={stats?.by_day || []} dataFrom={stats?.data_from} dataTo={stats?.data_to} loading={loading} />
-        {isBO && <StoresMissingDeptCheck deptCheck={stats?.dept_check_7d} allStores={scopeStores} scopeStoreIds={scopedStoreIds} statsFrom={stats?.stats_from} loading={loading} />}
+        {isBO && <StoresMissingDeptCheck deptCheck={stats?.dept_check_range} allStores={scopeStores} scopeStoreIds={scopedStoreIds} statsFrom={stats?.stats_from} loading={loading} />}
       </div>
 
       {isBO && <StoreDonutGrid rows={stats?.by_store || []} loading={loading} allStores={scopeStores} dataDays={stats?.by_day || []} dataFrom={stats?.data_from} dataTo={stats?.data_to} />}
@@ -572,17 +572,20 @@ function StoreDonutGrid({ rows, loading, allStores, dataDays, dataFrom, dataTo }
 }
 
 // Active stores that have NOT recorded a Department Check (task type J) in the
-// last 7 days.
+// currently selected date range.
 //
-// This card deliberately does NOT follow the range picker. Over a long range
-// almost every store has done one eventually, which makes the card read as "all
-// clear" and useless; a fixed recent window is the actionable compliance signal,
-// and it matches what the weekly aging email already reports.
+// This used to have its own fixed 7-day window regardless of the range picker
+// (the reasoning: over a long range almost every store has done one
+// eventually, so the card would read as "all clear" and be useless). Users
+// found that confusing — "same 10 stores showing even if we select 1 month,
+// 6 months" — and explicitly asked for it to follow the picker like every
+// other card, 2026-09-08. It now does; see the `partial` note below for the
+// long-range tradeoff that motivated the original fixed window.
 //
-// `deptCheck.store_ids` is the set of stores that DID one, computed server-side
-// from task_stats_daily (+ live records for today), so it survives the nightly
-// purge that deletes J records after the retention window regardless of status.
-// That purge is why this card used to list compliant stores.
+// `deptCheck.store_ids` is the set of stores that DID one in [from, to],
+// computed server-side (task_stats_daily for prior days + live records for
+// today), so it survives the nightly purge that deletes J records after the
+// retention window regardless of status.
 function StoresMissingDeptCheck({ deptCheck, allStores, scopeStoreIds, statsFrom, loading }) {
   const doneJ = new Set(deptCheck?.store_ids || [])
   const missing = (allStores || [])
@@ -593,16 +596,18 @@ function StoresMissingDeptCheck({ deptCheck, allStores, scopeStoreIds, statsFrom
 
   const days = deptCheck?.days || 7
   // Show the window as real dates, the same as every other card header, rather
-  // than making the reader work out what "last 7 days" covers. Derived from the
-  // server's own `from` + `days` so the label can never disagree with the data
-  // it describes — the window is computed in UTC server-side, and the client's
-  // idea of "today" can differ from the database's at the day boundary.
+  // than making the reader work out what the selected range covers. Derived
+  // from the server's own `from`/`to` so the label can never disagree with the
+  // data it describes — the window is computed in UTC server-side, and the
+  // client's idea of "today" can differ from the database's at the day
+  // boundary.
   const winLabel = deptCheck?.from
-    ? dataRangeLabel(null, deptCheck.from, addDays(deptCheck.from, days - 1))
+    ? dataRangeLabel(null, deptCheck.from, deptCheck.to || addDays(deptCheck.from, days - 1))
     : `last ${days} days`
-  // Statistics only start the day the rollup was deployed. Until the window is
-  // fully covered, say so rather than letting a partial history read as
-  // chain-wide non-compliance.
+  // Statistics only start the day the rollup was deployed. On a range that
+  // reaches further back than that, the earlier days have no data at all —
+  // say so rather than letting that read as chain-wide non-compliance. This
+  // matters more now that the window can be long (6 months, etc.).
   const partial = statsFrom && deptCheck?.from && statsFrom > deptCheck.from
 
   return (
@@ -611,8 +616,7 @@ function StoresMissingDeptCheck({ deptCheck, allStores, scopeStoreIds, statsFrom
         {/* Wraps rather than ellipsis-truncating: the dates are the point of the
             header, and on a narrow card an ellipsis would eat exactly them.
             The range itself stays nowrap so it never breaks mid-span. */}
-        <span style={{ minWidth: 0 }}
-              title={`Last ${days} days. This card has its own fixed window and does not follow the date range above.`}>
+        <span style={{ minWidth: 0 }}>
           No Department Check
           <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}> ({winLabel})</span>
         </span>
