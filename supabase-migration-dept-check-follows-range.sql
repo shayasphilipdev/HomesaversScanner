@@ -1,0 +1,56 @@
+-- ============================================================================
+--  "No Department Check" card now follows the Dashboard's date-range picker
+--
+--  Run once in the Supabase SQL Editor. Affects the LIVE database.
+--  (Already applied live 2026-09-08 via the apply_migration MCP tool under
+--  the name "dept_check_follows_range_picker" -- this file documents it.)
+-- ============================================================================
+--
+--  WHY
+--  ---
+--  dept_check_7d was a fixed trailing-7-day window regardless of the range
+--  picker (supabase-migration-stats-rollup.sql's original reasoning: over a
+--  long range almost every store has done a check eventually, so a
+--  range-following card would read as "all clear" and be useless).
+--
+--  Users found the fixed window confusing instead: "same 10 stores showing
+--  even if we select 1 month, 6 months, last one week" (2026-09-08). After
+--  the tradeoff was explained, the explicit choice was to make it follow the
+--  picker like every other card on the page.
+--
+--  WHAT CHANGED
+--  ------------
+--  dashboard_stats_v2's output key dept_check_7d -> dept_check_range. Its
+--  underlying CTE now uses v_from_day/v_to_day (the actual requested range,
+--  already used everywhere else in this function) instead of a hardcoded
+--  v_today-6..v_today:
+--    * the task_stats_daily branch:  day >= v_from_day AND day <= v_to_day
+--    * the live task_records branch: created_at >= v_from_day
+--                                     AND created_at < v_to_day + 1  (NEW upper
+--                                     bound -- the old version had none, which
+--                                     was fine only because it was always
+--                                     implicitly "up to now")
+--  The returned object gained a `to` field alongside `from`/`days`/`store_ids`.
+--  Every other CTE in the function (hist/gap/live/by_day/by_store/totals) is
+--  untouched.
+--
+--  Client-side: functions/api/[[route]].js's `empty()` fallback and
+--  client/src/pages/Dashboard.jsx (prop name + the card's header comment/
+--  tooltip, which claimed a fixed window that's no longer true) were updated
+--  to match. The card's existing "statistics start <date>" partial-coverage
+--  note needed no change -- it already compares statsFrom against
+--  deptCheck.from, which now naturally reflects the picker's start.
+--
+--  VERIFIED
+--  --------
+--  In a rolled-back transaction: a J record backdated 20 days for store 1045
+--  (which otherwise has zero J records ever) was excluded from a 5-day window
+--  and included in a 30-day one. Live smoke test after applying: a 7-day call
+--  still returns the same 49/59 present as before this change; a 30-day call
+--  returns 58/59 present (only store 1045, which genuinely has never logged a
+--  Department Check, remains flagged) -- confirms the list actually shrinks as
+--  the range widens instead of staying static.
+--
+--  Full current function body: supabase-migration-realtime-stats-capture.sql
+--  (that migration landed first, same day, and is the base this one edits).
+-- ============================================================================
