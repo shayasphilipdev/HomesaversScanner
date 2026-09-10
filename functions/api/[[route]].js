@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-08-dept-check-range'
+const API_REVISION   = '2026-09-10-msg-audiences'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -218,6 +218,50 @@ async function scopedStoreIds(db, session) {
 
 function userCanAccessHQTasks(s)    { return !!s && (s.can_access_hq_tasks    !== false || isAdminRole(s)) }
 function userCanAccessStoreTasks(s) { return !!s && (s.can_access_store_tasks !== false || isAdminRole(s)) }
+
+// ── Message audiences ──────────────────────────────────────────────────────
+// A record message can be restricted to a role group. 'all' (the default and
+// every pre-existing row) keeps the original store<->BO, scope-gated behaviour.
+// 'backoffice'    → only REVIEWER_ROLES (HQ minus area_manager).
+// 'area_managers' → only area_manager.
+// Either restricted kind is ALSO visible to the message's own author and to a
+// named recipient, so a cross-group note ("both directions") still shows up for
+// the person who sent it. recipient_id is a visibility carve-out + a display
+// hint; it does NOT narrow the audience.
+const MSG_AUDIENCES = ['all', 'backoffice', 'area_managers']
+
+function audienceGroupRoles(audience) {
+  if (audience === 'backoffice')    return REVIEWER_ROLES
+  if (audience === 'area_managers') return ['area_manager']
+  return null   // 'all' is not a role group
+}
+
+// Can this session post to this audience? Store logins are 'all' only; any
+// back-office login (incl. area_manager) may post to either restricted group
+// as well as 'all'.
+function canPostAudience(session, audience) {
+  if (audience === 'all') return true
+  if (!MSG_AUDIENCES.includes(audience)) return false
+  return isBackOffice(session)
+}
+
+// Row-level read: is this message row visible to the session? `row` needs
+// audience, author_id, recipient_id.
+function msgVisibleTo(session, row) {
+  const aud = row.audience || 'all'
+  if (aud === 'all') return true            // caller still applies store scope
+  if (row.author_id && session.user_id && row.author_id === session.user_id) return true
+  if (row.recipient_id && session.user_id && row.recipient_id === session.user_id) return true
+  return hasRole(session, audienceGroupRoles(aud) || [])
+}
+
+// Which per-side read/dismiss flag suffix this session uses for a row of the
+// given audience: 'store' | 'bo' | 'am'.
+function msgSide(session, audience) {
+  if (audience === 'backoffice')    return 'bo'
+  if (audience === 'area_managers') return 'am'
+  return STORE_ROLES.includes(session.role) ? 'store' : 'bo'
+}
 
 // Append-only audit log writer. Records every transition of
 // task_records.status (creation -> pending, HO completion, store
@@ -3512,27 +3556,35 @@ export async function onRequest(context) {
     // one message the current user hasn't read yet. Used for nav badge.
     if (path === '/task-messages/unread-count' && method === 'GET') {
       if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled for this account', 403)
-      const unreadField = isBO ? 'is_read_by_bo' : 'is_read_by_store'
-      // Fetch record_ids with unread messages, scoped to accessible stores.
       const scope = await scopedStoreIds(db, session)
-      const msgParams = {
-        select:    'record_id',
-        [unreadField]: 'eq.false'
-      }
-      const unreadMsgs = await db.select('task_record_messages', msgParams)
-      if (!unreadMsgs.length) return json({ count: 0 })
-      const uniqRecordIds = [...new Set(unreadMsgs.map(m => m.record_id))]
-      // Filter to records within the user's store scope.
+      // Coarse prefilter: any side still unread. The per-audience side flag +
+      // visibility check happens in JS (volumes are tiny).
+      const rows = await db.select('task_record_messages', {
+        select: 'record_id,audience,author_id,recipient_id,is_read_by_store,is_read_by_bo,is_read_by_am',
+        or:     '(is_read_by_store.eq.false,is_read_by_bo.eq.false,is_read_by_am.eq.false)'
+      })
+      const unread = rows.filter(m => {
+        if (!msgVisibleTo(session, m)) return false
+        const side = msgSide(session, m.audience || 'all')
+        return m[`is_read_by_${side}`] === false
+      })
+      if (!unread.length) return json({ count: 0 })
+      // 'all' rows are still store-scoped; restricted rows are role-scoped only.
+      const openRecIds = [...new Set(unread.filter(m => (m.audience || 'all') === 'all').map(m => m.record_id))]
+      const hitRecIds  = new Set(unread.filter(m => (m.audience || 'all') !== 'all').map(m => m.record_id))
       if (scope !== null) {
-        if (!scope.length) return json({ count: 0 })
-        const recs = await db.select('task_records', {
-          select:   'id',
-          id:       `in.(${uniqRecordIds.join(',')})`,
-          store_id: `in.(${scope.join(',')})`
-        })
-        return json({ count: recs.length })
+        if (openRecIds.length) {
+          const recs = await db.select('task_records', {
+            select:   'id',
+            id:       `in.(${openRecIds.join(',')})`,
+            store_id: `in.(${scope.join(',')})`
+          })
+          for (const r of recs) hitRecIds.add(r.id)
+        }
+      } else {
+        for (const id of openRecIds) hitRecIds.add(id)
       }
-      return json({ count: uniqRecordIds.length })
+      return json({ count: hitRecIds.size })
     }
 
     // GET /task-messages/threads — all active (not-dismissed) message threads for
@@ -3540,46 +3592,52 @@ export async function onRequest(context) {
     // Threads only disappear when explicitly dismissed via the Clear button.
     if (path === '/task-messages/threads' && method === 'GET') {
       if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled for this account', 403)
-      const dismissedField = isBO ? 'is_dismissed_by_bo'  : 'is_dismissed_by_store'
-      const readField      = isBO ? 'is_read_by_bo'       : 'is_read_by_store'
       const scope = await scopedStoreIds(db, session)
 
-      // Fetch all messages that haven't been dismissed for this side.
-      const activeMsgs = await db.select('task_record_messages', { select: 'record_id', [dismissedField]: 'eq.false' })
-      if (!activeMsgs.length) return json({ threads: [], unread_total: 0 })
-      const recordIds = [...new Set(activeMsgs.map(m => m.record_id))]
-
-      const recParams = {
-        select: 'id,task_type,store_id,product_code,product_barcode,item_name,description,product_name_label',
-        id:     `in.(${recordIds.join(',')})`
-      }
-      if (scope !== null) {
-        if (!scope.length) return json({ threads: [], unread_total: 0 })
-        recParams['store_id'] = `in.(${scope.join(',')})`
-      }
-      const records = await db.select('task_records', recParams)
-      if (!records.length) return json({ threads: [], unread_total: 0 })
-      const recById    = Object.fromEntries(records.map(r => [r.id, r]))
-      const allowedIds = records.map(r => r.id)
-
-      // All non-dismissed messages for allowed records → preview + unread + priority.
-      const msgs = await db.select('task_record_messages', {
-        select:    `record_id,body,priority,created_at,${readField},${dismissedField}`,
-        record_id: `in.(${allowedIds.join(',')})`,
-        order:     'created_at.desc'
+      // Coarse prefilter: still active on some side. The per-audience side +
+      // visibility check is applied in JS below.
+      const rawMsgs = await db.select('task_record_messages', {
+        select: 'record_id,body,priority,created_at,audience,author_id,recipient_id,is_read_by_store,is_read_by_bo,is_read_by_am,is_dismissed_by_store,is_dismissed_by_bo,is_dismissed_by_am',
+        or:     '(is_dismissed_by_store.eq.false,is_dismissed_by_bo.eq.false,is_dismissed_by_am.eq.false)',
+        order:  'created_at.desc'
       })
+      // Visible to me AND not dismissed for my side (per the row's audience).
+      const mine = rawMsgs.filter(m => {
+        if (!msgVisibleTo(session, m)) return false
+        const side = msgSide(session, m.audience || 'all')
+        return m[`is_dismissed_by_${side}`] === false
+      })
+      if (!mine.length) return json({ threads: [], unread_total: 0 })
+
+      const restrictSet = new Set(mine.filter(m => (m.audience || 'all') !== 'all').map(m => m.record_id))
+      const wantIds     = [...new Set(mine.map(m => m.record_id))]
+      const records = await db.select('task_records', {
+        select: 'id,task_type,store_id,product_code,product_barcode,item_name,description,product_name_label',
+        id:     `in.(${wantIds.join(',')})`
+      })
+      // 'all' threads still need store scope; restricted threads are role-scoped.
+      let allowed = records
+      if (scope !== null) {
+        const inScope = new Set(scope)
+        allowed = records.filter(r => restrictSet.has(r.id) || inScope.has(r.store_id))
+      }
+      if (!allowed.length) return json({ threads: [], unread_total: 0 })
+      const recById    = Object.fromEntries(allowed.map(r => [r.id, r]))
+      const allowedIds = new Set(allowed.map(r => r.id))
+
       const acc = {}
-      for (const m of msgs) {
-        if (m[dismissedField]) continue
+      for (const m of mine) {
+        if (!allowedIds.has(m.record_id)) continue
+        const side = msgSide(session, m.audience || 'all')
         const t = acc[m.record_id] || (acc[m.record_id] = { record_id: m.record_id, unread: 0, preview: '', latest_at: m.created_at, has_high_priority: false })
-        if (m[readField] === false) t.unread++
+        if (m[`is_read_by_${side}`] === false) t.unread++
         if (m.priority === 'high') t.has_high_priority = true
         if (!t.preview) { t.preview = String(m.body || '').replace(/\s+/g, ' ').trim().slice(0, 90); t.latest_at = m.created_at }
       }
-      const threads = allowedIds
+      const threads = Object.keys(acc)
         .map(id => {
           const r = recById[id], t = acc[id]
-          if (!t) return null
+          if (!r || !t) return null
           return {
             record_id:        id,
             store_id:         r.store_id,
@@ -3610,21 +3668,63 @@ export async function onRequest(context) {
       return json({ threads: threads || [] })
     }
 
+    // GET /message-recipients — HQ people a back-office user can name as the
+    // "To:" of a restricted message. Names + roles of colleagues only; any
+    // back-office login may read it (area managers included, for both-direction
+    // messaging). Grouped client-side by role → audience.
+    if (path === '/message-recipients' && method === 'GET') {
+      if (!isBackOffice(session)) return err('Forbidden', 403)
+      const rows = await db.select('users', {
+        select:    'id,display_name,role',
+        role:      `in.(${BO_ROLES.join(',')})`,
+        is_active: 'eq.true',
+        order:     'display_name.asc'
+      })
+      return json(rows)
+    }
+
     // POST /task-messages/threads/:recordId/dismiss — marks all messages in a
     // thread as dismissed (and read) for the current user's side, removing it
     // from the dropdown. New messages in the same thread will un-dismiss it.
+    // Helper: return the store_id of a record if the session can reach it by
+    // store scope, else null. Restricted-audience messages are role-scoped and
+    // may sit on records outside that scope.
+    async function recordInStoreScope(recId) {
+      const scope = await scopedStoreIds(db, session)
+      if (scope === null) return true
+      const [own] = await db.select('task_records', { select: 'store_id', id: `eq.${recId}`, limit: '1' })
+      return !!(own && scope.includes(own.store_id))
+    }
+    // Helper: split a record's message rows into per-side id buckets for the
+    // rows the session can actually see (store scope for 'all', role for
+    // restricted). Used by mark-read and dismiss.
+    async function visibleMsgIdsBySide(recId, inStoreScope) {
+      const rows = await db.select('task_record_messages', {
+        select:    'id,audience,author_id,recipient_id',
+        record_id: `eq.${recId}`
+      })
+      const bySide = { store: [], bo: [], am: [] }
+      for (const m of rows) {
+        const aud = m.audience || 'all'
+        const canSee = aud === 'all' ? inStoreScope : msgVisibleTo(session, m)
+        if (canSee) bySide[msgSide(session, aud)].push(m.id)
+      }
+      return bySide
+    }
+
     const threadDismissMatch = path.match(/^\/task-messages\/threads\/([a-f0-9-]+)\/dismiss$/)
     if (threadDismissMatch && method === 'POST') {
       if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled for this account', 403)
-      const recId          = threadDismissMatch[1]
-      const dismissedField = isBO ? 'is_dismissed_by_bo' : 'is_dismissed_by_store'
-      const readField      = isBO ? 'is_read_by_bo'      : 'is_read_by_store'
-      const scope = await scopedStoreIds(db, session)
-      if (scope !== null) {
-        const [own] = await db.select('task_records', { select: 'store_id', id: `eq.${recId}`, limit: '1' })
-        if (!own || !scope.includes(own.store_id)) return err('Record not found or not allowed', 404)
+      const recId = threadDismissMatch[1]
+      const inStoreScope = await recordInStoreScope(recId)
+      const bySide = await visibleMsgIdsBySide(recId, inStoreScope)
+      for (const side of ['store', 'bo', 'am']) {
+        if (bySide[side].length) {
+          await db.update('task_record_messages',
+            { id: `in.(${bySide[side].join(',')})` },
+            { [`is_dismissed_by_${side}`]: true, [`is_read_by_${side}`]: true })
+        }
       }
-      await db.update('task_record_messages', { record_id: `eq.${recId}` }, { [dismissedField]: true, [readField]: true })
       return json({ ok: true })
     }
 
@@ -3632,14 +3732,15 @@ export async function onRequest(context) {
     if (recMsgMarkReadMatch && method === 'POST') {
       if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled for this account', 403)
       const recId = recMsgMarkReadMatch[1]
-      const unreadField = isBO ? 'is_read_by_bo' : 'is_read_by_store'
-      // Scope check: user must be able to access this record.
-      const scope = await scopedStoreIds(db, session)
-      if (scope !== null) {
-        const [own] = await db.select('task_records', { select: 'store_id', id: `eq.${recId}`, limit: '1' })
-        if (!own || !scope.includes(own.store_id)) return err('Record not found or not allowed', 404)
+      const inStoreScope = await recordInStoreScope(recId)
+      const bySide = await visibleMsgIdsBySide(recId, inStoreScope)
+      for (const side of ['store', 'bo', 'am']) {
+        if (bySide[side].length) {
+          await db.update('task_record_messages',
+            { id: `in.(${bySide[side].join(',')})`, [`is_read_by_${side}`]: 'eq.false' },
+            { [`is_read_by_${side}`]: true })
+        }
       }
-      await db.update('task_record_messages', { record_id: `eq.${recId}`, [unreadField]: 'eq.false' }, { [unreadField]: true })
       return json({ ok: true })
     }
 
@@ -3672,52 +3773,88 @@ export async function onRequest(context) {
     if (recMsgMatch && method === 'GET') {
       if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled for this account', 403)
       const recId = recMsgMatch[1]
-      const scope = await scopedStoreIds(db, session)
-      if (scope !== null) {
-        const [own] = await db.select('task_records', { select: 'store_id', id: `eq.${recId}`, limit: '1' })
-        if (!own || !scope.includes(own.store_id)) return err('Record not found or not allowed', 404)
-      }
+      const inStoreScope = await recordInStoreScope(recId)
       const msgs = await db.select('task_record_messages', {
-        select:    'id,record_id,author_id,author_name,author_role,body,priority,msg_type,is_read_by_store,is_read_by_bo,created_at',
+        select:    'id,record_id,author_id,author_name,author_role,body,priority,msg_type,audience,recipient_id,recipient_name,is_read_by_store,is_read_by_bo,is_read_by_am,created_at',
         record_id: `eq.${recId}`,
         order:     'created_at.asc'
       })
-      return json(msgs)
+      // 'all' messages need store access to the record; restricted messages are
+      // visible by role / author / named recipient regardless of store scope.
+      const visible = msgs.filter(m => (m.audience || 'all') === 'all' ? inStoreScope : msgVisibleTo(session, m))
+      // Don't leak a record's existence to someone with no access to it at all.
+      if (!visible.length && !inStoreScope) return err('Record not found or not allowed', 404)
+      return json(visible)
     }
 
     if (recMsgMatch && method === 'POST') {
       if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled for this account', 403)
       const recId = recMsgMatch[1]
-      const scope = await scopedStoreIds(db, session)
-      if (scope !== null) {
-        const [own] = await db.select('task_records', { select: 'store_id', id: `eq.${recId}`, limit: '1' })
-        if (!own || !scope.includes(own.store_id)) return err('Record not found or not allowed', 404)
-      }
+      const inStoreScope = await recordInStoreScope(recId)
       const body = await request.json()
+
+      const audience = MSG_AUDIENCES.includes(body.audience) ? body.audience : 'all'
+      if (!canPostAudience(session, audience)) return err('Not allowed to post to that audience', 403)
+      // 'all' messages require store access to the record. Restricted messages
+      // are internal HQ notes, role-scoped, and can be added on any record a
+      // back-office user reached (reports / awaiting-reply / dropdown).
+      if (audience === 'all' && !inStoreScope) return err('Record not found or not allowed', 404)
       if (!body.body || !String(body.body).trim()) return err('Message body required', 400)
+
+      // recipient is a display + visibility hint; it must belong to the chosen
+      // audience's role group or it's dropped.
+      let recipientId = null, recipientName = null
+      if (audience !== 'all' && body.recipient_id) {
+        const [rcpt] = await db.select('users', { select: 'id,display_name,role', id: `eq.${body.recipient_id}`, limit: '1' })
+        const grp = audienceGroupRoles(audience) || []
+        if (rcpt && grp.includes(rcpt.role)) { recipientId = rcpt.id; recipientName = rcpt.display_name || null }
+      }
+
       const VALID_PRIORITY = ['high', 'normal']
       const VALID_TYPE     = ['information', 'query', 'action']
+
+      // Per-side read/dismiss seed:
+      //  - 'all': unchanged — author's side read+dismissed, other side unread+active.
+      //  - restricted: the store side is force-hidden (read+dismissed); the target
+      //    group's side (bo for 'backoffice', am for 'area_managers') starts
+      //    UNREAD+active for the WHOLE group incl. the author, so the "you've got
+      //    a message" badge fires for everyone in the group. Trade-off of the
+      //    shared-per-side read model — the author's own badge also counts it
+      //    until they next open the thread. Acceptable for low-volume internal
+      //    notes; a per-user read table is the real fix (out of scope).
+      const authorSide = msgSide(session, audience)
+      const seed = {
+        is_read_by_store:      audience !== 'all'          ? true  : (authorSide === 'store'),
+        is_dismissed_by_store: audience !== 'all'          ? true  : (authorSide === 'store'),
+        is_read_by_bo:         audience === 'backoffice'   ? false : (audience === 'all' ? authorSide === 'bo' : true),
+        is_dismissed_by_bo:    audience === 'backoffice'   ? false : (audience === 'all' ? authorSide === 'bo' : true),
+        is_read_by_am:         audience === 'area_managers'? false : true,
+        is_dismissed_by_am:    audience === 'area_managers'? false : true,
+      }
+
       const inserted = await db.insert('task_record_messages', {
-        record_id:            recId,
-        author_id:            session.user_id || null,
-        author_name:          session.display_name || session.username || 'Unknown',
-        author_role:          session.role || 'unknown',
-        body:                 String(body.body).trim(),
-        priority:             VALID_PRIORITY.includes(body.priority) ? body.priority : 'normal',
-        msg_type:             VALID_TYPE.includes(body.msg_type) ? body.msg_type : 'query',
-        // Sender's side starts read + dismissed; recipient's side starts unread + active.
-        is_read_by_store:     !isBO,
-        is_read_by_bo:        isBO,
-        is_dismissed_by_store: !isBO,
-        is_dismissed_by_bo:    isBO
+        record_id:   recId,
+        author_id:   session.user_id || null,
+        author_name: session.display_name || session.username || 'Unknown',
+        author_role: session.role || 'unknown',
+        body:        String(body.body).trim(),
+        priority:    VALID_PRIORITY.includes(body.priority) ? body.priority : 'normal',
+        msg_type:    VALID_TYPE.includes(body.msg_type) ? body.msg_type : 'query',
+        audience,
+        recipient_id:   recipientId,
+        recipient_name: recipientName,
+        ...seed
       })
       // A reply on a resolved thread means it wasn't actually done — reopen
       // it. Filtered on messages_resolved_at already being set so this is a
-      // no-op write on the (usual) still-open case.
-      await db.update('task_records',
-        { id: `eq.${recId}`, messages_resolved_at: 'not.is.null' },
-        { messages_resolved_at: null, messages_resolved_by_name: null }
-      ).catch(() => {})
+      // no-op write on the (usual) still-open case. Restricted internal notes
+      // don't touch the record's HO↔store resolved state.
+      if (audience === 'all') {
+        await db.update('task_records',
+          { id: `eq.${recId}`, messages_resolved_at: 'not.is.null' },
+          { messages_resolved_at: null, messages_resolved_by_name: null }
+        ).catch(() => {})
+      }
       return json(inserted[0] ?? inserted, 201)
     }
 
