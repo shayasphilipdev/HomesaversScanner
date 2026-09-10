@@ -1,11 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
-import { getRecordMessages, postRecordMessage, markRecordMessagesRead, uploadMessagePhoto, deletePhoto, resolveRecordMessages } from '../lib/api.js'
+import { getRecordMessages, postRecordMessage, markRecordMessagesRead, uploadMessagePhoto, deletePhoto, resolveRecordMessages, getMessageRecipients } from '../lib/api.js'
 import { compressImage } from '../lib/photos.js'
 import { imageFromDataTransfer } from '../lib/screenshot.js'
 import ScreenshotInput from './forms/ScreenshotInput.jsx'
 import CannedReplyPicker from './forms/CannedReplyPicker.jsx'
 import { useStore } from '../App.jsx'
 import { canReviewHQRecords } from '../lib/roles.js'
+
+// Restricted message audiences. 'all' = the normal store <-> back-office thread.
+const REVIEWER_ROLES = ['admin', 'buying_manager', 'buying_head', 'support_admin']
+const AUDIENCE_LABEL  = { all: 'Store (everyone)', backoffice: 'Back office', area_managers: 'Area managers' }
+const audienceOfRole  = (role) =>
+  role === 'area_manager' ? 'area_managers'
+    : REVIEWER_ROLES.includes(role) ? 'backoffice'
+    : null
 
 function formatTime(iso) {
   if (!iso) return ''
@@ -46,6 +54,10 @@ export default function RecordMessages({ recordId, onUnreadChange, resolvedAt, r
   const [uploading, setUploading] = useState(false)
   const [resolvedState, setResolvedState] = useState({ at: resolvedAt || null, by: resolvedByName || null })
   const [resolving, setResolving] = useState(false)
+  // Restricted-audience compose (back-office logins only). 'all' = normal thread.
+  const [audience, setAudience]     = useState('all')
+  const [recipientId, setRecipientId] = useState('')
+  const [recipients, setRecipients]   = useState([])
   const bottomRef   = useRef(null)
   const fileRef     = useRef(null)
   const textareaRef = useRef(null)
@@ -54,11 +66,23 @@ export default function RecordMessages({ recordId, onUnreadChange, resolvedAt, r
     setResolvedState({ at: resolvedAt || null, by: resolvedByName || null })
   }, [recordId, resolvedAt, resolvedByName])
 
+  // Load the HQ people list once, for the "To:" person picker.
+  useEffect(() => {
+    if (!isBO) return
+    getMessageRecipients().then(setRecipients).catch(() => setRecipients([]))
+  }, [isBO])
+
   const load = async () => {
     setLoading(true); setError('')
     try {
       const rows = await getRecordMessages(recordId)
       setMsgs(rows)
+      // Default the compose target to the last message's audience, so a
+      // back-and-forth in a restricted thread stays in that channel by default
+      // (an 'all' last message resets it to Store).
+      const lastAud = Array.isArray(rows) && rows.length ? (rows[rows.length - 1].audience || 'all') : 'all'
+      setAudience(isBO ? lastAud : 'all')
+      setRecipientId('')
       // Mark as read so the nav unread badge decreases.
       await markRecordMessagesRead(recordId).catch(() => {})
       window.dispatchEvent(new Event('hs:messages-read'))
@@ -79,17 +103,22 @@ export default function RecordMessages({ recordId, onUnreadChange, resolvedAt, r
   const send = async () => {
     const text = draft.trim()
     if (!text && !photos.length) return
+    const aud = isBO ? audience : 'all'
     setSending(true)
     try {
-      const msg = await postRecordMessage(recordId, text, priority, msgType, photos.map(p => p.url))
+      const msg = await postRecordMessage(
+        recordId, text, priority, msgType, photos.map(p => p.url),
+        aud, aud !== 'all' && recipientId ? recipientId : null
+      )
       setMsgs(prev => [...(prev || []), msg])
       setDraft('')
       setPriority('normal')
       setMsgType('query')
       setPhotos([])
-      // The server reopens a resolved thread on any new message — reflect
-      // that locally rather than waiting on a re-fetch.
-      if (resolvedState.at) {
+      setRecipientId('')
+      // Keep `audience` as-is so a restricted back-and-forth stays in channel.
+      // Only an 'all' message can reopen a resolved (store) thread.
+      if (aud === 'all' && resolvedState.at) {
         setResolvedState({ at: null, by: null })
         onResolvedChange?.(null, null)
       }
@@ -157,7 +186,9 @@ export default function RecordMessages({ recordId, onUnreadChange, resolvedAt, r
       {loading && <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading messages…</div>}
       {error && <div className="login-error" style={{ marginBottom: 8 }}>{error}</div>}
 
-      {msgs !== null && msgs.length > 0 && (
+      {/* "Resolved" is the store-thread SLA state — only offer it when there's
+          an actual store-visible conversation, not on a restricted-only thread. */}
+      {msgs !== null && msgs.some(m => (m.audience || 'all') === 'all') && (
         <div className="flex-row" style={{
           justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 8,
           padding: '5px 10px', borderRadius: 6,
@@ -189,13 +220,19 @@ export default function RecordMessages({ recordId, onUnreadChange, resolvedAt, r
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10, maxHeight: 260, overflowY: 'auto' }}>
             {msgs.map(msg => {
-              const mine     = isOwnMessage(msg)
-              const hiPri    = msg.priority === 'high'
-              const typColor = TYPE_COLOR[msg.msg_type] || TYPE_COLOR.query
+              const mine       = isOwnMessage(msg)
+              const hiPri      = msg.priority === 'high'
+              const restricted = msg.audience && msg.audience !== 'all'
+              const typColor   = TYPE_COLOR[msg.msg_type] || TYPE_COLOR.query
               return (
                 <div key={msg.id} style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '82%' }}>
-                  {(hiPri || (msg.msg_type && msg.msg_type !== 'query')) && (
-                    <div style={{ display: 'flex', gap: 4, marginBottom: 3, justifyContent: mine ? 'flex-end' : 'flex-start' }}>
+                  {(hiPri || restricted || (msg.msg_type && msg.msg_type !== 'query')) && (
+                    <div style={{ display: 'flex', gap: 4, marginBottom: 3, flexWrap: 'wrap', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
+                      {restricted && (
+                        <span style={{ fontSize: 11, fontWeight: 600, color: '#6D28D9', background: '#EDE9FE', borderRadius: 4, padding: '1px 6px' }}>
+                          🔒 {AUDIENCE_LABEL[msg.audience] || msg.audience}{msg.recipient_name ? ` · ${msg.recipient_name}` : ''}
+                        </span>
+                      )}
                       {hiPri && (
                         <span style={{ fontSize: 11, fontWeight: 700, color: '#DC2626', background: '#FEE2E2', borderRadius: 4, padding: '1px 6px' }}>HIGH</span>
                       )}
@@ -207,13 +244,13 @@ export default function RecordMessages({ recordId, onUnreadChange, resolvedAt, r
                     </div>
                   )}
                   <div style={{
-                    background: mine ? 'var(--primary, #2563eb)' : 'var(--surface)',
+                    background: mine ? 'var(--primary, #2563eb)' : (restricted ? '#F5F3FF' : 'var(--surface)'),
                     color: mine ? '#fff' : 'inherit',
                     borderRadius: mine ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
                     padding: '7px 12px',
                     fontSize: 13.5,
                     boxShadow: '0 1px 2px rgba(0,0,0,.08)',
-                    border: hiPri ? '1.5px solid #FCA5A5' : undefined
+                    border: restricted ? '1.5px dashed #A78BFA' : (hiPri ? '1.5px solid #FCA5A5' : undefined)
                   }}>
                     {msg.body && <div style={{ whiteSpace: 'pre-wrap' }}>{msg.body}</div>}
                     {Array.isArray(msg.photo_urls) && msg.photo_urls.length > 0 && (
@@ -239,6 +276,39 @@ export default function RecordMessages({ recordId, onUnreadChange, resolvedAt, r
 
       {/* Compose area */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {isBO && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <label style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>To</label>
+            <select
+              value={audience}
+              onChange={e => { setAudience(e.target.value); setRecipientId('') }}
+              disabled={sending}
+              style={{ width: 150, fontSize: 12, padding: '3px 6px', borderRadius: 5, border: '1px solid var(--border)', background: audience !== 'all' ? '#F5F3FF' : 'var(--surface)', color: audience !== 'all' ? '#6D28D9' : 'inherit', fontWeight: audience !== 'all' ? 700 : 400, cursor: 'pointer' }}
+            >
+              <option value="all">Store (everyone)</option>
+              <option value="backoffice">Back office</option>
+              <option value="area_managers">Area managers</option>
+            </select>
+            {audience !== 'all' && (
+              <select
+                value={recipientId}
+                onChange={e => setRecipientId(e.target.value)}
+                disabled={sending}
+                style={{ minWidth: 140, fontSize: 12, padding: '3px 6px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer' }}
+              >
+                <option value="">— Anyone —</option>
+                {recipients
+                  .filter(u => audienceOfRole(u.role) === audience)
+                  .map(u => <option key={u.id} value={u.id}>{u.display_name}</option>)}
+              </select>
+            )}
+            {audience !== 'all' && (
+              <span style={{ fontSize: 11, color: '#6D28D9' }}>
+                🔒 internal — hidden from stores {audience === 'backoffice' ? '& area managers' : '& back office'}
+              </span>
+            )}
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <label style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>Priority</label>
           <select

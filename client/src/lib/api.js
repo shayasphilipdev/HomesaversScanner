@@ -306,8 +306,13 @@ export const getTaskRecordEvents      = (id) => request(`/task-records/${id}/eve
 
 // ── Per-record message threads ──────────────────────────────────────────────
 export const getRecordMessages      = (id) => request(`/task-records/${id}/messages`)
-export const postRecordMessage      = (id, body, priority = 'normal', msg_type = 'query', photo_urls = []) =>
-  request(`/task-records/${id}/messages`, { method: 'POST', body: { body, priority, msg_type, photo_urls } })
+// audience: 'all' (store <-> back office, default) | 'backoffice' | 'area_managers'.
+// recipient_id: optional HQ user to name as the "To:" of a restricted message
+// (a visibility + display hint — the whole audience group still sees it).
+export const postRecordMessage      = (id, body, priority = 'normal', msg_type = 'query', photo_urls = [], audience = 'all', recipient_id = null) =>
+  request(`/task-records/${id}/messages`, { method: 'POST', body: { body, priority, msg_type, photo_urls, audience, recipient_id } })
+// HQ people selectable as a restricted message's named recipient.
+export const getMessageRecipients   = () => request('/message-recipients')
 // Upload one message photo to the shared task-photos bucket (messages/ prefix).
 export const uploadMessagePhoto     = (file) =>
   uploadPhoto({ file, slot: 'message', tempId: (crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`) })
