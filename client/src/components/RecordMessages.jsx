@@ -276,46 +276,42 @@ export default function RecordMessages({ recordId, onUnreadChange, resolvedAt, r
 
       {/* Compose area */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {isBO && (
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <label style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>To</label>
-            <select
-              value={audience}
-              onChange={e => { setAudience(e.target.value); setRecipientId('') }}
-              disabled={sending}
-              style={{ width: 150, fontSize: 12, padding: '3px 6px', borderRadius: 5, border: '1px solid var(--border)', background: audience !== 'all' ? '#F5F3FF' : 'var(--surface)', color: audience !== 'all' ? '#6D28D9' : 'inherit', fontWeight: audience !== 'all' ? 700 : 400, cursor: 'pointer' }}
-            >
-              <option value="all">Store (everyone)</option>
-              <option value="backoffice">Back office</option>
-              <option value="area_managers">Area managers</option>
-            </select>
-            {audience !== 'all' && (
+        {/* All the pickers on one wrapping row — To (back office only) · Priority · Type. */}
+        <div style={{ display: 'flex', gap: '4px 8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {isBO && (
+            <>
+              <label style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>To</label>
               <select
-                value={recipientId}
-                onChange={e => setRecipientId(e.target.value)}
+                value={audience}
+                onChange={e => { setAudience(e.target.value); setRecipientId('') }}
                 disabled={sending}
-                style={{ minWidth: 140, fontSize: 12, padding: '3px 6px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer' }}
+                style={{ width: 148, fontSize: 12, padding: '3px 6px', borderRadius: 5, border: '1px solid var(--border)', background: audience !== 'all' ? '#F5F3FF' : 'var(--surface)', color: audience !== 'all' ? '#6D28D9' : 'inherit', fontWeight: audience !== 'all' ? 700 : 400, cursor: 'pointer' }}
               >
-                <option value="">— Anyone —</option>
-                {recipients
-                  .filter(u => audienceOfRole(u.role) === audience)
-                  .map(u => <option key={u.id} value={u.id}>{u.display_name}</option>)}
+                <option value="all">Store (everyone)</option>
+                <option value="backoffice">Back office</option>
+                <option value="area_managers">Area managers</option>
               </select>
-            )}
-            {audience !== 'all' && (
-              <span style={{ fontSize: 11, color: '#6D28D9' }}>
-                🔒 internal — hidden from stores {audience === 'backoffice' ? '& area managers' : '& back office'}
-              </span>
-            )}
-          </div>
-        )}
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {audience !== 'all' && (
+                <select
+                  value={recipientId}
+                  onChange={e => setRecipientId(e.target.value)}
+                  disabled={sending}
+                  style={{ minWidth: 130, fontSize: 12, padding: '3px 6px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer' }}
+                >
+                  <option value="">— Anyone —</option>
+                  {recipients
+                    .filter(u => audienceOfRole(u.role) === audience)
+                    .map(u => <option key={u.id} value={u.id}>{u.display_name}</option>)}
+                </select>
+              )}
+            </>
+          )}
           <label style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>Priority</label>
           <select
             value={priority}
             onChange={e => setPriority(e.target.value)}
             disabled={sending}
-            style={{ width: 110, fontSize: 12, padding: '3px 6px', borderRadius: 5, border: '1px solid var(--border)', background: priority === 'high' ? '#FEF2F2' : 'var(--surface)', cursor: 'pointer' }}
+            style={{ width: 104, fontSize: 12, padding: '3px 6px', borderRadius: 5, border: '1px solid var(--border)', background: priority === 'high' ? '#FEF2F2' : 'var(--surface)', cursor: 'pointer' }}
           >
             <option value="normal">Normal</option>
             <option value="high">🔴 High</option>
@@ -325,13 +321,19 @@ export default function RecordMessages({ recordId, onUnreadChange, resolvedAt, r
             value={msgType}
             onChange={e => setMsgType(e.target.value)}
             disabled={sending}
-            style={{ width: 140, fontSize: 12, padding: '3px 6px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer' }}
+            style={{ width: 132, fontSize: 12, padding: '3px 6px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--surface)', cursor: 'pointer' }}
           >
             <option value="query">Query</option>
             <option value="information">Information</option>
             <option value="action">Action required</option>
           </select>
+          {isBO && audience !== 'all' && (
+            <span style={{ fontSize: 11, color: '#6D28D9', whiteSpace: 'nowrap' }}>
+              🔒 hidden from stores {audience === 'backoffice' ? '& area managers' : '& back office'}
+            </span>
+          )}
         </div>
+
         {photos.length > 0 && (
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {photos.map(p => (
@@ -343,13 +345,9 @@ export default function RecordMessages({ recordId, onUnreadChange, resolvedAt, r
             ))}
           </div>
         )}
-        <ScreenshotInput
-          compact
-          disabled={sending || uploading || photos.length >= 3}
-          onImage={file => addPhotos([file])}
-        />
 
-        <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end' }}>
+        {/* Attach + snip tools on one slim line, in order: file · paste-snip · capture. */}
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
           <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
             onChange={e => addPhotos(e.target.files)} />
           <button
@@ -357,11 +355,19 @@ export default function RecordMessages({ recordId, onUnreadChange, resolvedAt, r
             className="btn btn-outline btn-sm"
             onClick={() => fileRef.current?.click()}
             disabled={sending || uploading || photos.length >= 3}
-            title={photos.length >= 3 ? 'Up to 3 photos' : 'Attach photo'}
-            style={{ alignSelf: 'flex-end' }}
+            title={photos.length >= 3 ? 'Up to 3 photos' : 'Attach a photo'}
+            style={{ whiteSpace: 'nowrap' }}
           >
-            {uploading ? <span className="spinner spinner-dark" /> : '📷'}
+            {uploading ? <span className="spinner spinner-dark" /> : '📷 Attach'}
           </button>
+          <ScreenshotInput
+            inline
+            disabled={sending || uploading || photos.length >= 3}
+            onImage={file => addPhotos([file])}
+          />
+        </div>
+
+        <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end' }}>
           <textarea
             ref={textareaRef}
             rows={2}

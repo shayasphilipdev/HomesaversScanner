@@ -7,7 +7,7 @@ import { canCaptureScreen, captureScreen, imageFromDataTransfer, isDesktopPointe
 //
 // onImage(fileOrBlob) receives the picture; the caller compresses and uploads it
 // exactly as it would a file chosen from disk.
-export default function ScreenshotInput({ onImage, disabled, compact }) {
+export default function ScreenshotInput({ onImage, disabled, compact, inline }) {
   const [busy, setBusy]   = useState(false)
   const [error, setError] = useState('')
   const [armed, setArmed] = useState(false)   // zone focused → ready for Ctrl+V
@@ -49,6 +49,50 @@ export default function ScreenshotInput({ onImage, disabled, compact }) {
     } finally {
       setBusy(false)
     }
+  }
+
+  // inline: a slim one-line variant — a small "paste zone" chip + the capture
+  // button, no dashed container or long hint. Used where vertical space is tight
+  // (e.g. the message composer) and the controls sit in a row with other buttons.
+  if (inline) {
+    return (
+      <>
+        <span
+          tabIndex={0}
+          onPaste={onPaste}
+          onDrop={onDrop}
+          onDragOver={e => { e.preventDefault(); setHover(true) }}
+          onDragLeave={() => setHover(false)}
+          onFocus={() => setArmed(true)}
+          onBlur={() => setArmed(false)}
+          className="btn btn-sm btn-outline"
+          style={{
+            cursor: 'text', whiteSpace: 'nowrap',
+            borderStyle: 'dashed',
+            borderColor: armed || hover ? 'var(--primary, #2563eb)' : undefined,
+            background: armed || hover ? 'var(--surface-warm)' : undefined,
+          }}
+          title="Click here, then press Ctrl+V to paste a snip (Win+Shift+S). You can also drop an image."
+        >
+          {armed ? '🖼️ Ctrl+V to paste' : '🖼️ Paste snip'}
+        </span>
+        {showCapture && (
+          <button
+            type="button"
+            className="btn btn-sm btn-outline"
+            onClick={doCapture}
+            disabled={disabled || busy}
+            style={{ whiteSpace: 'nowrap' }}
+            title="Pick a screen or window to capture"
+          >
+            {busy ? <><span className="spinner spinner-dark" /> Capturing…</> : '🖥 Capture'}
+          </button>
+        )}
+        {error && (
+          <span className="note" style={{ fontSize: 12, color: 'var(--red, #c0392b)', width: '100%' }}>{error}</span>
+        )}
+      </>
+    )
   }
 
   return (

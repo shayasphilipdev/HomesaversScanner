@@ -76,15 +76,15 @@ export default function CannedReplyPicker({ textareaRef, value, onChange, disabl
         className="btn btn-outline btn-sm"
         onClick={() => setOpen(o => !o)}
         disabled={disabled}
-        title="Insert a canned reply at the cursor"
+        title="Insert a pre-set message at the cursor"
       >
-        📋 Canned ▾
+        📋 Pre-set ▾
       </button>
 
       {open && (
         <div
           role="listbox"
-          aria-label="Canned replies"
+          aria-label="Pre-set messages"
           style={{
             position: 'absolute', bottom: '110%', right: 0, zIndex: 40,
             width: 300, maxHeight: 260, overflowY: 'auto',
@@ -98,7 +98,7 @@ export default function CannedReplyPicker({ textareaRef, value, onChange, disabl
           {err && <div className="login-error" style={{ margin: 6, fontSize: 12.5 }}>{err}</div>}
           {items !== null && items.length === 0 && (
             <div className="note" style={{ padding: 10, fontSize: 12.5 }}>
-              No canned replies yet. Add some in Admin → Lookups (kind: canned_reply).
+              No pre-set messages yet. Add some in Admin → Lookups (kind: canned_reply).
             </div>
           )}
           {items?.map((text, i) => (
