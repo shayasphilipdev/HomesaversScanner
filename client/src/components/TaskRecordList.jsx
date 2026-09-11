@@ -25,8 +25,14 @@ function formatDT(iso) {
 export default function TaskRecordList({ records, loading, onRefresh, onOptimisticRemove, onUnreadChange, autoOpenId, showBulkToolbar = true, showRowActions = true }) {
   const { session } = useStore()
   const toast = useToast()
-  // Area managers get store-side clear UI (J/K bulk-clear) despite being in backoffice mode.
-  const isBO = session.mode === 'backoffice' && session.role !== 'area_manager'
+  // Unified 2026-09-11: area managers now count as back office everywhere,
+  // same as Reports.jsx and the server's isBackOffice()/BO_ROLES — they
+  // already get the back-office login treatment in every other respect
+  // (mode:'backoffice', sessionStorage, 12h token). This used to exclude
+  // area_manager specifically so they'd see the store-side J/K clear UI on
+  // this page; that's now gone for them here (Reports.jsx never gave them
+  // that UI anyway), superseded by full back-office treatment instead.
+  const isBO = session.mode === 'backoffice'
 
   // ── Bulk-select state (J/K rows). Drives both the store Clear and the
   //    permanent Delete (available to every user for Department/Price checks). ─

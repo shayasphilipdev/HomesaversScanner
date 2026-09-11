@@ -317,6 +317,9 @@ export const postRecordMessage      = (id, body, priority = 'normal', msg_type =
   request(`/task-records/${id}/messages`, { method: 'POST', body: { body, priority, msg_type, photo_urls, audience, recipient_id } })
 // HQ people selectable as a restricted message's named recipient.
 export const getMessageRecipients   = () => request('/message-recipients')
+// Permanently delete one message. Admin only (server-enforced).
+export const deleteRecordMessage    = (recordId, messageId) =>
+  request(`/task-records/${recordId}/messages/${messageId}`, { method: 'DELETE' })
 // Upload one message photo to the shared task-photos bucket (messages/ prefix).
 export const uploadMessagePhoto     = (file) =>
   uploadPhoto({ file, slot: 'message', tempId: (crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`) })
