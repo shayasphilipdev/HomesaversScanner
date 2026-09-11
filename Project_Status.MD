@@ -551,6 +551,54 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-09-11 — Server-side role gate on status transitions (+ a leftover-flag audit)
+
+**The gap.** `PATCH /task-records/:id` applied any `status` the client sent,
+once scoped to the session's own store, with no role check at all — the
+buttons in Reports.jsx/TaskRecordList.jsx/RecordDetailModal.jsx were the only
+thing stopping e.g. a store session from PATCHing `{status:'completed'}`
+directly. Found while adding the Reverse feature above, deliberately not
+fixed there (kept that change scoped), flagged separately, then fixed now on
+request.
+
+**Fix — new `STATUS_SETTERS` map**, values taken from *current* client
+gating, not a redesign:
+- `completed` / `no_change_needed` → `BO_ROLES` (matches Reports.jsx's
+  `isBO`, which already includes `area_manager` — the operative real-world
+  gate today).
+- `store_completed` / `cleared` → store-side roles + `area_manager`, matching
+  `TaskRecordList.jsx`'s own `isBO` (which *excludes* `area_manager` for
+  these two, i.e. treats them as store-like there). `cleared` here only
+  covers the single-record PATCH path; back office still clears through the
+  separate, already-scoped `/task-records/bulk-clear` endpoint.
+- Strict `admin` bypasses the map entirely — same precedent as
+  reverse-status's "admin may reverse any record".
+- `'pending'` is deliberately **absent** — rejected outright, admin included.
+  Reverting to Pending only ever goes through
+  `POST /task-records/:id/reverse-status` (2026-09-11, above), which has its
+  own stricter admin-or-own-action check and correctly resets
+  `marked_for_deletion`; allowing `'pending'` here too would let anyone
+  bypass that check with a plain PATCH.
+
+**Bonus fix**, found auditing every status-writing path: `POST /task-records`
+(creation) now always forces `status='pending'` server-side instead of
+trusting `body.status` — every task form already only ever creates pending
+records, so this closes the same class of gap on creation for free.
+
+**Verified** every current real call site by hand against the new map
+(`RecordDetailModal` `ReviewButtons`, `TaskRecordList`
+`markCompleted`/`markCleared`, `Reports.jsx` `reviewOne`) — all pass
+unchanged; only a direct API call outside those buttons is newly rejected.
+
+**Left alone, on purpose:** `TaskRecordList.jsx`'s `markStoreCompleted` has
+**zero call sites** anywhere in the client (dead code) — nothing currently
+sets `status='store_completed'` through any button. The `STATUS_SETTERS`
+entry for it is evidence-based (the function's own store-side placement +
+CLAUDE.md's v1 description) but unverifiable against a live UI path; harmless
+either way since it's unreachable today. See §12 for the `isBO` inconsistency
+between Reports.jsx and TaskRecordList.jsx that this fix deliberately
+preserved rather than silently resolving.
+
 ### 2026-09-11 — Reverse a status change back to Pending
 
 New `POST /task-records/:id/reverse-status`: undoes a record's current
@@ -987,6 +1035,16 @@ scanning) and the DB size alarm crossing 60%+.
   horizontally inside the centred container on smaller screens.
 - Older docs (`docs/phase8-...md`, parts of `CLAUDE.md`) describe earlier
   designs; this file is the current source of truth.
+- **`area_manager` can Complete/No-change records via Reports.jsx but not via
+  TaskRecordList.jsx (HO Tasks page)** — the two pages define `isBO`
+  differently (`Reports.jsx`: `mode==='backoffice'`, includes area_manager;
+  `TaskRecordList.jsx`: same, but explicitly excludes area_manager). Found
+  2026-09-11 while adding the server-side `STATUS_SETTERS` role gate on
+  `PATCH /task-records/:id` — deliberately preserved rather than narrowed to
+  either side, since either choice would change real behaviour for a real
+  role without being asked to. Worth a product decision on which is actually
+  intended, then unifying both client gates and the server's `BO_ROLES` entry
+  in `STATUS_SETTERS.completed`/`.no_change_needed` to match.
 - **`dashboard_stats` still times out (`57014`) intermittently under real
   load**, despite the fixes in §11 (2026-07-31). Every isolated test after
   those fixes completes in 1-3s regardless of scope (admin/null or a 10-store
