@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { getRecordMessages, postRecordMessage, markRecordMessagesRead, resolveRecordMessages, getMessageRecipients } from '../lib/api.js'
+import { getRecordMessages, postRecordMessage, markRecordMessagesRead, resolveRecordMessages, getMessageRecipients, deleteRecordMessage } from '../lib/api.js'
 import CannedReplyPicker from './forms/CannedReplyPicker.jsx'
 import { useStore } from '../App.jsx'
 import { canReviewHQRecords } from '../lib/roles.js'
@@ -31,6 +31,9 @@ const TYPE_COLOR = { information: '#3B82F6', query: '#D97706', action: '#DC2626'
 export default function RecordMessages({ recordId, onUnreadChange, resolvedAt, resolvedByName, onResolvedChange }) {
   const { session } = useStore()
   const isBO = session.mode === 'backoffice'
+  // Deleting a message is a moderation action, not something an author gets
+  // for their own messages — strict admin only, matching the server guard.
+  const isAdmin = session.role === 'admin'
   // Canned replies are head-office reply templates ("VRS is investigating…"),
   // so the picker is limited to the roles that actually answer these threads.
   // Deliberately NOT `isBO`: area_manager logs in with mode 'backoffice' too
@@ -120,6 +123,18 @@ export default function RecordMessages({ recordId, onUnreadChange, resolvedAt, r
       setError(e.message)
     } finally {
       setSending(false)
+    }
+  }
+
+  // Permanent — no undo, so a native confirm rather than an optimistic
+  // remove. Admin only; the server re-checks this independently.
+  const removeMessage = async (msg) => {
+    if (!window.confirm('Delete this message? This cannot be undone.')) return
+    try {
+      await deleteRecordMessage(recordId, msg.id)
+      setMsgs(prev => (prev || []).filter(m => m.id !== msg.id))
+    } catch (e) {
+      setError(e.message)
     }
   }
 
@@ -221,8 +236,14 @@ export default function RecordMessages({ recordId, onUnreadChange, resolvedAt, r
                   }}>
                     {msg.body}
                   </div>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2, textAlign: mine ? 'right' : 'left' }}>
-                    {msg.author_name} · {formatTime(msg.created_at)}
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2, textAlign: mine ? 'right' : 'left', display: 'flex', gap: 6, justifyContent: mine ? 'flex-end' : 'flex-start' }}>
+                    <span>{msg.author_name} · {formatTime(msg.created_at)}</span>
+                    {isAdmin && (
+                      <button type="button" onClick={() => removeMessage(msg)} title="Delete this message (admin)"
+                        style={{ border: 'none', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0, fontSize: 12, lineHeight: 1 }}>
+                        🗑
+                      </button>
+                    )}
                   </div>
                 </div>
               )

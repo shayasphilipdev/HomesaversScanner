@@ -310,6 +310,9 @@ export const postRecordMessage      = (id, body, priority = 'normal', msg_type =
   request(`/task-records/${id}/messages`, { method: 'POST', body: { body, priority, msg_type, audience, recipient_id } })
 // HQ people selectable as a restricted message's named recipient.
 export const getMessageRecipients   = () => request('/message-recipients')
+// Permanently delete one message. Admin only (server-enforced).
+export const deleteRecordMessage    = (recordId, messageId) =>
+  request(`/task-records/${recordId}/messages/${messageId}`, { method: 'DELETE' })
 export const getUnreadMessageCount  = () => request('/task-messages/unread-count')
 export const getMessageThreads      = () => request('/task-messages/threads')
 export const markRecordMessagesRead = (id) => request(`/task-records/${id}/messages/mark-read`, { method: 'POST' })

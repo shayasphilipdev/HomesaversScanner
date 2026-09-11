@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-11-status-role-gate'
+const API_REVISION   = '2026-09-11-am-unify-msg-delete'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -189,29 +189,28 @@ function canCreateTasks(s) { return hasRole(s, TASK_CREATORS) }
 // buttons were the only thing stopping a store session from PATCHing
 // {status:'completed'} directly. Values here mirror the CURRENT client
 // gating (the source of intent), not a redesign:
-//   completed / no_change_needed -> Reports.jsx's `isBO` (mode==='backoffice',
-//     which already includes area_manager) is the operative real-world gate
-//     today -- TaskRecordList.jsx separately excludes area_manager for the
-//     same action, an existing inconsistency between the two pages that
-//     this list does not resolve either way; it preserves what already
-//     works for every role rather than silently narrowing anyone's access.
-//   store_completed / cleared -> store-side roles, matching
-//     TaskRecordList.jsx's own `isBO` (which excludes area_manager, i.e.
-//     treats them as store-like for these two). `cleared` here only covers
-//     the single-record PATCH path (TaskRecordList's markCleared) -- back
-//     office clears through the separate, already-scoped
-//     /task-records/bulk-clear endpoint, untouched by this.
+//   completed / no_change_needed -> BO_ROLES (support_admin/buying_manager/
+//     buying_head/admin/area_manager). Reports.jsx's `isBO` was always this;
+//     TaskRecordList.jsx used to exclude area_manager for the same action --
+//     unified 2026-09-11 (area managers already get back-office login
+//     treatment in every other respect, so they now count as back office
+//     here too, not store-like).
+//   store_completed / cleared -> STORE_ROLES only (no longer + area_manager,
+//     following the same unification -- TaskRecordList.jsx's markCleared no
+//     longer offers this button to an area manager either). `cleared` here
+//     only covers the single-record PATCH path; back office clears through
+//     the separate, already-scoped /task-records/bulk-clear endpoint,
+//     untouched by this.
 // 'pending' is deliberately ABSENT: reverting to Pending only ever goes
 // through POST /task-records/:id/reverse-status, which has its own stricter
 // admin-or-own-action check and resets marked_for_deletion correctly.
 // Allowing 'pending' here too would let anyone bypass that check with a
 // plain PATCH -- so it's rejected below regardless of role, admin included.
-const STORE_LIKE_ROLES = [...STORE_ROLES, 'area_manager']
 const STATUS_SETTERS = {
   completed:         BO_ROLES,
   no_change_needed:  BO_ROLES,
-  store_completed:   STORE_LIKE_ROLES,
-  cleared:           STORE_LIKE_ROLES,
+  store_completed:   STORE_ROLES,
+  cleared:           STORE_ROLES,
 }
 
 function buildSessionForUser(_db, user) {
@@ -3951,6 +3950,38 @@ export async function onRequest(context) {
         ).catch(() => {})
       }
       return json(inserted[0] ?? inserted, 201)
+    }
+
+    // DELETE /task-records/:recordId/messages/:messageId — permanently
+    // remove one message. Admin only (the strict role) — a moderation/
+    // cleanup action, not something an author gets for their own messages;
+    // there is no dismiss-vs-delete nuance here, the row is gone. Scope is
+    // moot: isOnlyAdmin already implies scopedStoreIds() returns null
+    // (unrestricted), so no store_id filter is needed beyond confirming the
+    // message actually belongs to the record named in the URL.
+    const msgDeleteMatch = path.match(/^\/task-records\/([a-f0-9-]+)\/messages\/([a-f0-9-]+)$/)
+    if (msgDeleteMatch && method === 'DELETE') {
+      if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled for this account', 403)
+      if (!isOnlyAdmin(session)) return err('Only an admin can delete a message', 403)
+      const [recId, msgId] = [msgDeleteMatch[1], msgDeleteMatch[2]]
+      const [msg] = await db.select('task_record_messages', {
+        select: 'id,photo_urls', id: `eq.${msgId}`, record_id: `eq.${recId}`, limit: '1'
+      })
+      if (!msg) return err('Message not found', 404)
+      const removed = await db.remove('task_record_messages', { id: `eq.${msgId}` })
+      if (!removed.length) return err('Message not found', 404)
+      // Best-effort photo cleanup — never fail the delete just because a
+      // photo file is already gone (same pattern as the record hard-delete).
+      const storageBase = `${env.SUPABASE_URL}/storage/v1/object/public/task-photos/`
+      const urls = Array.isArray(msg.photo_urls) ? msg.photo_urls : []
+      for (const u of urls) {
+        if (typeof u !== 'string' || !u.startsWith(storageBase)) continue
+        await fetch(`${env.SUPABASE_URL}/storage/v1/object/task-photos/${u.slice(storageBase.length)}`, {
+          method:  'DELETE',
+          headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}` }
+        }).catch(() => {})
+      }
+      return json({ ok: true })
     }
 
     if (path === '/task-records' && method === 'POST') {
