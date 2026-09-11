@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-10-msg-audiences'
+const API_REVISION   = '2026-09-11-reverse-status'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -3631,6 +3631,63 @@ export async function onRequest(context) {
         order: 'at.asc'
       })
       return json(rows)
+    }
+
+    // POST /task-records/:id/reverse-status — undo the record's current
+    // status back to 'pending' (e.g. "Completed by HO" -> Pending, or
+    // "Cleared" -> Pending). Who may do it:
+    //   - admin (strictly the `admin` role, not the wider ADMIN_ROLES/
+    //     buying_manager+buying_head set) -- any record, unconditionally.
+    //   - everyone else (store roles, area_manager, support_admin,
+    //     buying_manager, buying_head) -- ONLY if they personally are the
+    //     one who set the record's CURRENT status, checked against
+    //     task_record_events (the most recent row whose to_status matches).
+    //     Store scope still applies on top, same as every other record
+    //     action -- this is an extra restriction, not a replacement for it.
+    const recReverseMatch = path.match(/^\/task-records\/([a-f0-9-]+)\/reverse-status$/)
+    if (recReverseMatch && method === 'POST') {
+      if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled for this account', 403)
+      const id = recReverseMatch[1]
+      const filter = { id: `eq.${id}` }
+      const scope = await scopedStoreIds(db, session)
+      if (scope !== null) {
+        if (!scope.length) return err('Record not found or not allowed', 404)
+        filter['store_id'] = `in.(${scope.join(',')})`
+      }
+      const [rec] = await db.select('task_records', { select: 'id,status', ...filter, limit: '1' })
+      if (!rec) return err('Record not found or not allowed', 404)
+      if (rec.status === 'pending') return err('This record is already Pending', 400)
+
+      if (!isOnlyAdmin(session)) {
+        const [lastEvent] = await db.select('task_record_events', {
+          select:    'by_user_id',
+          record_id: `eq.${id}`,
+          to_status: `eq.${rec.status}`,
+          order:     'at.desc',
+          limit:     '1'
+        })
+        if (!session.user_id || !lastEvent || lastEvent.by_user_id !== session.user_id) {
+          return err('You can only reverse a status change you made yourself', 403)
+        }
+      }
+
+      const updated = await db.update('task_records', filter, {
+        status:              'pending',
+        reviewed_at:         null,
+        completed_at:        null,
+        store_completed_at:  null,
+        cleared_at:          null,
+        updated_at:          new Date().toISOString()
+      })
+      if (!updated.length) return err('Record not found or not allowed', 404)
+      await writeTaskEvent(db, {
+        record_id:   id,
+        from_status: rec.status,
+        to_status:   'pending',
+        session,
+        note:        'Reversed'
+      })
+      return json(updated[0] ?? updated)
     }
 
     // ── Per-record message threads ─────────────────────────────────────────

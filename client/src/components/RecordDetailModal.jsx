@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { getTaskRecordEvents, getProductMaster, updateTaskRecord } from '../lib/api.js'
+import { getTaskRecordEvents, getProductMaster, updateTaskRecord, reverseTaskRecordStatus } from '../lib/api.js'
 import { TASK_FORMS } from '../lib/taskTypes.js'
 import { useToast } from './Toast.jsx'
+import { useStore } from '../App.jsx'
 import RecordMessages from './RecordMessages.jsx'
 import AgeClock from './AgeClock.jsx'
 
@@ -63,6 +64,50 @@ const GROUPS = [
 // so it gets its own editable section below instead of a plain Row - see
 // BackofficeComments.
 const isInternal = (f) => f[2] === true
+
+// Undo the record's current status back to Pending (e.g. "Completed by HO"
+// or "Cleared" -> Pending). Shown only when this session could plausibly do
+// it — admin always; otherwise only if they're the one who set the CURRENT
+// status, read off the already-loaded event history (the most recent
+// task_record_events row whose to_status matches — events is ascending by
+// `at`, so the last match is the most recent). The server re-checks this
+// independently on the actual request; this is accurate UI, not the real
+// gate, and fails safe (hides the button) while `events` is still loading.
+function ReverseStatusButton({ record, events, onUpdated }) {
+  const { session } = useStore()
+  const toast = useToast()
+  const [busy, setBusy] = useState(false)
+
+  if (record.status === 'pending') return null
+  const isAdmin = session.role === 'admin'
+  const statusEvents    = (events || []).filter(e => e.to_status === record.status)
+  const lastStatusEvent = statusEvents[statusEvents.length - 1]
+  const canReverse = isAdmin || (!!session.userId && lastStatusEvent?.by_user_id === session.userId)
+  if (!canReverse) return null
+
+  const run = async () => {
+    setBusy(true)
+    try {
+      await reverseTaskRecordStatus(record.id)
+      onUpdated?.(record.id, {
+        status: 'pending', reviewed_at: null, completed_at: null,
+        store_completed_at: null, cleared_at: null
+      })
+      toast.success('Reversed to Pending.')
+    } catch (e) {
+      toast.error(e.message || 'Could not reverse this status')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <button className="btn btn-sm btn-outline" disabled={busy} onClick={run}
+      title="Undo this status back to Pending" style={{ marginTop: 6 }}>
+      {busy ? <span className="spinner spinner-dark" /> : '↩ Reverse to Pending'}
+    </button>
+  )
+}
 
 // Backoffice Comments (task_records.review_notes) — an internal note a
 // back-office user can leave on a record; a store login never sees this
@@ -250,6 +295,8 @@ export default function RecordDetailModal({ record, storeName, open, onClose, sh
               </div>
             )
           })}
+
+          <ReverseStatusButton record={record} events={events} onUpdated={onUpdated} />
 
           {showInternal && <BackofficeComments record={record} onUpdated={onUpdated} />}
 

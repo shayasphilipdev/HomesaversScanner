@@ -6,7 +6,8 @@ import {
   deleteTaskRecord, bulkDeleteTaskRecords, deleteJkMatching,
   adminListTemplates, getStoreTaskReportRows,
   clearToken, getProductMaster, getProductMasterFilters,
-  getSpacePlanReport, getCompetitorReport, sendToPricing, getBmReductions
+  getSpacePlanReport, getCompetitorReport, sendToPricing, getBmReductions,
+  reverseTaskRecordStatus
 } from '../lib/api.js'
 import { COMPETITION_REPORT_COLS, COMPETITION_REPORT_HEADERS, COMPETITION_REPORT_MIN_WIDTHS } from '../lib/competitionOptions.js'
 import { TASK_FORMS, STORE_CLEARABLE, HARD_DELETABLE } from '../lib/taskTypes.js'
@@ -822,6 +823,29 @@ function HQReports() {
     }
   }
 
+  // Undo a record's current status back to Pending. Updated in place (not
+  // removed) since Pending is a normal, visible state — unlike clearOne,
+  // there's no view this always needs to drop out of. Server is the real
+  // gate (admin always; anyone else only their own prior action) — on a 403
+  // the row snaps back via runReport() rather than trusting the optimistic
+  // update.
+  const reverseOne = async (id) => {
+    const prev = records.find(r => r.id === id)
+    setRecords(rs => rs.map(r => r.id === id
+      ? { ...r, status: 'pending', reviewed_at: null, completed_at: null, store_completed_at: null, cleared_at: null }
+      : r))
+    setBusy(true); setError('')
+    try {
+      await reverseTaskRecordStatus(id)
+      toast.success('Reversed to Pending.')
+    } catch (e) {
+      if (prev) setRecords(rs => rs.map(r => r.id === id ? prev : r))
+      setError(e.message); toast.error(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   // Copy the selected records to the Pricing page (back office only).
   // Snapshot copies — the originals stay exactly as they are here.
   const sendSelectedToPricing = async () => {
@@ -1089,7 +1113,7 @@ function HQReports() {
                             by role, not by page, so it still never reaches a
                             store login here. */}
                         <td>
-                          <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end' }}>
+                          <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                             {isBO && isPending && (
                               <>
                                 <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => reviewOne(r.id, 'completed')}>
@@ -1099,6 +1123,17 @@ function HQReports() {
                                   No change
                                 </button>
                               </>
+                            )}
+                            {/* Undo a status back to Pending — e.g. Completed or Cleared by
+                                mistake. Shown to anyone (server is the real gate: admin may
+                                reverse any record, everyone else only a status THEY
+                                personally set — a wrong click here just explains that in
+                                the error toast rather than being hidden ahead of time). */}
+                            {!isPending && (
+                              <button className="btn btn-sm btn-outline" disabled={busy}
+                                title="Undo this status back to Pending" onClick={() => reverseOne(r.id)}>
+                                ↩ Reverse
+                              </button>
                             )}
                             <button
                               className="btn btn-sm btn-outline"
