@@ -5,7 +5,7 @@ fresh Claude session opening this repo cold, **read this file first** — it has
 the architecture, data model, every module, recent changes, known issues, and
 the project memory all in one place.
 
-*Last updated: 2026-09-02.*
+*Last updated: 2026-09-11.*
 
 ---
 
@@ -254,8 +254,18 @@ below.)
   reviewed_at · created_at · updated_at`. Type-specific fields go in `details`
   (e.g. `item_group` for J/K, `reason_code`, prices, `drs_size`, `shop_floor_count`).
 - `task_record_events` — append-only audit ledger of every status transition.
-- `task_record_messages` — per-record two-way thread. `record_id · author_id ·
-  author_name · author_role · body · is_read_by_store · is_read_by_bo · created_at`.
+- `task_record_messages` — per-record thread. `record_id · author_id ·
+  author_name · author_role · body · priority (normal|high) · msg_type
+  (query|information|action) · photo_urls (jsonb, main only) · created_at`.
+  **Audience (added 2026-09-10):** `audience` (`all` default · `backoffice` ·
+  `area_managers`) + `recipient_id`/`recipient_name` (a "To: X" display +
+  visibility hint, does not by itself widen who can see the message) restrict
+  a message to a role group instead of the whole store↔BO thread — see §6
+  Messages and §11. Three independent read/dismiss sides:
+  `is_read_by_store`/`is_dismissed_by_store`,
+  `is_read_by_bo`/`is_dismissed_by_bo` (also used for `backoffice`-audience
+  rows), `is_read_by_am`/`is_dismissed_by_am` (added with `audience`, used for
+  `area_managers`-audience rows).
 - **Scale (as of 2026-07-31):** ~294k rows, ~251k not `cleared`, growing
   ~40-75k/week. Indexes added for this volume: `idx_tr_active_store_date
   (store_id, created_at) WHERE status<>'cleared'`, `idx_tr_active_created_at
@@ -328,6 +338,15 @@ below.)
   days by `purge_task_stats_daily()` at 02:10. ~25 rows/day (~8,000 records
   compress ~300:1) — 64 kB for the first week, ~1.6 MB expected at 6 months.
   This is what makes dashboard history survive the record purge; see §11.
+  **Real-time capture (added 2026-09-10):** two triggers on `task_records`
+  (`trg_task_stats_capture_insert`/`_update`) now write into this table the
+  instant a record is created or its status/photo changes, instead of only at
+  the nightly rollup — closes the gap where a store could scan and
+  immediately hard-delete a J/K record before that night's job ever ran,
+  losing it from statistics entirely (see §11). The nightly job is unchanged
+  and still runs as a reconciling backstop (`GREATEST()` upsert can only
+  raise a count, never lower one the trigger already captured). No trigger
+  fires on DELETE, by design.
 
 ---
 
@@ -364,8 +383,13 @@ below.)
   numbers survive the nightly purge (§11, 2026-09-02). `work_mem='32MB'` is set
   on the function itself (since 2026-07-31 — eliminates a disk-spill sort; see
   §12 for the recurring-timeout issue that isn't fully resolved). The
-  "No Department Check" card uses its own fixed 7-day window, not the picker.
-  `dashboard_stats` (v1) is still deployed unchanged as the rollback target.
+  "No Department Check" card **follows the range picker** (changed
+  2026-09-10 — it originally had its own fixed 7-day window; users found a
+  card that never moved when they changed the range confusing, so it now
+  answers "who hasn't checked in *this* range" like every other card; see §11
+  for the trade-off that motivated the original fixed window and why it was
+  reversed). `dashboard_stats` (v1) is still deployed unchanged as the
+  rollback target.
 - **Space Plan** (`/space-plan`, admin `/admin/space-plan`): per-store grid,
   Equipment Variance summary (planned vs audited total), auto-save, Excel
   export. PRIMARY BAYS renders subcategory sub-rows (mobile: collapsible). Admin
@@ -374,6 +398,22 @@ below.)
   threads with unread messages (one-line preview, per-thread + total unread
   count) → clicking opens the record's thread in HO Tasks. Endpoints
   `/task-messages/threads`, `/task-messages/unread-count`, `/task-records/:id/messages*`.
+  **Restricted audiences (added 2026-09-10):** a back-office login can target
+  a message at **Store (everyone)** (default, unchanged), **Back office**
+  (`REVIEWER_ROLES` only), or **Area managers** (`area_manager` only) via a
+  "To:" selector in `RecordMessages.jsx`, plus name one person in that group
+  (a "To: X" hint — doesn't narrow visibility beyond the group). Stores,
+  store managers, and the *other* HQ group see nothing of a restricted
+  message — no thread, no preview, no badge. Either HQ group can post to the
+  other ("both directions"); visibility is **strict by group** — you see a
+  restricted message only by role, by being its author, or by being named on
+  it, with no "whoever replied stays in the thread" widening (see §11 for the
+  full model and the accepted trade-off on the shared read-flag). New `GET
+  /message-recipients` (active users only) feeds the person picker. The
+  composer was also compacted the same week: To/Priority/Type share one row,
+  attach+snip controls collapse onto one line, and the **"Canned" reply
+  picker is now labelled "Pre-set"** (the underlying `lookup_options` kind
+  stays `canned_reply`).
 - **Competition** (`/competition`, added 2026-08-13): per-store competitor
   capture for all users — dropdown-driven form (retailer from a shared,
   user-extensible `competitor_retailers` list seeded with ~100 Irish chains;
@@ -511,6 +551,167 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-09-10 — Restricted-audience messages (Back office / Area managers)
+
+**The ask.** Back office needed a way to post a note on a record that's
+visible only to fellow reviewers, or only to area managers — not to stores,
+not to store managers, and not to the other HQ group. Named as "send a
+message to Chamya, so Chamya and the rest of back office can see it,
+excluding area managers" — and the same for area managers.
+
+**Model.** `task_record_messages.audience`: `all` (default, every
+pre-existing row, unchanged behaviour) · `backoffice` (visible to
+`REVIEWER_ROLES` — `admin`/`buying_manager`/`buying_head`/`support_admin`) ·
+`area_managers` (visible to `area_manager` only). `recipient_id`/
+`recipient_name` name one person as a display + visibility hint — the row is
+still visible to the whole audience group; naming someone does not narrow it,
+it only guarantees a non-group viewer (e.g. the sender, if their own role
+isn't in that group) can also see it. Design decisions taken with the user,
+each with a real trade-off:
+- **Person + group**, not group-only — a message can be addressed to a named
+  colleague as well as broadcast to their group.
+- **Both directions** — either HQ group may post into the other's audience,
+  not just back office → area managers.
+- **Strict groups**, not "whoever joined the thread" — you see a restricted
+  message only by role, by being its author, or by being named on it. No
+  per-record participation widening. Consequence accepted: a cross-group
+  reply is invisible to the original sender unless the replier names them.
+- **Per-record thread**, not a standalone inbox — restricted notes live in
+  the same per-record thread as everything else, just filtered.
+
+**Read/dismiss:** a third "side" (`am`) joins the existing `store`/`bo` pair.
+`backoffice`-audience rows track on the existing `is_read_by_bo` (all
+reviewers share one flag, same as `all` already does for BO); `area_managers`
+rows use the new `is_read_by_am`. **Accepted wart:** because the flag is
+shared per side, seeding a restricted row unread-for-the-whole-group (so
+everyone gets the "you've got a message" badge) also makes the *author's own*
+badge count it until they reopen the thread — a per-user read table is the
+real fix, deliberately out of scope for this.
+
+**Server (`functions/api/[[route]].js`):** `msgVisibleTo(session, row)` +
+`msgSide(session, audience)` gate every message read path — `GET .../messages`,
+the header dropdown (`/task-messages/threads`), the unread badge
+(`/task-messages/unread-count`), `mark-read`, `dismiss` — plus a
+`POST`-time guard (`canPostAudience`) so a store login can only ever post
+`all`. New `GET /message-recipients` (any back-office login; `is_active=true`
+only) feeds the person picker. `awaiting_reply_threads` now ranks off
+`audience='all'` rows only — a restricted note is an internal aside, not an
+HO↔store SLA obligation, so a record whose only messages are restricted never
+appears in that queue.
+
+**Verified** with a DB-predicate harness (all six role combinations against a
+scratch thread carrying one message of each audience matched intent exactly)
+before touching the client. Migration: `supabase-migration-message-audiences.sql`.
+
+**Branch note:** `test`'s `RecordMessages.jsx` doesn't have the message-photo
+feature `main` has (never cherry-picked, or built after `test` diverged) —
+each cherry-pick for this work conflicted there and was resolved by hand,
+keeping `test`'s no-photos version and layering the audience UI on top of it.
+This is *not* one of the deliberately main-only features (§ branch rule) —
+it's an unrelated pre-existing divergence worth closing eventually.
+
+Same week: the compose area was shortened (To/Priority/Type on one row;
+attach+snip controls collapsed onto one line, in order — file picker → paste
+snip chip → capture button — instead of a tall dashed box) and the "Canned"
+reply picker relabelled **"Pre-set"** everywhere in the UI (button, tooltip,
+empty state) — the `lookup_options` kind stays `canned_reply`, so nothing
+changes in Admin → Lookups.
+
+### 2026-09-10 — Dashboard stats: same-day delete gap closed, Department Check card follows the picker
+
+**The bug (found by the user, not by testing).** `task_stats_daily` (2026-09-02,
+above) was only populated once a night at 01:30 UTC. Store users are allowed
+to permanently delete their own J/K (Department Check/Price Check) records at
+any time (`functions/api/[[route]].js`, the record DELETE handler — "Store
+users may permanently delete Department/Price Check records in their
+stores"), so a record created and deleted the **same day**, before that
+night's rollup ever ran, was captured nowhere — not in `task_records`
+(deleted), not in `task_stats_daily` (rollup hadn't run yet) — and the store
+looked like it had skipped a check it actually did.
+
+**Fix:** two triggers (`trg_task_stats_capture_insert`/`_update`, see §5) now
+write into `task_stats_daily` the instant a record is created or its
+status/photo changes, so a check is durably counted before any delete can
+race it. Deliberately no DELETE trigger — that's the entire point. The
+nightly rollup is unchanged and keeps running as a reconciling backstop.
+`dashboard_stats_v2`'s `dept_check_7d` sub-query needed one bound widened
+(`day <= v_today - 1` → `day <= v_today`) so the now-real-time "today" row
+can stand in for a same-day-deleted live record; every other part of that
+function is untouched. **Proved non-destructively** with a `BEGIN…ROLLBACK`
+harness against the live triggers before and after applying the migration:
+insert a J record for a store with zero J history → `records` 0→1 → hard-
+delete it (confirmed gone from `task_records`) → `records` stays 1 and the
+store now correctly appears in `dept_check_7d.store_ids`.
+
+**Then, in the same conversation:** the user pushed back on the
+"No Department Check" card showing the *same* 10 stores no matter what range
+was selected on the Dashboard (1 day / 1 month / 6 months all identical).
+That was by design (see the 2026-09-02 entry) — a deliberate fixed 7-day
+window, on the theory that a range-following card would read "all clear" on
+long ranges and be useless. Once that trade-off was explained, the user chose
+to make it follow the picker anyway. `dept_check_7d` → **`dept_check_range`**:
+the same query, but keyed on the caller's actual `p_from`/`p_to` instead of a
+hardcoded `today-6..today`. Verified live: a 7-day call still returns the
+same 49/59 stores present as before; a 30-day call returns 58/59 (only the
+one store with zero Department Checks *ever* remains flagged) — confirming
+the list now genuinely responds to the range instead of staying static.
+Migrations: `supabase-migration-realtime-stats-capture.sql`,
+`supabase-migration-dept-check-follows-range.sql`.
+
+### 2026-09-04 — Backoffice Comments (an internal note on any record) + a pre-existing exposure fix
+
+Added a `review_notes` editor (`BackofficeComments` in
+`RecordDetailModal.jsx`) visible only when `showInternal` (back-office
+sessions) — "may be you can call this Backoffice Comments, this should be
+visible to backoffice users." While wiring it, found that `review_notes` was
+**already** readable *and* writable by any session — store included — through
+three endpoints (`GET /task-records`, `PATCH /task-records/:id`,
+`GET /reports/task-records`); the client-side `showInternal` gate was the
+only thing hiding it, not real access control. Not something the user
+reported — found by checking what "visible to backoffice users" actually
+required at each endpoint rather than trusting the existing UI gate. Fixed
+server-side in all three: the field is omitted from non-BO `GET` responses
+and stripped from non-BO `PATCH` bodies before they reach the database.
+
+### 2026-09-03/04 — HO Tasks split for store logins; Reports gets per-row store actions
+
+**HO Tasks (`/tasks`)** now renders differently for store vs. back-office
+logins instead of one shared table+toolbar for everyone. Store mode: no
+status-filter tabs, no bulk-select toolbar, no per-row Clear/Msg/Delete
+column (`TaskRecordList` gained `showBulkToolbar`/`showRowActions` props) —
+just the scan form and a plain history list; those actions remain reachable
+at Reports → HO records against the same records, so store users lose a
+duplicate path, not a capability. Landed after three rounds of correction
+(first pass over-removed table columns *and* buttons; a fix over-corrected by
+restoring buttons that were meant to stay gone) — resolved by giving the two
+concerns independent, precisely-scoped props instead of one combined toggle.
+
+**Reports (`/reports` → HO records)** then gained the store-mode equivalent:
+a right-hand actions column with **Clear** (self, once reviewed/store-
+completable), **Msg** (thread toggle, now unconditional rather than BO-only),
+and **Delete** (`HARD_DELETABLE` = J/K only, matching the existing store
+delete permission) — explicitly excluding the Canned/"Pre-set" picker from
+that row set per request. Caught and fixed one bug before shipping: the Clear
+button's condition initially let a *back-office* row that happened to be
+`reviewed` show Clear too (missing an `!isBO` guard on half the condition) —
+caught via a harness screenshot comparing back-office vs. store views.
+
+### 2026-09-03 — Smaller fixes this batch
+
+- **Manual upload server (`scripts/local_upload_server.py`)** — fixed two
+  independent bugs that were silently blocking uploads (a `cp1252` print
+  crash on certain filenames, and an expired-certificate `urllib` failure),
+  then made it survive reboots via a real Windows Scheduled Task
+  (`scripts/install-upload-server-task.cmd`, run-at-logon,
+  `scripts/startup-sync.vbs`) instead of needing to be started by hand.
+- **Nav badge** simplified to show only the login mode, no working-store suffix.
+- **Bottom nav** redesigned with a hand-drawn SVG icon set (replacing Unicode
+  glyphs) and fixed alignment, verified across 5/8/11-item role cases in both
+  themes.
+- **Dashboard** date picker made dropdown-only (defaulting to Last 7 days);
+  **Pricing** page's Delete button moved out of the Details modal onto the
+  row itself.
+
 ### 2026-09-03 — alt_barcodes stopped losing products to shared barcodes
 
 **The bug.** `alt_barcodes.barcode_no` was `UNIQUE`, but a barcode in the ALT
@@ -608,6 +809,9 @@ Also fixed here:
 - **The No-Department-Check card no longer follows the range picker** — it always
   asks "last 7 days", which is the actionable signal and matches the email. Over
   a 6-month range the old behaviour would have reported everyone compliant.
+  **Reversed 2026-09-10** — see that entry below: users found a card that never
+  moved when they changed the range confusing rather than reassuring, and
+  explicitly asked for it to follow the picker once the trade-off was explained.
 - **Latent duplicate-React-key bug in `ActivityChart`**, exposed by this work:
   `dd` duplicates the sole point on a one-day range to draw a flat line while
   keying by date. Unreachable before (the Worker always returned exactly 14
@@ -835,7 +1039,9 @@ roles drive `mode` store/backoffice; `scopedStoreIds` resolves multi-store
 scope; area managers are BO-mode but get store-style clear UI;
 `product_master` view exposes `supl_id AS supplier` (so the supplier filter must
 map supplier_code → supl_id via alt_barcodes); message author's own side is
-marked read immediately, the opposite side unread.
+marked read immediately, the opposite side unread; a message's `audience`
+(`all`/`backoffice`/`area_managers`) gates visibility server-side on every
+read path, not just in the UI — see §11 (2026-09-10).
 
 **Feature history** — see §11 above (kept in sync with
 `memory/feature_history.md`).
