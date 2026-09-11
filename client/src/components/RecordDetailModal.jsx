@@ -131,7 +131,7 @@ function ReverseStatusButton({ record, events, onUpdated }) {
       await reverseTaskRecordStatus(record.id)
       onUpdated?.(record.id, {
         status: 'pending', reviewed_at: null, completed_at: null,
-        store_completed_at: null, cleared_at: null
+        store_completed_at: null, cleared_at: null, marked_for_deletion: false
       })
       toast.success('Reversed to Pending.')
     } catch (e) {
