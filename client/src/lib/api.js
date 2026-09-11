@@ -296,6 +296,10 @@ export async function adminUploadExcel(endpoint, file, sheet) {
 
 // Append-only audit ledger for one task_records row.
 export const getTaskRecordEvents      = (id) => request(`/task-records/${id}/events`)
+// Undo the record's current status back to Pending (e.g. "Completed by HO" or
+// "Cleared" -> Pending). Server enforces who may do it: admin always; anyone
+// else only if they personally set the current status.
+export const reverseTaskRecordStatus  = (id) => request(`/task-records/${id}/reverse-status`, { method: 'POST' })
 
 // ── Per-record message threads ──────────────────────────────────────────────
 export const getRecordMessages      = (id) => request(`/task-records/${id}/messages`)
