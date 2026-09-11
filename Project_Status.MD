@@ -551,6 +551,42 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-09-11 — area_manager unified as back office everywhere; admin can delete messages
+
+**Unify `isBO`.** The entry above (server-side role gate) documented, but
+deliberately preserved, an inconsistency: `TaskRecordList.jsx` excluded
+`area_manager` from `isBO` (so they'd see the store-side J/K clear UI on the
+HO Tasks page) while `Reports.jsx`, `RecordMessages.jsx`, and the server's
+own `isBackOffice()`/`BO_ROLES` already treated them as full back office
+everywhere else. Resolved on request: area managers already get
+back-office login treatment in every other respect (`mode:'backoffice'`,
+`sessionStorage`, the 12h token vs. the store 24h one), so `isBO` in
+`TaskRecordList.jsx` now matches everywhere else exactly
+(`session.mode === 'backoffice'`, no exclusion). Consequence for area
+managers: "Mark complete" replaces the store-style "Clear" button on the HO
+Tasks page, and the J/K bulk-clear checkbox toolbar there is gone for them
+too (Reports.jsx never gave them either anyway — genuinely one rule now,
+not a new restriction relative to the rest of the app). Server's
+`STATUS_SETTERS` updated to match: `store_completed`/`cleared` via
+`PATCH /task-records/:id` now require plain `STORE_ROLES` (no more
+`+ area_manager`); `completed`/`no_change_needed` already included them via
+`BO_ROLES`, unchanged.
+
+**Admin can delete a message.** New
+`DELETE /task-records/:recordId/messages/:messageId` — permanently removes
+one message (+ best-effort photo cleanup from storage, same pattern as the
+record hard-delete). Strict `admin` only, server-enforced — not an
+author's-own-message action, no dismiss/soft-delete nuance. Client: a small
+🗑 next to the author/time line in `RecordMessages.jsx`, visible only to
+admin, behind a native `confirm()` (no undo, so no optimistic remove either
+— waits for the server to confirm first).
+
+**Verified:** every real `TaskRecordList.jsx`/`Reports.jsx` call site
+re-checked by hand against the updated `STATUS_SETTERS` map; the
+message-delete write sequence proven live in a `BEGIN…ROLLBACK` transaction
+(insert a message with a `photo_urls` entry, confirm the endpoint's exact
+select+delete removes it, roll back).
+
 ### 2026-09-11 — Server-side role gate on status transitions (+ a leftover-flag audit)
 
 **The gap.** `PATCH /task-records/:id` applied any `status` the client sent,
@@ -1035,16 +1071,11 @@ scanning) and the DB size alarm crossing 60%+.
   horizontally inside the centred container on smaller screens.
 - Older docs (`docs/phase8-...md`, parts of `CLAUDE.md`) describe earlier
   designs; this file is the current source of truth.
-- **`area_manager` can Complete/No-change records via Reports.jsx but not via
-  TaskRecordList.jsx (HO Tasks page)** — the two pages define `isBO`
-  differently (`Reports.jsx`: `mode==='backoffice'`, includes area_manager;
-  `TaskRecordList.jsx`: same, but explicitly excludes area_manager). Found
-  2026-09-11 while adding the server-side `STATUS_SETTERS` role gate on
-  `PATCH /task-records/:id` — deliberately preserved rather than narrowed to
-  either side, since either choice would change real behaviour for a real
-  role without being asked to. Worth a product decision on which is actually
-  intended, then unifying both client gates and the server's `BO_ROLES` entry
-  in `STATUS_SETTERS.completed`/`.no_change_needed` to match.
+- ~~`area_manager` can Complete/No-change records via Reports.jsx but not via
+  TaskRecordList.jsx~~ — **resolved 2026-09-11**, same day it was found: unified
+  toward "area manager = back office everywhere" (see §11). Left here as a
+  pointer in case anything else surfaces still keyed on the old, narrower
+  `TaskRecordList.jsx` definition of `isBO`.
 - **`dashboard_stats` still times out (`57014`) intermittently under real
   load**, despite the fixes in §11 (2026-07-31). Every isolated test after
   those fixes completes in 1-3s regardless of scope (admin/null or a 10-store
