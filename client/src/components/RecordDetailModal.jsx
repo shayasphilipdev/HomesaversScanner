@@ -241,7 +241,7 @@ function prettyKey(k) {
 function Row({ label, value, mono }) {
   return (
     <div style={{ display: 'flex', gap: 10, padding: '4px 0', borderBottom: '1px solid var(--border-soft)' }}>
-      <div className="note" style={{ flex: '0 0 42%', fontSize: 12.5 }}>{label}</div>
+      <div className="note" style={{ flex: '0 0 135px', fontSize: 12.5 }}>{label}</div>
       <div style={{ flex: 1, fontSize: 13, wordBreak: 'break-word', fontFamily: mono ? 'ui-monospace, monospace' : undefined }}>
         {value}
       </div>
@@ -302,7 +302,7 @@ export default function RecordDetailModal({ record, storeName, open, onClose, sh
       <div
         onMouseDown={e => e.stopPropagation()}
         className="card"
-        style={{ width: '100%', maxWidth: 1180, marginBottom: 40 }}
+        style={{ width: '100%', maxWidth: 1520, marginBottom: 40 }}
       >
         <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <strong>{TASK_FORMS[record.task_type]?.name || record.task_type}</strong>
@@ -318,14 +318,18 @@ export default function RecordDetailModal({ record, storeName, open, onClose, sh
         </div>
 
         <div className="card-body" style={{ paddingTop: 10 }}>
-          {storeName && <Row label="Store" value={storeName} />}
-
           {/* Left: the static record itself. Right: status actions, the
               back-office note, the conversation, and the audit trail — what's
               happening with it rather than what it is. Wraps back to one
               column on a narrow (phone) screen — see .rdm-cols in App.css. */}
           <div className="rdm-cols">
             <div className="rdm-left">
+              {/* Was rendered full-width above the two-column split, so its
+                  42%-of-row label boundary landed in a different spot than
+                  every row below it once those moved into the narrower left
+                  column — moved in here to line up with the rest. */}
+              {storeName && <Row label="Store" value={storeName} />}
+
               {GROUPS.map(g => {
                 const rows = g.fields
                   .filter(f => showInternal || !isInternal(f))
