@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-11-reverse-status-fix'
+const API_REVISION   = '2026-09-11-status-role-gate'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -182,6 +182,37 @@ function isManagerRole(s)  { return hasRole(s, MANAGER_ROLES) }
 // meters that buying_manager (also in ADMIN_ROLES) shouldn't see.
 function isOnlyAdmin(s)    { return !!s && s.role === 'admin' }
 function canCreateTasks(s) { return hasRole(s, TASK_CREATORS) }
+
+// ── Who may set which task_records.status via PATCH /task-records/:id ──────
+// Until this existed, the endpoint applied any status the caller sent (once
+// scoped to their store) with no role check at all -- the client-side
+// buttons were the only thing stopping a store session from PATCHing
+// {status:'completed'} directly. Values here mirror the CURRENT client
+// gating (the source of intent), not a redesign:
+//   completed / no_change_needed -> Reports.jsx's `isBO` (mode==='backoffice',
+//     which already includes area_manager) is the operative real-world gate
+//     today -- TaskRecordList.jsx separately excludes area_manager for the
+//     same action, an existing inconsistency between the two pages that
+//     this list does not resolve either way; it preserves what already
+//     works for every role rather than silently narrowing anyone's access.
+//   store_completed / cleared -> store-side roles, matching
+//     TaskRecordList.jsx's own `isBO` (which excludes area_manager, i.e.
+//     treats them as store-like for these two). `cleared` here only covers
+//     the single-record PATCH path (TaskRecordList's markCleared) -- back
+//     office clears through the separate, already-scoped
+//     /task-records/bulk-clear endpoint, untouched by this.
+// 'pending' is deliberately ABSENT: reverting to Pending only ever goes
+// through POST /task-records/:id/reverse-status, which has its own stricter
+// admin-or-own-action check and resets marked_for_deletion correctly.
+// Allowing 'pending' here too would let anyone bypass that check with a
+// plain PATCH -- so it's rejected below regardless of role, admin included.
+const STORE_LIKE_ROLES = [...STORE_ROLES, 'area_manager']
+const STATUS_SETTERS = {
+  completed:         BO_ROLES,
+  no_change_needed:  BO_ROLES,
+  store_completed:   STORE_LIKE_ROLES,
+  cleared:           STORE_LIKE_ROLES,
+}
 
 function buildSessionForUser(_db, user) {
   return {
@@ -3982,7 +4013,12 @@ export async function onRequest(context) {
         supplier_code:       body.supplier_code || null,
         item_status:         body.item_status || null,
         barcode_status:      body.barcode_status || null,
-        status:              body.status || 'pending',
+        // Always 'pending' on creation, regardless of anything the client
+        // sends — every task form already only ever creates pending records;
+        // this just stops a direct API call from creating one pre-completed/
+        // pre-cleared (bypassing the STATUS_SETTERS role gate on PATCH
+        // entirely, since nothing then needs to *change* the status).
+        status:              'pending',
         marked_for_deletion: false,
         // Origin tag: records saved on the test/preview site (test.* or a
         // preview deployment) are marked 'test' so they can be identified and
@@ -4021,6 +4057,18 @@ export async function onRequest(context) {
       // body, so without this a store session could still write it with a
       // direct API call even though no button ever offers one.
       if (!isBO) delete updates.review_notes
+      // Role-gate the status transition itself — see STATUS_SETTERS above.
+      // Everything else in `updates` (notes, photos, etc.) is unaffected.
+      if (updates.status !== undefined) {
+        if (updates.status === 'pending') {
+          return err('Use POST /task-records/:id/reverse-status to move a record back to Pending', 400)
+        }
+        if (!isOnlyAdmin(session)) {
+          const allowedRoles = STATUS_SETTERS[updates.status]
+          if (!allowedRoles) return err(`Unknown status: ${updates.status}`, 400)
+          if (!hasRole(session, allowedRoles)) return err('Not allowed to set that status', 403)
+        }
+      }
       // If the back office is moving the record to a reviewed status,
       // stamp reviewed_at automatically so the UI doesn't have to.
       if (isBO && (updates.status === 'completed' || updates.status === 'no_change_needed') && !updates.reviewed_at) {
