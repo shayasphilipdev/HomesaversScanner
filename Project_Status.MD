@@ -551,6 +551,50 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-09-11 — Reverse a status change back to Pending
+
+New `POST /task-records/:id/reverse-status`: undoes a record's current
+status (Completed by HO, No change needed, Store confirmed, Cleared) back to
+**Pending**, nulling the four status timestamps
+(`reviewed_at`/`completed_at`/`store_completed_at`/`cleared_at`) and logging
+the reversal in `task_record_events` like every other transition (`from` the
+old status `to` `pending`, `note: 'Reversed'`).
+
+**Permission — three tiers, from the user's own framing:**
+- **`admin`** (the strict role, not the wider `buying_manager`/`buying_head`
+  set that also counts as "back office" elsewhere in the app) — may reverse
+  **any** record, regardless of who set the status.
+- **Everyone else** — store roles, `area_manager`, `support_admin`,
+  `buying_manager`, `buying_head` — may reverse **only a status change they
+  personally made themselves**. Checked against the most recent
+  `task_record_events` row whose `to_status` matches the record's current
+  status; if `by_user_id` isn't the requesting session's own `user_id`
+  (or there's no such event), it's refused with a clear 403. Store scope
+  still applies on top, same as every other record action — this check is
+  additive, not a replacement for it.
+- Reversal target is always **Pending**, not "whatever status came before" —
+  simplest, and matches both examples the user gave.
+
+**Client:** a "↩ Reverse" button in Reports → HO records (both store and
+back-office row-action columns, shown whenever a row isn't Pending — the
+server's specific error message explains a denial rather than the client
+trying to predict one), and a more precisely gated "↩ Reverse to Pending" in
+`RecordDetailModal` (uses the record's already-loaded event history to only
+render when this session could plausibly succeed — admin always, otherwise
+only if their own `session.userId` — **camelCase, the client session shape**,
+see the `ProductQuery.jsx` gotcha this repo already learned once — matches
+the last event's `by_user_id`).
+
+No new DB objects: this reuses the existing `task_record_events` audit
+ledger and the **2026-09-10 real-time `task_stats_daily` triggers**
+unchanged — a reversal is just another status UPDATE, already handled
+correctly by that generic OLD/NEW-status trigger (see below).
+
+**Verified** with a `BEGIN…ROLLBACK` transaction against a real `cleared`
+record (store-set, by a real sales_assistant login): the exact write
+sequence correctly flips it to `pending`, nulls `cleared_at`, and logs a
+`cleared → pending` audit event — then rolled back, nothing persisted.
+
 ### 2026-09-10 — Restricted-audience messages (Back office / Area managers)
 
 **The ask.** Back office needed a way to post a note on a record that's
