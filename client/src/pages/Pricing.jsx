@@ -338,6 +338,9 @@ export default function Pricing() {
         record={detail?.record}
         storeName={detail?.storeName || ''}
         onClose={() => setDetail(null)}
+        // This page is about pricing a record, not reviewing it — Complete/
+        // No change belong to the HO review workflow in Reports, not here.
+        allowReview={false}
         // Backoffice Comments lives on the underlying task record, one level
         // inside each pricing item (it.record) — merge into that nested
         // object so reopening the same row's Details shows what was just
