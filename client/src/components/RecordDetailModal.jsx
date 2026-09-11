@@ -302,7 +302,7 @@ export default function RecordDetailModal({ record, storeName, open, onClose, sh
       <div
         onMouseDown={e => e.stopPropagation()}
         className="card"
-        style={{ width: '100%', maxWidth: 760, marginBottom: 40 }}
+        style={{ width: '100%', maxWidth: 1180, marginBottom: 40 }}
       >
         <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <strong>{TASK_FORMS[record.task_type]?.name || record.task_type}</strong>
@@ -320,121 +320,133 @@ export default function RecordDetailModal({ record, storeName, open, onClose, sh
         <div className="card-body" style={{ paddingTop: 10 }}>
           {storeName && <Row label="Store" value={storeName} />}
 
-          {GROUPS.map(g => {
-            const rows = g.fields
-              .filter(f => showInternal || !isInternal(f))
-              .map(([k, label]) => [k, label, fmt(k, record[k])])
-              .filter(([, , v]) => showEmpty || v !== null)
-            if (!rows.length) return null
-            return (
-              <div key={g.title}>
-                {rows.map(([k, label, v]) => (
-                  <Row key={k} label={label} value={v ?? <span className="td-muted">—</span>}
-                       mono={k === 'barcode_no' || k === 'product_barcode' || k === 'product_code'} />
-                ))}
+          {/* Left: the static record itself. Right: status actions, the
+              back-office note, the conversation, and the audit trail — what's
+              happening with it rather than what it is. Wraps back to one
+              column on a narrow (phone) screen — see .rdm-cols in App.css. */}
+          <div className="rdm-cols">
+            <div className="rdm-left">
+              {GROUPS.map(g => {
+                const rows = g.fields
+                  .filter(f => showInternal || !isInternal(f))
+                  .map(([k, label]) => [k, label, fmt(k, record[k])])
+                  .filter(([, , v]) => showEmpty || v !== null)
+                if (!rows.length) return null
+                return (
+                  <div key={g.title}>
+                    {rows.map(([k, label, v]) => (
+                      <Row key={k} label={label} value={v ?? <span className="td-muted">—</span>}
+                           mono={k === 'barcode_no' || k === 'product_barcode' || k === 'product_code'} />
+                    ))}
+                  </div>
+                )
+              })}
+
+              {/* Task-specific payload — shape varies by task type. */}
+              {(detailKeys.length > 0 || showEmpty) && (
+                <div>
+                  {detailKeys.length === 0
+                    ? <div className="note" style={{ fontSize: 12.5 }}>None recorded.</div>
+                    : detailKeys.map(k => (
+                        <Row key={k} label={prettyKey(k)}
+                             value={typeof details[k] === 'object' ? JSON.stringify(details[k]) : String(details[k])} />
+                      ))}
+                </div>
+              )}
+
+              {/* Photos */}
+              {(record.photo_product_url || record.photo_barcode_url) && (
+                <div style={{ marginTop: 14 }}>
+                  <div className="flex-row" style={{ gap: 10, flexWrap: 'wrap' }}>
+                    {[['Product', record.photo_product_url], ['Barcode', record.photo_barcode_url]]
+                      .filter(([, u]) => u)
+                      .map(([lbl, u]) => (
+                        <a key={lbl} href={u} target="_blank" rel="noopener noreferrer" title={`Open ${lbl} photo`}>
+                          <img src={u} alt={lbl} style={{ width: 120, height: 120, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)', display: 'block' }} />
+                          <span className="note" style={{ fontSize: 12 }}>{lbl}</span>
+                        </a>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Live Product Master — not stored on the record. */}
+              <div>
+                {pmErr ? <div className="note" style={{ fontSize: 12.5 }}>Could not load — {pmErr}</div>
+                 : pm === null ? <div className="note" style={{ fontSize: 12.5 }}>No matching Product Master entry.</div>
+                 : (
+                  <>
+                    <Row label="Selling Price" value={pm.selling_price != null && pm.selling_price !== '' ? `€${Number(pm.selling_price).toFixed(2)}` : '—'} />
+                    <Row label="Category"      value={pm.category || '—'} />
+                    <Row label="Subcategory"   value={pm.subcategory || '—'} />
+                    <Row label="Product Type"  value={pm.product_type || '—'} />
+                    <Row label="Product Status" value={pm.product_status || '—'} />
+                    <Row label="Supplier"      value={pm.supplier || '—'} />
+                  </>
+                )}
               </div>
-            )
-          })}
-
-          <ReviewButtons record={record} showInternal={showInternal} onUpdated={onUpdated} />
-          <ReverseStatusButton record={record} events={events} onUpdated={onUpdated} />
-
-          {showInternal && <BackofficeComments record={record} onUpdated={onUpdated} />}
-
-          {/* Task-specific payload — shape varies by task type. */}
-          {(detailKeys.length > 0 || showEmpty) && (
-            <div>
-              {detailKeys.length === 0
-                ? <div className="note" style={{ fontSize: 12.5 }}>None recorded.</div>
-                : detailKeys.map(k => (
-                    <Row key={k} label={prettyKey(k)}
-                         value={typeof details[k] === 'object' ? JSON.stringify(details[k]) : String(details[k])} />
-                  ))}
             </div>
-          )}
 
-          {/* Photos */}
-          {(record.photo_product_url || record.photo_barcode_url) && (
-            <div style={{ marginTop: 14 }}>
-              <div className="flex-row" style={{ gap: 10, flexWrap: 'wrap' }}>
-                {[['Product', record.photo_product_url], ['Barcode', record.photo_barcode_url]]
-                  .filter(([, u]) => u)
-                  .map(([lbl, u]) => (
-                    <a key={lbl} href={u} target="_blank" rel="noopener noreferrer" title={`Open ${lbl} photo`}>
-                      <img src={u} alt={lbl} style={{ width: 120, height: 120, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)', display: 'block' }} />
-                      <span className="note" style={{ fontSize: 12 }}>{lbl}</span>
-                    </a>
-                  ))}
-              </div>
-            </div>
-          )}
+            <div className="rdm-right">
+              <ReviewButtons record={record} showInternal={showInternal} onUpdated={onUpdated} />
+              <ReverseStatusButton record={record} events={events} onUpdated={onUpdated} />
 
-          {/* Live Product Master — not stored on the record. */}
-          <div>
-            {pmErr ? <div className="note" style={{ fontSize: 12.5 }}>Could not load — {pmErr}</div>
-             : pm === null ? <div className="note" style={{ fontSize: 12.5 }}>No matching Product Master entry.</div>
-             : (
-              <>
-                <Row label="Selling Price" value={pm.selling_price != null && pm.selling_price !== '' ? `€${Number(pm.selling_price).toFixed(2)}` : '—'} />
-                <Row label="Category"      value={pm.category || '—'} />
-                <Row label="Subcategory"   value={pm.subcategory || '—'} />
-                <Row label="Product Type"  value={pm.product_type || '—'} />
-                <Row label="Product Status" value={pm.product_status || '—'} />
-                <Row label="Supplier"      value={pm.supplier || '—'} />
-              </>
-            )}
-          </div>
+              {showInternal && <BackofficeComments record={record} onUpdated={onUpdated} />}
 
-          {/* The conversation on this record — same thread as the 💬 toggle in
-              the grid, so a reply can be read and written without leaving the
-              popup. */}
-          <div style={{ marginTop: 14, marginLeft: -14, marginRight: -14 }}>
-            <RecordMessages
-              recordId={record.id}
-              resolvedAt={record.messages_resolved_at}
-              resolvedByName={record.messages_resolved_by_name}
-            />
-          </div>
-
-          {/* Timestamps, unlabelled, immediately before the history they explain. */}
-          <div style={{ marginTop: 14 }}>
-            {TIME_FIELDS
-              .map(([k, label]) => [k, label, fmt(k, record[k])])
-              .filter(([, , v]) => showEmpty || v !== null)
-              .map(([k, label, v]) => (
-                <Row
-                  key={k}
-                  label={label}
-                  value={
-                    <>
-                      {v ?? <span className="td-muted">—</span>}
-                      {k === 'created_at' && record.status === 'pending' && (
-                        <AgeClock at={record.created_at} style={{ marginLeft: 8 }} />
-                      )}
-                    </>
-                  }
+              {/* The conversation on this record — same thread as the 💬 toggle
+                  in the grid, so a reply can be read and written without
+                  leaving the popup. No longer bleeds to the card's outer edge
+                  (it used to, when this sat in a single full-width column) —
+                  a bordered panel reads better as a sidebar block. */}
+              <div style={{ marginTop: 14, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border-soft)' }}>
+                <RecordMessages
+                  recordId={record.id}
+                  resolvedAt={record.messages_resolved_at}
+                  resolvedByName={record.messages_resolved_by_name}
                 />
-              ))}
-          </div>
+              </div>
 
-          {/* Audit history — background detail, so it gets a quiet heading and
-              the smallest type in the popup. */}
-          <div style={{ marginTop: 14, paddingTop: 8, borderTop: '1px solid var(--border-soft)' }}>
-            <div className="note" style={{ fontSize: 11, fontWeight: 600, marginBottom: 4 }}>History</div>
-            {events === null ? <div className="note" style={{ fontSize: 11 }}><span className="spinner spinner-dark" /> Loading…</div>
-             : !events.length ? <div className="note" style={{ fontSize: 11 }}>No history yet.</div>
-             : (
-              <ol style={{ margin: 0, paddingLeft: 16, fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                {events.map(ev => (
-                  <li key={ev.id} style={{ marginBottom: 2 }}>
-                    {ev.from_status || '—'} → <strong>{ev.to_status}</strong>
-                    {' · '}{ev.by_user_name}
-                    {' · '}{new Date(ev.at).toLocaleString('en-IE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                    {ev.note && <span> · “{ev.note}”</span>}
-                  </li>
-                ))}
-              </ol>
-            )}
+              {/* Timestamps, unlabelled, immediately before the history they explain. */}
+              <div style={{ marginTop: 14 }}>
+                {TIME_FIELDS
+                  .map(([k, label]) => [k, label, fmt(k, record[k])])
+                  .filter(([, , v]) => showEmpty || v !== null)
+                  .map(([k, label, v]) => (
+                    <Row
+                      key={k}
+                      label={label}
+                      value={
+                        <>
+                          {v ?? <span className="td-muted">—</span>}
+                          {k === 'created_at' && record.status === 'pending' && (
+                            <AgeClock at={record.created_at} style={{ marginLeft: 8 }} />
+                          )}
+                        </>
+                      }
+                    />
+                  ))}
+              </div>
+
+              {/* Audit history — background detail, so it gets a quiet heading
+                  and the smallest type in the popup. */}
+              <div style={{ marginTop: 14, paddingTop: 8, borderTop: '1px solid var(--border-soft)' }}>
+                <div className="note" style={{ fontSize: 11, fontWeight: 600, marginBottom: 4 }}>History</div>
+                {events === null ? <div className="note" style={{ fontSize: 11 }}><span className="spinner spinner-dark" /> Loading…</div>
+                 : !events.length ? <div className="note" style={{ fontSize: 11 }}>No history yet.</div>
+                 : (
+                  <ol style={{ margin: 0, paddingLeft: 16, fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                    {events.map(ev => (
+                      <li key={ev.id} style={{ marginBottom: 2 }}>
+                        {ev.from_status || '—'} → <strong>{ev.to_status}</strong>
+                        {' · '}{ev.by_user_name}
+                        {' · '}{new Date(ev.at).toLocaleString('en-IE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                        {ev.note && <span> · “{ev.note}”</span>}
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       </div>
