@@ -1043,7 +1043,7 @@ function HQReports() {
                   <th style={{ width: 110 }}>Product Barcode</th>
                   <th style={{ width: 140 }}>Photos</th>
                   <th style={{ whiteSpace: 'nowrap', width: 110 }}>Date</th>
-                  <th style={{ width: isBO ? 300 : 220 }}></th>
+                  <th style={{ width: isBO ? 320 : 260 }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -1113,7 +1113,7 @@ function HQReports() {
                             by role, not by page, so it still never reaches a
                             store login here. */}
                         <td>
-                          <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                          <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
                             {isBO && isPending && (
                               <>
                                 <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => reviewOne(r.id, 'completed')}>
@@ -1130,16 +1130,16 @@ function HQReports() {
                                 personally set — a wrong click here just explains that in
                                 the error toast rather than being hidden ahead of time). */}
                             {!isPending && (
-                              <button className="btn btn-sm btn-outline" disabled={busy}
+                              <button className="btn btn-sm btn-icon btn-outline" disabled={busy}
                                 title="Undo this status back to Pending" onClick={() => reverseOne(r.id)}>
-                                ↩ Reverse
+                                ↩
                               </button>
                             )}
                             <button
-                              className="btn btn-sm btn-outline"
+                              className="btn btn-sm btn-icon btn-outline"
                               title="All details for this record"
                               onClick={() => setDetailRecord(r)}
-                            >🔍 Details</button>
+                            >🔍</button>
                             {!isBO && (reviewed || storeCanClearNow) && (
                               <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => clearOne(r.id)}
                                 title={reviewed ? 'PO actioned — clear from list' : 'Mark as actioned — clear from list'}>
