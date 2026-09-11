@@ -65,6 +65,46 @@ const GROUPS = [
 // BackofficeComments.
 const isInternal = (f) => f[2] === true
 
+// The same HO review action available per-row in Reports (Complete / No
+// change needed), offered here too so a reviewer who opened Details to check
+// something doesn't have to close the modal and go back to the row just to
+// act on it. Back-office only (showInternal), and only while still Pending —
+// ReverseStatusButton takes over this slot once the record's been reviewed.
+function ReviewButtons({ record, showInternal, onUpdated }) {
+  const toast = useToast()
+  const [busy, setBusy] = useState(false)
+  if (!showInternal || record.status !== 'pending') return null
+
+  const review = async (status) => {
+    setBusy(true)
+    try {
+      const now   = new Date().toISOString()
+      const patch = { status, ...(status === 'completed' ? { completed_at: now } : {}) }
+      await updateTaskRecord(record.id, patch)
+      // The server auto-stamps reviewed_at for a BO session moving to
+      // completed/no_change_needed (see PATCH /task-records/:id) — mirror
+      // that locally so "Reviewed" shows immediately without a re-fetch.
+      onUpdated?.(record.id, { ...patch, reviewed_at: now })
+      toast.success(status === 'completed' ? 'Marked complete.' : 'Marked “no change needed”.')
+    } catch (e) {
+      toast.error(e.message || 'Could not update this record')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="flex-row" style={{ gap: 6, marginTop: 6 }}>
+      <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => review('completed')}>
+        {busy ? <span className="spinner" /> : 'Complete'}
+      </button>
+      <button className="btn btn-sm btn-outline" disabled={busy} onClick={() => review('no_change_needed')}>
+        No change
+      </button>
+    </div>
+  )
+}
+
 // Undo the record's current status back to Pending (e.g. "Completed by HO"
 // or "Cleared" -> Pending). Shown only when this session could plausibly do
 // it — admin always; otherwise only if they're the one who set the CURRENT
@@ -296,6 +336,7 @@ export default function RecordDetailModal({ record, storeName, open, onClose, sh
             )
           })}
 
+          <ReviewButtons record={record} showInternal={showInternal} onUpdated={onUpdated} />
           <ReverseStatusButton record={record} events={events} onUpdated={onUpdated} />
 
           {showInternal && <BackofficeComments record={record} onUpdated={onUpdated} />}
