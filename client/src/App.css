@@ -514,6 +514,26 @@ body {
 
 .note { font-size: 15px; color: var(--text-muted); line-height: 1.55; }
 
+/* Record detail modal — the static record fields (left, wider) vs. status
+   actions/comments/conversation/history (right, narrower) side by side, so
+   the popup reads across instead of scrolling through one long column.
+   min-width on both columns is deliberately high enough that their combined
+   floor exceeds a phone-width modal, so flex-wrap stacks them back to one
+   column there without needing a separate media query for the split itself
+   — only the divider styling (border-left -> border-top) needs one. */
+.rdm-cols { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 4px; }
+.rdm-cols > .rdm-left  { flex: 2 1 380px; min-width: 320px; }
+.rdm-cols > .rdm-right {
+  flex: 1 1 340px; min-width: 300px;
+  border-left: 1px solid var(--border-soft); padding-left: 20px;
+}
+@media (max-width: 760px) {
+  .rdm-cols > .rdm-right {
+    border-left: none; padding-left: 0;
+    border-top: 1px solid var(--border-soft); padding-top: 14px; margin-top: 4px;
+  }
+}
+
 /* ── Form ── */
 .form-grid {
   display: grid;
