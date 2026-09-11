@@ -68,12 +68,14 @@ const isInternal = (f) => f[2] === true
 // The same HO review action available per-row in Reports (Complete / No
 // change needed), offered here too so a reviewer who opened Details to check
 // something doesn't have to close the modal and go back to the row just to
-// act on it. Back-office only (showInternal), and only while still Pending —
+// act on it. Back-office only (showInternal), only while still Pending, and
+// only where the caller opts in (allowReview) — Pricing.jsx's copy of this
+// modal is about pricing a record, not reviewing it, so it opts out.
 // ReverseStatusButton takes over this slot once the record's been reviewed.
-function ReviewButtons({ record, showInternal, onUpdated }) {
+function ReviewButtons({ record, showInternal, allowReview, onUpdated }) {
   const toast = useToast()
   const [busy, setBusy] = useState(false)
-  if (!showInternal || record.status !== 'pending') return null
+  if (!showInternal || !allowReview || record.status !== 'pending') return null
 
   const review = async (status) => {
     setBusy(true)
@@ -249,7 +251,7 @@ function Row({ label, value, mono }) {
   )
 }
 
-export default function RecordDetailModal({ record, storeName, open, onClose, showInternal = true, onUpdated }) {
+export default function RecordDetailModal({ record, storeName, open, onClose, showInternal = true, allowReview = true, onUpdated }) {
   const [showEmpty, setShowEmpty] = useState(false)
   const [events, setEvents]       = useState(null)
   const [pm, setPm]               = useState(null)
@@ -392,7 +394,7 @@ export default function RecordDetailModal({ record, storeName, open, onClose, sh
             </div>
 
             <div className="rdm-right">
-              <ReviewButtons record={record} showInternal={showInternal} onUpdated={onUpdated} />
+              <ReviewButtons record={record} showInternal={showInternal} allowReview={allowReview} onUpdated={onUpdated} />
               <ReverseStatusButton record={record} events={events} onUpdated={onUpdated} />
 
               {showInternal && <BackofficeComments record={record} onUpdated={onUpdated} />}
