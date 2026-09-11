@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-11-reverse-status'
+const API_REVISION   = '2026-09-11-reverse-status-fix'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -3592,6 +3592,13 @@ export async function onRequest(context) {
         completed_at:        null,
         store_completed_at:  null,
         cleared_at:          null,
+        // A store_completed record also carries marked_for_deletion=true
+        // (set by the "Store confirm" action -- TaskRecordList.jsx), which
+        // hides it from every task-list view regardless of status
+        // (GET /task-records: params.marked_for_deletion = 'neq.true').
+        // Without resetting it here, a reversed record would say Pending
+        // but stay invisible everywhere.
+        marked_for_deletion: false,
         updated_at:          new Date().toISOString()
       })
       if (!updated.length) return err('Record not found or not allowed', 404)

@@ -681,7 +681,7 @@ function HQReports() {
   const reverseOne = async (id) => {
     const prev = records.find(r => r.id === id)
     setRecords(rs => rs.map(r => r.id === id
-      ? { ...r, status: 'pending', reviewed_at: null, completed_at: null, store_completed_at: null, cleared_at: null }
+      ? { ...r, status: 'pending', reviewed_at: null, completed_at: null, store_completed_at: null, cleared_at: null, marked_for_deletion: false }
       : r))
     setBusy(true); setError('')
     try {
