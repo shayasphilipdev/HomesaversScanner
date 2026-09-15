@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { getRecordMessages, postRecordMessage, markRecordMessagesRead, resolveRecordMessages, getMessageRecipients, deleteRecordMessage } from '../lib/api.js'
 import CannedReplyPicker from './forms/CannedReplyPicker.jsx'
+import Lightbox from './Lightbox.jsx'
 import { useStore } from '../App.jsx'
 import { canReviewHQRecords } from '../lib/roles.js'
 
@@ -52,6 +53,9 @@ export default function RecordMessages({ recordId, onUnreadChange, resolvedAt, r
   const [sending, setSending]   = useState(false)
   const [resolvedState, setResolvedState] = useState({ at: resolvedAt || null, by: resolvedByName || null })
   const [resolving, setResolving] = useState(false)
+  // { images:[{url,label}], index } | null — one message's attachments,
+  // opened in-app instead of a new browser tab. See Lightbox.jsx.
+  const [lightbox, setLightbox] = useState(null)
   // Restricted-audience compose (back-office logins only). 'all' = normal thread.
   const [audience, setAudience]       = useState('all')
   const [recipientId, setRecipientId] = useState('')
@@ -164,6 +168,7 @@ export default function RecordMessages({ recordId, onUnreadChange, resolvedAt, r
   }
 
   return (
+    <>
     <div style={{ padding: '10px 14px', background: 'var(--bg-soft)', borderTop: '1px solid var(--border)' }}>
       {loading && <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading messages…</div>}
       {error && <div className="login-error" style={{ marginBottom: 8 }}>{error}</div>}
@@ -234,7 +239,29 @@ export default function RecordMessages({ recordId, onUnreadChange, resolvedAt, r
                     boxShadow: '0 1px 2px rgba(0,0,0,.08)',
                     border: restricted ? '1.5px dashed #A78BFA' : (hiPri ? '1.5px solid #FCA5A5' : undefined)
                   }}>
-                    {msg.body}
+                    {msg.body && <div style={{ whiteSpace: 'pre-wrap' }}>{msg.body}</div>}
+                    {/* Test has no compose-side photo attach button, but the
+                        DB is shared with main — a message sent from the main
+                        app can still carry photo_urls here, so still render
+                        them (via the same Lightbox as record photos) rather
+                        than silently dropping them. */}
+                    {Array.isArray(msg.photo_urls) && msg.photo_urls.length > 0 && (
+                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: msg.body ? 6 : 0 }}>
+                        {msg.photo_urls.map((u, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => setLightbox({
+                              images: msg.photo_urls.map((mu, mi) => ({ url: mu, label: `Attachment ${mi + 1}` })),
+                              index: i,
+                            })}
+                            style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer' }}
+                          >
+                            <img src={u} alt="attachment" style={{ width: 88, height: 88, objectFit: 'cover', borderRadius: 8, display: 'block' }} />
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2, textAlign: mine ? 'right' : 'left', display: 'flex', gap: 6, justifyContent: mine ? 'flex-end' : 'flex-start' }}>
                     <span>{msg.author_name} · {formatTime(msg.created_at)}</span>
@@ -342,5 +369,14 @@ export default function RecordMessages({ recordId, onUnreadChange, resolvedAt, r
         </div>
       </div>
     </div>
+    {lightbox && (
+      <Lightbox
+        images={lightbox.images}
+        index={lightbox.index}
+        onClose={() => setLightbox(null)}
+        onIndexChange={i => setLightbox(l => ({ ...l, index: i }))}
+      />
+    )}
+    </>
   )
 }
