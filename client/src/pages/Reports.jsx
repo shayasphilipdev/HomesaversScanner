@@ -657,6 +657,13 @@ function HQReports() {
     () => new Set(records.filter(r => r.task_type === 'J' || r.task_type === 'K').map(r => r.id)),
     [records]
   )
+
+  // Prev/Next inside the Details popup slide through the currently-loaded
+  // page of records — not a separate fetch. Naturally disables at either end
+  // of what's loaded; a "Load more" fetch doesn't retroactively extend it
+  // until the popup is reopened, which is fine — this is for browsing what's
+  // already on screen, not paging through the full report from inside there.
+  const detailIndex = detailRecord ? records.findIndex(r => r.id === detailRecord.id) : -1
   const selectedJkIds = [...selected].filter(id => jkIdSet.has(id))
 
   const confirmDelete = async () => {
@@ -1197,6 +1204,8 @@ function HQReports() {
           setRecords(rs => rs.map(r => r.id === id ? { ...r, ...patch } : r))
           setDetailRecord(r => r && r.id === id ? { ...r, ...patch } : r)
         }}
+        onPrev={detailIndex > 0 ? () => setDetailRecord(records[detailIndex - 1]) : undefined}
+        onNext={detailIndex >= 0 && detailIndex < records.length - 1 ? () => setDetailRecord(records[detailIndex + 1]) : undefined}
       />
 
       <ConfirmDeleteModal

@@ -5,6 +5,7 @@ import { useToast } from './Toast.jsx'
 import { useStore } from '../App.jsx'
 import RecordMessages from './RecordMessages.jsx'
 import AgeClock from './AgeClock.jsx'
+import Lightbox from './Lightbox.jsx'
 
 // Everything known about one task record, in one place.
 //
@@ -251,18 +252,45 @@ function Row({ label, value, mono }) {
   )
 }
 
-export default function RecordDetailModal({ record, storeName, open, onClose, showInternal = true, allowReview = true, onUpdated }) {
+export default function RecordDetailModal({ record, storeName, open, onClose, showInternal = true, allowReview = true, onUpdated, onPrev, onNext }) {
   const [showEmpty, setShowEmpty] = useState(false)
   const [events, setEvents]       = useState(null)
   const [pm, setPm]               = useState(null)
   const [pmErr, setPmErr]         = useState('')
+  // { images:[{url,label}], index } | null — the record's own Product/Barcode
+  // photos, opened in-app instead of a new browser tab (see Lightbox.jsx).
+  const [lightbox, setLightbox]   = useState(null)
 
+  // Escape closes (the lightbox first, if it's open, then the modal itself);
+  // Left/Right move to the previous/next record — but only when focus isn't
+  // inside a text field (so arrow-key editing in Backoffice Comments or the
+  // message composer isn't hijacked) and no lightbox is open, since it has
+  // its own key handler for sliding/closing itself. Checked via the DOM
+  // (data-lightbox) rather than the local `lightbox` state, because a photo
+  // viewer can also be open one level down — RecordMessages opens its own
+  // Lightbox for message attachments, and this modal has no state for that.
   useEffect(() => {
     if (!open) return
-    const onKey = (e) => { if (e.key === 'Escape') onClose?.() }
+    const onKey = (e) => {
+      const lightboxOpen = document.querySelector('[data-lightbox]')
+      if (e.key === 'Escape') {
+        if (lightboxOpen) return   // Lightbox's own handler closes just the photo viewer
+        onClose?.()
+        return
+      }
+      if (lightboxOpen) return
+      const tag = document.activeElement?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+      if (e.key === 'ArrowLeft'  && onPrev) onPrev()
+      if (e.key === 'ArrowRight' && onNext) onNext()
+    }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [open, onClose])
+  }, [open, onClose, onPrev, onNext])
+
+  // A stale photo from the previous record must never carry over when
+  // sliding to the next one via onPrev/onNext.
+  useEffect(() => { setLightbox(null) }, [record?.id])
 
   useEffect(() => {
     if (!open || !record?.id) return
@@ -289,7 +317,13 @@ export default function RecordDetailModal({ record, storeName, open, onClose, sh
   const details = record.details && typeof record.details === 'object' ? record.details : {}
   const detailKeys = Object.keys(details).filter(k => details[k] !== null && details[k] !== '')
 
+  const recordPhotos = [
+    ['Product', record.photo_product_url],
+    ['Barcode', record.photo_barcode_url],
+  ].filter(([, u]) => u).map(([label, url]) => ({ label, url }))
+
   return (
+    <>
     <div
       role="dialog"
       aria-modal="true"
@@ -312,6 +346,12 @@ export default function RecordDetailModal({ record, storeName, open, onClose, sh
             {record.item_name || record.description || record.product_name_label || '(no description)'}
           </span>
           <span style={{ marginLeft: 'auto' }} />
+          {(onPrev || onNext) && (
+            <span className="flex-row" style={{ gap: 4 }}>
+              <button className="btn btn-sm btn-outline" onClick={onPrev} disabled={!onPrev} title="Previous record (←)">‹ Prev</button>
+              <button className="btn btn-sm btn-outline" onClick={onNext} disabled={!onNext} title="Next record (→)">Next ›</button>
+            </span>
+          )}
           <label className="note" style={{ fontSize: 12, display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer' }}>
             <input type="checkbox" checked={showEmpty} onChange={e => setShowEmpty(e.target.checked)} />
             Show empty fields
@@ -360,18 +400,24 @@ export default function RecordDetailModal({ record, storeName, open, onClose, sh
                 </div>
               )}
 
-              {/* Photos */}
-              {(record.photo_product_url || record.photo_barcode_url) && (
+              {/* Photos — open in the in-app Lightbox instead of a new browser
+                  tab, so zoom and sliding between the two are available and
+                  the record detail underneath stays open. */}
+              {recordPhotos.length > 0 && (
                 <div style={{ marginTop: 14 }}>
                   <div className="flex-row" style={{ gap: 10, flexWrap: 'wrap' }}>
-                    {[['Product', record.photo_product_url], ['Barcode', record.photo_barcode_url]]
-                      .filter(([, u]) => u)
-                      .map(([lbl, u]) => (
-                        <a key={lbl} href={u} target="_blank" rel="noopener noreferrer" title={`Open ${lbl} photo`}>
-                          <img src={u} alt={lbl} style={{ width: 120, height: 120, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)', display: 'block' }} />
-                          <span className="note" style={{ fontSize: 12 }}>{lbl}</span>
-                        </a>
-                      ))}
+                    {recordPhotos.map((p, i) => (
+                      <button
+                        key={p.label}
+                        type="button"
+                        onClick={() => setLightbox({ images: recordPhotos, index: i })}
+                        title={`View ${p.label} photo`}
+                        style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer', textAlign: 'center' }}
+                      >
+                        <img src={p.url} alt={p.label} style={{ width: 120, height: 120, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)', display: 'block' }} />
+                        <span className="note" style={{ fontSize: 12 }}>{p.label}</span>
+                      </button>
+                    ))}
                   </div>
                 </div>
               )}
@@ -457,5 +503,14 @@ export default function RecordDetailModal({ record, storeName, open, onClose, sh
         </div>
       </div>
     </div>
+    {lightbox && (
+      <Lightbox
+        images={lightbox.images}
+        index={lightbox.index}
+        onClose={() => setLightbox(null)}
+        onIndexChange={i => setLightbox(l => ({ ...l, index: i }))}
+      />
+    )}
+    </>
   )
 }
