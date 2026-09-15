@@ -255,7 +255,7 @@ export default function Pricing() {
                   const isSaving = savingIds.has(it.id)
                   const empty = <span className="td-muted">—</span>
                   return (
-                    <tr key={it.id} style={isPriced ? { background: 'var(--surface-warm)' } : undefined}>
+                    <tr key={it.id} style={{ background: isPriced ? 'var(--surface-warm)' : '#fff' }}>
                       <td className="td-code" style={{ whiteSpace: 'nowrap' }}>{r.barcode_no || r.product_code || empty}</td>
                       <td className="td-code" style={{ whiteSpace: 'nowrap' }}>{it.product_barcode || empty}</td>
                       <td>{r.item_name || r.description || r.product_name_label || empty}</td>
