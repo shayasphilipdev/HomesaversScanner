@@ -551,6 +551,39 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-09-15 — Prev/Next record navigation + in-app photo Lightbox; Pricing hides HO review buttons
+
+**Prev/Next between records.** The Details popup (`RecordDetailModal.jsx`)
+now takes `onPrev`/`onNext` props and shows header buttons (and ArrowLeft/
+ArrowRight keys, guarded against typing in a text field) to move to the
+adjacent record without closing/reopening the modal. `Reports.jsx` supplies
+these from the currently-loaded `records` array's index around
+`detailRecord` — no separate fetch, so it naturally disables at either end
+of what's loaded on screen; a "Load more" fetch doesn't retroactively
+extend it until the popup is reopened.
+
+**In-app photo Lightbox.** New `client/src/components/Lightbox.jsx` — a
+full-screen overlay (not a literal new OS window) with zoom (0.5x-4x via
+CSS `transform: scale()`, +/- keys or buttons) and Prev/Next sliding
+between every photo in the current set (Esc/←/→ keys). Replaces the old
+`<a target="_blank">` behaviour in two places: `RecordDetailModal.jsx`'s
+own Product/Barcode photos, and `RecordMessages.jsx`'s per-message
+`photo_urls` attachments (each message opens its own photo set). Since
+`RecordDetailModal`'s Escape/arrow-key record-navigation handler and a
+nested `RecordMessages` Lightbox both listen on `document`, the record-nav
+handler checks for `[data-lightbox]` in the DOM (not just its own local
+lightbox state) before acting, so a message-photo viewer correctly "wins"
+the key over sliding to the next record or closing the whole modal.
+
+**Pricing page.** `Pricing.jsx`'s copy of `RecordDetailModal` now passes
+`allowReview={false}` — Complete/No change belong to the HO review workflow
+in Reports, not to a page about pricing a record.
+
+**Verified:** `npx vite build` clean on both `main` and `test` (client-only
+change, no `API_REVISION` bump needed). Not interactively verified in a
+browser this session — no local `.dev.vars`/wrangler backend or test PINs
+were available to log in and click through it live.
+
 ### 2026-09-11 — area_manager unified as back office everywhere; admin can delete messages
 
 **Unify `isBO`.** The entry above (server-side role gate) documented, but
