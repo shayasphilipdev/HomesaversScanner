@@ -26,7 +26,7 @@ const isoDate = (d) => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 const todayStr = () => isoDate(new Date())
-const daysAgoStr = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return isoDate(d) }
+const monthAgoStr = () => { const d = new Date(); d.setMonth(d.getMonth() - 1); return isoDate(d) }
 
 export default function Pricing() {
   const { session } = useStore()
@@ -38,7 +38,7 @@ export default function Pricing() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [taskTypes, setTaskTypes]     = useState([])
   const [taskTypeIds, setTaskTypeIds] = useState([])   // [] = all task types
-  const [fromDate, setFromDate]       = useState(daysAgoStr(7))
+  const [fromDate, setFromDate]       = useState(monthAgoStr())
   const [toDate, setToDate]           = useState(todayStr())
   const [loading, setLoading]   = useState(true)
   const [savingIds, setSavingIds] = useState(new Set())   // ids currently mid-autosave (a Set — more than one row can be saving at once)
