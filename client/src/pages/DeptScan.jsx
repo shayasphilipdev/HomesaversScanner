@@ -98,6 +98,25 @@ export default function DeptScan() {
     return () => document.body.classList.remove('deptscan-full')
   }, [])
 
+  // Browsers refuse to start audio until the user has interacted, and the
+  // first thing that wants to make a sound here is a scan, not a tap — so the
+  // duplicate alert would be silent exactly when it is first needed. Unlock on
+  // the first touch anywhere, which the operator makes on the way in.
+  useEffect(() => {
+    const unlock = () => {
+      try {
+        audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)()
+        if (audioCtx.state === 'suspended') audioCtx.resume()
+      } catch { /* no audio on this device; vibration still fires */ }
+    }
+    window.addEventListener('pointerdown', unlock, { once: true })
+    window.addEventListener('touchstart', unlock, { once: true })
+    return () => {
+      window.removeEventListener('pointerdown', unlock)
+      window.removeEventListener('touchstart', unlock)
+    }
+  }, [])
+
   const handleConfirm = useCallback(async (raw) => {
     const scanned = String(raw || '').trim()
     if (scanned.length < 4) return
