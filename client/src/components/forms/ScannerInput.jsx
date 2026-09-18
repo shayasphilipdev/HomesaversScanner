@@ -19,8 +19,13 @@ export default function ScannerInput({
   value, onChange, label, placeholder = 'Scan or type…',
   onConfirm, lookupLoading,
   readerId = 'reader',
-  inlineAction = null   // node rendered to the right of the input (e.g. a Save
+  inlineAction = null,  // node rendered to the right of the input (e.g. a Save
                         // button) so the action sits ABOVE the camera band.
+  compactActions = null // node sharing ONE row with a shrunken camera button.
+                        // Opt-in: without it the camera keeps its own
+                        // full-width line, which every task form expects.
+                        // Department Scan passes its Undo here, because the
+                        // strip above the Android keyboard is its whole budget.
 }) {
   const inputRef   = useRef(null)
   const scannerRef = useRef(null)
@@ -393,7 +398,24 @@ export default function ScannerInput({
         </div>
         {inlineAction}
       </div>
-      {cameraEnabled && (
+      {compactActions ? (
+        // One row, small buttons — vertical space is the scarce resource.
+        (cameraEnabled || compactActions) && (
+          <div className="flex-row" style={{ gap: 6, marginTop: 6, alignItems: 'stretch' }}>
+            {cameraEnabled && (
+              <button
+                type="button"
+                className={`btn btn-sm ${cameraOn ? 'btn-danger' : 'btn-outline'}`}
+                style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+                onClick={() => setCameraOn(v => !v)}
+              >
+                {cameraOn ? '✕ Camera' : '📷 Camera'}
+              </button>
+            )}
+            {compactActions}
+          </div>
+        )
+      ) : cameraEnabled && (
         <div style={{ marginTop: 8 }}>
           <button
             type="button"

@@ -468,9 +468,13 @@ Shared by all HO task forms. Behaviour (after several iterations):
   lookup ~250 ms after the scanned value stops changing, so it works even for
   guns that send no Enter/Tab. A `lastConfirmed` guard prevents duplicate
   lookups. (This fixed "lookup only fires after a button press".)
-- **Mobile soft-keyboard suppression:** `inputMode='none'` keeps the field
-  focused for the gun without popping the on-screen keyboard; a real tap flips
-  it to `inputMode='text'` for manual entry; resets to none when the field clears.
+- **Mobile soft-keyboard suppression: REMOVED, and it must not come back.**
+  `inputMode='none'` was tried twice in June (b5d1aa8, 49214ff) and reverted
+  both times (9099e68, 88f2862). Measured on the real handhelds 2026-09-18:
+  it blocks the gun outright — 0 characters arrive. The scan is delivered
+  through the Android IME, so suppressing the keyboard suppresses the scan
+  with it. Same result for `readOnly` and `virtualkeyboardpolicy="manual"`.
+  See §11 (2026-09-18) for the full measurement table.
 - Optional camera scanner (lazy `html5-qrcode`, N-of-3 confirmation), shown only
   when an admin enables it (`hs_camera_enabled`).
 
@@ -550,6 +554,125 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 ---
 
 ## 11. Recent work
+
+### 2026-09-18 — Department Scan + Scan Doctor ⚠️ TEST BRANCH ONLY
+
+> **Do not merge or cherry-pick any of this to `main`.** Explicit instruction
+> from the business owner: "Do any changes only in the Test App. Do not edit
+> any codes in live app." This is the "anything specific to Test branch, only
+> Test branch gets" half of the standing branch rule (§2). Everything in this
+> entry lives on `test` alone. Live is still on API_REVISION
+> `2026-09-11-am-unify-msg-delete` and must stay there until asked otherwise.
+
+**Why.** Department Check (Task J) is >90% of everything the estate records —
+~143,800 rows in three weeks. Stores reported it as slow, specifically "multiple
+tap to scan-save-clear", and later, more precisely: *the keyboard covers the scan
+box, the Save button and the data from the first save onwards.*
+
+**What the numbers said before any code was written.**
+- Continuous scanning (gaps ≤30s, same 22 stores on both apps): live median
+  **8.29s**/item, test median **7.79s**. p10 4.87s, p90 16.42s.
+- Test was already faster because commit `608e69d` (19 Aug, "not for main until
+  store-tested") has been live on `test` the whole time. It was finally
+  store-tested on 2026-09-18 and it works — so the double-tap fix is worth
+  **~7%**, not the drastic win being asked for. Taps were never the main cost.
+- Across 143,818 live Task J rows: **zero notes, zero quantities.** Every stored
+  field is derived from the barcode, so the Save tap confirms nothing a human
+  entered. Department auto-resolves 93.1% of the time.
+- 2,194 scans (1.5%) repeat the previous barcode; 1,289 within 10s.
+
+**Scan Doctor (`client/src/pages/ScanDoctor.jsx`, route `/scan-doctor`).** A
+diagnostic instrument, not a feature. Eight attempts to kill the Android
+double-tap were tried and reverted over six days in June, every one a guess
+about device behaviour nobody had measured. This measures it: per scan it
+records characters, keyCodes, inter-character timing, terminator, `keyCode 229`
+/ `Unidentified` / composing flags, function keys and their position in the
+burst, and whether the soft keyboard is up. Five focus modes (nothing focused /
+normal box / read-only / `inputMode="none"` / `virtualkeyboardpolicy="manual"`).
+Results upload with one tap — see the diagnostics endpoint below — because
+reading JSON off a handheld and retyping it is the very friction being studied.
+
+**MEASURED HARDWARE FACTS (HS Tallaght, generic Chinese Android handheld
+"V520", Android 10, Chrome 152). These are settled; do not re-litigate them.**
+
+| Focus mode | Barcode arrives? | What actually happens |
+|---|---|---|
+| Nothing focused | **No** — 0 chars | Only F1 arrives; one burst was 6 keydowns, all F1 |
+| Normal editable box | **Yes** | But **2 keydowns for 13 digits**, `keyCode 229` + `Unidentified` |
+| Read-only | **No** — 0 chars | Blocked |
+| `inputMode="none"` | **No** — 0 chars | Blocked (confirms the June reverts, with data) |
+| `virtualkeyboardpolicy="manual"` | **No** — 0 chars | Blocked; `kc229` never fires, IME never engages |
+
+- **The gun delivers through the Android IME, not as keystrokes.** That is the
+  root cause of the composition re-injection, of the keyboard, and of why
+  `ScannerInput`'s global key listener never helped (it filters
+  `e.key.length === 1`; these events are `Unidentified`).
+- **Suppressing the keyboard suppresses the scan.** Four independent mechanisms,
+  one result. On this hardware, with this scanner output mode, there is no
+  web-side way to have the scan without the keyboard.
+- **The gun sends `F1` (keyCode 112) as a PREFIX** (`@start`), not a terminator.
+  On a page that does not `preventDefault` it opens Chrome's help site — which
+  is why `ScannerInput.jsx` has swallowed F-keys since ff68555. Being a prefix,
+  it does **not** allow the 250ms auto-settle to be removed.
+- Escape hatch not yet tried: switching the device's scanner output from "text
+  fill" to **keystroke simulation**. That would make real key events arrive, the
+  no-focus mode start working, and zero-tap/no-keyboard become possible. Verify
+  any settings change in 10 seconds via Scan Doctor Mode A.
+
+**Department Scan (`client/src/pages/DeptScan.jsx`, route `/dept-scan`).** The
+Task J loop rebuilt around the constraint above rather than around a hope.
+- The keyboard **is** going to be up, so the layout assumes it: header, result,
+  scan box and the actions row occupy a ~210px strip at the top, nothing that
+  matters is ever placed where the keyboard covers it, and the page never
+  scrolls. Sized from `visualViewport`. Full-bleed — `body.deptscan-full` hides
+  nav, sidebar and bottom bar (rule in `App.css`).
+- **No Save tap.** The record commits on lookup; a large Undo replaces the
+  confirmation step, per the zero-notes/zero-quantities finding above.
+- **Duplicate inside 3s** is refused with a distinct two-tone alert + vibration.
+  A sub-second repeat is already swallowed one layer down by `ScannerInput`'s
+  IME-echo guard — correct, that is an echo, not a second trigger pull.
+- **No department found saves normally and stays silent** — explicit business
+  rule, it is a normal outcome and must not be flagged.
+- WebAudio tones (no asset to fetch); audio is unlocked on first touch, since
+  browsers block it until a gesture and the first thing wanting to beep is a
+  scan, not a tap.
+- Menu entry "Dept Scan" in all three nav bars immediately after HO Tasks,
+  gated on `isTestEnv()` as well as `canDoHQTasks`.
+
+**`ScannerInput` gained `compactActions`** — opt-in prop that shrinks the camera
+button and shares one row with the caller's own buttons. Without it the camera
+keeps its full-width line, exactly as every other task form (A–M) expects; only
+Department Scan opts in.
+
+**Worker: `POST /task-records` now accepts `scanned_at`.** `created_at` is
+stamped server-side at insert, so anything going through the offline outbox
+landed timestamped at **reconnect**, not when the shelf was walked — HS Wicklow
+Abbey St shows a 0.44s median gap and Tullamore 1.06s, which are drain bursts,
+not scanning. `resolveScanTime()` accepts a client stamp inside a sane window
+(no more than 5 min ahead, no older than 30 days) and falls back to the server
+clock otherwise. **This fix is on `test` only; live still has the bug.**
+
+**New table `device_diagnostics`** (migration `device_diagnostics`, applied to
+the shared DB) + **`POST /device-diagnostics`** on the test Worker: field
+diagnostics uploaded straight from a handheld so results are readable with SQL.
+The table is additive and inert on live — only the test Worker exposes a write
+path. Any signed-in session may write; a store user is precisely who runs it.
+
+**Also on `test`: a darker palette.** `data-testenv="1"` is stamped on `<html>`
+before first paint (`main.jsx`), darkening the ground tokens a step in both
+themes (light `#DDE5F1 → #C2CFE3`, dark `#0C0F17 → #070A11`) so staff can tell
+the test app from live at a glance without reading the top banner. The red
+TESTING MODE banner stays.
+
+**Still open:** the Monday store test of Department Scan (does the keyboard now
+stay clear of the top strip, is the duplicate alert audible, and what does the
+`source='test'` timing say against the 8.29s/7.79s baseline); the scanner
+output-mode question above; and test-app load time (~590KB main bundle),
+reported as slow but not yet measured.
+
+**Stale doc corrected:** §7 still described `inputMode='none'` as current
+behaviour. It was reverted in June and is now measured to block the gun
+outright.
 
 ### 2026-09-15 — Prev/Next record navigation + in-app photo Lightbox; Pricing hides HO review buttons
 

@@ -277,6 +277,21 @@ export default function DeptScan() {
           lookupLoading={busy}
           readerId="reader-deptscan"
           placeholder="Scan"
+          // Undo shares one small row with the camera button rather than
+          // taking a full-width line of its own — every pixel here is a pixel
+          // the keyboard would otherwise take.
+          compactActions={
+            <button
+              type="button"
+              onClick={undoLast}
+              disabled={!canUndo}
+              className="btn btn-sm"
+              style={{
+                flex: 1, background: 'var(--red)', color: '#fff', border: 'none',
+                fontWeight: 700, opacity: canUndo ? 1 : .4,
+              }}
+            >Undo last</button>
+          }
         />
       </div>
 
@@ -289,19 +304,6 @@ export default function DeptScan() {
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }}>{error}</div>
       )}
-
-      <div style={{ padding: '0 10px 6px', flexShrink: 0 }}>
-        <button
-          type="button"
-          onClick={undoLast}
-          disabled={!canUndo}
-          style={{
-            width: '100%', padding: '14px 10px', fontSize: 17, fontWeight: 700,
-            borderRadius: 10, border: 'none', color: '#fff', cursor: 'pointer',
-            background: 'var(--red)', opacity: canUndo ? 1 : .4,
-          }}
-        >Undo last</button>
-      </div>
 
       {/* Everything below here may well be behind the keyboard. Nothing in it
           is required to keep scanning. */}
