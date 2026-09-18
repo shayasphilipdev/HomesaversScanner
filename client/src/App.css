@@ -115,6 +115,44 @@
     #0C0F17;
 }
 
+/* ── Test build tint ──────────────────────────────────────────────────────
+   The test app runs the same code against the same live database, so staff
+   need to know at a glance which one is in their hand. The red TESTING MODE
+   banner sits at the very top and is easy to miss once someone is looking at
+   a shelf, so the whole ground is darkened instead. Stamped on <html> in
+   main.jsx before first paint; sits after both theme blocks to win the
+   cascade. Text tokens are deliberately untouched — the type colours already
+   have plenty of contrast against these darker grounds. */
+:root[data-testenv="1"] {
+  --bg:             #C2CFE3;
+  --bg-soft:        #B6C5DD;
+  --surface:        #DCE3EF;
+  --surface-warm:   #CCD7E8;
+  --hs-head-1:      #CFDAEE;
+  --hs-head-2:      #BDCAE5;
+  --border:         #9BA8C2;
+  --border-soft:    #B3BDD1;
+  --body-bg:
+    radial-gradient(58vw 52vh at 98%  -10%, rgba(42, 75, 196, .26), transparent 60%),
+    radial-gradient(54vw 48vh at  2%   2%,  rgba(31, 58, 160, .22), transparent 60%),
+    radial-gradient(64vw 56vh at -10% 110%, rgba(19, 36,  90, .20), transparent 62%),
+    radial-gradient(46vw 42vh at 60%  112%, rgba(63, 95, 166, .16), transparent 58%),
+    #D3DCEC;
+}
+
+:root[data-testenv="1"][data-theme="dark"] {
+  --bg:             #070A11;
+  --bg-soft:        #0E121D;
+  --surface:        #101623;
+  --surface-warm:   #151C2D;
+  --body-bg:
+    radial-gradient(52vw 46vh at 98%  -8%,  rgba(255, 142, 92,  .18), transparent 60%),
+    radial-gradient(56vw 50vh at -8%   6%,  rgba(99, 102, 241,  .20), transparent 60%),
+    radial-gradient(50vw 48vh at 50%  112%, rgba(45, 212, 191,  .12), transparent 60%),
+    radial-gradient(44vw 42vh at 104% 100%, rgba(168, 85, 247,  .14), transparent 60%),
+    #070A11;
+}
+
 html, body { height: 100%; }
 
 body {
