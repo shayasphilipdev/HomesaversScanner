@@ -27,6 +27,7 @@ const MODES = [
   { key: 'normal',   label: 'B · Normal box',      hint: "Today's behaviour — an ordinary focused text box." },
   { key: 'readonly', label: 'C · Read-only box',   hint: 'Focused but read-only. Keeps focus, should not raise the keyboard.' },
   { key: 'imenone',  label: 'D · Keyboard off',    hint: 'inputMode="none" — focused, on-screen keyboard suppressed.' },
+  { key: 'vkpolicy', label: 'E · Keyboard held back', hint: 'Normal editable box, but the keyboard is asked not to open.' },
 ]
 
 // A burst of keystrokes is treated as one finished scan after this much quiet.
@@ -105,6 +106,12 @@ export default function ScanDoctor() {
       inputValue:   inputRef.current ? inputRef.current.value : '',
       raw:          evs,
     }, ...prev].slice(0, 12))
+
+    // Clear the box the way the real form does after a save. That clear is
+    // precisely what provokes the Android IME re-injection, so whatever the
+    // NEXT scan records as its box value tells us whether the old barcode
+    // came back — measured instead of inferred.
+    if (inputRef.current) inputRef.current.value = ''
   }
 
   const record = (type, e) => {
@@ -161,6 +168,17 @@ export default function ScanDoctor() {
     } else {
       const el = inputRef.current
       if (el) { el.value = ''; try { el.focus({ preventScroll: true }) } catch { el.focus() } }
+      // Mode E: the field stays a normal editable input — which the measured
+      // results show is the only kind this gun will deliver into — but the
+      // VirtualKeyboard API is asked to keep the on-screen keyboard down.
+      // virtualkeyboardpolicy="manual" stops it auto-opening on focus; hide()
+      // closes it if it already came up.
+      if (mode === 'vkpolicy' && navigator.virtualKeyboard) {
+        try {
+          navigator.virtualKeyboard.overlaysContent = true
+          navigator.virtualKeyboard.hide()
+        } catch { /* unsupported — the report records that */ }
+      }
     }
   }, [mode])
 
@@ -183,6 +201,7 @@ export default function ScanDoctor() {
     ua: navigator.userAgent,
     screen: `${window.screen.width}x${window.screen.height} dpr${window.devicePixelRatio}`,
     mode,
+    virtualKeyboardApi: typeof navigator !== 'undefined' && 'virtualKeyboard' in navigator,
     keyboardUp: kbd.vv > 0 && kbd.win - kbd.vv > 120,
     scans: scans.map(s => ({
       mode: s.mode, value: s.assembled, len: s.length, events: s.events,
@@ -258,6 +277,7 @@ export default function ScanDoctor() {
             spellCheck={false}
             readOnly={mode === 'readonly'}
             inputMode={mode === 'imenone' ? 'none' : undefined}
+            virtualkeyboardpolicy={mode === 'vkpolicy' ? 'manual' : undefined}
             placeholder="Scan here"
             className="scan-input"
             style={{ width: '100%', marginBottom: 10, fontSize: 16 }}
