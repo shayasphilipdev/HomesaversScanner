@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-18-device-diagnostics-TEST'
+const API_REVISION   = '2026-09-18-deptscan-TEST'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -211,6 +211,26 @@ const STATUS_SETTERS = {
   no_change_needed:  BO_ROLES,
   store_completed:   STORE_ROLES,
   cleared:           STORE_ROLES,
+}
+
+// When a record was actually scanned, as reported by the device.
+//
+// created_at is stamped server-side at insert, so anything that went through
+// the offline outbox lands timestamped at RECONNECT rather than at the moment
+// the shelf was walked — which misreports the audit. A client may send
+// scanned_at to say when the trigger was really pulled.
+//
+// Only trusted within a sane window, since it is client-supplied: no further
+// ahead than a little clock skew, and no older than the retention window.
+// Anything outside that, or unparseable, falls back to the server clock.
+function resolveScanTime(raw, fallbackIso) {
+  if (typeof raw !== 'string' || !raw) return fallbackIso
+  const t = Date.parse(raw)
+  if (!Number.isFinite(t)) return fallbackIso
+  const nowMs = Date.parse(fallbackIso)
+  if (t > nowMs + 5 * 60 * 1000)       return fallbackIso   // future — bad device clock
+  if (t < nowMs - 30 * 24 * 3600_000)  return fallbackIso   // implausibly old
+  return new Date(t).toISOString()
 }
 
 function buildSessionForUser(_db, user) {
@@ -4079,7 +4099,7 @@ export async function onRequest(context) {
         // preview deployment) are marked 'test' so they can be identified and
         // kept out of the real data; live-site records stay null.
         source:              url.hostname === 'homesaversscanner.pages.dev' ? null : 'test',
-        created_at:          now,
+        created_at:          resolveScanTime(body.scanned_at, now),
         updated_at:          now
       })
       const created = Array.isArray(inserted) ? inserted[0] : inserted

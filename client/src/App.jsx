@@ -29,6 +29,7 @@ import Pricing from './pages/Pricing.jsx'
 import AwaitingReply from './pages/AwaitingReply.jsx'
 import AdminSpacePlan from './pages/AdminSpacePlan.jsx'
 import ScanDoctor from './pages/ScanDoctor.jsx'
+import DeptScan from './pages/DeptScan.jsx'
 import { setToken, clearToken, getAppConfig } from './lib/api.js'
 import { canDoHQTasks } from './lib/roles.js'
 import { isTestEnv } from './lib/env.js'
@@ -158,6 +159,7 @@ function Shell() {
                 on the test branch, and the page itself refuses to run on the
                 live host. */}
             <Route path="/scan-doctor" element={<ScanDoctor />} />
+            <Route path="/dept-scan"   element={<DeptScan />} />
             <Route path="/manager"       element={<ManagerDashboard />} />
             <Route path="/admin/task-templates" element={<AdminGuard mode="templates"><AdminTaskTemplates /></AdminGuard>} />
             <Route path="/admin"            element={<Navigate to="/admin/stores" replace />} />

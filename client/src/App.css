@@ -153,6 +153,15 @@
     #070A11;
 }
 
+/* Department Scan runs full-bleed. On a handheld the nav chrome is pure cost,
+   and with the Android keyboard up — which, on this hardware, is the only
+   state in which a scan arrives at all — there is no room for it whatever.
+   See client/src/pages/DeptScan.jsx. */
+body.deptscan-full .nav,
+body.deptscan-full .sidebar,
+body.deptscan-full .bottom-nav { display: none !important; }
+body.deptscan-full .main-content { padding: 0; max-width: none; }
+
 html, body { height: 100%; }
 
 body {
