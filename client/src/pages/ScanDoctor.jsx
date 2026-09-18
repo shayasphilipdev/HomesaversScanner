@@ -31,6 +31,18 @@ const MODES = [
 // A burst of keystrokes is treated as one finished scan after this much quiet.
 const QUIET_MS = 350
 
+// The handhelds in this estate send a function key around each scan — on a
+// page that does not swallow it, F1 opens Chrome's help site and navigates
+// away mid-scan. ScannerInput.jsx:92 has swallowed these since ff68555 ("a
+// mis-set Android trigger key was opening Chrome Help"). Which function key
+// it is, and where in the burst it lands, is now the most valuable thing this
+// page can report — so these are recorded and then suppressed, never ignored.
+const isFnKey = (e) =>
+  /^F\d{1,2}$/.test(e.key || '') || (e.keyCode >= 112 && e.keyCode <= 135)
+
+const isEnterKey = (e) => e.key === 'Enter' || e.keyCode === 13 || e.keyCode === 10
+const isTabKey   = (e) => e.key === 'Tab'   || e.keyCode === 9
+
 const median = (xs) => {
   if (!xs.length) return 0
   const s = [...xs].sort((a, b) => a - b)
@@ -62,8 +74,17 @@ export default function ScanDoctor() {
     for (let i = 1; i < keydowns.length; i++) gaps.push(Math.round(keydowns[i].t - keydowns[i - 1].t))
 
     const last = keydowns[keydowns.length - 1] || {}
-    const isTerm = (e) => e.key === 'Enter' || e.key === 'Tab' || e.keyCode === 13 || e.keyCode === 10 || e.keyCode === 9
+    const isTerm = (e) => isEnterKey(e) || isTabKey(e) || isFnKey(e)
     const chars = keydowns.filter(e => !isTerm(e) && e.key && e.key.length === 1).map(e => e.key).join('')
+
+    // Function keys, with their position in the burst — a key at index 0 is a
+    // prefix, one at the end is the terminator. Either is usable as an exact
+    // scan-complete signal, which would retire the 250ms auto-settle delay
+    // that currently costs a quarter second on every single scan.
+    const fnKeys = keydowns
+      .map((e, i) => ({ e, i }))
+      .filter(({ e }) => isFnKey(e))
+      .map(({ e, i }) => `${e.key || '?'}(kc${e.keyCode})@${i === 0 ? 'start' : i === keydowns.length - 1 ? 'end' : i}`)
 
     setScans(prev => [{
       id: prev.length + 1,
@@ -75,6 +96,7 @@ export default function ScanDoctor() {
       durationMs:   Math.round((evs[evs.length - 1]?.t ?? 0)),
       medianGapMs:  median(gaps),
       terminator:   isTerm(last) ? `${last.key || '?'} (keyCode ${last.keyCode})` : 'NONE',
+      fnKeys,
       saw229:       evs.some(e => e.keyCode === 229),
       sawUnident:   evs.some(e => e.key === 'Unidentified'),
       sawComposing: evs.some(e => e.isComposing),
@@ -100,11 +122,22 @@ export default function ScanDoctor() {
     timerRef.current = setTimeout(flush, QUIET_MS)
   }
 
-  // Document-level capture. Deliberately capture-phase and non-preventing —
-  // we want to observe exactly what arrives, not change it.
+  // Document-level capture, capture-phase so nothing else sees these first.
+  // Everything is recorded before anything is suppressed: we suppress only
+  // the keys that would drive browser UI or move focus and so end the test
+  // (F-keys open Chrome help; Tab jumps focus out of the field under test).
+  // Ordinary characters are always left alone, so modes B/C/D can still show
+  // what actually lands in the box.
   useEffect(() => {
-    const onKeyDown  = (e) => record('keydown', e)
-    const onKeyPress = (e) => record('keypress', e)
+    const onKeyDown = (e) => {
+      record('keydown', e)
+      if (isFnKey(e) || isTabKey(e)) { e.preventDefault(); return }
+      if (mode === 'nofocus' && isEnterKey(e)) e.preventDefault()
+    }
+    const onKeyPress = (e) => {
+      record('keypress', e)
+      if (isFnKey(e) || isTabKey(e)) e.preventDefault()
+    }
     document.addEventListener('keydown', onKeyDown, true)
     document.addEventListener('keypress', onKeyPress, true)
     return () => {
@@ -150,7 +183,7 @@ export default function ScanDoctor() {
     scans: scans.map(s => ({
       mode: s.mode, value: s.assembled, len: s.length, events: s.events,
       keydowns: s.keydowns, ms: s.durationMs, gapMs: s.medianGapMs,
-      terminator: s.terminator, kc229: s.saw229, unidentified: s.sawUnident,
+      terminator: s.terminator, fnKeys: s.fnKeys, kc229: s.saw229, unidentified: s.sawUnident,
       composing: s.sawComposing, inputValue: s.inputValue,
       raw: s.raw.slice(0, 40),
     })),
@@ -244,6 +277,9 @@ export default function ScanDoctor() {
               mode <strong>{s.mode}</strong> · {s.length} chars · {s.keydowns} keydowns · {s.durationMs}ms ·
               {' '}gap {s.medianGapMs}ms<br />
               terminator: <strong style={{ color: s.terminator === 'NONE' ? 'var(--red)' : 'var(--green)' }}>{s.terminator}</strong>
+              {s.fnKeys?.length > 0 && (
+                <><br />function keys: <strong style={{ color: 'var(--blue)' }}>{s.fnKeys.join(', ')}</strong></>
+              )}
               {s.saw229       && <> · <strong style={{ color: 'var(--amber)' }}>keyCode 229 (IME)</strong></>}
               {s.sawUnident   && <> · <strong style={{ color: 'var(--amber)' }}>Unidentified</strong></>}
               {s.sawComposing && <> · <strong style={{ color: 'var(--amber)' }}>composing</strong></>}
