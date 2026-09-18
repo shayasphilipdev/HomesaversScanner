@@ -313,6 +313,10 @@ export const getMessageRecipients   = () => request('/message-recipients')
 // Permanently delete one message. Admin only (server-enforced).
 export const deleteRecordMessage    = (recordId, messageId) =>
   request(`/task-records/${recordId}/messages/${messageId}`, { method: 'DELETE' })
+// TEST BRANCH ONLY — upload a field diagnostic from a store handheld so the
+// result never has to be read off that screen and retyped. See ScanDoctor.jsx.
+export const postDeviceDiagnostic   = (kind, payload, user_agent) =>
+  request('/device-diagnostics', { method: 'POST', body: { kind, payload, user_agent } })
 export const getUnreadMessageCount  = () => request('/task-messages/unread-count')
 export const getMessageThreads      = () => request('/task-messages/threads')
 export const markRecordMessagesRead = (id) => request(`/task-records/${id}/messages/mark-read`, { method: 'POST' })

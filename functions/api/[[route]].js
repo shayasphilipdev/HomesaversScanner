@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-11-am-unify-msg-delete'
+const API_REVISION   = '2026-09-18-device-diagnostics-TEST'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -3775,6 +3775,30 @@ export async function onRequest(context) {
         order:     'display_name.asc'
       })
       return json(rows)
+    }
+
+    // POST /device-diagnostics — TEST BRANCH ONLY. Upload a field diagnostic
+    // (see client/src/pages/ScanDoctor.jsx) straight from a store handheld.
+    // Getting results off those devices by hand means reading JSON on a small
+    // screen and retyping it, which is exactly the friction being diagnosed;
+    // one tap writes it where head office can read it with SQL instead.
+    // Any signed-in session may write — a store user is precisely who runs it.
+    if (path === '/device-diagnostics' && method === 'POST') {
+      const body = await request.json().catch(() => ({}))
+      const kind = typeof body.kind === 'string' && body.kind ? body.kind.slice(0, 60) : 'unknown'
+      // Cap the blob so a runaway client can never post something huge.
+      const payload = JSON.stringify(body.payload ?? {}).slice(0, 200000)
+      const [store] = Array.isArray(session.store_ids) ? session.store_ids : []
+      const inserted = await db.insert('device_diagnostics', {
+        kind,
+        by_user_id:   session.user_id || null,
+        by_user_name: session.display_name || session.username || null,
+        store_id:     body.store_id || store || null,
+        user_agent:   String(body.user_agent || '').slice(0, 500),
+        payload:      JSON.parse(payload),
+      })
+      const row = Array.isArray(inserted) ? inserted[0] : inserted
+      return json({ ok: true, id: row?.id ?? null }, 201)
     }
 
     // POST /task-messages/threads/:recordId/dismiss — marks all messages in a

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { postDeviceDiagnostic } from '../lib/api.js'
 
 // Usable on the test app and in local dev, never on the live site. This file
 // only exists on the test branch at all, so the check is belt-and-braces.
@@ -54,6 +55,7 @@ export default function ScanDoctor() {
   const [mode, setMode]       = useState('nofocus')
   const [scans, setScans]     = useState([])
   const [activeTag, setActiveTag] = useState('')
+  const [sending, setSending] = useState(null)   // null | 'sending' | 'sent' | 'failed: …'
   const [kbd, setKbd]         = useState({ vv: 0, win: 0 })
 
   const inputRef  = useRef(null)
@@ -147,10 +149,12 @@ export default function ScanDoctor() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode])
 
-  // Apply the focus policy for the selected mode, and clear the log between
-  // modes so one mode's events never get attributed to another.
+  // Apply the focus policy for the selected mode. The captured log is kept
+  // across mode switches — every card records the mode it came from, and one
+  // upload should carry all four modes rather than only the last one tried.
+  // Only the in-flight burst is dropped, so a half-captured scan never gets
+  // attributed to the mode being switched to.
   useEffect(() => {
-    setScans([])
     eventsRef.current = []
     if (mode === 'nofocus') {
       document.activeElement?.blur?.()
@@ -191,6 +195,18 @@ export default function ScanDoctor() {
 
   const copy = async () => {
     try { await navigator.clipboard.writeText(report()) } catch { /* fall back to the textarea below */ }
+  }
+
+  // The whole point: one tap puts the result where head office can read it,
+  // instead of the tester squinting at JSON on this screen and retyping it.
+  const send = async () => {
+    setSending('sending')
+    try {
+      await postDeviceDiagnostic('scan-doctor', JSON.parse(report()), navigator.userAgent)
+      setSending('sent')
+    } catch (e) {
+      setSending('failed: ' + (e?.message || 'could not send'))
+    }
   }
 
   if (window.location.hostname === LIVE_HOST) {
@@ -256,9 +272,31 @@ export default function ScanDoctor() {
           <span>Scans: <strong>{scans.length}</strong></span>
         </div>
 
+        <button
+          type="button"
+          onClick={send}
+          disabled={!scans.length || sending === 'sending'}
+          style={{
+            width: '100%', padding: '16px 12px', fontSize: 18, fontWeight: 700,
+            borderRadius: 10, marginBottom: 8, cursor: 'pointer',
+            border: 'none', color: '#fff',
+            background: sending === 'sent' ? 'var(--green)' : 'var(--primary)',
+            opacity: (!scans.length || sending === 'sending') ? .5 : 1,
+          }}
+        >
+          {sending === 'sending' ? 'Sending…'
+            : sending === 'sent' ? '✓ Sent to head office'
+            : 'Send to head office'}
+        </button>
+        {typeof sending === 'string' && sending.startsWith('failed') && (
+          <div className="login-error" style={{ marginBottom: 8 }}>
+            {sending} — use Copy report instead.
+          </div>
+        )}
+
         <div className="flex-row" style={{ gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-          <button type="button" className="btn btn-primary" onClick={copy}>Copy report</button>
-          <button type="button" className="btn btn-outline" onClick={() => { setScans([]); eventsRef.current = [] }}>Clear</button>
+          <button type="button" className="btn btn-outline" onClick={copy}>Copy report</button>
+          <button type="button" className="btn btn-outline" onClick={() => { setScans([]); eventsRef.current = []; setSending(null) }}>Clear</button>
         </div>
 
         {scans.length === 0 && (
