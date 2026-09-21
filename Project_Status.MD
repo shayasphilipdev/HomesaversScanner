@@ -555,6 +555,32 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-09-21 — Combined scan lookup ⚠️ TEST BRANCH ONLY
+
+> Same do-not-merge rule as the 2026-09-18 entry below.
+
+**`GET /scan/lookup?barcode=…`** resolves both halves of a Department Check
+lookup in one request. Department Scan previously called
+`/alt-barcodes/lookup`, waited for the EAN to come back to the device, then
+called `/prices/lookup` with it — two round trips over shop wifi, strictly
+sequential because the second needs the first's answer. Both Supabase queries
+now happen inside the edge Worker, so the slow device link is crossed once.
+Returns the `alt_barcodes` row with the price row nested under `price` (a
+superset of what the two endpoints returned separately).
+
+Per Department Check item: **3 Worker requests → 2.** At ~143,800 records per
+three weeks that also matters for the 100k/day account-wide Cloudflare cap,
+which was at 76% in July: Task J drops from roughly 20k to 13k requests/day.
+
+Both original endpoints are untouched and still serve every other task form
+(A–M); only `DeptScan.jsx` uses the combined one. `client/src/lib/api.js`
+gains `scanLookup()`.
+
+**Not yet done** from the same list: returning the department in the save
+response (would reach 1 request/item), dropping or deferring the per-create
+audit-event write (a second Supabase write on every scan), a client-side
+barcode→department cache, and batched writes.
+
 ### 2026-09-18 — Department Scan + Scan Doctor ⚠️ TEST BRANCH ONLY
 
 > **Do not merge or cherry-pick any of this to `main`.** Explicit instruction

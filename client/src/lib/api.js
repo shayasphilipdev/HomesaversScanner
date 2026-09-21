@@ -313,6 +313,12 @@ export const getMessageRecipients   = () => request('/message-recipients')
 // Permanently delete one message. Admin only (server-enforced).
 export const deleteRecordMessage    = (recordId, messageId) =>
   request(`/task-records/${recordId}/messages/${messageId}`, { method: 'DELETE' })
+// TEST BRANCH ONLY — both halves of a Department Check lookup in one request,
+// so the slow device link is crossed once instead of twice. Returns the
+// alt_barcodes row with a nested `price`. See DeptScan.jsx.
+export const scanLookup = (barcode) =>
+  request(`/scan/lookup?barcode=${encodeURIComponent(barcode)}`)
+
 // TEST BRANCH ONLY — upload a field diagnostic from a store handheld so the
 // result never has to be read off that screen and retyped. See ScanDoctor.jsx.
 export const postDeviceDiagnostic   = (kind, payload, user_agent) =>

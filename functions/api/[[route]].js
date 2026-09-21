@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-18-deptscan-TEST'
+const API_REVISION   = '2026-09-21-scan-lookup-TEST'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -3318,6 +3318,43 @@ export async function onRequest(context) {
     // Joins suppliers so the scan-result UI can show "Supplier: X" subtly.
     // GET /alt-barcodes/lookup?barcode=  — scan lookup by barcode_no.
     // Returns the item details to show in the task body after a scan.
+    // GET /scan/lookup?barcode=… — TEST BRANCH ONLY.
+    //
+    // Both halves of a Department Check lookup in one request. The client
+    // currently calls /alt-barcodes/lookup, waits for the EAN to come back,
+    // then calls /prices/lookup with it — two round trips over a shop wifi
+    // link, strictly sequential because the second needs the first's answer.
+    // Done here the two Supabase queries stay inside the edge Worker and the
+    // slow device link is crossed once.
+    //
+    // Also halves Task J's Worker requests, which matters on its own: the
+    // account is on the 100k/day free plan and Task J alone is ~20k/day.
+    //
+    // Returns the alt_barcodes row with the price fields merged in, so the
+    // shape is a superset of what the two endpoints returned separately.
+    // Both remain in place — every other task form still uses them.
+    if (path === '/scan/lookup' && method === 'GET') {
+      const barcode = url.searchParams.get('barcode')
+      if (!barcode) return json(null)
+      const [alt] = await db.select('alt_barcodes', {
+        select: 'barcode_no,ean_barcode,item_name,supl_id,supplier_code,item_status,barcode_status',
+        barcode_no: `eq.${String(barcode).trim()}`,
+        order: 'barcode_status.asc,item_status.asc',
+        limit: '1'
+      })
+      if (!alt) return json(null)
+      let price = null
+      if (alt.ean_barcode) {
+        const [p] = await db.select('prices', {
+          select: 'ean_barcode,item_group,item_subgrp_id,product_type,sale_rate',
+          ean_barcode: `eq.${String(alt.ean_barcode).trim()}`,
+          limit: '1'
+        })
+        price = p || null
+      }
+      return json({ ...alt, price })
+    }
+
     if (path === '/alt-barcodes/lookup' && method === 'GET') {
       const barcode = url.searchParams.get('barcode')
       if (!barcode) return json(null)

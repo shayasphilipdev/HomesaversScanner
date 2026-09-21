@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { createTaskRecord, deleteTaskRecord, lookupAltBarcode, lookupPrice } from '../lib/api.js'
+import { createTaskRecord, deleteTaskRecord, scanLookup } from '../lib/api.js'
 import { altFields } from '../components/forms/useTaskForm.jsx'
 import ScannerInput from '../components/forms/ScannerInput.jsx'
 import { useStore } from '../App.jsx'
@@ -140,12 +140,13 @@ export default function DeptScan() {
     setBusy(true)
     setError('')
 
+    // One request, not two sequential ones — the barcode→EAN→price chain is
+    // resolved inside the Worker so this slow link is crossed once.
     let info = null, price = null
-    try { info = await lookupAltBarcode(scanned) } catch { /* unknown barcodes still save */ }
-    if (gen !== genRef.current) return
-    if (info?.ean_barcode) {
-      try { price = await lookupPrice(info.ean_barcode) } catch { /* department stays null */ }
-    }
+    try {
+      info  = await scanLookup(scanned)
+      price = info?.price || null
+    } catch { /* unknown barcodes, and lookup failures, still save */ }
     if (gen !== genRef.current) return
 
     const dept = price?.item_group || null
