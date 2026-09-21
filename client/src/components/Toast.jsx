@@ -19,7 +19,7 @@ export function ToastProvider({ children }) {
     setTimeout(() => remove(id), ms)
   }, [remove])
 
-  // [TEST] Stable identity — `push` is memoised, so this object never changes.
+  // Stable identity — `push` is memoised, so this object never changes.
   // Previously a fresh object each render invalidated the context for every
   // consumer, so each toast auto-dismiss fired a second full re-render of the
   // record list ~3.5s after a save, landing mid next-scan.

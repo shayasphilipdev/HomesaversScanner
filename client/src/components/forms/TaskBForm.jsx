@@ -62,7 +62,7 @@ export default function TaskBForm({ onSaved, storeId }) {
     }
 
     try {
-      // [TEST] Upload both photos in parallel instead of one-after-the-other —
+      // Upload both photos in parallel instead of one-after-the-other —
       // they are independent, so this roughly halves Non-Scan save time.
       // allSettled keeps the exact orphan-cleanup semantics: whichever upload
       // succeeded still has its path recorded for cleanup if the other fails.
