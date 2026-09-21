@@ -18,8 +18,18 @@ const REMINDER_KEY = 'hs_barcode_reminder_dismissed'
 // One-tap toggle between the live app and the test app. On the test build it
 // links back to live; on the live build it links to the test app. Driven by the
 // current hostname so the same code does both.
+//
+// HIDDEN ON LIVE (2026-09-21). Stores must not be able to cross into the test
+// app with a single tap during normal trading — test records are tagged
+// source='test' and never reach the live HO queues, so a store working there by
+// accident loses its scans. The TEST build keeps the toggle so a tester can get
+// back to live, which is the only direction that needs to stay open.
+//
+// To re-open it for the next round of store testing, delete the guard below —
+// the two-sided rendering underneath is intact and needs no other change.
 function TestAppToggle() {
   const test = isTestEnv()
+  if (!test) return null
   return (
     <a
       href={test ? LIVE_URL : TEST_URL}
