@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-21-upca-recovery'
+const API_REVISION   = '2026-09-21-scanlookup-scannedat'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -219,6 +219,28 @@ function upcaCheckDigit(eleven) {
     else             even += n
   }
   return String((10 - ((odd * 3 + even) % 10)) % 10)
+}
+
+// When a record was actually scanned, as reported by the device.
+//
+// created_at is stamped server-side at insert, so anything that went through
+// the offline outbox lands timestamped at RECONNECT rather than at the moment
+// the shelf was walked — which misreports the audit. HS Wicklow Abbey St shows
+// a 0.44s median gap between Department Checks and Tullamore 1.06s; those are
+// drain bursts, not scanning. A client may send scanned_at to say when the
+// trigger was really pulled.
+//
+// Only trusted within a sane window, since it is client-supplied: no further
+// ahead than a little clock skew, and no older than the retention window.
+// Anything outside that, or unparseable, falls back to the server clock.
+function resolveScanTime(raw, fallbackIso) {
+  if (typeof raw !== 'string' || !raw) return fallbackIso
+  const t = Date.parse(raw)
+  if (!Number.isFinite(t)) return fallbackIso
+  const nowMs = Date.parse(fallbackIso)
+  if (t > nowMs + 5 * 60 * 1000)       return fallbackIso   // future — bad device clock
+  if (t < nowMs - 30 * 24 * 3600_000)  return fallbackIso   // implausibly old
+  return new Date(t).toISOString()
 }
 
 const STATUS_SETTERS = {
@@ -3389,6 +3411,58 @@ export async function onRequest(context) {
     // Joins suppliers so the scan-result UI can show "Supplier: X" subtly.
     // GET /alt-barcodes/lookup?barcode=  — scan lookup by barcode_no.
     // Returns the item details to show in the task body after a scan.
+    // GET /scan/lookup?barcode=… — both halves of a scan lookup in one request.
+    //
+    // A caller otherwise hits /alt-barcodes/lookup, waits for the EAN to come
+    // back to the device, then calls /prices/lookup with it — two round trips
+    // over shop wifi, strictly sequential because the second needs the first's
+    // answer. Done here, both Supabase queries stay inside the edge Worker and
+    // the slow device link is crossed once.
+    //
+    // Also halves the Worker requests for the caller, which matters on its own:
+    // the account is on the 100k/day free plan and Department Check alone is
+    // ~20k/day.
+    //
+    // Returns the alt_barcodes row with the price row nested under `price`, so
+    // the shape is a superset of what the two endpoints return separately. Both
+    // of those remain in place and unchanged — every existing task form still
+    // uses them.
+    if (path === '/scan/lookup' && method === 'GET') {
+      const barcode = url.searchParams.get('barcode')
+      if (!barcode) return json(null)
+      const scanned = String(barcode).trim()
+      const selectAlt = (code) => db.select('alt_barcodes', {
+        select: 'barcode_no,ean_barcode,item_name,supl_id,supplier_code,item_status,barcode_status',
+        barcode_no: `eq.${code}`,
+        order: 'barcode_status.asc,item_status.asc',
+        limit: '1'
+      })
+
+      let [alt] = await selectAlt(scanned)
+      let recoveredFrom = null
+
+      // Same trimmed-UPC-A recovery as /alt-barcodes/lookup, and the same
+      // guard: the candidate is only accepted if it actually exists in
+      // alt_barcodes, so a wrong guess resolves to nothing rather than to the
+      // wrong product. See that handler for the full reasoning.
+      if (!alt && /^[0-9]{11}$/.test(scanned)) {
+        const [recovered] = await selectAlt(scanned + upcaCheckDigit(scanned))
+        if (recovered) { alt = recovered; recoveredFrom = scanned }
+      }
+
+      if (!alt) return json(null)
+      let price = null
+      if (alt.ean_barcode) {
+        const [p] = await db.select('prices', {
+          select: 'ean_barcode,item_group,item_subgrp_id,product_type,sale_rate',
+          ean_barcode: `eq.${String(alt.ean_barcode).trim()}`,
+          limit: '1'
+        })
+        price = p || null
+      }
+      return json({ ...alt, price, recovered_from: recoveredFrom })
+    }
+
     if (path === '/alt-barcodes/lookup' && method === 'GET') {
       const barcode = url.searchParams.get('barcode')
       if (!barcode) return json(null)
@@ -4187,7 +4261,7 @@ export async function onRequest(context) {
         // preview deployment) are marked 'test' so they can be identified and
         // kept out of the real data; live-site records stay null.
         source:              url.hostname === 'homesaversscanner.pages.dev' ? null : 'test',
-        created_at:          now,
+        created_at:          resolveScanTime(body.scanned_at, now),
         updated_at:          now
       })
       const created = Array.isArray(inserted) ? inserted[0] : inserted

@@ -110,6 +110,18 @@ export const lookupAltBarcode = (barcode) =>
     ? Promise.resolve(null)   // offline: don't fire a doomed request — it would hang the scan
     : request(`/alt-barcodes/lookup?barcode=${encodeURIComponent(barcode)}`)
 
+// Both halves of a scan lookup in one request, so the slow device link is
+// crossed once instead of twice. Returns the alt_barcodes row with the price
+// row nested under `price`, or null. See GET /scan/lookup in the Worker.
+//
+// Deliberately NO offline short-circuit, unlike lookupAltBarcode/lookupPrice
+// below. Callers need to tell "no signal" apart from "this barcode is genuinely
+// not in the master": a throw means the former, null means the latter, and they
+// are shown to the operator quite differently. request() fails fast on a
+// network error, and the caller is expected to bound it with its own timeout.
+export const scanLookup = (barcode) =>
+  request(`/scan/lookup?barcode=${encodeURIComponent(barcode)}`)
+
 // Look up a price row by EAN barcode.
 // Returns { ean_barcode, item_group, item_subgrp_id, product_type, sale_rate } or null.
 export const lookupPrice = (ean) =>
