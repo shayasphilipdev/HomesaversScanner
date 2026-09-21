@@ -5,7 +5,7 @@ fresh Claude session opening this repo cold, **read this file first** — it has
 the architecture, data model, every module, recent changes, known issues, and
 the project memory all in one place.
 
-*Last updated: 2026-09-11.*
+*Last updated: 2026-09-21.*
 
 ---
 
@@ -468,13 +468,9 @@ Shared by all HO task forms. Behaviour (after several iterations):
   lookup ~250 ms after the scanned value stops changing, so it works even for
   guns that send no Enter/Tab. A `lastConfirmed` guard prevents duplicate
   lookups. (This fixed "lookup only fires after a button press".)
-- **Mobile soft-keyboard suppression: REMOVED, and it must not come back.**
-  `inputMode='none'` was tried twice in June (b5d1aa8, 49214ff) and reverted
-  both times (9099e68, 88f2862). Measured on the real handhelds 2026-09-18:
-  it blocks the gun outright — 0 characters arrive. The scan is delivered
-  through the Android IME, so suppressing the keyboard suppresses the scan
-  with it. Same result for `readOnly` and `virtualkeyboardpolicy="manual"`.
-  See §11 (2026-09-18) for the full measurement table.
+- **Mobile soft-keyboard suppression:** `inputMode='none'` keeps the field
+  focused for the gun without popping the on-screen keyboard; a real tap flips
+  it to `inputMode='text'` for manual entry; resets to none when the field clears.
 - Optional camera scanner (lazy `html5-qrcode`, N-of-3 confirmation), shown only
   when an admin enables it (`hs_camera_enabled`).
 
@@ -555,261 +551,87 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
-### 2026-09-21 — Combined scan lookup ⚠️ TEST BRANCH ONLY
+### 2026-09-21 — Department Scan shipped to live, plus the speed work behind it
 
-> Same do-not-merge rule as the 2026-09-18 entry below.
+Shipped in four deliberate steps, each verified before the next.
 
-**`GET /scan/lookup?barcode=…`** resolves both halves of a Department Check
-lookup in one request. Department Scan previously called
-`/alt-barcodes/lookup`, waited for the EAN to come back to the device, then
-called `/prices/lookup` with it — two round trips over shop wifi, strictly
-sequential because the second needs the first's answer. Both Supabase queries
-now happen inside the edge Worker, so the slow device link is crossed once.
-Returns the `alt_barcodes` row with the price row nested under `price` (a
-superset of what the two endpoints returned separately).
+**Measured hardware facts — these are settled, do not re-litigate them.** The
+store handhelds are generic Chinese Android units ("V520"), NOT Zebra, and
+device-settings changes have historically never stuck. A scan is delivered
+**through the Android IME** (2 keydowns for 13 digits, `keyCode 229` /
+`Unidentified`), measured on a real device. Consequences:
+- Suppressing the keyboard suppresses the scan. `readOnly`, `inputMode="none"`
+  and `virtualkeyboardpolicy="manual"` each block the gun entirely — all three
+  measured, confirming the reverted June attempts. **The scan must land in a
+  focused, ordinary, editable input.**
+- With nothing focused the page receives only an `F1` prefix (keyCode 112) and
+  **zero barcode characters**, so a no-input/document-capture design is not
+  possible on this hardware.
+- `F1` arrives at the START of the burst, so it is a prefix, not a terminator —
+  it cannot replace the 250ms auto-settle.
+- Do not design anything that depends on reconfiguring 55 stores' devices.
 
-Per Department Check item: **3 Worker requests → 2.** At ~143,800 records per
-three weeks that also matters for the 100k/day account-wide Cloudflare cap,
-which was at 76% in July: Task J drops from roughly 20k to 13k requests/day.
+**Baseline before any of this:** continuous Department Check (gaps ≤30s),
+median **8.29s**/item on live, p10 4.87s, p90 16.42s. Across 143,818 live Task J
+records there are **zero notes and zero quantities** — every stored field is
+derived from the barcode, which is what justifies removing the Save tap.
 
-Both original endpoints are untouched and still serve every other task form
-(A–M); only `DeptScan.jsx` uses the combined one. `client/src/lib/api.js`
-gains `scanLookup()`.
+**Step 1 — scanner latency fixes** (originally `608e69d`, sat unmerged on test
+since 19 Aug with "not for main until store-tested"; that test happened 18 Sep
+and passed). An idempotent confirm guard — `onBlur` fired a lookup on Save,
+which disabled the button between mousedown and click so **the first Save tap
+was silently swallowed**; an 800ms Android IME-echo guard; the per-save
+`ScannerInput` remount dropped; `Toast` context memoised (an unmemoised object
+re-rendered the whole record list ~3.5s after every save, landing mid next
+scan); `TaskBForm` photo uploads parallelised. Benefits **every** task form.
+Worth ~7% on its own (8.29s live vs 7.79s on test while it ran there).
 
-**Not yet done** from the same list: returning the department in the save
-response (would reach 1 request/item), dropping or deferring the per-create
-audit-event write (a second Supabase write on every scan), a client-side
-barcode→department cache, and batched writes.
+**Step 2/3 — `/scan/lookup` and `scanned_at`.** One request resolves both
+halves of a lookup inside the edge Worker instead of two sequential round trips
+over shop wifi; `POST /task-records` accepts a client scan time so an offline
+batch is no longer timestamped at **reconnect** (HS Wicklow Abbey St showed a
+0.44s median gap and Tullamore 1.06s — those were drain bursts, not scanning).
+`resolveScanTime()` trusts a client stamp only within a sane window and falls
+back to the server clock, so clients that send nothing behave exactly as before.
 
-**Way off the page fixed (same day).** Stores reported being unable to leave
-Department Scan. `Exit` worked, but it was a 44×25 chip in the extreme
-top-right — roughly half the Android minimum touch target, in the hardest
-corner to reach, labelled in a way that does not read as navigation. With all
-three nav bars hidden on this page that left no usable exit. Replaced with an
-85×44 "← Back" button on the left. The bottom nav stays hidden by explicit
-decision: the screen space is worth more than the shortcut.
+**Step 4 — Department Scan** (`client/src/pages/DeptScan.jsx`, `/dept-scan`).
+Store and task chosen once; after that the operator only pulls the trigger.
+- The keyboard **is** going to be up, so the layout assumes it: everything
+  needed sits in a ~141px strip at the top, nothing that matters is placed
+  where the keyboard covers it, and the page never scrolls. Full-bleed via
+  `body.deptscan-full`.
+- **No Save tap** — the record commits on lookup; a large Undo replaces the
+  confirmation. Same barcode within 3s is refused with a two-tone alert; a
+  sub-second repeat is an IME echo, swallowed one layer down. No department
+  found saves normally and stays silent (business rule).
+- Nine-column detail table, deliberately wider than the screen and scrolling
+  sideways rather than cramming into 412px.
+- Offline: queues to the outbox with a "waiting" count; a failed lookup is
+  distinguished from a genuine miss; Undo pulls a queued scan back out; rows
+  fill in on reconnect, bounded to 10 lookups.
+- `ScannerInput` gained two **opt-in** props, `compactActions` and
+  `resetSignal`, plus blurring the field while the camera is open. Task forms
+  A–M pass neither and are unaffected.
 
-**Keyboard vs the scan box (worth understanding before touching focus).** The
-store V520 scans through an IME that shows **no keyboard**, so nothing is
-normally visible; a Samsung phone uses a real keyboard, so the same code looks
-completely different on each. Chrome will not let a *programmatic* focus raise
-the keyboard, but a focus during a **user gesture** does — which is why taps,
-not page load, were summoning it. Two rules follow, and both are load-bearing:
-- Buttons on Department Scan refuse focus via `preventDefault` on **pointerdown**
-  (mousedown alone is too late in the Android touch sequence).
-- Nothing calls `.focus()` in response to a tap. The safety net only acts when
-  focus has ended up on `<body>` — genuinely nowhere.
-- **While the camera is open the field is deliberately blurred.** A camera scan
-  is decoded from the video and pushed straight through onChange/confirm — it
-  never goes near the input — so focus is not needed, and on a phone a focused
-  field puts a keyboard over the viewfinder being aimed. Focus is restored when
-  the camera closes so a gun still has somewhere to deliver. The auto-focus,
-  window-refocus and page-level safety-net all skip while it is open, or they
-  would immediately undo it.
+**Also fixed on live along the way:**
+- **Camera close crashed the page.** `html5-qrcode`'s `stop()` throws
+  *synchronously* when the scanner never started (permission denied, no camera,
+  start in flight); a sync throw never reaches `.catch()`, so it escaped the
+  effect cleanup and tripped the ErrorBoundary. Tapping Camera on then straight
+  off took the whole page to "Something went wrong". Affected every task form,
+  but only where an admin enabled camera scanning (off chain-wide by default).
+- **Trimmed UPC-A check digits** (`/alt-barcodes/lookup`). Six stores'
+  handhelds are set not to transmit the check digit, so a 12-digit US barcode
+  arrives as 11 and never matches — 73 scans in 60 days, still happening.
+  11 digits is never a valid retail barcode and the check digit is
+  arithmetically determined, so there is exactly one candidate. **Guard:** it is
+  only accepted if it already exists in `alt_barcodes`; a miss falls through to
+  null as before. 8/8 real barcodes reproduced, 144/147 (98%) of unmatched
+  11-digit scans resolve. Still worth turning the setting back on for HS
+  Tallaght, Athy, Ennis Ballymaley, Crumlin, Longford Axis and Milford.
 
-**UPC-A check-digit recovery (`/scan/lookup`).** Several handhelds are
-configured not to transmit the UPC-A check digit, so a 12-digit US barcode
-arrives as 11 digits and never matches. Still live as of 2026-09-21 — 73 scans
-in 60 days across HS Tallaght, Athy, Ennis Ballymaley, Crumlin, Longford Axis
-and Milford; 49 of 55 stores are unaffected, so it is a per-device setting, not
-the model. No app-side recovery existed on either branch.
-- An 11-digit code is never a valid retail barcode (UPC-A 12, EAN-13 13, EAN-8
-  8), so the length alone is the signature. The check digit is arithmetically
-  determined by the other eleven — exactly ONE candidate, not a guess.
-- **The guard against inventing a product:** the candidate is only accepted if
-  it already exists in `alt_barcodes`. A miss falls through to "not found".
-- Validated before shipping: the algorithm reproduces 8/8 real barcodes from
-  the live tables, and **144 of 147** distinct unmatched 11-digit scans from
-  the last 60 days (98%) resolve with it. The remaining 3 fail safely.
-- A recovery is reported as `recovered_from` and shown in the table as `+chk`,
-  so the correction is visible rather than silent. `product_code` still stores
-  what the gun actually sent, so misconfigured devices stay detectable in the
-  data; `barcode_no` gets the corrected barcode so the record identifies the
-  right product.
-
-**Robustness pass (asked for explicitly: could it stick, freeze, or stop
-scanning?).** Four faults found and fixed.
-- **Focus theft — the "it stopped scanning" failure.** These handhelds deliver
-  a scan through the Android IME, and an IME only delivers to a **focused**
-  input. Tapping Undo or the camera moved focus to that button, and
-  `ScannerInput` only restores focus when the field *transitions* to empty —
-  which it already was. The operator then pulled the trigger and nothing
-  happened, with nothing on screen to explain why. Department Scan now returns
-  focus to the scan box whenever it lands anywhere else (real text fields
-  exempt, so the camera's zoom slider still works).
-- **⚠️ CAMERA CRASH — ALSO PRESENT ON LIVE.** `html5-qrcode`'s `stop()` throws
-  **synchronously** ("Cannot stop, scanner is not running or paused") when the
-  scanner never actually started — permission denied, no camera, or start still
-  in flight. A synchronous throw never reaches `.catch()`, so it escaped the
-  effect cleanup and tripped the ErrorBoundary: **tapping Camera on and
-  straight back off took the whole page down to "Something went wrong"**. Fixed
-  in `ScannerInput.jsx` on `test` only. The same bug is in `main`, in shared
-  code used by every task form A–M — it only bites where an admin has enabled
-  camera scanning (`hs_camera_enabled`), which is off chain-wide by default.
-  **Worth porting to live on its own merit.**
-- **Unbounded lookup.** No timeout, so shop wifi that accepts a connection and
-  never answers left a row on "Looking up…" forever. Now capped at 10s, after
-  which it is treated as a failed lookup — the scan still saves and the details
-  fill in server-side on sync.
-- **Spinner ownership.** An early return on a superseded scan skipped
-  `setBusy(false)`. Now only the newest generation clears it.
-
-**Offline behaviour (Department Scan).** Scanning works with no signal; the
-loop never blocks on the network.
-- The lookup throws and the save goes to the existing IndexedDB outbox
-  (`createTaskRecord` already queues on a network error). A **throw and a null
-  are treated differently**: null means the barcode genuinely is not in
-  `alt_barcodes` → "HO will update it soon"; a throw means no signal → "Saved —
-  details will fill in when back online". Telling an operator HO needs to add a
-  product it already has, because the wifi dropped, sends them chasing nothing.
-- The header shows an amber "**N waiting**" pill, because the table has no
-  status column and one would sit off-screen to the right.
-- `scanned_at` is stored in the queued body, so a batch that syncs hours later
-  still lands with the real trigger-pull time (see the `created_at` fix above).
-- **Undo works offline** — a queued row is pulled back out of the outbox by its
-  queue id. Undo now stops at the first row that recorded anything rather than
-  searching past it; previously, undoing while the newest row was queued would
-  silently delete an *older, already-synced* record.
-- On reconnect `OfflineIndicator` drains (it is still mounted here — this page
-  hides the nav with `display:none`, which does not unmount). The drain
-  enriches each record server-side, so the page never sees the result; it
-  listens for `hs:outbox-changed`, marks those rows synced, and re-fetches the
-  detail for **at most 10** of them so the table fills in rather than keeping a
-  stale "will fill in when back online". Bounded deliberately: a long offline
-  stint would otherwise fire hundreds of requests the moment wifi returns.
-- A row that synced in the background has no server id on this page, so Undo
-  refuses it with "Already synced — remove it from HO Tasks" instead of
-  deleting something else.
-
-**Detail table below the scan.** The recent-scans list is now a table, with
-columns `Product Id` (ean_barcode) · `Product Desc` (item_name) · `Department`
-(item_group) · `Product Status` (product_type — header wording is the
-business's) · `Product Active` and `Barcode Active` (item_status /
-barcode_status rendered Yes/No) · `Barcode` (the scanned code). It is
-deliberately **wider than the screen and scrolls sideways** (764px on a 375px
-handheld) rather than cramming seven columns in; the page itself still does not
-scroll. A barcode with no `alt_barcodes` row shows only the barcode plus
-"HO will update it soon" — the scan is still saved, and the operator has done
-nothing wrong.
-
-### 2026-09-18 — Department Scan + Scan Doctor ⚠️ TEST BRANCH ONLY
-
-> **Do not merge or cherry-pick any of this to `main`.** Explicit instruction
-> from the business owner: "Do any changes only in the Test App. Do not edit
-> any codes in live app." This is the "anything specific to Test branch, only
-> Test branch gets" half of the standing branch rule (§2). Everything in this
-> entry lives on `test` alone. Live is still on API_REVISION
-> `2026-09-11-am-unify-msg-delete` and must stay there until asked otherwise.
-
-**Why.** Department Check (Task J) is >90% of everything the estate records —
-~143,800 rows in three weeks. Stores reported it as slow, specifically "multiple
-tap to scan-save-clear", and later, more precisely: *the keyboard covers the scan
-box, the Save button and the data from the first save onwards.*
-
-**What the numbers said before any code was written.**
-- Continuous scanning (gaps ≤30s, same 22 stores on both apps): live median
-  **8.29s**/item, test median **7.79s**. p10 4.87s, p90 16.42s.
-- Test was already faster because commit `608e69d` (19 Aug, "not for main until
-  store-tested") has been live on `test` the whole time. It was finally
-  store-tested on 2026-09-18 and it works — so the double-tap fix is worth
-  **~7%**, not the drastic win being asked for. Taps were never the main cost.
-- Across 143,818 live Task J rows: **zero notes, zero quantities.** Every stored
-  field is derived from the barcode, so the Save tap confirms nothing a human
-  entered. Department auto-resolves 93.1% of the time.
-- 2,194 scans (1.5%) repeat the previous barcode; 1,289 within 10s.
-
-**Scan Doctor (`client/src/pages/ScanDoctor.jsx`, route `/scan-doctor`).** A
-diagnostic instrument, not a feature. Eight attempts to kill the Android
-double-tap were tried and reverted over six days in June, every one a guess
-about device behaviour nobody had measured. This measures it: per scan it
-records characters, keyCodes, inter-character timing, terminator, `keyCode 229`
-/ `Unidentified` / composing flags, function keys and their position in the
-burst, and whether the soft keyboard is up. Five focus modes (nothing focused /
-normal box / read-only / `inputMode="none"` / `virtualkeyboardpolicy="manual"`).
-Results upload with one tap — see the diagnostics endpoint below — because
-reading JSON off a handheld and retyping it is the very friction being studied.
-
-**MEASURED HARDWARE FACTS (HS Tallaght, generic Chinese Android handheld
-"V520", Android 10, Chrome 152). These are settled; do not re-litigate them.**
-
-| Focus mode | Barcode arrives? | What actually happens |
-|---|---|---|
-| Nothing focused | **No** — 0 chars | Only F1 arrives; one burst was 6 keydowns, all F1 |
-| Normal editable box | **Yes** | But **2 keydowns for 13 digits**, `keyCode 229` + `Unidentified` |
-| Read-only | **No** — 0 chars | Blocked |
-| `inputMode="none"` | **No** — 0 chars | Blocked (confirms the June reverts, with data) |
-| `virtualkeyboardpolicy="manual"` | **No** — 0 chars | Blocked; `kc229` never fires, IME never engages |
-
-- **The gun delivers through the Android IME, not as keystrokes.** That is the
-  root cause of the composition re-injection, of the keyboard, and of why
-  `ScannerInput`'s global key listener never helped (it filters
-  `e.key.length === 1`; these events are `Unidentified`).
-- **Suppressing the keyboard suppresses the scan.** Four independent mechanisms,
-  one result. On this hardware, with this scanner output mode, there is no
-  web-side way to have the scan without the keyboard.
-- **The gun sends `F1` (keyCode 112) as a PREFIX** (`@start`), not a terminator.
-  On a page that does not `preventDefault` it opens Chrome's help site — which
-  is why `ScannerInput.jsx` has swallowed F-keys since ff68555. Being a prefix,
-  it does **not** allow the 250ms auto-settle to be removed.
-- Escape hatch not yet tried: switching the device's scanner output from "text
-  fill" to **keystroke simulation**. That would make real key events arrive, the
-  no-focus mode start working, and zero-tap/no-keyboard become possible. Verify
-  any settings change in 10 seconds via Scan Doctor Mode A.
-
-**Department Scan (`client/src/pages/DeptScan.jsx`, route `/dept-scan`).** The
-Task J loop rebuilt around the constraint above rather than around a hope.
-- The keyboard **is** going to be up, so the layout assumes it: header, result,
-  scan box and the actions row occupy a ~210px strip at the top, nothing that
-  matters is ever placed where the keyboard covers it, and the page never
-  scrolls. Sized from `visualViewport`. Full-bleed — `body.deptscan-full` hides
-  nav, sidebar and bottom bar (rule in `App.css`).
-- **No Save tap.** The record commits on lookup; a large Undo replaces the
-  confirmation step, per the zero-notes/zero-quantities finding above.
-- **Duplicate inside 3s** is refused with a distinct two-tone alert + vibration.
-  A sub-second repeat is already swallowed one layer down by `ScannerInput`'s
-  IME-echo guard — correct, that is an echo, not a second trigger pull.
-- **No department found saves normally and stays silent** — explicit business
-  rule, it is a normal outcome and must not be flagged.
-- WebAudio tones (no asset to fetch); audio is unlocked on first touch, since
-  browsers block it until a gesture and the first thing wanting to beep is a
-  scan, not a tap.
-- Menu entry "Dept Scan" in all three nav bars immediately after HO Tasks,
-  gated on `isTestEnv()` as well as `canDoHQTasks`.
-
-**`ScannerInput` gained `compactActions`** — opt-in prop that shrinks the camera
-button and shares one row with the caller's own buttons. Without it the camera
-keeps its full-width line, exactly as every other task form (A–M) expects; only
-Department Scan opts in.
-
-**Worker: `POST /task-records` now accepts `scanned_at`.** `created_at` is
-stamped server-side at insert, so anything going through the offline outbox
-landed timestamped at **reconnect**, not when the shelf was walked — HS Wicklow
-Abbey St shows a 0.44s median gap and Tullamore 1.06s, which are drain bursts,
-not scanning. `resolveScanTime()` accepts a client stamp inside a sane window
-(no more than 5 min ahead, no older than 30 days) and falls back to the server
-clock otherwise. **This fix is on `test` only; live still has the bug.**
-
-**New table `device_diagnostics`** (migration `device_diagnostics`, applied to
-the shared DB) + **`POST /device-diagnostics`** on the test Worker: field
-diagnostics uploaded straight from a handheld so results are readable with SQL.
-The table is additive and inert on live — only the test Worker exposes a write
-path. Any signed-in session may write; a store user is precisely who runs it.
-
-**Also on `test`: a darker palette.** `data-testenv="1"` is stamped on `<html>`
-before first paint (`main.jsx`), darkening the ground tokens a step in both
-themes (light `#DDE5F1 → #C2CFE3`, dark `#0C0F17 → #070A11`) so staff can tell
-the test app from live at a glance without reading the top banner. The red
-TESTING MODE banner stays.
-
-**Still open:** the Monday store test of Department Scan (does the keyboard now
-stay clear of the top strip, is the duplicate alert audible, and what does the
-`source='test'` timing say against the 8.29s/7.79s baseline); the scanner
-output-mode question above; and test-app load time (~590KB main bundle),
-reported as slow but not yet measured.
-
-**Stale doc corrected:** §7 still described `inputMode='none'` as current
-behaviour. It was reverted in June and is now measured to block the gun
-outright.
+**Deliberately NOT on live:** the Scan Doctor diagnostic page, the
+`/device-diagnostics` endpoint and the darker test palette. See §12.
 
 ### 2026-09-15 — Prev/Next record navigation + in-app photo Lightbox; Pricing hides HO review buttons
 
@@ -1351,6 +1173,23 @@ scanning) and the DB size alarm crossing 60%+.
 
 ## 12. Known issues / watch-outs
 
+- **Scan Doctor is deliberately test-only — do not ship it to live.** Decided by
+  the business owner 2026-09-21, after Department Scan went live. The page
+  (`/scan-doctor`, `client/src/pages/ScanDoctor.jsx`) and its upload endpoint
+  (`POST /device-diagnostics`) exist on the `test` branch only. It is a
+  diagnostic instrument for settling device questions — it reports exactly what
+  a handheld emits per scan — and it is how the IME findings in §11 were
+  established. Reach for it on `test` when a new device question comes up;
+  do not port it. The `device_diagnostics` table already exists in the shared
+  database and is inert on live because only the test Worker can write to it.
+- **The darker test palette is test-only by design** (`data-testenv` in
+  `App.css`, stamped in `main.jsx`). It is how staff tell the test app from
+  live at a glance. Never port it.
+- **Six stores still have handhelds that trim the UPC-A check digit** — HS
+  Tallaght, Athy, Ennis Ballymaley, Crumlin, Longford Axis, Milford. The app
+  now recovers these (§11), so the data is correct, but the devices are still
+  misconfigured and the raw scan is kept in `product_code` so they stay
+  detectable. Turning the setting back on at source remains the cleaner fix.
 - **Service worker `/sw.js` may be absent** in `public/` → SW registration
   fails silently; no offline shell. Hashed assets + HTML still deploy fresh.
 - **Local end-to-end is hard to drive here:** the app is session-authed and
