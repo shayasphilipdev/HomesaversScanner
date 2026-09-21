@@ -367,9 +367,11 @@ export default function ScannerInput({
   }
 
   return (
-    <div className="form-group">
-      <label>{label}</label>
-      <div className="flex-row" style={{ gap: 8, alignItems: 'stretch' }}>
+    <div className="form-group" style={compactActions ? { gap: 0 } : undefined}>
+      {/* An empty label still costs a line box and the group's gap — on
+          Department Scan that is space the keyboard would take. */}
+      {label ? <label>{label}</label> : null}
+      <div className="flex-row" style={{ gap: 6, alignItems: 'stretch' }}>
         <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
           <input
             ref={inputRef}
@@ -397,25 +399,26 @@ export default function ScannerInput({
           )}
         </div>
         {inlineAction}
+        {/* Compact mode: camera and the caller's actions sit on the SAME row
+            as the input — scan box, then a square icon-only camera, then the
+            action. Opt-in; task forms A–M are untouched. */}
+        {compactActions && cameraEnabled && (
+          <button
+            type="button"
+            onClick={() => setCameraOn(v => !v)}
+            aria-label={cameraOn ? 'Stop camera' : 'Scan with camera'}
+            title={cameraOn ? 'Stop camera' : 'Scan with camera'}
+            style={{
+              flexShrink: 0, width: 38, padding: 0, fontSize: 17, lineHeight: 1,
+              borderRadius: 8, cursor: 'pointer',
+              border: '1px solid var(--border-strong)',
+              background: cameraOn ? 'var(--red-soft)' : 'var(--bg-soft)',
+            }}
+          >{cameraOn ? '✕' : '📷'}</button>
+        )}
+        {compactActions}
       </div>
-      {compactActions ? (
-        // One row, small buttons — vertical space is the scarce resource.
-        (cameraEnabled || compactActions) && (
-          <div className="flex-row" style={{ gap: 6, marginTop: 6, alignItems: 'stretch' }}>
-            {cameraEnabled && (
-              <button
-                type="button"
-                className={`btn btn-sm ${cameraOn ? 'btn-danger' : 'btn-outline'}`}
-                style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
-                onClick={() => setCameraOn(v => !v)}
-              >
-                {cameraOn ? '✕ Camera' : '📷 Camera'}
-              </button>
-            )}
-            {compactActions}
-          </div>
-        )
-      ) : cameraEnabled && (
+      {!compactActions && cameraEnabled && (
         <div style={{ marginTop: 8 }}>
           <button
             type="button"

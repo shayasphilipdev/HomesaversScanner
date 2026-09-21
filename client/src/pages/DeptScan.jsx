@@ -236,52 +236,56 @@ export default function DeptScan() {
           onClick={() => navigate('/tasks')}
           aria-label="Back to HO Tasks"
           style={{
-            display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,
-            minHeight: 44, padding: '0 14px',
-            border: '1px solid var(--border-strong)', borderRadius: 8,
+            display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0,
+            height: 28, padding: '0 12px',
+            border: '1px solid var(--border-strong)', borderRadius: 7,
             background: 'var(--bg-soft)', color: 'inherit',
-            fontSize: 15, fontWeight: 700, cursor: 'pointer',
+            fontSize: 13, fontWeight: 700, cursor: 'pointer',
           }}
         >← Back</button>
         <strong style={{
           fontSize: 13, minWidth: 0,
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-        }}>Dept Scan</strong>
+        }}>Department Check</strong>
         <span style={{
-          marginLeft: 'auto', fontSize: 24, fontWeight: 800, lineHeight: 1,
+          marginLeft: 'auto', fontSize: 20, fontWeight: 800, lineHeight: 1,
           fontVariantNumeric: 'tabular-nums', color: 'var(--green)',
         }}>{savedCount}</span>
       </div>
 
       {/* The result, directly under the header and above the scan box, because
           this is the one thing the operator actually reads. */}
+      {/* One line: DEPARTMENT · Product description, truncated at the edge.
+          It persists until the next scan replaces it, so the operator can look
+          away, check the shelf, and look back. This also absorbs the old
+          "Pull the trigger to scan." block rather than paying for a separate
+          one. */}
       <div style={{
-        padding: '8px 10px', flexShrink: 0, minHeight: 64,
+        display: 'flex', alignItems: 'center', flexShrink: 0,
+        height: 52, padding: '0 10px', gap: 8,
         background: latest?.status === 'dup' ? 'var(--amber-soft)' : 'var(--surface-warm)',
         borderBottom: '1px solid var(--border)',
+        whiteSpace: 'nowrap', overflow: 'hidden',
       }}>
         {!latest ? (
-          <div className="note" style={{ fontSize: 14 }}>Pull the trigger to scan.</div>
+          <span className="note" style={{ fontSize: 14 }}>Pull the trigger to scan.</span>
         ) : latest.status === 'dup' ? (
-          <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--amber)' }}>
+          <span style={{ fontSize: 18, fontWeight: 800, color: 'var(--amber)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             Already scanned
-            <div className="note" style={{ fontSize: 12, fontWeight: 400 }}>{latest.barcode} — not saved again</div>
-          </div>
+            <span className="note" style={{ fontSize: 12, fontWeight: 400, marginLeft: 8 }}>{latest.barcode} — not saved again</span>
+          </span>
         ) : (
-          <>
-            <div style={{
-              fontSize: 22, fontWeight: 800, lineHeight: 1.15,
+          <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <span style={{
+              fontSize: 20, fontWeight: 800,
               color: latest.dept ? 'var(--text)' : 'var(--text-muted)',
             }}>
               {latest.status === 'saving' ? '…' : (latest.dept || 'No department')}
-            </div>
-            <div className="note" style={{
-              fontSize: 12, marginTop: 2, whiteSpace: 'nowrap',
-              overflow: 'hidden', textOverflow: 'ellipsis',
-            }}>
-              {latest.name || latest.barcode}
-            </div>
-          </>
+            </span>
+            <span className="note" style={{ fontSize: 13, marginLeft: 8 }}>
+              · {latest.name || latest.barcode}
+            </span>
+          </span>
         )}
       </div>
 
@@ -305,12 +309,13 @@ export default function DeptScan() {
               type="button"
               onClick={undoLast}
               disabled={!canUndo}
-              className="btn btn-sm"
               style={{
-                flex: 1, background: 'var(--red)', color: '#fff', border: 'none',
-                fontWeight: 700, opacity: canUndo ? 1 : .4,
+                flexShrink: 0, padding: '0 12px', borderRadius: 8, border: 'none',
+                background: 'var(--red)', color: '#fff', cursor: 'pointer',
+                fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap',
+                opacity: canUndo ? 1 : .4,
               }}
-            >Undo last</button>
+            >Undo Last Scan</button>
           }
         />
       </div>
