@@ -24,6 +24,12 @@ import { useCurrentStore } from '../lib/currentStore.jsx'
 // so confirming it conveys nothing. The record commits on lookup, and Undo
 // replaces the confirmation step.
 
+// The source tables store 'Active' / 'Inactive'; the floor wants Yes / No.
+const activeYesNo = (v) => {
+  if (!v) return '—'
+  return String(v).trim().toLowerCase() === 'active' ? 'Yes' : 'No'
+}
+
 const DUP_WINDOW_MS = 3000   // a repeat of the same barcode inside this is a double trigger-pull
 const MAX_ROWS      = 50     // on-screen history; the full list lives in Reports
 
@@ -165,11 +171,11 @@ export default function DeptScan() {
         scanned_at:   new Date(now).toISOString(),
       })
       setRows(prev => prev.map(r => r.key === rowKey
-        ? { ...r, status: res?.queued ? 'queued' : 'saved', id: res?.queued ? null : res?.id, dept, name }
+        ? { ...r, status: res?.queued ? 'queued' : 'saved', id: res?.queued ? null : res?.id, dept, name, info, price }
         : r))
       soundSaved()
     } catch (e) {
-      setRows(prev => prev.map(r => r.key === rowKey ? { ...r, status: 'failed', dept, name } : r))
+      setRows(prev => prev.map(r => r.key === rowKey ? { ...r, status: 'failed', dept, name, info, price } : r))
       setError(e?.message || 'Could not save')
     } finally {
       setBusy(false)
@@ -319,32 +325,69 @@ export default function DeptScan() {
         }}>{error}</div>
       )}
 
-      {/* Everything below here may well be behind the keyboard. Nothing in it
-          is required to keep scanning. */}
-      <div style={{ flex: 1, overflowY: 'auto', borderTop: '1px solid var(--border-soft)' }}>
-        {rows.map(r => (
-          <div
-            key={r.key}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
-              borderBottom: '1px solid var(--border-soft)', fontSize: 13,
-              opacity: r.status === 'dup' ? .65 : 1,
-            }}
-          >
-            <span style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              <strong>{r.dept || (r.status === 'dup' ? 'duplicate' : '—')}</strong>
-              <span className="note" style={{ marginLeft: 6 }}>{r.name || r.barcode}</span>
-            </span>
-            <span className="note" style={{ fontSize: 11, flexShrink: 0 }}>
-              {r.status === 'saving'  ? '…'
-                : r.status === 'queued' ? 'offline'
-                : r.status === 'failed' ? 'failed'
-                : r.status === 'undoing' ? '…'
-                : r.status === 'dup'    ? '×'
-                : '✓'}
-            </span>
-          </div>
-        ))}
+      {/* Detail table. Everything below here may well be behind the keyboard,
+          and nothing in it is needed to keep scanning — it is for checking a
+          product, so it is allowed to be wider than the screen and scroll
+          sideways rather than cramming seven columns into 375px. */}
+      <div style={{
+        flex: 1, minHeight: 0, overflow: 'auto',
+        borderTop: '1px solid var(--border-soft)', WebkitOverflowScrolling: 'touch',
+      }}>
+        <table style={{ borderCollapse: 'collapse', fontSize: 12, whiteSpace: 'nowrap', minWidth: '100%' }}>
+          <thead>
+            <tr>
+              {['Product Id', 'Product Desc', 'Department', 'Product Status', 'Product Active', 'Barcode Active', 'Barcode']
+                .map(h => (
+                  <th key={h} style={{
+                    position: 'sticky', top: 0, zIndex: 1,
+                    background: 'var(--surface)', borderBottom: '1px solid var(--border)',
+                    padding: '6px 10px', textAlign: 'left', fontSize: 11,
+                    fontWeight: 700, color: 'var(--text-muted)',
+                  }}>{h}</th>
+                ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(r => {
+              const td = {
+                padding: '6px 10px', borderBottom: '1px solid var(--border-soft)',
+                maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis',
+              }
+              // Nothing came back from the lookup: the barcode is not in the
+              // database yet. Show the barcode and say so — the operator has
+              // done nothing wrong and the scan is still saved.
+              if (r.status !== 'dup' && !r.info) {
+                return (
+                  <tr key={r.key}>
+                    <td colSpan={6} style={{ ...td, color: 'var(--amber)', fontWeight: 600 }}>
+                      {r.status === 'saving' ? 'Looking up…' : 'HO will update it soon'}
+                    </td>
+                    <td style={{ ...td, fontFamily: 'monospace' }}>{r.barcode}</td>
+                  </tr>
+                )
+              }
+              if (r.status === 'dup') {
+                return (
+                  <tr key={r.key} style={{ opacity: .6 }}>
+                    <td colSpan={6} style={{ ...td, color: 'var(--amber)' }}>Duplicate — not saved again</td>
+                    <td style={{ ...td, fontFamily: 'monospace' }}>{r.barcode}</td>
+                  </tr>
+                )
+              }
+              return (
+                <tr key={r.key}>
+                  <td style={{ ...td, fontFamily: 'monospace' }}>{r.info.ean_barcode || '—'}</td>
+                  <td style={td} title={r.info.item_name || ''}>{r.info.item_name || '—'}</td>
+                  <td style={{ ...td, fontWeight: 700 }}>{r.price?.item_group || '—'}</td>
+                  <td style={td}>{r.price?.product_type || '—'}</td>
+                  <td style={td}>{activeYesNo(r.info.item_status)}</td>
+                  <td style={td}>{activeYesNo(r.info.barcode_status)}</td>
+                  <td style={{ ...td, fontFamily: 'monospace' }}>{r.barcode}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   )

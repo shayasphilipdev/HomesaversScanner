@@ -581,6 +581,25 @@ response (would reach 1 request/item), dropping or deferring the per-create
 audit-event write (a second Supabase write on every scan), a client-side
 barcode→department cache, and batched writes.
 
+**Way off the page fixed (same day).** Stores reported being unable to leave
+Department Scan. `Exit` worked, but it was a 44×25 chip in the extreme
+top-right — roughly half the Android minimum touch target, in the hardest
+corner to reach, labelled in a way that does not read as navigation. With all
+three nav bars hidden on this page that left no usable exit. Replaced with an
+85×44 "← Back" button on the left. The bottom nav stays hidden by explicit
+decision: the screen space is worth more than the shortcut.
+
+**Detail table below the scan.** The recent-scans list is now a table, with
+columns `Product Id` (ean_barcode) · `Product Desc` (item_name) · `Department`
+(item_group) · `Product Status` (product_type — header wording is the
+business's) · `Product Active` and `Barcode Active` (item_status /
+barcode_status rendered Yes/No) · `Barcode` (the scanned code). It is
+deliberately **wider than the screen and scrolls sideways** (764px on a 375px
+handheld) rather than cramming seven columns in; the page itself still does not
+scroll. A barcode with no `alt_barcodes` row shows only the barcode plus
+"HO will update it soon" — the scan is still saved, and the operator has done
+nothing wrong.
+
 ### 2026-09-18 — Department Scan + Scan Doctor ⚠️ TEST BRANCH ONLY
 
 > **Do not merge or cherry-pick any of this to `main`.** Explicit instruction
