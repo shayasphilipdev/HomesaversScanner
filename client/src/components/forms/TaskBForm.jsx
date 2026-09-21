@@ -56,8 +56,14 @@ export default function TaskBForm({ onSaved, storeId }) {
       store_id:           storeId || session.storeId || null,
       description:        form.description.trim(),
       notes:              form.notes.trim() || null,
+      // product_code keeps exactly what was entered, even when altFields stores
+      // a check-digit-corrected barcode_no — that raw value is what makes a
+      // handheld with the wrong setting detectable later. Every other task form
+      // already persists it; Task B was the only one that did not.
+      product_code:       form.product_barcode.trim(),
       ...altFields(lookupInfo, form.product_barcode.trim()),
-      // barcode_no already set to the scanned value by altFields; product_barcode holds the EAN.
+      // barcode_no is the scanned value, or the corrected 12-digit code when a
+      // trimmed UPC-A was recovered; product_barcode holds the EAN.
       status:             'pending'
     }
 

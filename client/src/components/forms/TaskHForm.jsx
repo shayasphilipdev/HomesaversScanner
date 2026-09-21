@@ -1,5 +1,5 @@
-﻿import { useState } from 'react'
-import { createTaskRecord, lookupAltBarcode, lookupPrice } from '../../lib/api.js'
+﻿import { useState, useRef } from 'react'
+import { createTaskRecord, scanLookupOrNull } from '../../lib/api.js'
 import { useStore } from '../../App.jsx'
 import ScannerInput from './ScannerInput.jsx'
 import { LookupBanner, altFields } from './useTaskForm.jsx'
@@ -17,19 +17,30 @@ export default function TaskHForm({ onSaved, storeId }) {
   const [lookupInfo, setLookupInfo] = useState(null)
   const [priceInfo, setPriceInfo]   = useState(null)
 
+  // One /scan/lookup request returns the product AND its selling price, instead
+  // of the two strictly-sequential hops this used to make (the price lookup
+  // needed the first call's ean_barcode, so it could not overlap).
+  //
+  // The generation counter is new here: this form rolls its own triggerLookup
+  // rather than using the hook's, so it previously had no protection against an
+  // out-of-order response. A slow lookup for one barcode could land after a
+  // faster lookup for the NEXT one and show the wrong product against the count
+  // being typed. Stale generations now bail out instead.
+  const genRef = useRef(0)
   const triggerLookup = async (code) => {
     if (!code || code.length < 4) { setLookupInfo(null); setPriceInfo(null); return }
     // Clear the previous scan's product/price before the new lookup so a blank
     // or stale snapshot can't be saved against the next barcode.
     setLookupInfo(null); setPriceInfo(null); setLookupLoading(true)
+    const gen = ++genRef.current
     try {
-      const p = await lookupAltBarcode(code)
+      const p = await scanLookupOrNull(code)
+      if (gen !== genRef.current) return   // superseded by a newer scan
       setLookupInfo(p || null)
-      // Also fetch the selling price (sale_rate) so it can show in the info box.
-      if (p?.ean_barcode) {
-        try { setPriceInfo(await lookupPrice(p.ean_barcode)) } catch {}
-      }
-    } catch {} finally { setLookupLoading(false) }
+      setPriceInfo(p?.price || null)
+    } catch {} finally {
+      if (gen === genRef.current) setLookupLoading(false)
+    }
   }
 
   const handleSubmit = async (e) => {

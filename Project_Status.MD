@@ -575,6 +575,85 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-09-21 — Department Scan's speed work applied to every other task form
+
+Dept Scan's core win was collapsing the two strictly-sequential lookups into one
+`/scan/lookup` request. Every other scanning task was still paying the old cost,
+so the same change was applied across both surfaces.
+
+**The two-hop pattern.** `useTaskForm.triggerLookup` called
+`lookupAltBarcode`, then a form's `onLookup` called `lookupPrice(product.ean_barcode)`.
+The second call *needs* the first call's `ean_barcode`, so it could never
+overlap — two full device→edge round trips per scan, on shop wifi.
+
+| Path | Round trips before | After |
+|---|---|---|
+| Task J (Department Check, HO form) | 2 | **1** |
+| Task K (Price Check) | 2 | **1** |
+| Task M (Routine Expiry Sweep) | 2 | **1** |
+| Task H (Stock Count) | 2 | **1** |
+| Offline drain, **per queued record** | 2 | **1** |
+| Tasks A/C/D/E/G (no price needed) | 1 | 1 |
+| Task B, F, Store-Task blocks (no price needed) | 1 | 1 |
+
+All 11 task forms share `useTaskForm`, so pointing the hook at `/scan/lookup`
+fixed most of them at once; J/K/M now read `product.price` from the response
+they already have, and their `onLookup` handlers stopped being `async`. Task H
+and the outbox drain rolled their own two-hop lookup and were changed directly.
+
+The price select is **identical** in both endpoints
+(`ean_barcode,item_group,item_subgrp_id,product_type,sale_rate`), so nothing was
+lost in the swap. The forms that never needed a price stay on
+`/alt-barcodes/lookup` rather than making the Worker do a `prices` query they
+would throw away.
+
+**`scanLookupOrNull` — why a wrapper rather than reusing `scanLookup`.**
+`scanLookup` deliberately has **no** offline short-circuit: Dept Scan must tell
+"no signal" from "this barcode is not in the master". The task forms want the
+older, gentler contract — a null, a record that still saves, and `drain()`
+filling in product and price on reconnect. Putting the short-circuit in a
+wrapper keeps both behaviours, and leaves Dept Scan untouched.
+
+**Stuck-screen fix (was latent, and real).** `request()` is a bare `fetch` with
+no `AbortController` — no timeout anywhere. A shop-wifi socket that connects and
+then never answers never rejects, so `lookupLoading` could stay true forever;
+Tasks J/K/M/H disable Save while it is set, so the form became **unusable**, not
+just slow. Both lookup helpers are now bounded by a shared 10s
+`withLookupTimeout`, the same bound Dept Scan already applied to itself.
+
+**Trimmed UPC-A now handled everywhere.** `altFields()` stored the *scanned*
+code as `barcode_no`, so a recovered 11-digit scan persisted a value that is
+never a valid retail barcode — the exact condition behind the 177-record
+backfill. It now prefers the corrected `info.barcode_no` whenever
+`recovered_from` is set, matching Dept Scan. Task B was the only form not
+persisting `product_code`, so it gained it — that raw scan is what keeps a
+misconfigured handheld detectable.
+
+**Task H also gained a generation guard.** It rolls its own `triggerLookup`
+instead of using the hook's, so it had no protection against an out-of-order
+response: a slow lookup for one barcode could land after a fast one for the
+next and show the wrong product against the count being typed.
+
+**Measured workload this was aimed at** (live, 30 days, continuous scanning —
+gaps under 120s):
+
+| Task | Records | Median s/scan | Share |
+|---|---|---|---|
+| J Department Check | 159,302 | 8.55 | **96.9%** |
+| K Price Check | 4,386 | 9.86 | 2.7% |
+| H Stock Count | 535 | 17.06 | 0.3% |
+| B Non-Scans | 118 | 70.74 | 0.1% |
+
+J averages 7,241 records per active day and peaked at 12,376. Dropping one
+request per scan removes roughly that many Cloudflare requests per day from an
+account on the 100k/day free plan.
+
+> ⚠️ The per-scan medians above are **workload** figures, not a measurement of
+> round-trip latency — they include the operator walking, aiming and typing.
+> The round-trip *counts* are a code fact; the seconds saved are not yet
+> measured. The lookup endpoints require auth, so they could not be timed
+> directly from outside the app.
+
 ### 2026-09-21 — Test App toggle hidden on live; historical trimmed UPC-A backfilled
 
 **Test App toggle is now test-only (in behaviour, not in code).** The one-tap

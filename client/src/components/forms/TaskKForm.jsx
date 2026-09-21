@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { createTaskRecord, lookupPrice } from '../../lib/api.js'
+import { createTaskRecord } from '../../lib/api.js'
 import { useStore } from '../../App.jsx'
 import ScannerInput from './ScannerInput.jsx'
 import { useTaskForm, LookupBanner, altFields } from './useTaskForm.jsx'
@@ -13,26 +13,22 @@ export default function TaskKForm({ onSaved, storeId }) {
   const { session } = useStore()
   const [priceInfo, setPriceInfo] = useState(null)
 
-  // onLookup fires after the alt-barcode row resolves.  We then do a second
-  // request to /api/prices/lookup to pull the ItemMaster selling price.
-  const handleLookup = async ({ product, setForm }) => {
+  // onLookup fires after the alt-barcode row resolves. The ItemMaster selling
+  // price now comes back in the SAME /scan/lookup response, so there is no
+  // second request to /api/prices/lookup and no await here at all.
+  const handleLookup = ({ product, setForm }) => {
     // Auto-fill description from the Alternate Barcode master.
     if (product.item_name) {
       setForm(f => ({ ...f, description: product.item_name }))
     }
-    // Price lookup by EAN barcode (step 2).
-    if (product.ean_barcode) {
-      try {
-        const price = await lookupPrice(product.ean_barcode)
-        setPriceInfo(price)
-        if (price) {
-          setForm(f => ({
-            ...f,
-            sale_rate:  price.sale_rate != null ? String(price.sale_rate) : '',
-            item_group: price.item_group || ''
-          }))
-        }
-      } catch { /* silent — price column is optional */ }
+    const price = product.price || null
+    setPriceInfo(price)
+    if (price) {
+      setForm(f => ({
+        ...f,
+        sale_rate:  price.sale_rate != null ? String(price.sale_rate) : '',
+        item_group: price.item_group || ''
+      }))
     }
   }
 

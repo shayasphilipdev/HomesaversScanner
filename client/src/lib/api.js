@@ -102,13 +102,29 @@ export const getBmReductions = ({ from, to } = {}) => {
   return request('/reports/bm-reductions' + (q.toString() ? `?${q}` : ''))
 }
 
+// Every scan lookup is bounded. request() is a bare fetch with no
+// AbortController, so an unbounded lookup can wait forever on shop wifi — a
+// socket that connects and then never answers never rejects. Left unbounded
+// that shows as a spinner that never stops, and on the forms that disable Save
+// while a lookup is in flight, as a form that cannot be used at all. A
+// rejection is caught by the caller, which clears the loading flag and lets the
+// raw barcode save, so a dead network costs one pause instead of a stuck
+// screen. Dept Scan already bounds its own lookup the same way.
+const LOOKUP_TIMEOUT_MS = 10000
+
+const withLookupTimeout = (p) => Promise.race([
+  p,
+  new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('lookup timed out')), LOOKUP_TIMEOUT_MS)),
+])
+
 // Phase 3: scan lookup against the Alternate Barcode table (Barcode_No is the
 // primary key). Returns { barcode_no, ean_barcode, item_name, supl_id,
 // supplier_code, item_status, barcode_status } or null.
 export const lookupAltBarcode = (barcode) =>
   (typeof navigator !== 'undefined' && !navigator.onLine)
     ? Promise.resolve(null)   // offline: don't fire a doomed request — it would hang the scan
-    : request(`/alt-barcodes/lookup?barcode=${encodeURIComponent(barcode)}`)
+    : withLookupTimeout(request(`/alt-barcodes/lookup?barcode=${encodeURIComponent(barcode)}`))
 
 // Both halves of a scan lookup in one request, so the slow device link is
 // crossed once instead of twice. Returns the alt_barcodes row with the price
@@ -121,6 +137,21 @@ export const lookupAltBarcode = (barcode) =>
 // network error, and the caller is expected to bound it with its own timeout.
 export const scanLookup = (barcode) =>
   request(`/scan/lookup?barcode=${encodeURIComponent(barcode)}`)
+
+// Offline-tolerant, timeout-bounded scanLookup — this is what the HO and Store
+// task forms use.
+//
+// Those forms want the gentler contract the two-step lookup always gave them:
+// a null result, a record that still saves, and drain() filling product and
+// price in on reconnect. scanLookup's throw-on-no-signal is right for Dept
+// Scan — which has to tell the operator "no signal" apart from "this barcode
+// is not in the master" — but it would turn a queued task record into a visible
+// error here. So the offline short-circuit lives in this wrapper, NOT in
+// scanLookup itself, and Dept Scan keeps its stricter behaviour untouched.
+export const scanLookupOrNull = (barcode) =>
+  (typeof navigator !== 'undefined' && !navigator.onLine)
+    ? Promise.resolve(null)   // offline: record queues, drain() enriches on sync
+    : withLookupTimeout(scanLookup(barcode))
 
 // Look up a price row by EAN barcode.
 // Returns { ean_barcode, item_group, item_subgrp_id, product_type, sale_rate } or null.

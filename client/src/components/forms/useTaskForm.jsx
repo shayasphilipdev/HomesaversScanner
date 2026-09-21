@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { lookupAltBarcode } from '../../lib/api.js'
+import { scanLookupOrNull } from '../../lib/api.js'
 
 // Shared state + behaviour for the HO Task forms (A–J).
 // Each form still owns its own EMPTY shape, validation, JSX, and payload
@@ -50,6 +50,13 @@ export function useTaskForm({ initial, onLookup } = {}) {
 
   // Scan -> resolve the Alternate Barcode row by Barcode_No -> stash the
   // result for the banner and the form-specific onLookup hook.
+  //
+  // Uses /scan/lookup, which returns the alt row AND the price row (nested
+  // under `price`) in ONE request. Forms that need the department or selling
+  // price read `product.price` in their onLookup instead of firing a second,
+  // strictly-sequential /prices/lookup — that second hop was the same
+  // multi-round-trip cost Dept Scan was rebuilt to remove, and it was being
+  // paid on every scan of the highest-volume tasks.
   const triggerLookup = async (code) => {
     if (!code || code.length < 4) { setLookupInfo(null); return }
     // Clear immediately so the UI never shows stale data from a previous scan
@@ -58,7 +65,7 @@ export function useTaskForm({ initial, onLookup } = {}) {
     setLookupLoading(true)
     const gen = ++genRef.current
     try {
-      const p = await lookupAltBarcode(code)
+      const p = await scanLookupOrNull(code)
       if (gen !== genRef.current) return   // superseded by reset or newer scan
       if (p) {
         setLookupInfo(p)
@@ -88,8 +95,17 @@ export function useTaskForm({ initial, onLookup } = {}) {
 // createTaskRecord payload so reports can show item/supplier/status without a
 // second lookup. barcode_no = scanned Barcode_No; product_barcode = EAN from lookup.
 export function altFields(info, barcode) {
+  // Trimmed UPC-A: some handhelds drop the 12th check digit, so a 12-digit US
+  // barcode arrives as 11 and the Worker recovers it. When that happens,
+  // info.barcode_no is the CORRECTED 12-digit code and info.recovered_from is
+  // what the gun actually sent. Persist the corrected one — an 11-digit value
+  // is never a valid retail barcode, and storing it is what left 177 historical
+  // records unmatched until they had to be backfilled by hand. Dept Scan
+  // already did this (DeptScan.jsx); doing it here gives every task form the
+  // same behaviour. The raw scan is still kept in product_code by the caller.
+  const scanned = (barcode || info?.barcode_no || '') || null
   return {
-    barcode_no:      (barcode || info?.barcode_no || '') || null,
+    barcode_no:      (info?.recovered_from ? info.barcode_no : scanned) || null,
     product_barcode: info?.ean_barcode   || null,   // EAN → "Product Code" in reports
     item_name:       info?.item_name     || null,
     supl_id:         info?.supl_id       || null,
