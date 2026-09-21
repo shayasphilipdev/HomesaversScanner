@@ -112,11 +112,18 @@ export const getBmReductions = ({ from, to } = {}) => {
 // screen. Dept Scan already bounds its own lookup the same way.
 const LOOKUP_TIMEOUT_MS = 10000
 
-const withLookupTimeout = (p) => Promise.race([
-  p,
-  new Promise((_, reject) =>
-    setTimeout(() => reject(new Error('lookup timed out')), LOOKUP_TIMEOUT_MS)),
-])
+const withLookupTimeout = (p) => {
+  let timer
+  return Promise.race([
+    p,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error('lookup timed out')), LOOKUP_TIMEOUT_MS)
+    }),
+  // Cancel the timer once the race settles. Without this every scan leaves a
+  // live 10s timer holding its closure — harmless individually, but this runs
+  // thousands of times a day on a cheap handheld that is scanning continuously.
+  ]).finally(() => clearTimeout(timer))
+}
 
 // Phase 3: scan lookup against the Alternate Barcode table (Barcode_No is the
 // primary key). Returns { barcode_no, ean_barcode, item_name, supl_id,

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { createTaskRecord, deleteTaskRecord, scanLookup } from '../lib/api.js'
+import { createTaskRecord, deleteTaskRecord, scanLookup, scanLookupOrNull } from '../lib/api.js'
 import { altFields } from '../components/forms/useTaskForm.jsx'
 import ScannerInput from '../components/forms/ScannerInput.jsx'
 import { useStore } from '../App.jsx'
@@ -209,7 +209,13 @@ export default function DeptScan() {
         if (!navigator.onLine) return
         for (const row of justSynced.slice(0, 10)) {
           try {
-            const info = await scanLookup(row.barcode)
+            // Bounded variant: this loop is SEQUENTIAL, so one socket that
+            // connects and never answers would stall every remaining row on
+            // "details to come" and never finish. The throw-vs-null distinction
+            // that matters during a live scan is irrelevant here — `continue`
+            // below and the catch treat both the same — so the 10s bound is
+            // free of charge.
+            const info = await scanLookupOrNull(row.barcode)
             if (!info) continue
             setRows(prev => prev.map(r => r.key === row.key
               ? { ...r, info, price: info.price || null, dept: info.price?.item_group || null,
@@ -266,8 +272,19 @@ export default function DeptScan() {
       ])
       price = info?.price || null
     } catch { lookupFailed = true }
-    if (gen !== genRef.current) return
-
+    // NOTE: deliberately no `if (gen !== genRef.current) return` here.
+    //
+    // A newer scan supersedes this one's claim on the SPINNER, never its claim
+    // to be saved. The operator pulled the trigger on a real product; bailing
+    // out here skipped createTaskRecord entirely, so the scan was silently lost
+    // — no beep, no queue entry, and its row stuck on "Looking up…" forever.
+    // Reachable whenever a second scan arrives during a slow lookup, which on
+    // shop wifi can be up to LOOKUP_TIMEOUT_MS: the input is never disabled
+    // while a lookup runs (ScannerInput shows a spinner but stays live).
+    //
+    // Everything below is safe to run out of order: the row updates are keyed
+    // by the unique rowKey, and the only genuinely shared piece of state — the
+    // busy spinner — is still gated on the generation in the finally block.
     const dept = price?.item_group || null
     const name = info?.item_name || null
 
@@ -302,6 +319,20 @@ export default function DeptScan() {
     } catch (e) {
       setRows(prev => prev.map(r => r.key === rowKey ? { ...r, status: 'failed', dept, name, info, price, lookupFailed } : r))
       setError(e?.message || 'Could not save')
+      // The duplicate window was armed before the lookup, so without this an
+      // immediate re-scan of the SAME barcode is refused as "Already scanned —
+      // not saved again" when in fact nothing was saved. That is the opposite
+      // of the truth, and it locks the operator out of retrying for 3s.
+      // undoLast clears these two for exactly the same reason.
+      //
+      // Only disarm if the window still belongs to THIS barcode. Saves can now
+      // complete out of order, so an older scan failing must not strip the
+      // duplicate protection a newer scan has since armed — that would let a
+      // stray second trigger-pull on the newer barcode through.
+      if (lastCodeRef.current === scanned) {
+        lastCodeRef.current = ''
+        lastAtRef.current   = 0
+      }
     } finally {
       // Only the newest scan owns the spinner. Clearing it unconditionally
       // would switch off the indicator for a scan that is still in flight.
