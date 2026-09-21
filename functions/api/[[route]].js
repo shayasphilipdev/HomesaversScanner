@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-11-am-unify-msg-delete'
+const API_REVISION   = '2026-09-21-upca-recovery'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -206,6 +206,21 @@ function canCreateTasks(s) { return hasRole(s, TASK_CREATORS) }
 // admin-or-own-action check and resets marked_for_deletion correctly.
 // Allowing 'pending' here too would let anyone bypass that check with a
 // plain PATCH -- so it's rejected below regardless of role, admin included.
+// The 12th digit of a UPC-A, computed from the first eleven: positions 1,3,5…
+// are summed and tripled, positions 2,4,6… are summed, and the check digit is
+// whatever brings the total to the next multiple of ten. Deterministic — there
+// is exactly one valid check digit for any eleven digits. Used to recover
+// scans from handhelds set not to transmit it (see /alt-barcodes/lookup).
+function upcaCheckDigit(eleven) {
+  let odd = 0, even = 0
+  for (let i = 0; i < 11; i++) {
+    const n = eleven.charCodeAt(i) - 48
+    if (i % 2 === 0) odd += n
+    else             even += n
+  }
+  return String((10 - ((odd * 3 + even) % 10)) % 10)
+}
+
 const STATUS_SETTERS = {
   completed:         BO_ROLES,
   no_change_needed:  BO_ROLES,
@@ -3386,13 +3401,38 @@ export async function onRequest(context) {
       // changes; without the ordering, `limit 1` would return whichever row
       // Postgres happened to hand back and a scan could resolve to a
       // discontinued product.
-      const rows = await db.select('alt_barcodes', {
+      const scanned = String(barcode).trim()
+      const selectAlt = (code) => db.select('alt_barcodes', {
         select: 'barcode_no,ean_barcode,item_name,supl_id,supplier_code,item_status,barcode_status',
-        barcode_no: `eq.${String(barcode).trim()}`,
+        barcode_no: `eq.${code}`,
         order: 'barcode_status.asc,item_status.asc',
         limit: '1'
       })
-      return json(rows[0] || null)
+
+      const rows = await selectAlt(scanned)
+      if (rows[0]) return json(rows[0])
+
+      // Several handhelds are configured not to transmit the UPC-A check
+      // digit, so a 12-digit US barcode arrives as 11 digits and never
+      // matches. Measured 2026-09-21: 73 such scans in 60 days across six
+      // stores (Tallaght, Athy, Ennis Ballymaley, Crumlin, Longford Axis,
+      // Milford). 49 of 55 stores are unaffected, so it is a per-device
+      // setting rather than the hardware.
+      //
+      // An 11-digit code is never a valid retail barcode (UPC-A is 12,
+      // EAN-13 is 13, EAN-8 is 8), so the length alone is the signature, and
+      // the check digit is arithmetically determined by the other eleven —
+      // exactly ONE candidate, not a guess among ten.
+      //
+      // The guard against inventing a product: the candidate is only returned
+      // if it actually exists in alt_barcodes. A miss falls through to null,
+      // exactly as before. recovered_from reports the correction so it is
+      // visible rather than silent; older clients simply ignore the field.
+      if (/^[0-9]{11}$/.test(scanned)) {
+        const recovered = await selectAlt(scanned + upcaCheckDigit(scanned))
+        if (recovered[0]) return json({ ...recovered[0], recovered_from: scanned })
+      }
+      return json(null)
     }
 
     // GET /product-master/filters — distinct values for the dropdown filters.
