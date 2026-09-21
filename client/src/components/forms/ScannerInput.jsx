@@ -202,6 +202,10 @@ export default function ScannerInput({
     // That is preferred over having to tap the field before every scan.
     const el = inputRef.current
     if (!el) return
+    // While the camera is open the field must stay blurred — see the effect
+    // below. Refocusing here after a camera scan would put the keyboard back
+    // over the viewfinder.
+    if (cameraOn) return
     const doFocus = () => {
       try { el.focus({ preventScroll: true }) } catch { el.focus() }
     }
@@ -209,12 +213,38 @@ export default function ScannerInput({
     const t1  = setTimeout(doFocus, 150)
     const t2  = setTimeout(doFocus, 400)
     return () => { cancelAnimationFrame(raf); clearTimeout(t1); clearTimeout(t2) }
-  }, [value])
+  }, [value, cameraOn])
+
+  // Keep the keyboard off the viewfinder.
+  //
+  // A camera scan is decoded from the video and pushed straight through
+  // onChange/confirm — it never goes near the input — so the field does not
+  // need focus while the camera is open. On a phone a focused field means a
+  // keyboard sitting over the very thing the user is trying to aim, so blur
+  // it. Focus is restored when the camera closes, otherwise a scanner gun
+  // would have nowhere to deliver to afterwards.
+  // Read at call time by the window-refocus listener, which subscribes once.
+  const cameraOnRef = useRef(false)
+  cameraOnRef.current = cameraOn
+  const wasCameraOnRef = useRef(false)
+  useEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    if (cameraOn) {
+      try { el.blur() } catch { /* nothing focused */ }
+    } else if (wasCameraOnRef.current) {
+      try { el.focus({ preventScroll: true }) } catch { el.focus() }
+    }
+    wasCameraOnRef.current = cameraOn
+  }, [cameraOn])
 
   // Refocus whenever the window/tab regains attention — covers the case where
   // the user switches apps (stock lookup, camera app) and comes back.
   useEffect(() => {
     const refocus = () => {
+      // Not while the camera is open — that would drop the keyboard back over
+      // the viewfinder the moment the user returns to the tab.
+      if (cameraOnRef.current) return
       if (value === '') {
         try { inputRef.current?.focus({ preventScroll: true }) } catch { inputRef.current?.focus() }
       }

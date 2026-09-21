@@ -114,6 +114,9 @@ export default function DeptScan() {
   // that the keyboard appearing is the lesser problem.
   useEffect(() => {
     const restore = () => {
+      // The camera deliberately blurs the box so the keyboard is not sitting
+      // over the viewfinder. The reader element only exists while it is open.
+      if (document.getElementById('reader-deptscan')) return
       const active = document.activeElement
       if (active && active !== document.body) return   // something owns focus — leave it
       const box = document.querySelector('input.scan-input')

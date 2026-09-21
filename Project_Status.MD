@@ -589,6 +589,24 @@ three nav bars hidden on this page that left no usable exit. Replaced with an
 85×44 "← Back" button on the left. The bottom nav stays hidden by explicit
 decision: the screen space is worth more than the shortcut.
 
+**Keyboard vs the scan box (worth understanding before touching focus).** The
+store V520 scans through an IME that shows **no keyboard**, so nothing is
+normally visible; a Samsung phone uses a real keyboard, so the same code looks
+completely different on each. Chrome will not let a *programmatic* focus raise
+the keyboard, but a focus during a **user gesture** does — which is why taps,
+not page load, were summoning it. Two rules follow, and both are load-bearing:
+- Buttons on Department Scan refuse focus via `preventDefault` on **pointerdown**
+  (mousedown alone is too late in the Android touch sequence).
+- Nothing calls `.focus()` in response to a tap. The safety net only acts when
+  focus has ended up on `<body>` — genuinely nowhere.
+- **While the camera is open the field is deliberately blurred.** A camera scan
+  is decoded from the video and pushed straight through onChange/confirm — it
+  never goes near the input — so focus is not needed, and on a phone a focused
+  field puts a keyboard over the viewfinder being aimed. Focus is restored when
+  the camera closes so a gun still has somewhere to deliver. The auto-focus,
+  window-refocus and page-level safety-net all skip while it is open, or they
+  would immediately undo it.
+
 **UPC-A check-digit recovery (`/scan/lookup`).** Several handhelds are
 configured not to transmit the UPC-A check digit, so a 12-digit US barcode
 arrives as 11 digits and never matches. Still live as of 2026-09-21 — 73 scans
