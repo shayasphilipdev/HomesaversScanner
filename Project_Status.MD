@@ -589,6 +589,33 @@ three nav bars hidden on this page that left no usable exit. Replaced with an
 85×44 "← Back" button on the left. The bottom nav stays hidden by explicit
 decision: the screen space is worth more than the shortcut.
 
+**Robustness pass (asked for explicitly: could it stick, freeze, or stop
+scanning?).** Four faults found and fixed.
+- **Focus theft — the "it stopped scanning" failure.** These handhelds deliver
+  a scan through the Android IME, and an IME only delivers to a **focused**
+  input. Tapping Undo or the camera moved focus to that button, and
+  `ScannerInput` only restores focus when the field *transitions* to empty —
+  which it already was. The operator then pulled the trigger and nothing
+  happened, with nothing on screen to explain why. Department Scan now returns
+  focus to the scan box whenever it lands anywhere else (real text fields
+  exempt, so the camera's zoom slider still works).
+- **⚠️ CAMERA CRASH — ALSO PRESENT ON LIVE.** `html5-qrcode`'s `stop()` throws
+  **synchronously** ("Cannot stop, scanner is not running or paused") when the
+  scanner never actually started — permission denied, no camera, or start still
+  in flight. A synchronous throw never reaches `.catch()`, so it escaped the
+  effect cleanup and tripped the ErrorBoundary: **tapping Camera on and
+  straight back off took the whole page down to "Something went wrong"**. Fixed
+  in `ScannerInput.jsx` on `test` only. The same bug is in `main`, in shared
+  code used by every task form A–M — it only bites where an admin has enabled
+  camera scanning (`hs_camera_enabled`), which is off chain-wide by default.
+  **Worth porting to live on its own merit.**
+- **Unbounded lookup.** No timeout, so shop wifi that accepts a connection and
+  never answers left a row on "Looking up…" forever. Now capped at 10s, after
+  which it is treated as a failed lookup — the scan still saves and the details
+  fill in server-side on sync.
+- **Spinner ownership.** An early return on a superseded scan skipped
+  `setBusy(false)`. Now only the newest generation clears it.
+
 **Offline behaviour (Department Scan).** Scanning works with no signal; the
 loop never blocks on the network.
 - The lookup throws and the save goes to the existing IndexedDB outbox

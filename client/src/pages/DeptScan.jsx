@@ -25,6 +25,14 @@ import { getAll as outboxGetAll, remove as outboxRemove } from '../lib/outbox.js
 // so confirming it conveys nothing. The record commits on lookup, and Undo
 // replaces the confirmation step.
 
+const euro = (v) =>
+  (v == null || v === '' || isNaN(Number(v))) ? '—' : `€${Number(v).toFixed(2)}`
+
+// Supplier id and code both carry meaning and are often both set; the rest of
+// the app shows them joined the same way (see LookupBanner in useTaskForm).
+const supplierOf = (info) =>
+  [info?.supl_id, info?.supplier_code].filter(Boolean).join(' · ')
+
 // The source tables store 'Active' / 'Inactive'; the floor wants Yes / No.
 const activeYesNo = (v) => {
   if (!v) return '—'
@@ -32,6 +40,7 @@ const activeYesNo = (v) => {
 }
 
 const DUP_WINDOW_MS = 3000   // a repeat of the same barcode inside this is a double trigger-pull
+const LOOKUP_TIMEOUT_MS = 10000  // shop wifi can connect and then never answer
 const MAX_ROWS      = 50     // on-screen history; the full list lives in Reports
 
 // WebAudio rather than audio files: no asset to load on a slow shop
@@ -80,6 +89,35 @@ export default function DeptScan() {
   const [viewH, setViewH] = useState(0)
   // Bumped on undo to clear ScannerInput's dedupe guards — see undoLast.
   const [resetSignal, setResetSignal] = useState(0)
+
+  // THE most important guard on this page.
+  //
+  // These handhelds deliver a scan through the Android IME, and an IME only
+  // delivers to a FOCUSED input. Tapping Undo, the camera, or anywhere that is
+  // not the box moves focus to that element — and ScannerInput only restores
+  // focus when the field transitions to empty, which it already is. The
+  // operator then pulls the trigger, nothing happens, and there is nothing on
+  // screen explaining why. That is the "it stopped scanning" failure.
+  //
+  // So on this page focus always goes back to the scan box. Real text fields
+  // are exempt so the camera's zoom slider still works.
+  useEffect(() => {
+    const restore = (e) => {
+      const tag = e.target?.tagName
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return
+      const box = document.querySelector('input.scan-input')
+      if (!box || document.activeElement === box) return
+      setTimeout(() => {
+        try { box.focus({ preventScroll: true }) } catch { box.focus() }
+      }, 0)
+    }
+    document.addEventListener('focusin', restore)
+    document.addEventListener('click', restore)
+    return () => {
+      document.removeEventListener('focusin', restore)
+      document.removeEventListener('click', restore)
+    }
+  }, [])
 
   // Always-current rows, for handlers that need them without re-subscribing.
   const rowsRef    = useRef(rows)
@@ -208,9 +246,16 @@ export default function DeptScan() {
     // usually means there is no signal in that aisle. Telling an operator
     // "HO will update it soon" about a product HO already has, purely because
     // the wifi dropped, would send them chasing nothing.
+    // Bounded: shop wifi can accept a connection and then never answer. Left
+    // unbounded the row would sit on "Looking up…" indefinitely. On timeout we
+    // treat it as a failed lookup — the scan still saves, and the details are
+    // filled in server-side when the record syncs.
     let info = null, price = null, lookupFailed = false
     try {
-      info  = await scanLookup(scanned)
+      info = await Promise.race([
+        scanLookup(scanned),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('lookup timed out')), LOOKUP_TIMEOUT_MS)),
+      ])
       price = info?.price || null
     } catch { lookupFailed = true }
     if (gen !== genRef.current) return
@@ -246,7 +291,9 @@ export default function DeptScan() {
       setRows(prev => prev.map(r => r.key === rowKey ? { ...r, status: 'failed', dept, name, info, price, lookupFailed } : r))
       setError(e?.message || 'Could not save')
     } finally {
-      setBusy(false)
+      // Only the newest scan owns the spinner. Clearing it unconditionally
+      // would switch off the indicator for a scan that is still in flight.
+      if (gen === genRef.current) setBusy(false)
     }
   }, [storeId])
 
@@ -444,7 +491,8 @@ export default function DeptScan() {
         <table style={{ borderCollapse: 'collapse', fontSize: 12, whiteSpace: 'nowrap', minWidth: '100%' }}>
           <thead>
             <tr>
-              {['Product Id', 'Product Desc', 'Department', 'Product Status', 'Product Active', 'Barcode Active', 'Barcode']
+              {['Product Id', 'Product Desc', 'Selling Price', 'Department', 'Product Status',
+                'Product Active', 'Barcode Active', 'Barcode', 'Supplier']
                 .map(h => (
                   <th key={h} style={{
                     position: 'sticky', top: 0, zIndex: 1,
@@ -467,7 +515,7 @@ export default function DeptScan() {
               if (r.status !== 'dup' && !r.info) {
                 return (
                   <tr key={r.key}>
-                    <td colSpan={6} style={{ ...td, color: 'var(--amber)', fontWeight: 600 }}>
+                    <td colSpan={7} style={{ ...td, color: 'var(--amber)', fontWeight: 600 }}>
                       {r.status === 'saving' ? 'Looking up…'
                         // No signal, so we never got to ask. The product may be
                         // perfectly well known — the details fill in on sync.
@@ -476,14 +524,16 @@ export default function DeptScan() {
                         : 'HO will update it soon'}
                     </td>
                     <td style={{ ...td, fontFamily: 'monospace' }}>{r.barcode}</td>
+                    <td style={td} />
                   </tr>
                 )
               }
               if (r.status === 'dup') {
                 return (
                   <tr key={r.key} style={{ opacity: .6 }}>
-                    <td colSpan={6} style={{ ...td, color: 'var(--amber)' }}>Duplicate — not saved again</td>
+                    <td colSpan={7} style={{ ...td, color: 'var(--amber)' }}>Duplicate — not saved again</td>
                     <td style={{ ...td, fontFamily: 'monospace' }}>{r.barcode}</td>
+                    <td style={td} />
                   </tr>
                 )
               }
@@ -491,11 +541,13 @@ export default function DeptScan() {
                 <tr key={r.key}>
                   <td style={{ ...td, fontFamily: 'monospace' }}>{r.info.ean_barcode || '—'}</td>
                   <td style={td} title={r.info.item_name || ''}>{r.info.item_name || '—'}</td>
+                  <td style={{ ...td, fontVariantNumeric: 'tabular-nums' }}>{euro(r.price?.sale_rate)}</td>
                   <td style={{ ...td, fontWeight: 700 }}>{r.price?.item_group || '—'}</td>
                   <td style={td}>{r.price?.product_type || '—'}</td>
                   <td style={td}>{activeYesNo(r.info.item_status)}</td>
                   <td style={td}>{activeYesNo(r.info.barcode_status)}</td>
                   <td style={{ ...td, fontFamily: 'monospace' }}>{r.barcode}</td>
+                  <td style={td} title={supplierOf(r.info)}>{supplierOf(r.info) || '—'}</td>
                 </tr>
               )
             })}
