@@ -325,11 +325,13 @@ export default function DeptScan() {
       // of the truth, and it locks the operator out of retrying for 3s.
       // undoLast clears these two for exactly the same reason.
       //
-      // Only disarm if the window still belongs to THIS barcode. Saves can now
-      // complete out of order, so an older scan failing must not strip the
-      // duplicate protection a newer scan has since armed — that would let a
-      // stray second trigger-pull on the newer barcode through.
-      if (lastCodeRef.current === scanned) {
+      // Only the newest scan may disarm the window. Saves can complete out of
+      // order, so an older failure must not strip the duplicate protection a
+      // newer scan has since armed — that would let a stray second
+      // trigger-pull through. Comparing the generation rather than the barcode
+      // is what makes this exact: two scans of the SAME code would compare
+      // equal by value and the older one would still clear the newer's guard.
+      if (gen === genRef.current) {
         lastCodeRef.current = ''
         lastAtRef.current   = 0
       }
@@ -362,11 +364,19 @@ export default function DeptScan() {
     try {
       if (previousStatus === 'queued') await outboxRemove(target.queuedId)
       else                             await deleteTaskRecord(target.id)
-      // Drop the undone row and anything above it. Those can only be notices
-      // that never saved — duplicates, failures — since `target` is the first
-      // actually-saved row. Leaving a "Duplicate" line sitting on top after an
+      // Drop the undone row and the notices above it — duplicates and failures,
+      // which never saved. Leaving a "Duplicate" line sitting on top after an
       // undo reads as if the undo did not work.
-      setRows(prev => prev.slice(prev.findIndex(r => r.key === target.key) + 1))
+      //
+      // Rows still in 'saving' are the exception and must be KEPT: they are
+      // live scans whose createTaskRecord is still in flight, and they will
+      // commit. Dropping them removes the only key the completion handler can
+      // match on, so the record lands on the server with nothing on screen to
+      // show for it — and no way to undo it either.
+      setRows(prev => {
+        const i = prev.findIndex(r => r.key === target.key)
+        return [...prev.slice(0, i).filter(r => r.status === 'saving'), ...prev.slice(i + 1)]
+      })
       // Undoing means the operator intends to scan that barcode again, so put
       // the page back to a genuinely clean state. The box itself must be
       // emptied: the Android IME re-commits the previous barcode after a save,
@@ -386,7 +396,14 @@ export default function DeptScan() {
   }
 
   const latest = rows[0]
-  const canUndo = rows.some(r => r.status === 'saved' && r.id)
+  // Queued scans count too. undoLast already knows how to pull one back out of
+  // the outbox (its `previousStatus === 'queued'` branch), but this gate only
+  // accepted status 'saved' with a server id — which a queued row never has —
+  // so the button stayed disabled for the entire time a store was offline and
+  // that branch was unreachable. Offline is exactly when a mis-scan is most
+  // expensive to leave in, because it syncs later without anyone looking.
+  const canUndo = rows.some(r => (r.status === 'saved' && r.id) ||
+                                 (r.status === 'queued' && r.queuedId))
 
   if (!storeId) {
     return (
@@ -562,6 +579,26 @@ export default function DeptScan() {
               const td = {
                 padding: '6px 10px', borderBottom: '1px solid var(--border-soft)',
                 maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis',
+              }
+              // A failed SAVE must never read as a success, and this has to be
+              // tested before the branches below: a row whose lookup also
+              // failed would otherwise fall through and announce "Saved —
+              // details will fill in when back online", and a row whose lookup
+              // succeeded would render as an ordinary product line. Either way
+              // the operator is told the scan is safe when it is not, while
+              // savedCount quietly excludes it — the count and the table
+              // disagree and nothing says which scan to redo. The error strip
+              // above is no help: the next scan clears it.
+              if (r.status === 'failed') {
+                return (
+                  <tr key={r.key}>
+                    <td colSpan={7} style={{ ...td, color: 'var(--red)', fontWeight: 700 }}>
+                      Not saved — scan this one again
+                    </td>
+                    <td style={{ ...td, fontFamily: 'monospace' }}>{r.barcode}</td>
+                    <td style={td} />
+                  </tr>
+                )
               }
               // Nothing came back from the lookup: the barcode is not in the
               // database yet. Show the barcode and say so — the operator has

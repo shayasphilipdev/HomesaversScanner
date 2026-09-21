@@ -31,10 +31,29 @@ export default function TaskDIForm({ taskType, onSaved, storeId }) {
     }
   })
 
+  // onLookup only fires on a HIT, so a scan that misses leaves whatever the
+  // PREVIOUS product put in this field sitting against the new barcode — and on
+  // Task D the operator cannot see it is stale, let alone edit it, because the
+  // field is read-only. Clearing it before each scan is the same guard
+  // TaskKForm applies to its description/price. Task I's copy of the field is
+  // user-editable, so it must never be wiped from under them.
+  const handleConfirm = (code) => {
+    if (taskType === 'D') t.setForm(f => ({ ...f, product_name_label: '' }))
+    t.triggerLookup(code)
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!t.form.product_code.trim()) return t.setError('Product code is required.')
-    if (!t.form.product_name_label.trim()) return t.setError('Product name is required.')
+    // Only Task I can be held to this. On Task D the field is a read-only
+    // system reference filled solely by a successful lookup, so requiring it
+    // made the form impossible to submit whenever the lookup returned nothing
+    // — offline, timed out, or a barcode not in the master — and the operator
+    // had no way to supply it. The report's actual content is product_code +
+    // actual_product_name + notes, all of which are still required below.
+    if (taskType !== 'D' && !t.form.product_name_label.trim()) {
+      return t.setError('Product name is required.')
+    }
     if (taskType === 'D') {
       if (!t.form.actual_product_name.trim()) return t.setError('Actual product name is required.')
       if (t.form.actual_product_name.trim().length <= 2) return t.setError('Actual product name must be more than 2 characters.')
@@ -71,7 +90,7 @@ export default function TaskDIForm({ taskType, onSaved, storeId }) {
               label="Product Barcode *"
               value={t.form.product_code}
               onChange={v => { t.update('product_code')(v); t.setError('') }}
-              onConfirm={t.triggerLookup}
+              onConfirm={handleConfirm}
               lookupLoading={t.lookupLoading}
               readerId={`reader-${taskType.toLowerCase()}-code`}
             />
@@ -79,7 +98,9 @@ export default function TaskDIForm({ taskType, onSaved, storeId }) {
             <LookupBanner info={t.lookupInfo} />
 
             <div className="form-group full">
-              <label>Product Name (as on the product) *</label>
+              {/* No asterisk on Task D — the field is a read-only system
+                  reference there and is no longer required to save. */}
+              <label>Product Name (as on the product){taskType === 'D' ? '' : ' *'}</label>
               <input
                 type="text" value={t.form.product_name_label}
                 readOnly={taskType === 'D'}

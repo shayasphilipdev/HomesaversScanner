@@ -27,8 +27,13 @@ async function request(path, options = {}) {
   let res
   try {
     res = await fetch(`${base}${path}`, {
-      headers,
+      // `headers` must come AFTER the spread: it already merges
+      // options.headers, so spreading options last would put the caller's raw
+      // header object back and silently drop Authorization and Content-Type
+      // with it. No caller passes headers today, which is exactly why this
+      // would be missed the first time one does.
       ...options,
+      headers,
       body: options.body ? JSON.stringify(options.body) : undefined
     })
   } catch (e) {
@@ -61,11 +66,37 @@ export const verifyUserPin        = (username, pin) => request('/users/verify-pi
 
 export const getTaskTypes      = () => request('/task-types')
 export const getAppConfig      = () => request('/app-config')
+// Cached in localStorage because two forms cannot be completed without their
+// vocabulary: Task C requires a reason code and Task F requires a DRS size,
+// both sourced from here. Offline — or on any failed fetch — the list came back
+// empty, the required dropdown had nothing in it, and the task simply could not
+// be recorded from the aisle. These vocabularies are small and change rarely,
+// so the last good copy is a far better answer than none.
+const LOOKUP_CACHE_PREFIX = 'hs_lookup_opts_'
+const lookupCacheKey = (kind, task_type) =>
+  `${LOOKUP_CACHE_PREFIX}${kind || 'all'}_${task_type || 'all'}`
+const readLookupCache = (key) => {
+  try { return JSON.parse(localStorage.getItem(key)) || null } catch { return null }
+}
+
 export const getLookupOptions  = ({ kind, task_type } = {}) => {
   const q = new URLSearchParams()
   if (kind)      q.set('kind', kind)
   if (task_type) q.set('task_type', task_type)
+  const key = lookupCacheKey(kind, task_type)
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    return Promise.resolve(readLookupCache(key) || [])
+  }
   return request(`/lookup-options?${q}`)
+    .then(rows => {
+      try { localStorage.setItem(key, JSON.stringify(rows)) } catch { /* quota/private mode */ }
+      return rows
+    })
+    .catch(err => {
+      const cached = readLookupCache(key)
+      if (cached) return cached
+      throw err   // nothing cached yet — let the caller's own handling apply
+    })
 }
 export const getSuppliers      = () => request('/suppliers')
 export const getAreas          = () => request('/areas')

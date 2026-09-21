@@ -45,6 +45,12 @@ export function useTaskForm({ initial, onLookup } = {}) {
     genRef.current++
     setForm(initial || {})
     setLookupInfo(null)
+    // Bumping genRef orphans any in-flight lookup: its finally block checks the
+    // generation and will NOT clear this flag. Without clearing it here the
+    // spinner — and every Save button gated on it — stays stuck on for the life
+    // of the component. Tapping Clear during a lookup was enough to do it.
+    // Nothing is being waited on after a reset, so false is always right.
+    setLookupLoading(false)
     setError('')
   }
 
