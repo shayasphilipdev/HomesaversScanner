@@ -99,8 +99,12 @@ export default function DeptScan() {
   // operator then pulls the trigger, nothing happens, and there is nothing on
   // screen explaining why. That is the "it stopped scanning" failure.
   //
-  // So on this page focus always goes back to the scan box. Real text fields
-  // are exempt so the camera's zoom slider still works.
+  // The buttons on this page refuse focus in the first place (preventDefault
+  // on mousedown), which is what actually keeps the keyboard from bouncing.
+  // This is the safety net for anything that still manages to take it. It
+  // listens on focusin ONLY — a blanket click listener would refocus, and so
+  // re-open the keyboard, on any tap at all, including a tap to scroll the
+  // table. Real text fields are exempt so the camera's zoom slider works.
   useEffect(() => {
     const restore = (e) => {
       const tag = e.target?.tagName
@@ -112,11 +116,7 @@ export default function DeptScan() {
       }, 0)
     }
     document.addEventListener('focusin', restore)
-    document.addEventListener('click', restore)
-    return () => {
-      document.removeEventListener('focusin', restore)
-      document.removeEventListener('click', restore)
-    }
+    return () => document.removeEventListener('focusin', restore)
   }, [])
 
   // Always-current rows, for handlers that need them without re-subscribing.
@@ -457,6 +457,13 @@ export default function DeptScan() {
           compactActions={
             <button
               type="button"
+              // Do not take focus. Focus must stay in the scan box — that is
+              // the only thing the IME delivers to — and on Android moving it
+              // away hides the keyboard, then putting it back animates the
+              // keyboard up again. That bounce is what the floor reported as
+              // "Undo pops the keyboard". preventDefault on mousedown stops
+              // the focus transfer while still firing onClick.
+              onMouseDown={e => e.preventDefault()}
               onClick={undoLast}
               disabled={!canUndo}
               style={{

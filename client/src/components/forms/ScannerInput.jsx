@@ -433,6 +433,9 @@ export default function ScannerInput({
         {compactActions && cameraEnabled && (
           <button
             type="button"
+            // Same reason as the caller's compact action: never pull focus out
+            // of the scan box, or Android hides and re-shows the keyboard.
+            onMouseDown={e => e.preventDefault()}
             onClick={() => setCameraOn(v => !v)}
             aria-label={cameraOn ? 'Stop camera' : 'Scan with camera'}
             title={cameraOn ? 'Stop camera' : 'Scan with camera'}
