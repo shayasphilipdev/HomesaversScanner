@@ -42,7 +42,12 @@ async function request(path, options = {}) {
     throw new Error('Network error: ' + (e?.message || 'request failed'))
   }
 
-  if (res.status === 401) {
+  // The credential check is exempt: a 401 there means WRONG PIN, not an expired
+  // session. Reloading tore down the login screen before StoreSelector could
+  // render "Username or PIN doesn't match", so the operator saw the app flash
+  // and reset itself with no idea why — on a handheld whose digitiser makes
+  // mistyping routine. Falling through lets the server's own message surface.
+  if (res.status === 401 && path !== '/users/verify-pin') {
     clearToken()
     sessionStorage.removeItem('hs_session')
     localStorage.removeItem('hs_session')
@@ -50,8 +55,24 @@ async function request(path, options = {}) {
     throw new Error('Session expired')
   }
 
-  const data = await res.json()
-  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`)
+  // Read the body as text first, then parse. Every endpoint of this API answers
+  // through the Worker's json() helper, so a body that will not parse did not
+  // come from us — a wifi captive portal, or a Cloudflare edge error page.
+  // Those can arrive with status 200, so res.ok proves nothing.
+  //
+  // This matters well beyond the error message. res.json() threw a SyntaxError
+  // ("Unexpected token '<'"), which isOfflineError() cannot recognise while
+  // navigator.onLine is true — so createTaskRecord did NOT queue the record and
+  // the scan was lost outright, in exactly the conditions the outbox exists to
+  // cover. Wording it as a network error puts the record in the queue instead.
+  //
+  // `parsed` is tracked separately because null is a legitimate response here:
+  // the barcode lookups answer json(null) for "not in the master".
+  const text = await res.text().catch(() => '')
+  let data = null, parsed = true
+  try { data = text === '' ? null : JSON.parse(text) } catch { parsed = false }
+  if (!parsed) throw new Error('Network error: connection returned a non-API response')
+  if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`)
   return data
 }
 
