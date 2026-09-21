@@ -43,9 +43,34 @@ export default function MultiSelectDropdown({
   const panelRef = useRef(null)
 
   // Recompute the panel's screen position from the trigger button.
+  //
+  // Measured against the VISUAL viewport, not the layout one. With the Android
+  // keyboard up the layout viewport stays full height, so a panel anchored
+  // below its trigger — and sized in vh — happily opens into the region the
+  // keyboard covers, where it can be neither seen nor tapped. That is the
+  // normal state on these handhelds: the scan box is focused, so the keyboard
+  // is up. So: flip above the trigger when there is not enough room below, and
+  // cap the height to whatever is actually visible.
+  const GAP = 6
   const place = () => {
     const r = btnRef.current?.getBoundingClientRect()
-    if (r) setRect({ left: r.left, top: r.bottom + 6, width: r.width })
+    if (!r) return
+    const vv         = typeof window !== 'undefined' ? window.visualViewport : null
+    const viewTop    = vv?.offsetTop ?? 0
+    const viewH      = vv?.height ?? window.innerHeight
+    const spaceBelow = (viewTop + viewH) - r.bottom - GAP
+    const spaceAbove = (r.top - viewTop) - GAP
+    const up         = spaceBelow < 160 && spaceAbove > spaceBelow
+    const avail      = Math.max(120, Math.floor(up ? spaceAbove : spaceBelow))
+    setRect({
+      left:   r.left,
+      width:  r.width,
+      maxH:   Math.min(360, avail),
+      // `position: fixed` resolves against the layout viewport, so anchor with
+      // bottom when opening upward rather than converting to a top offset.
+      top:    up ? null : r.bottom + GAP,
+      bottom: up ? Math.max(0, window.innerHeight - r.top + GAP) : null,
+    })
   }
 
   useEffect(() => {
@@ -64,11 +89,18 @@ export default function MultiSelectDropdown({
     document.addEventListener('touchstart', onDoc, { passive: true })
     window.addEventListener('scroll', onMove, true)
     window.addEventListener('resize', onMove)
+    // The Android keyboard opening or closing resizes the VISUAL viewport and
+    // often does not fire window.resize at all, so without these the panel
+    // keeps the position it was given before the keyboard appeared.
+    window.visualViewport?.addEventListener('resize', onMove)
+    window.visualViewport?.addEventListener('scroll', onMove)
     return () => {
       document.removeEventListener('mousedown', onDoc)
       document.removeEventListener('touchstart', onDoc)
       window.removeEventListener('scroll', onMove, true)
       window.removeEventListener('resize', onMove)
+      window.visualViewport?.removeEventListener('resize', onMove)
+      window.visualViewport?.removeEventListener('scroll', onMove)
     }
   }, [open])
 
@@ -129,11 +161,14 @@ export default function MultiSelectDropdown({
         <div ref={panelRef} style={{
           // Portalled to document.body + position:fixed so NO ancestor's
           // overflow / backdrop-filter / transform can clip or re-anchor it.
-          position: 'fixed', top: rect.top, left: rect.left,
+          position: 'fixed', left: rect.left,
+          ...(rect.top != null ? { top: rect.top } : { bottom: rect.bottom }),
           width: Math.max(rect.width, minPanelWidth),
           background: 'var(--surface)', border: '1px solid var(--border)',
           borderRadius: 10, boxShadow: 'var(--shadow-md)',
-          maxHeight: 'min(360px, 60vh)', overflow: 'auto',
+          // Capped to the space actually visible, so the list never runs on
+          // past the bottom of what the operator can reach.
+          maxHeight: rect.maxH, overflow: 'auto',
           zIndex: 4000
         }}>
           {/* Toolbar — single-select needs only a Clear; no Select-all.
