@@ -5,7 +5,7 @@ fresh Claude session opening this repo cold, **read this file first** — it has
 the architecture, data model, every module, recent changes, known issues, and
 the project memory all in one place.
 
-*Last updated: 2026-09-11.*
+*Last updated: 2026-09-21.*
 
 ---
 
@@ -551,6 +551,88 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-09-21 — Department Scan shipped to live, plus the speed work behind it
+
+Shipped in four deliberate steps, each verified before the next.
+
+**Measured hardware facts — these are settled, do not re-litigate them.** The
+store handhelds are generic Chinese Android units ("V520"), NOT Zebra, and
+device-settings changes have historically never stuck. A scan is delivered
+**through the Android IME** (2 keydowns for 13 digits, `keyCode 229` /
+`Unidentified`), measured on a real device. Consequences:
+- Suppressing the keyboard suppresses the scan. `readOnly`, `inputMode="none"`
+  and `virtualkeyboardpolicy="manual"` each block the gun entirely — all three
+  measured, confirming the reverted June attempts. **The scan must land in a
+  focused, ordinary, editable input.**
+- With nothing focused the page receives only an `F1` prefix (keyCode 112) and
+  **zero barcode characters**, so a no-input/document-capture design is not
+  possible on this hardware.
+- `F1` arrives at the START of the burst, so it is a prefix, not a terminator —
+  it cannot replace the 250ms auto-settle.
+- Do not design anything that depends on reconfiguring 55 stores' devices.
+
+**Baseline before any of this:** continuous Department Check (gaps ≤30s),
+median **8.29s**/item on live, p10 4.87s, p90 16.42s. Across 143,818 live Task J
+records there are **zero notes and zero quantities** — every stored field is
+derived from the barcode, which is what justifies removing the Save tap.
+
+**Step 1 — scanner latency fixes** (originally `608e69d`, sat unmerged on test
+since 19 Aug with "not for main until store-tested"; that test happened 18 Sep
+and passed). An idempotent confirm guard — `onBlur` fired a lookup on Save,
+which disabled the button between mousedown and click so **the first Save tap
+was silently swallowed**; an 800ms Android IME-echo guard; the per-save
+`ScannerInput` remount dropped; `Toast` context memoised (an unmemoised object
+re-rendered the whole record list ~3.5s after every save, landing mid next
+scan); `TaskBForm` photo uploads parallelised. Benefits **every** task form.
+Worth ~7% on its own (8.29s live vs 7.79s on test while it ran there).
+
+**Step 2/3 — `/scan/lookup` and `scanned_at`.** One request resolves both
+halves of a lookup inside the edge Worker instead of two sequential round trips
+over shop wifi; `POST /task-records` accepts a client scan time so an offline
+batch is no longer timestamped at **reconnect** (HS Wicklow Abbey St showed a
+0.44s median gap and Tullamore 1.06s — those were drain bursts, not scanning).
+`resolveScanTime()` trusts a client stamp only within a sane window and falls
+back to the server clock, so clients that send nothing behave exactly as before.
+
+**Step 4 — Department Scan** (`client/src/pages/DeptScan.jsx`, `/dept-scan`).
+Store and task chosen once; after that the operator only pulls the trigger.
+- The keyboard **is** going to be up, so the layout assumes it: everything
+  needed sits in a ~141px strip at the top, nothing that matters is placed
+  where the keyboard covers it, and the page never scrolls. Full-bleed via
+  `body.deptscan-full`.
+- **No Save tap** — the record commits on lookup; a large Undo replaces the
+  confirmation. Same barcode within 3s is refused with a two-tone alert; a
+  sub-second repeat is an IME echo, swallowed one layer down. No department
+  found saves normally and stays silent (business rule).
+- Nine-column detail table, deliberately wider than the screen and scrolling
+  sideways rather than cramming into 412px.
+- Offline: queues to the outbox with a "waiting" count; a failed lookup is
+  distinguished from a genuine miss; Undo pulls a queued scan back out; rows
+  fill in on reconnect, bounded to 10 lookups.
+- `ScannerInput` gained two **opt-in** props, `compactActions` and
+  `resetSignal`, plus blurring the field while the camera is open. Task forms
+  A–M pass neither and are unaffected.
+
+**Also fixed on live along the way:**
+- **Camera close crashed the page.** `html5-qrcode`'s `stop()` throws
+  *synchronously* when the scanner never started (permission denied, no camera,
+  start in flight); a sync throw never reaches `.catch()`, so it escaped the
+  effect cleanup and tripped the ErrorBoundary. Tapping Camera on then straight
+  off took the whole page to "Something went wrong". Affected every task form,
+  but only where an admin enabled camera scanning (off chain-wide by default).
+- **Trimmed UPC-A check digits** (`/alt-barcodes/lookup`). Six stores'
+  handhelds are set not to transmit the check digit, so a 12-digit US barcode
+  arrives as 11 and never matches — 73 scans in 60 days, still happening.
+  11 digits is never a valid retail barcode and the check digit is
+  arithmetically determined, so there is exactly one candidate. **Guard:** it is
+  only accepted if it already exists in `alt_barcodes`; a miss falls through to
+  null as before. 8/8 real barcodes reproduced, 144/147 (98%) of unmatched
+  11-digit scans resolve. Still worth turning the setting back on for HS
+  Tallaght, Athy, Ennis Ballymaley, Crumlin, Longford Axis and Milford.
+
+**Deliberately NOT on live:** the Scan Doctor diagnostic page, the
+`/device-diagnostics` endpoint and the darker test palette. See §12.
+
 ### 2026-09-15 — Prev/Next record navigation + in-app photo Lightbox; Pricing hides HO review buttons
 
 **Prev/Next between records.** The Details popup (`RecordDetailModal.jsx`)
@@ -1091,6 +1173,23 @@ scanning) and the DB size alarm crossing 60%+.
 
 ## 12. Known issues / watch-outs
 
+- **Scan Doctor is deliberately test-only — do not ship it to live.** Decided by
+  the business owner 2026-09-21, after Department Scan went live. The page
+  (`/scan-doctor`, `client/src/pages/ScanDoctor.jsx`) and its upload endpoint
+  (`POST /device-diagnostics`) exist on the `test` branch only. It is a
+  diagnostic instrument for settling device questions — it reports exactly what
+  a handheld emits per scan — and it is how the IME findings in §11 were
+  established. Reach for it on `test` when a new device question comes up;
+  do not port it. The `device_diagnostics` table already exists in the shared
+  database and is inert on live because only the test Worker can write to it.
+- **The darker test palette is test-only by design** (`data-testenv` in
+  `App.css`, stamped in `main.jsx`). It is how staff tell the test app from
+  live at a glance. Never port it.
+- **Six stores still have handhelds that trim the UPC-A check digit** — HS
+  Tallaght, Athy, Ennis Ballymaley, Crumlin, Longford Axis, Milford. The app
+  now recovers these (§11), so the data is correct, but the devices are still
+  misconfigured and the raw scan is kept in `product_code` so they stay
+  detectable. Turning the setting back on at source remains the cleaner fix.
 - **Service worker `/sw.js` may be absent** in `public/` → SW registration
   fails silently; no offline shell. Hashed assets + HTML still deploy fresh.
 - **Local end-to-end is hard to drive here:** the app is session-authed and
