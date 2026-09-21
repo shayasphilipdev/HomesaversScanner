@@ -103,9 +103,15 @@ export function altFields(info, barcode) {
   // records unmatched until they had to be backfilled by hand. Dept Scan
   // already did this (DeptScan.jsx); doing it here gives every task form the
   // same behaviour. The raw scan is still kept in product_code by the caller.
-  const scanned = (barcode || info?.barcode_no || '') || null
+  // Both halves are required before preferring the recovered code: a
+  // recovered_from with an empty barcode_no would otherwise resolve to null and
+  // drop the barcode from the record altogether, which is worse than storing
+  // the short scan. The Worker always sets them together, so this is a guard
+  // rather than a live path.
+  const scanned   = (barcode || info?.barcode_no || '') || null
+  const recovered = info?.recovered_from && info.barcode_no ? info.barcode_no : null
   return {
-    barcode_no:      (info?.recovered_from ? info.barcode_no : scanned) || null,
+    barcode_no:      recovered || scanned || null,
     product_barcode: info?.ean_barcode   || null,   // EAN → "Product Code" in reports
     item_name:       info?.item_name     || null,
     supl_id:         info?.supl_id       || null,

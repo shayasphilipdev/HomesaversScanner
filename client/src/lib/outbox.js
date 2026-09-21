@@ -215,6 +215,16 @@ export async function drain() {
                   supplier_code:   alt.supplier_code || null,
                   item_status:     alt.item_status   || null,
                   barcode_status:  alt.barcode_status|| null,
+                  // A scan made offline could not be check-digit corrected at
+                  // the time, so a trimmed UPC-A queued with its invalid
+                  // 11-digit barcode_no. The lookup above has now recovered the
+                  // real 12-digit code, so write it in — otherwise the record
+                  // lands in exactly the state 177 rows had to be backfilled
+                  // out of. product_code still holds the raw scan, which is
+                  // what keeps the misconfigured handheld detectable.
+                  ...(alt.recovered_from && alt.barcode_no
+                        ? { barcode_no: alt.barcode_no }
+                        : {}),
                 }
                 if (alt.price?.item_group) {
                   body = { ...body, details: { ...(body.details || {}), item_group: alt.price.item_group } }
