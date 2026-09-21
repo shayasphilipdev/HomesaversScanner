@@ -11,9 +11,9 @@
   h2 { font-size:16px; margin:26px 0 10px; color:#2A4BC4; }
   p  { margin:0 0 12px; font-size:15px; }
   .muted { color:#5a6580; font-size:13.5px; }
-  .shotwrap { text-align:center; margin:10px 0 2px; }
-  .shot { position:relative; display:inline-block; padding:0 34px; }
-  .shot img { width:300px; max-width:100%; display:block; border:1px solid #c6cede; border-radius:10px; }
+  .shotwrap { display:flex; gap:22px; align-items:flex-start; flex-wrap:wrap; margin:10px 0 2px; }
+  .shot { position:relative; flex:0 0 auto; padding:0 32px; }
+  .shot img { width:250px; max-width:100%; display:block; border:1px solid #c6cede; border-radius:10px; }
   .pin { position:absolute; transform:translateY(-50%); width:26px; height:26px; border-radius:50%;
           background:#D92D20; color:#fff; font:700 13px/26px Arial,sans-serif; text-align:center;
           box-shadow:0 1px 3px rgba(0,0,0,.28); }
@@ -22,7 +22,7 @@
   .pin::after { content:""; position:absolute; top:50%; width:18px; height:1.5px; background:#D92D20; opacity:.55; }
   .pin.l::after { left:26px; }
   .pin.r::after { right:26px; }
-  ul.key { list-style:none; padding:0; margin:16px 0 0; }
+  ul.key { list-style:none; padding:0; margin:0; flex:1 1 250px; min-width:230px; }
   ul.key li { display:flex; gap:11px; align-items:flex-start; margin-bottom:11px; }
   ul.key .num { flex:0 0 auto; width:23px; height:23px; border-radius:50%; background:#D92D20; color:#fff;
                  font:700 12px/23px Arial,sans-serif; text-align:center; }
@@ -37,6 +37,17 @@
   .card span { font-size:13.5px; color:#4a5670; }
   .big { background:#FEF6E7; border:1px solid #F0C775; border-radius:10px; padding:14px 16px; margin:18px 0 4px; font-size:15px; }
   .foot { border-top:1px solid #e3e8f2; margin-top:26px; padding-top:16px; font-size:13.5px; color:#5a6580; }
+
+  @page { size:A4; margin:14mm; }
+  @media print {
+    body { background:#fff !important; padding:0 !important;
+           -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .wrap { max-width:none; border-radius:0; }
+    .hdr, .card, .big, .steps li, .pin, ul.key .num {
+           -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .shotwrap, .steps li, .card, .big, ul.key li { page-break-inside:avoid; break-inside:avoid; }
+    h2 { page-break-after:avoid; break-after:avoid; }
+  }
 </style>
 <div class="wrap">
   <div class="hdr">
@@ -64,15 +75,15 @@
       <span class="pin r" style="top:14.8%">5</span>
       <span class="pin l" style="top:31.0%">6</span>
       </div>
-    </div>
-    <ul class="key">
+      <ul class="key">
       <li><span class="num">1</span><div><strong>Back</strong><br><span class="muted">Returns you to HO Tasks. The normal menus are hidden here to keep the screen clear.</span></div></li>
       <li><span class="num">2</span><div><strong>Counter</strong><br><span class="muted">How many you have scanned this session.</span></div></li>
       <li><span class="num">3</span><div><strong>Department</strong><br><span class="muted">The answer you are looking for. It stays on screen until the next scan, so you can look at the shelf and back.</span></div></li>
       <li><span class="num">4</span><div><strong>Scan box</strong><br><span class="muted">You never need to tap this. Just pull the trigger.</span></div></li>
       <li><span class="num">5</span><div><strong>Undo Last Scan</strong><br><span class="muted">Scanned something by mistake? One tap removes it.</span></div></li>
       <li><span class="num">6</span><div><strong>Your scans</strong><br><span class="muted">Everything so far, newest at the top. Swipe the table sideways for price, supplier and more.</span></div></li>
-    </ul>
+      </ul>
+    </div>
 
     <h2>Scanning</h2>
     <ol class="steps">
