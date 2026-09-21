@@ -308,11 +308,22 @@ export default function ScannerInput({
     return () => {
       cancelled = true
       setTorchOn(false); setZoomCaps(null); setTorchCap(false)
-      if (scannerRef.current) {
-        scannerRef.current.stop().catch(() => {}).finally(() => {
-          try { scannerRef.current.clear() } catch {}
-          scannerRef.current = null
-        })
+      // html5-qrcode's stop() THROWS SYNCHRONOUSLY ("Cannot stop, scanner is
+      // not running or paused") when the scanner never actually started —
+      // camera permission denied, no camera on the device, or start() still in
+      // flight. A synchronous throw never reaches .catch(), so it escaped this
+      // cleanup and tripped the ErrorBoundary: tapping Scan with Camera and
+      // then closing it straight away took the whole page down to "Something
+      // went wrong". Handle both the sync throw and the async rejection.
+      const scanner = scannerRef.current
+      scannerRef.current = null
+      if (scanner) {
+        const done = () => { try { scanner.clear() } catch { /* already gone */ } }
+        try {
+          const stopping = scanner.stop()
+          if (stopping && typeof stopping.then === 'function') stopping.catch(() => {}).finally(done)
+          else done()
+        } catch { done() }
       }
     }
     // Only re-run when the camera is toggled — NOT when callback identities
