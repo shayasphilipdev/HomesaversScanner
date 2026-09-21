@@ -267,8 +267,12 @@ export default function DeptScan() {
       const res = await createTaskRecord({
         task_type:    'J',
         store_id:     storeId,
+        // product_code keeps what the gun actually sent, even when the check
+        // digit was recovered — that is what makes a misconfigured handheld
+        // detectable later. barcode_no gets the real, full barcode so the
+        // record identifies the right product.
         product_code: scanned,
-        ...altFields(info, scanned),
+        ...altFields(info, info?.recovered_from ? info.barcode_no : scanned),
         details:      { item_group: dept },
         // Stamped when the trigger was pulled, not when the row reaches the
         // server. Without this an offline batch lands with every record
@@ -553,7 +557,16 @@ export default function DeptScan() {
                   <td style={td}>{r.price?.product_type || '—'}</td>
                   <td style={td}>{activeYesNo(r.info.item_status)}</td>
                   <td style={td}>{activeYesNo(r.info.barcode_status)}</td>
-                  <td style={{ ...td, fontFamily: 'monospace' }}>{r.barcode}</td>
+                  {/* Show the corrected barcode, and flag that it was
+                      corrected — a silent fix would hide a device that needs
+                      its check-digit setting turned back on. */}
+                  <td style={{ ...td, fontFamily: 'monospace' }}>
+                    {r.info.recovered_from ? r.info.barcode_no : r.barcode}
+                    {r.info.recovered_from && (
+                      <span title={`Gun sent ${r.info.recovered_from} — check digit restored`}
+                            style={{ marginLeft: 6, color: 'var(--amber)', fontWeight: 700 }}>+chk</span>
+                    )}
+                  </td>
                   <td style={td} title={supplierOf(r.info)}>{supplierOf(r.info) || '—'}</td>
                 </tr>
               )

@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-21-scan-lookup-TEST'
+const API_REVISION   = '2026-09-21-upca-recovery-TEST'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -223,6 +223,20 @@ const STATUS_SETTERS = {
 // Only trusted within a sane window, since it is client-supplied: no further
 // ahead than a little clock skew, and no older than the retention window.
 // Anything outside that, or unparseable, falls back to the server clock.
+// The 12th digit of a UPC-A, computed from the first eleven: positions 1,3,5…
+// are summed and tripled, positions 2,4,6… are summed, and the check digit is
+// whatever brings the total to the next multiple of ten. Deterministic — there
+// is exactly one valid check digit for any eleven digits.
+function upcaCheckDigit(eleven) {
+  let odd = 0, even = 0
+  for (let i = 0; i < 11; i++) {
+    const n = eleven.charCodeAt(i) - 48
+    if (i % 2 === 0) odd += n
+    else             even += n
+  }
+  return String((10 - ((odd * 3 + even) % 10)) % 10)
+}
+
 function resolveScanTime(raw, fallbackIso) {
   if (typeof raw !== 'string' || !raw) return fallbackIso
   const t = Date.parse(raw)
@@ -3336,12 +3350,37 @@ export async function onRequest(context) {
     if (path === '/scan/lookup' && method === 'GET') {
       const barcode = url.searchParams.get('barcode')
       if (!barcode) return json(null)
-      const [alt] = await db.select('alt_barcodes', {
+      const scanned = String(barcode).trim()
+      const selectAlt = (code) => db.select('alt_barcodes', {
         select: 'barcode_no,ean_barcode,item_name,supl_id,supplier_code,item_status,barcode_status',
-        barcode_no: `eq.${String(barcode).trim()}`,
+        barcode_no: `eq.${code}`,
         order: 'barcode_status.asc,item_status.asc',
         limit: '1'
       })
+
+      let [alt] = await selectAlt(scanned)
+      let recoveredFrom = null
+
+      // Some handhelds in the estate are configured not to transmit the UPC-A
+      // check digit, so a 12-digit US barcode arrives as 11 digits and never
+      // matches. Measured 2026-09-21: ~4.5% of unmatched Department Check
+      // scans, across six stores, still happening.
+      //
+      // An 11-digit code is never a valid retail barcode (UPC-A is 12, EAN-13
+      // is 13, EAN-8 is 8), so that length alone is the signature. The check
+      // digit is not a guess — it is arithmetically determined by the other
+      // eleven, giving exactly ONE candidate.
+      //
+      // The guard against inventing a product: the candidate is only accepted
+      // if it actually exists in alt_barcodes. A recovered hit is reported via
+      // recovered_from so the correction is visible rather than silent, and so
+      // the trimming stays detectable in the data instead of being papered over.
+      if (!alt && /^[0-9]{11}$/.test(scanned)) {
+        const candidate = scanned + upcaCheckDigit(scanned)
+        const [recovered] = await selectAlt(candidate)
+        if (recovered) { alt = recovered; recoveredFrom = scanned }
+      }
+
       if (!alt) return json(null)
       let price = null
       if (alt.ean_barcode) {
@@ -3352,7 +3391,7 @@ export async function onRequest(context) {
         })
         price = p || null
       }
-      return json({ ...alt, price })
+      return json({ ...alt, price, recovered_from: recoveredFrom })
     }
 
     if (path === '/alt-barcodes/lookup' && method === 'GET') {

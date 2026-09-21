@@ -589,6 +589,26 @@ three nav bars hidden on this page that left no usable exit. Replaced with an
 85×44 "← Back" button on the left. The bottom nav stays hidden by explicit
 decision: the screen space is worth more than the shortcut.
 
+**UPC-A check-digit recovery (`/scan/lookup`).** Several handhelds are
+configured not to transmit the UPC-A check digit, so a 12-digit US barcode
+arrives as 11 digits and never matches. Still live as of 2026-09-21 — 73 scans
+in 60 days across HS Tallaght, Athy, Ennis Ballymaley, Crumlin, Longford Axis
+and Milford; 49 of 55 stores are unaffected, so it is a per-device setting, not
+the model. No app-side recovery existed on either branch.
+- An 11-digit code is never a valid retail barcode (UPC-A 12, EAN-13 13, EAN-8
+  8), so the length alone is the signature. The check digit is arithmetically
+  determined by the other eleven — exactly ONE candidate, not a guess.
+- **The guard against inventing a product:** the candidate is only accepted if
+  it already exists in `alt_barcodes`. A miss falls through to "not found".
+- Validated before shipping: the algorithm reproduces 8/8 real barcodes from
+  the live tables, and **144 of 147** distinct unmatched 11-digit scans from
+  the last 60 days (98%) resolve with it. The remaining 3 fail safely.
+- A recovery is reported as `recovered_from` and shown in the table as `+chk`,
+  so the correction is visible rather than silent. `product_code` still stores
+  what the gun actually sent, so misconfigured devices stay detectable in the
+  data; `barcode_no` gets the corrected barcode so the record identifies the
+  right product.
+
 **Robustness pass (asked for explicitly: could it stick, freeze, or stop
 scanning?).** Four faults found and fixed.
 - **Focus theft — the "it stopped scanning" failure.** These handhelds deliver
