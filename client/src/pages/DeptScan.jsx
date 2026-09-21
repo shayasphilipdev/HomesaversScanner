@@ -11,8 +11,8 @@ import { getAll as outboxGetAll, remove as outboxRemove } from '../lib/outbox.js
 // 90% of everything the estate records.
 //
 // Designed around a measured constraint rather than a hoped-for one. The
-// handhelds deliver a scan THROUGH the Android IME (keyCode 229; see
-// ScanDoctor.jsx and the device_diagnostics table). Suppressing the keyboard
+// handhelds deliver a scan THROUGH the Android IME (keyCode 229 — measured on
+// a store device, see Project_Status.MD §11). Suppressing the keyboard
 // — readOnly, inputMode="none", virtualkeyboardpolicy="manual" — suppresses
 // the scan with it, every time. So the keyboard is going to be up, and this
 // page's whole layout assumes that: everything the operator needs sits in a

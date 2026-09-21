@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { getRecordMessages, postRecordMessage, markRecordMessagesRead, resolveRecordMessages, getMessageRecipients, deleteRecordMessage } from '../lib/api.js'
+import { getRecordMessages, postRecordMessage, markRecordMessagesRead, uploadMessagePhoto, deletePhoto, resolveRecordMessages, getMessageRecipients, deleteRecordMessage } from '../lib/api.js'
+import { compressImage } from '../lib/photos.js'
+import { imageFromDataTransfer } from '../lib/screenshot.js'
+import ScreenshotInput from './forms/ScreenshotInput.jsx'
 import CannedReplyPicker from './forms/CannedReplyPicker.jsx'
 import Lightbox from './Lightbox.jsx'
 import { useStore } from '../App.jsx'
@@ -51,16 +54,19 @@ export default function RecordMessages({ recordId, onUnreadChange, resolvedAt, r
   const [priority, setPriority] = useState('normal')
   const [msgType, setMsgType]   = useState('query')
   const [sending, setSending]   = useState(false)
+  const [photos, setPhotos]     = useState([])     // pending attachments: [{ url, path }]
+  const [uploading, setUploading] = useState(false)
   const [resolvedState, setResolvedState] = useState({ at: resolvedAt || null, by: resolvedByName || null })
   const [resolving, setResolving] = useState(false)
   // { images:[{url,label}], index } | null — one message's attachments,
   // opened in-app instead of a new browser tab. See Lightbox.jsx.
   const [lightbox, setLightbox] = useState(null)
   // Restricted-audience compose (back-office logins only). 'all' = normal thread.
-  const [audience, setAudience]       = useState('all')
+  const [audience, setAudience]     = useState('all')
   const [recipientId, setRecipientId] = useState('')
   const [recipients, setRecipients]   = useState([])
   const bottomRef   = useRef(null)
+  const fileRef     = useRef(null)
   const textareaRef = useRef(null)
 
   useEffect(() => {
@@ -103,18 +109,19 @@ export default function RecordMessages({ recordId, onUnreadChange, resolvedAt, r
 
   const send = async () => {
     const text = draft.trim()
-    if (!text) return
+    if (!text && !photos.length) return
     const aud = isBO ? audience : 'all'
     setSending(true)
     try {
       const msg = await postRecordMessage(
-        recordId, text, priority, msgType,
+        recordId, text, priority, msgType, photos.map(p => p.url),
         aud, aud !== 'all' && recipientId ? recipientId : null
       )
       setMsgs(prev => [...(prev || []), msg])
       setDraft('')
       setPriority('normal')
       setMsgType('query')
+      setPhotos([])
       setRecipientId('')
       // Keep `audience` as-is so a restricted back-and-forth stays in channel.
       // Only an 'all' message can reopen a resolved (store) thread.
@@ -156,6 +163,32 @@ export default function RecordMessages({ recordId, onUnreadChange, resolvedAt, r
     } finally {
       setResolving(false)
     }
+  }
+
+  // Attach photos — compress client-side, upload to the shared task-photos
+  // bucket (messages/ prefix), cap at 3 per message.
+  const addPhotos = async (fileList) => {
+    const files = Array.from(fileList || [])
+    if (!files.length) return
+    setUploading(true); setError('')
+    try {
+      for (const f of files) {
+        if (photos.length >= 3) break
+        const blob = await compressImage(f, 1600, 0.8)
+        const up   = await uploadMessagePhoto(blob)
+        setPhotos(prev => (prev.length < 3 ? [...prev, { url: up.url, path: up.path }] : prev))
+      }
+    } catch (e) {
+      setError(e.message || 'Photo upload failed')
+    } finally {
+      setUploading(false)
+      if (fileRef.current) fileRef.current.value = ''
+    }
+  }
+
+  const removePhoto = (p) => {
+    setPhotos(prev => prev.filter(x => x.url !== p.url))
+    deletePhoto(p.path).catch(() => {})
   }
 
   const handleKeyDown = (e) => {
@@ -240,11 +273,6 @@ export default function RecordMessages({ recordId, onUnreadChange, resolvedAt, r
                     border: restricted ? '1.5px dashed #A78BFA' : (hiPri ? '1.5px solid #FCA5A5' : undefined)
                   }}>
                     {msg.body && <div style={{ whiteSpace: 'pre-wrap' }}>{msg.body}</div>}
-                    {/* Test has no compose-side photo attach button, but the
-                        DB is shared with main — a message sent from the main
-                        app can still carry photo_urls here, so still render
-                        them (via the same Lightbox as record photos) rather
-                        than silently dropping them. */}
                     {Array.isArray(msg.photo_urls) && msg.photo_urls.length > 0 && (
                       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: msg.body ? 6 : 0 }}>
                         {msg.photo_urls.map((u, i) => (
@@ -339,6 +367,40 @@ export default function RecordMessages({ recordId, onUnreadChange, resolvedAt, r
             </span>
           )}
         </div>
+
+        {photos.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {photos.map(p => (
+              <div key={p.url} style={{ position: 'relative' }}>
+                <img src={p.url} alt="attachment" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)', display: 'block' }} />
+                <button type="button" onClick={() => removePhoto(p)} title="Remove"
+                  style={{ position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: '50%', border: 'none', background: '#DC2626', color: '#fff', fontSize: 12, lineHeight: '18px', cursor: 'pointer', padding: 0 }}>×</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Attach + snip tools on one slim line, in order: file · paste-snip · capture. */}
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
+            onChange={e => addPhotos(e.target.files)} />
+          <button
+            type="button"
+            className="btn btn-outline btn-sm"
+            onClick={() => fileRef.current?.click()}
+            disabled={sending || uploading || photos.length >= 3}
+            title={photos.length >= 3 ? 'Up to 3 photos' : 'Attach a photo'}
+            style={{ whiteSpace: 'nowrap' }}
+          >
+            {uploading ? <span className="spinner spinner-dark" /> : '📷 Attach'}
+          </button>
+          <ScreenshotInput
+            inline
+            disabled={sending || uploading || photos.length >= 3}
+            onImage={file => addPhotos([file])}
+          />
+        </div>
+
         <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end' }}>
           <textarea
             ref={textareaRef}
@@ -346,6 +408,12 @@ export default function RecordMessages({ recordId, onUnreadChange, resolvedAt, r
             value={draft}
             onChange={e => setDraft(e.target.value)}
             onKeyDown={handleKeyDown}
+            onPaste={e => {
+              // Pasting a screenshot straight into the message box is the most
+              // natural route on a PC — attach it instead of pasting its name.
+              const img = imageFromDataTransfer(e.clipboardData)
+              if (img) { e.preventDefault(); addPhotos([img]) }
+            }}
             placeholder="Type a message… (Enter to send, Shift+Enter for new line)"
             style={{ flex: 1, resize: 'vertical', fontSize: 13, borderRadius: 6, padding: '6px 10px', border: '1px solid var(--border)' }}
             disabled={sending}
@@ -361,7 +429,7 @@ export default function RecordMessages({ recordId, onUnreadChange, resolvedAt, r
           <button
             className="btn btn-primary btn-sm"
             onClick={send}
-            disabled={sending || !draft.trim()}
+            disabled={sending || uploading || (!draft.trim() && !photos.length)}
             style={{ alignSelf: 'flex-end' }}
           >
             {sending ? <span className="spinner" /> : 'Send'}

@@ -224,7 +224,7 @@ export default function Pricing() {
       ) : (
         <div className="card">
           <div className="card-header">{items.length.toLocaleString('en-IE')} record(s)</div>
-          <div className="table-wrap">
+          <div className="table-wrap pricing-scroll">
             <table style={{ fontSize: 13 }}>
               <thead>
                 <tr>

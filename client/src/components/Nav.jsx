@@ -5,7 +5,6 @@ import { resolvedTheme, setTheme } from '../lib/theme.js'
 import { canAccessAdmin, canDoHQTasks, canDoStoreTasks, STORE_ROLE_KEYS, roleLabel } from '../lib/roles.js'
 import { getMessageThreads, dismissMessageThread } from '../lib/api.js'
 import { TASK_FORMS } from '../lib/taskTypes.js'
-import { isTestEnv } from '../lib/env.js'
 import OfflineIndicator from './OfflineIndicator.jsx'
 import CapacityAlert from './CapacityAlert.jsx'
 
@@ -86,9 +85,10 @@ export default function Nav() {
       <span className="nav-brand">Homesavers</span>
 
       {canDoHQTasks(session)    && <NavLink to="/tasks"       className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>HO Tasks</NavLink>}
-      {/* Department Scan — test app only, sat next to HO Tasks because it is
-          the same job done a faster way. See client/src/pages/DeptScan.jsx. */}
-      {isTestEnv() && canDoHQTasks(session) && <NavLink to="/dept-scan" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Dept Scan</NavLink>}
+      {/* Department Scan — the fast single-purpose loop for Task J, which is
+          over 90% of everything recorded. Sits next to HO Tasks because it is
+          the same job done a faster way. */}
+      {canDoHQTasks(session)    && <NavLink to="/dept-scan" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Dept Scan</NavLink>}
       {canDoHQTasks(session)    && <NavLink to="/awaiting-reply" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Awaiting Reply</NavLink>}
       {canDoStoreTasks(session) && <NavLink to="/store-tasks" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Store Tasks</NavLink>}
       <NavLink to="/space-plan" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Space Plan</NavLink>

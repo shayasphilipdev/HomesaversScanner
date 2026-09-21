@@ -3,9 +3,10 @@ import { useStore } from '../App.jsx'
 import { getDashboardStats, getStores, getAreas } from '../lib/api.js'
 import { ADMIN_ROLES } from '../lib/roles.js'
 import { TASK_FORMS } from '../lib/taskTypes.js'
+import { downloadExcel } from '../lib/excel.js'
 import Skeleton from '../components/Skeleton.jsx'
 import DateRangePicker from '../components/DateRangePicker.jsx'
-import { useDateRange } from '../lib/dateRange.js'
+import { useDateRange, addDays } from '../lib/dateRange.js'
 
 const STATUS_LABEL = {
   pending:          'Pending',
@@ -16,7 +17,24 @@ const STATUS_LABEL = {
 
 // Date presets, the local/UTC convention and the range->bucket rule all live in
 // lib/dateRange.js now (shared, and the single place that convention is stated).
-// The old startOfDay/toIso/relativeRange helpers are gone with them.
+
+// "15th Aug – 21st Aug". Prefers the RPC's data_from/data_to (the real first and
+// last day that actually had activity); falls back to scanning by_day for older
+// responses. Note by_day is gap-filled, so its own min/max is the whole selected
+// window rather than the days with data — hence the preference.
+function dataRangeLabel(dataDays, dataFrom, dataTo) {
+  const fmt = (iso) => {
+    const d = new Date(iso + 'T00:00:00')
+    const n = d.getDate(), v = n % 100, suf = ['th', 'st', 'nd', 'rd']
+    return `${n}${suf[(v - 20) % 10] || suf[v] || suf[0]} ${d.toLocaleDateString('en-IE', { month: 'short' })}`
+  }
+  if (dataFrom && dataTo) {
+    return dataFrom === dataTo ? fmt(dataFrom) : `${fmt(dataFrom)} – ${fmt(dataTo)}`
+  }
+  const dates = (dataDays || []).map(d => d.date).filter(Boolean).sort()
+  if (!dates.length) return ''
+  return dates[0] === dates[dates.length - 1] ? fmt(dates[0]) : `${fmt(dates[0])} – ${fmt(dates[dates.length - 1])}`
+}
 
 export default function Dashboard() {
   const { session } = useStore()
@@ -161,22 +179,20 @@ export default function Dashboard() {
           hoLabel="HO reviewed"       hoValue={hoReviewed}       hoSub={`${ho.completed} complete · ${ho.no_change_needed} no change`}
           opsLabel="Store cleared"    opsValue={ops.store_completed} opsSub="Actioned by store"
         />
-        <KpiCard loading={loading} label="Store confirmed" value={ho.store_completed} sub="Loop closed" />
-      </div>
-
-      <div className="dash-row">
-        <ActivityChart byDay={stats?.by_day || []} loading={loading} />
-        <TaskTypeBars  rows={stats?.by_task_type || []} loading={loading} />
+        <KpiCard loading={loading} tone="info" label="Store confirmed" value={ho.store_completed} sub="Loop closed" />
       </div>
 
       <div className="dash-row dash-row--thirds">
-        <TaskDonutOps    rows={stats?.by_task_type || []} loading={loading} />
-        <TaskDonutChecks rows={stats?.by_task_type || []} loading={loading} />
-        <StatusBreakdown totals={totals} loading={loading} />
+        <TaskDonutOps    rows={stats?.by_task_type || []} dataDays={stats?.by_day || []} dataFrom={stats?.data_from} dataTo={stats?.data_to} loading={loading} />
+        <TaskDonutChecks rows={stats?.by_task_type || []} dataDays={stats?.by_day || []} dataFrom={stats?.data_from} dataTo={stats?.data_to} loading={loading} />
+        {isBO && <StoresMissingDeptCheck deptCheck={stats?.dept_check_range} allStores={scopeStores} scopeStoreIds={scopedStoreIds} statsFrom={stats?.stats_from} loading={loading} />}
       </div>
 
-      {isBO && <StoreDonutGrid rows={stats?.by_store || []} loading={loading} allStores={scopeStores} />}
+      {isBO && <StoreDonutGrid rows={stats?.by_store || []} loading={loading} allStores={scopeStores} dataDays={stats?.by_day || []} dataFrom={stats?.data_from} dataTo={stats?.data_to} />}
       {!isBO && <RecentList rows={stats?.recent || []} loading={loading} isBO={isBO} />}
+
+      {/* Activity — moved below the store graph and made compact (secondary info). */}
+      <ActivityChart byDay={stats?.by_day || []} loading={loading} compact />
     </div>
   )
 }
@@ -185,6 +201,7 @@ function KpiCard({ label, value, sub, tone, loading }) {
   const cls = ['kpi-card']
   if (tone === 'warn') cls.push('kpi-card-warn')
   if (tone === 'ok')   cls.push('kpi-card-ok')
+  if (tone === 'info') cls.push('kpi-card-info')
   return (
     <div className={cls.join(' ')}>
       <div className="kpi-label">{label}</div>
@@ -216,42 +233,58 @@ function SplitKpiCard({ loading, feature, hoLabel, hoValue, hoSub, opsLabel, ops
   )
 }
 
-function ActivityChart({ byDay, loading }) {
+function ActivityChart({ byDay, loading, compact }) {
   const days = Array.isArray(byDay) ? byDay : []
 
   const hoTotal  = days.reduce((s, d) => s + (d.ho_count  || 0), 0)
   const opsTotal = days.reduce((s, d) => s + (d.ops_count || 0), 0)
   const fmt = (n) => n.toLocaleString('en-IE')
 
-  // SVG coordinate space. Drawn with preserveAspectRatio="none" so it stretches
-  // to fill the flex body and the bars always sit on the bottom baseline (VH).
-  const VW = 1000, VH = 300, GAP = 12
-  const n = days.length || 14
-  const slot = VW / n
-  const barW = Math.max(1, slot - GAP)
+  // SVG coordinate space (preserveAspectRatio="none" stretches it to fill the
+  // flex body). Two smooth lines — HO (blue) + Ops (orange) — on ONE SHARED
+  // scale so the real magnitude gap shows: Ops (thousands of checks) towers,
+  // while HO (a handful of queries) sits low near the baseline.
+  const VW = 1000, VH = 300, PAD = 26
+  const dd = days.length === 1 ? [days[0], days[0]] : days   // one day → a flat line
+  const nPts = dd.length
+  const sharedMax = Math.max(1, ...dd.map(d => Math.max(d.ho_count || 0, d.ops_count || 0)))
 
-  const HO_MIN = 6        // min visible HO (blue) height when ho_count > 0
-  const ZERO_TICK = 3     // faint flat tick on the baseline for zero days
+  const buildLine = (key) => {
+    const pts = dd.map((d, i) => {
+      const x = nPts <= 1 ? VW / 2 : (i / (nPts - 1)) * VW
+      const y = VH - PAD - ((d[key] || 0) / sharedMax) * (VH - 2 * PAD)
+      return [x, y]
+    })
+    if (!pts.length) return { line: '', area: '' }
+    let line = `M${pts[0][0]},${pts[0][1]}`
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[i > 0 ? i - 1 : 0]
+      const p1 = pts[i]
+      const p2 = pts[i + 1]
+      const p3 = pts[i + 2 < pts.length ? i + 2 : i + 1]
+      const c1x = p1[0] + (p2[0] - p0[0]) / 6, c1y = p1[1] + (p2[1] - p0[1]) / 6
+      const c2x = p2[0] - (p3[0] - p1[0]) / 6, c2y = p2[1] - (p3[1] - p1[1]) / 6
+      line += `C${c1x},${c1y} ${c2x},${c2y} ${p2[0]},${p2[1]}`
+    }
+    const area = `${line} L${pts[pts.length - 1][0]},${VH} L${pts[0][0]},${VH} Z`
+    return { line, area }
+  }
+  const hoLine  = buildLine('ho_count')
+  const opsLine = buildLine('ops_count')
 
-  // Stacked scale: (ho + ops) mapped into VH. HO stays a thin base because Ops dwarfs it.
-  // Scaled up 15% beyond the real max so the tallest bar's value label always
-  // has headroom above it instead of butting against the card's clipped edge.
-  const maxStack = Math.max(1, ...days.map(d => (d.ho_count || 0) + (d.ops_count || 0))) * 1.15
-  const yScale = (v) => (v / maxStack) * VH
-
-  const bars = days.map((d, i) => {
-    const x = i * slot + GAP / 2
-    const ho = d.ho_count || 0
+  // One dot per day, on top of the smoothed curves, at whichever series (HO
+  // or Ops) was higher that day — so every individual day's peak is still
+  // visible even though the lines themselves are curve-smoothed.
+  const dayMarkers = dd.map((d, i) => {
+    const x   = nPts <= 1 ? VW / 2 : (i / (nPts - 1)) * VW
+    const ho  = d.ho_count  || 0
     const ops = d.ops_count || 0
-    const hoH = ho > 0 ? Math.max(yScale(ho), HO_MIN) : 0
-    let opsH = ops > 0 ? yScale(ops) : 0
-    if (hoH + opsH > VH) opsH = Math.max(0, VH - hoH)   // never eat the HO base
-    const hoY  = VH - hoH        // HO is the BOTTOM block — bottom edge on baseline
-    const opsY = hoY - opsH      // Ops stacked directly on top
-    const isZero = ho === 0 && ops === 0
     const isHo = ho >= ops
     const value = Math.max(ho, ops)
-    return { i, x, ho, ops, opsY, opsH, hoY, hoH, isZero, isHo, value }
+    const y = VH - PAD - (value / sharedMax) * (VH - 2 * PAD)
+    // Index-qualified: dd duplicates the single point on a one-day range to
+    // draw a flat line, so the date alone is not a unique React key.
+    return { key: `${d.date || ''}-${i}`, x, y, isHo, value }
   })
 
   // One axis label per day (not just first/mid/last). Bare day number, EXCEPT
@@ -263,9 +296,9 @@ function ActivityChart({ byDay, loading }) {
   const dayNum = (s) => s ? new Date(s + 'T00:00:00').getDate() : ''
   const monthShort = (s) => s ? new Date(s + 'T00:00:00').toLocaleDateString('en-IE', { month: 'short' }) : ''
   const dayLabel = (s, prevS) => {
-    const num = dayNum(s)
-    if (!prevS || monthShort(s) !== monthShort(prevS)) return `${num} ${monthShort(s)}`
-    return num
+    const n = dayNum(s)
+    if (!prevS || monthShort(s) !== monthShort(prevS)) return `${n} ${monthShort(s)}`
+    return n
   }
 
   return (
@@ -273,60 +306,48 @@ function ActivityChart({ byDay, loading }) {
       <div className="ac-accent" />
 
       <div className="ac-head">
-        <div className="ac-title">Activity · last 14 days</div>
+        <div className="ac-title">Activity</div>
         <div className="ac-legend">
           <span className="ac-leg"><span className="ac-sw ac-sw-ho" /> HO <b>{fmt(hoTotal)}</b></span>
           <span className="ac-leg"><span className="ac-sw ac-sw-ops" /> Ops <b>{fmt(opsTotal)}</b></span>
         </div>
       </div>
 
-      <div className="ac-body">
+      <div className="ac-body" style={compact ? { height: 150 } : undefined}>
         {loading ? (
           <div className="ac-loading"><span className="spinner spinner-dark" /></div>
+        ) : !days.length ? (
+          <div className="empty-state" style={{ padding: 16 }}><p style={{ fontSize: 13 }}>No activity in this range yet.</p></div>
         ) : (
           <div style={{ position: 'relative', width: '100%', height: '100%' }}>
             <svg className="ac-svg" viewBox={`0 0 ${VW} ${VH}`} preserveAspectRatio="none"
-              role="img" aria-label={`Stacked bar chart of activity over the last 14 days. HO total ${fmt(hoTotal)}, Ops total ${fmt(opsTotal)}.`}>
+              role="img" aria-label={`Line chart of daily activity. HO total ${fmt(hoTotal)}, Ops total ${fmt(opsTotal)}.`}>
               <defs>
-                {/* HO blue: bright at top, medium blue at bottom — refined, never navy/muddy */}
-                <linearGradient id="acHoGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0" stopColor="#5BA8F5" />
-                  <stop offset="1" stopColor="#2E78D6" />
+                <linearGradient id="acHoLine" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0" stopColor="#5BA8F5" /><stop offset="1" stopColor="#2E78D6" />
                 </linearGradient>
-                {/* Ops orange: light at top, warm amber at bottom — premium, never burnt/dark */}
-                <linearGradient id="acOpsGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0" stopColor="#FFB066" />
-                  <stop offset="1" stopColor="#F2843C" />
+                <linearGradient id="acOpsLine" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0" stopColor="#FFB066" /><stop offset="1" stopColor="#F2843C" />
+                </linearGradient>
+                <linearGradient id="acHoFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stopColor="#2E78D6" stopOpacity="0.16" /><stop offset="1" stopColor="#2E78D6" stopOpacity="0" />
+                </linearGradient>
+                <linearGradient id="acOpsFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stopColor="#F2843C" stopOpacity="0.16" /><stop offset="1" stopColor="#F2843C" stopOpacity="0" />
                 </linearGradient>
               </defs>
 
               <line x1="0" y1={VH * (1 / 3)} x2={VW} y2={VH * (1 / 3)} className="ac-grid" />
               <line x1="0" y1={VH * (2 / 3)} x2={VW} y2={VH * (2 / 3)} className="ac-grid" />
-              <line x1="0" y1={VH} x2={VW} y2={VH} className="ac-baseline" />
 
-              {bars.map((b) => b.isZero ? (
-                <rect key={b.i} x={b.x} y={VH - ZERO_TICK} width={barW} height={ZERO_TICK} rx="0" className="ac-zero" />
-              ) : (
-                <g key={b.i}>
-                  {/* Ops (orange) stacked ON TOP */}
-                  {b.ops > 0 && (
-                    <rect x={b.x} y={b.opsY} width={barW} height={b.opsH} rx="0" fill="url(#acOpsGrad)" />
-                  )}
-                  {/* HO (blue) at the BOTTOM — crisp top edge meets Ops cleanly */}
-                  {b.ho > 0 && (
-                    <rect x={b.x} y={b.hoY} width={barW} height={b.hoH} rx="0" fill="url(#acHoGrad)" />
-                  )}
-                </g>
-              ))}
+              {opsLine.area && <path d={opsLine.area} fill="url(#acOpsFill)" />}
+              {hoLine.area  && <path d={hoLine.area}  fill="url(#acHoFill)" />}
+              {opsLine.line && <path d={opsLine.line} fill="none" stroke="url(#acOpsLine)" strokeWidth="4" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />}
+              {hoLine.line  && <path d={hoLine.line}  fill="none" stroke="url(#acHoLine)"  strokeWidth="4" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />}
 
-              {/* One dot per day at the top of its bar, coloured by whichever
-                  series (HO or Ops) was actually higher that day — the stack
-                  puts Ops visually on top regardless, so this is the only way
-                  to see at a glance which series actually led each day. */}
-              {bars.map((b) => (
-                <circle key={'dot' + b.i} cx={b.x + barW / 2}
-                  cy={b.isZero ? VH - ZERO_TICK : (b.ops > 0 ? b.opsY : b.hoY)}
-                  r="5" fill={b.isHo ? '#2E78D6' : '#F2843C'}
+              {dayMarkers.map(m => (
+                <circle key={m.key} cx={m.x} cy={m.y} r="5"
+                  fill={m.isHo ? '#2E78D6' : '#F2843C'}
                   stroke="var(--surface)" strokeWidth="1.5" />
               ))}
             </svg>
@@ -334,25 +355,23 @@ function ActivityChart({ byDay, loading }) {
             {/* Value labels overlaid as HTML, not SVG text — the viewBox is
                 stretched non-uniformly (preserveAspectRatio="none"), which
                 would distort glyph shapes if drawn as <text> inside it. */}
-            {bars.map((b) => (
-              <div key={'label' + b.i} className="ac-dot-label" style={{
-                left: `${((b.x + barW / 2) / VW) * 100}%`,
-                top: `${Math.max(((b.isZero ? VH - ZERO_TICK : (b.ops > 0 ? b.opsY : b.hoY)) / VH) * 100, 7)}%`,
-                color: b.isHo ? '#2E78D6' : '#F2843C'
-              }}>{b.isZero ? 0 : fmt(b.value)}</div>
+            {dayMarkers.map(m => (
+              <div key={m.key} className="ac-dot-label" style={{
+                left: `${(m.x / VW) * 100}%`,
+                top: `${Math.max((m.y / VH) * 100, 7)}%`,
+                color: m.isHo ? '#2E78D6' : '#F2843C'
+              }}>{fmt(m.value)}</div>
             ))}
           </div>
         )}
       </div>
 
       <div className="ac-axis">
-        {/* The RPC now sends a ready-made label per bucket ("04 Sep" /
-            "Wk 01 Sep" / "Sep 2026") because the bucket size varies with the
-            selected range. dayLabel is the fallback for a day-bucketed
-            response that has no label. Key is index-qualified because a
-            one-day range can repeat a date. */}
-        {days.map((d, i) => (
-          <span key={`${d.date || ''}-${i}`}>{d.label || dayLabel(d.date, days[i - 1]?.date)}</span>
+        {/* The RPC sends a ready-made label per bucket ("04 Sep" / "Wk 01 Sep" /
+            "Sep 2026") because the bucket size varies with the selected range.
+            dayLabel is the fallback for a day-bucketed response without one. */}
+        {dd.map((d, i) => (
+          <span key={`${d.date || ''}-${i}`}>{d.label || dayLabel(d.date, dd[i - 1]?.date)}</span>
         ))}
       </div>
     </div>
@@ -387,17 +406,17 @@ function TaskTypeBars({ rows, loading }) {
 const DONUT_COLORS = ['#0E9A52', '#12A156', '#0A7339', '#3960A8', '#B47F1E', '#C96442', '#7E57C2', '#2D7A4E', '#E07346', '#5DCAA5', '#9A6B12']
 const CHECK_CODES  = new Set(['J', 'H', 'K', 'M'])
 
-function TaskDonutOps({ rows, loading }) {
+function TaskDonutOps({ rows, dataDays, dataFrom, dataTo, loading }) {
   const data = (rows || []).filter(r => r.count > 0 && !CHECK_CODES.has(r.code))
-  return <DonutCard title="HO Tasks" data={data} loading={loading} colorOffset={3} />
+  return <DonutCard title="HO Tasks" range={dataRangeLabel(dataDays, dataFrom, dataTo)} data={data} loading={loading} colorOffset={3} />
 }
 
-function TaskDonutChecks({ rows, loading }) {
+function TaskDonutChecks({ rows, dataDays, dataFrom, dataTo, loading }) {
   const data = (rows || []).filter(r => r.count > 0 && CHECK_CODES.has(r.code))
-  return <DonutCard title="Operations Task" data={data} loading={loading} colorOffset={0} />
+  return <DonutCard title="Operations Task" range={dataRangeLabel(dataDays, dataFrom, dataTo)} data={data} loading={loading} colorOffset={0} />
 }
 
-function DonutCard({ title, data, loading, colorOffset = 0 }) {
+function DonutCard({ title, range, data, loading, colorOffset = 0 }) {
   const total = data.reduce((s, r) => s + r.count, 0)
   const cx = 80, cy = 80, rMid = 50, sw = 20
   const circ = 2 * Math.PI * rMid
@@ -410,7 +429,7 @@ function DonutCard({ title, data, loading, colorOffset = 0 }) {
   })
   return (
     <div className="card">
-      <div className="card-header">{title}</div>
+      <div className="card-header">{title}{range && <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--text-muted)' }}> ({range})</span>}</div>
       <div className="card-body">
         {loading ? (
           <div style={{ textAlign: 'center', padding: 30 }}><span className="spinner spinner-dark" /></div>
@@ -484,7 +503,7 @@ const TYPE_COLORS = {
   I: '#9A6B12', J: '#0A7339', K: '#5DCAA5',
 }
 
-function StoreDonutGrid({ rows, loading, allStores }) {
+function StoreDonutGrid({ rows, loading, allStores, dataDays, dataFrom, dataTo }) {
   // Merge stats rows (stores with records) with the full store list so every
   // store is always shown. Inactive stores appear faded at the end.
   const merged = useMemo(() => {
@@ -504,16 +523,40 @@ function StoreDonutGrid({ rows, loading, allStores }) {
   const activeCount  = display.filter(s => s.is_active !== false).length
   const inactiveCount = display.filter(s => s.is_active === false).length
 
+  // Excel of the by-store data — one row per store, a column per task type in
+  // display order, worst-first (matches the chart). Built from data already
+  // loaded, so no extra request.
+  const exportStores = () => {
+    const cols    = ['store_code', 'store_name', ...STORE_BAR_TASKS.map(t => t.code), 'total']
+    const headers = ['Store Code', 'Store Name', ...STORE_BAR_TASKS.map(t => t.name), 'Total']
+    const exportRows = sortStoresWorstFirst((display || []).map(s => {
+      const { byCode, total } = storeCounts(s)
+      return { ...s, _byCode: byCode, _total: total }
+    })).map(s => {
+      const row = { store_code: s.store_code || '', store_name: s.store_name || '' }
+      for (const t of STORE_BAR_TASKS) row[t.code] = s._byCode[t.code] || 0
+      row.total = s._total
+      return row
+    })
+    const stamp = new Date().toISOString().slice(0, 10)
+    downloadExcel(`By store - ${stamp}.xlsx`, exportRows, cols, headers)
+  }
+
   return (
     <div className="card" style={{ marginBottom: 24 }}>
       <div className="card-header">
-        By store
-        {!loading && display.length > 0 && (
-          <span className="chip" style={{ marginLeft: 'auto' }}>
-            <span className="chip-dot" />
-            {activeCount} active{inactiveCount > 0 ? ` · ${inactiveCount} inactive` : ''}
-          </span>
-        )}
+        <span>Store Performance{dataRangeLabel(dataDays, dataFrom, dataTo) && <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--text-muted)' }}> ({dataRangeLabel(dataDays, dataFrom, dataTo)})</span>}</span>
+        <div className="flex-row" style={{ marginLeft: 'auto', gap: 8, alignItems: 'center' }}>
+          {!loading && display.length > 0 && (
+            <span className="chip">
+              <span className="chip-dot" />
+              {activeCount} active{inactiveCount > 0 ? ` · ${inactiveCount} inactive` : ''}
+            </span>
+          )}
+          {!loading && display.length > 0 && (
+            <button className="btn btn-sm btn-outline" onClick={exportStores}>↓ Excel</button>
+          )}
+        </div>
       </div>
       <div className="card-body" style={{ padding: 16 }}>
         {loading ? (
@@ -521,10 +564,175 @@ function StoreDonutGrid({ rows, loading, allStores }) {
         ) : !display.length ? (
           <div className="empty-state" style={{ padding: 20 }}><p style={{ fontSize: 13 }}>No records in this range yet.</p></div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(194px, 1fr))', gap: 14 }}>
-            {display.map(r => <StoreDualDonut key={r.id} store={r} inactive={r.is_active === false} />)}
+          <StoreBarList display={display} />
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Active stores that have NOT recorded a Department Check (task type J) in the
+// currently selected date range.
+//
+// This used to have its own fixed 7-day window regardless of the range picker
+// (the reasoning: over a long range almost every store has done one
+// eventually, so the card would read as "all clear" and be useless). Users
+// found that confusing — "same 10 stores showing even if we select 1 month,
+// 6 months" — and explicitly asked for it to follow the picker like every
+// other card, 2026-09-08. It now does; see the `partial` note below for the
+// long-range tradeoff that motivated the original fixed window.
+//
+// `deptCheck.store_ids` is the set of stores that DID one in [from, to],
+// computed server-side (task_stats_daily for prior days + live records for
+// today), so it survives the nightly purge that deletes J records after the
+// retention window regardless of status.
+function StoresMissingDeptCheck({ deptCheck, allStores, scopeStoreIds, statsFrom, loading }) {
+  const doneJ = new Set(deptCheck?.store_ids || [])
+  const missing = (allStores || [])
+    .filter(s => s.is_active !== false)
+    .filter(s => !scopeStoreIds || scopeStoreIds.includes(s.id))
+    .filter(s => !doneJ.has(s.id))
+    .sort((a, b) => (a.store_code || '').localeCompare(b.store_code || '', undefined, { numeric: true }))
+
+  const days = deptCheck?.days || 7
+  // Show the window as real dates, the same as every other card header, rather
+  // than making the reader work out what the selected range covers. Derived
+  // from the server's own `from`/`to` so the label can never disagree with the
+  // data it describes — the window is computed in UTC server-side, and the
+  // client's idea of "today" can differ from the database's at the day
+  // boundary.
+  const winLabel = deptCheck?.from
+    ? dataRangeLabel(null, deptCheck.from, deptCheck.to || addDays(deptCheck.from, days - 1))
+    : `last ${days} days`
+  // Statistics only start the day the rollup was deployed. On a range that
+  // reaches further back than that, the earlier days have no data at all —
+  // say so rather than letting that read as chain-wide non-compliance. This
+  // matters more now that the window can be long (6 months, etc.).
+  const partial = statsFrom && deptCheck?.from && statsFrom > deptCheck.from
+
+  return (
+    <div className="card">
+      <div className="card-header">
+        {/* Wraps rather than ellipsis-truncating: the dates are the point of the
+            header, and on a narrow card an ellipsis would eat exactly them.
+            The range itself stays nowrap so it never breaks mid-span. */}
+        <span style={{ minWidth: 0 }}>
+          No Department Check
+          <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}> ({winLabel})</span>
+        </span>
+        {!loading && <span className="chip" style={{ marginLeft: 'auto', flexShrink: 0 }}><span className="chip-dot" />{missing.length}</span>}
+      </div>
+      <div className="card-body" style={{ maxHeight: 300, overflowY: 'auto' }}>
+        {partial && !loading && (
+          <p className="note" style={{ fontSize: 11.5, marginTop: 0, marginBottom: 8 }}>
+            Statistics start {statsFrom} — earlier days in this window are not covered yet.
+          </p>
+        )}
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: 24 }}><span className="spinner spinner-dark" /></div>
+        ) : missing.length === 0 ? (
+          <div className="empty-state" style={{ padding: 20 }}><p style={{ fontSize: 13 }}>✓ Every store did a Department Check.</p></div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {missing.map(s => (
+              <div key={s.id} className="flex-row" style={{ justifyContent: 'space-between', gap: 8, fontSize: 13, padding: '4px 0', borderBottom: '1px solid var(--border-soft)' }}>
+                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.store_name}</span>
+                <span className="td-muted" style={{ flexShrink: 0, fontSize: 12 }}>{s.store_code}</span>
+              </div>
+            ))}
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+// By-store performance bars — one horizontal stacked bar per store, worst
+// (fewest transactions) first. Each bar is split by task type in a fixed order,
+// coloured per task, with counts shown inside the wider segments (hover any
+// segment, or use the Excel export, for exact numbers). Bar length = the
+// store's total relative to the busiest store, so under-performers read short.
+const STORE_BAR_TASKS = [
+  { code: 'J', name: 'Department Check',      color: '#2E78D6' },
+  { code: 'K', name: 'Price Check',           color: '#17A2B8' },
+  { code: 'H', name: 'Stock Count',           color: '#3E9F4B' },
+  { code: 'B', name: 'Non-Scans',             color: '#F2843C' },
+  { code: 'C', name: 'Wrong Prices',          color: '#E0518D' },
+  { code: 'D', name: 'Wrong Description',      color: '#7C5CBF' },
+  { code: 'G', name: 'Promotion Error',       color: '#E0A03A' },
+  { code: 'A', name: 'UOM Errors',            color: '#D14B3D' },
+  { code: 'E', name: 'Price Marked Products', color: '#4C6EF5' },
+  { code: 'F', name: 'DRS Errors',            color: '#8A6D3B' },
+  { code: 'I', name: 'Miscellaneous',         color: '#8896A5' },
+]
+
+// A store's per-task-type counts (keyed by code) + total across those tasks.
+function storeCounts(store) {
+  const byCode = {}
+  for (const t of (store.types || [])) byCode[t.code] = (byCode[t.code] || 0) + t.count
+  const total = STORE_BAR_TASKS.reduce((a, t) => a + (byCode[t.code] || 0), 0)
+  return { byCode, total }
+}
+
+// Chart + export order: active stores worst-first (fewest transactions),
+// inactive stores last. Rows must already carry a numeric `_total`.
+function sortStoresWorstFirst(rows) {
+  return rows.slice().sort((a, b) => {
+    const ai = a.is_active === false, bi = b.is_active === false
+    if (ai !== bi) return ai ? 1 : -1
+    return a._total - b._total
+  })
+}
+
+function StoreBarList({ display }) {
+  const rows = sortStoresWorstFirst((display || []).map(s => {
+    const { byCode, total } = storeCounts(s)
+    return { ...s, _byCode: byCode, _total: total }
+  }))
+  const maxTotal = Math.max(1, ...rows.map(r => r._total))
+
+  return (
+    <div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px', justifyContent: 'flex-end', marginBottom: 12, fontSize: 11.5, color: 'var(--text-muted)' }}>
+        {STORE_BAR_TASKS.map(t => (
+          <span key={t.code} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 11, height: 11, borderRadius: 3, background: t.color, flexShrink: 0 }} /> {t.name}
+          </span>
+        ))}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {rows.map(s => <StoreBarRow key={s.id} store={s} maxTotal={maxTotal} />)}
+      </div>
+    </div>
+  )
+}
+
+function StoreBarRow({ store, maxTotal }) {
+  const inactive = store.is_active === false
+  const byCode = store._byCode, total = store._total
+  return (
+    <div style={{ opacity: inactive ? 0.5 : 1 }}>
+      <div className="flex-row" style={{ justifyContent: 'space-between', marginBottom: 1, gap: 8 }}>
+        <span style={{ fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {store.store_name}{inactive && <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}> (inactive)</span>}
+        </span>
+        <span style={{ fontSize: 11.5, color: 'var(--text-muted)', whiteSpace: 'nowrap', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+          {total} total
+        </span>
+      </div>
+      <div style={{ height: 18, borderRadius: 999, background: 'var(--bg-soft, #E9ECF1)', overflow: 'hidden', display: 'flex' }}>
+        {STORE_BAR_TASKS.map(t => {
+          const c = byCode[t.code] || 0
+          if (!c) return null
+          const share = c / maxTotal
+          return (
+            <div key={t.code} title={`${t.name}: ${c}`} style={{
+              width: `${share * 100}%`, background: t.color,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#fff', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden'
+            }}>{share >= 0.06 ? c : ''}</div>
+          )
+        })}
       </div>
     </div>
   )

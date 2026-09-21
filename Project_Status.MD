@@ -65,19 +65,29 @@ Function `functions/api/[[route]].js` is the entire backend.
 So `test` should always be **`main` plus whatever is still under test** — never a
 branch that is missing live features.
 
-> 📌 **Current reality (2026-08-27):** the rule applies **going forward**. `test` is
-> *not* yet caught up — it is missing roughly 25 commits of live work (Dead Stock
-> report, CN-code master sync, B&M daily sync, most of the Dashboard evolution,
-> message-thread photo attachments, the pricing scroll fix, the 21-day retention
-> standardisation). Bringing it level would be `git merge main` into `test`, with
-> conflicts expected wherever the same change was already cherry-picked. The user
-> has decided to **leave this gap as-is for now** — do not "fix" it unprompted.
-> Note `git log test..main` overstates the gap (~40), because many of those commits
-> have same-content twins on `test` with different hashes from cherry-picks.
+> ✅ **Caught up 2026-09-21.** The gap that existed from 2026-08-27 is closed —
+> `git merge main` into `test` brought over Dead Stock, StoreBarList,
+> StoresMissingDeptCheck, the CN-code and B&M daily syncs, the Dashboard
+> evolution, message-thread photo attachments, the pricing scroll fix and the
+> rest. **`test` is now `main` plus exactly three test-only things**, listed
+> below. Keep it that way: propagate every `main` change to `test` as it lands,
+> rather than letting a backlog build up again.
 >
-> Practical consequence: do not assume a feature present on `main` exists on `test`.
-> Check before relying on it — e.g. message-thread photo attachments exist only on
-> `main`, so screenshot paste support could not be wired into that component there.
+> **The only intended differences between the two branches:**
+>
+> | Difference | Where | Why |
+> |---|---|---|
+> | Scan Doctor page | `client/src/pages/ScanDoctor.jsx` + its route | Diagnostic instrument; owner decided 2026-09-21 it does not go to live |
+> | `POST /device-diagnostics` + `postDeviceDiagnostic()` | Worker + `lib/api.js` | Upload path for the above |
+> | Darker palette | `data-testenv` block in `App.css`, stamped in `main.jsx` | So staff can tell the test app from live at a glance |
+>
+> Note the **TESTING MODE banner and the Test/Live toggle are NOT branch
+> differences** — that code is on both branches and keyed on the hostname via
+> `isTestEnv()`. Same for the Task M gating. Do not "port" them.
+>
+> `git log test..main` overstates the remaining gap, because many commits have
+> same-content twins from earlier cherry-picks. Compare with
+> `git diff main test --stat` instead, which is the authoritative view.
 
 > ⚠️ Both apps share **one** Supabase database. A schema or `task_types` change is
 > visible to live immediately, regardless of which branch's code you deployed. Ship

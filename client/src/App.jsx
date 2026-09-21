@@ -155,11 +155,10 @@ function Shell() {
             <Route path="/pricing"       element={<Pricing />} />
             <Route path="/awaiting-reply" element={<AwaitingReply />} />
             <Route path="/product-query" element={<ProductQuery />} />
-            {/* Diagnostic instrument — see ScanDoctor.jsx. The file only exists
-                on the test branch, and the page itself refuses to run on the
-                live host. */}
-            <Route path="/scan-doctor" element={<ScanDoctor />} />
-            <Route path="/dept-scan"   element={<DeptScan />} />
+            {/* Diagnostic instrument — TEST BRANCH ONLY, see ScanDoctor.jsx.
+                The page itself also refuses to run on the live host. */}
+            <Route path="/scan-doctor"   element={<ScanDoctor />} />
+            <Route path="/dept-scan"     element={<DeptScan />} />
             <Route path="/manager"       element={<ManagerDashboard />} />
             <Route path="/admin/task-templates" element={<AdminGuard mode="templates"><AdminTaskTemplates /></AdminGuard>} />
             <Route path="/admin"            element={<Navigate to="/admin/stores" replace />} />

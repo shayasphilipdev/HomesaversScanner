@@ -6,7 +6,7 @@ import {
   deleteTaskRecord, bulkDeleteTaskRecords, deleteJkMatching,
   adminListTemplates, getStoreTaskReportRows,
   clearToken, getProductMaster, getProductMasterFilters,
-  getSpacePlanReport, getCompetitorReport, sendToPricing,
+  getSpacePlanReport, getCompetitorReport, sendToPricing, getBmReductions,
   reverseTaskRecordStatus
 } from '../lib/api.js'
 import { COMPETITION_REPORT_COLS, COMPETITION_REPORT_HEADERS, COMPETITION_REPORT_MIN_WIDTHS } from '../lib/competitionOptions.js'
@@ -53,6 +53,7 @@ const STATUS_LABEL = {
 
 const SUBTITLES = {
   hq:         'HO task records — error reports from stores',
+  bmreductions:'Dead Stock — one-off / clearance B&M products from Department Check',
   store:      'Store tasks — operational checklist completions',
   expiry:     'Expiry Overview — Reduce-to-Clear activity across sweeps',
   product:    'Product Master — look up any product',
@@ -77,6 +78,9 @@ export default function Reports() {
         </div>
         <div className="flex-row" style={{ gap: 6, flexWrap: 'wrap' }}>
           <button className={`btn btn-sm ${tab === 'hq' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('hq')}>HO records</button>
+          {isBO && (
+            <button className={`btn btn-sm ${tab === 'bmreductions' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('bmreductions')}>Dead Stock</button>
+          )}
           <button className={`btn btn-sm ${tab === 'store' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('store')}>Store tasks</button>
           {isBO && (
             <button className={`btn btn-sm ${tab === 'expiry' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('expiry')}>Expiry</button>
@@ -92,6 +96,7 @@ export default function Reports() {
         </div>
       </div>
       {tab === 'hq'        && <HQReports />}
+      {tab === 'bmreductions' && isBO && <BMReductionsReport />}
       {tab === 'store'     && <StoreTaskReports />}
       {tab === 'expiry'    && isBO && <ExpiryReport />}
       {tab === 'product'   && <ProductMasterReport />}
@@ -291,6 +296,153 @@ async function authedFetch(url) {
   return res
 }
 
+// ── Dead Stock ────────────────────────────────────────────────────────────────
+// Back office only. Department Check scans of supplier 510001 (B&M), limited to
+// the 4 clearance/dropped product types and present in Item_Master, minus any
+// product in (B&M Daily File − CN Code Master). One row per store per product;
+// the last two columns (QTY in Store, Auth Reduced Price) are blank for stores
+// to fill in. See report_bm_reductions() / GET /reports/bm-reductions.
+const BM_KEYS    = ['store_code','product_id','description','category','status','retail_price','qty_in_store','auth_reduced_price']
+const BM_HEADERS = ['Store Code','Product ID','Description','Category','Status','Retail Price','QTY in Store','Auth Reduced Price']
+// minWidth per column, parallel to BM_HEADERS — a floor so short/blank columns
+// don't stretch, never a cap (Description has none: it's free text and should
+// absorb whatever's left).
+const BM_MIN_WIDTHS = [100, 110, undefined, 110, 90, 100, 100, 140]
+const BM_MAX_SHOWN = 1000   // the grid is a preview; Excel export carries everything
+const BM_EMPTY_FILTERS = { store_code: [], category: [], status: [] }
+const bmDate = d => { const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` }
+const bmToday = () => bmDate(new Date())
+const bmDefaultFrom = () => bmDate(new Date(Date.now() - 30 * 86400000))
+
+function BMReductionsReport() {
+  const toast = useToast()
+  const [rows, setRows]       = useState([])
+  const [loading, setLoading] = useState(false)
+  const [hasRun, setHasRun]   = useState(false)
+  const [error, setError]     = useState('')
+  const [downloading, setDownloading] = useState(false)
+  const [filters, setFilters] = useState(BM_EMPTY_FILTERS)
+  const [from, setFrom]       = useState(bmDefaultFrom())
+  const [to, setTo]           = useState(bmToday())
+
+  // No auto-load — the report only runs when the user clicks Run Report.
+  const runReport = () => {
+    setLoading(true); setError(''); setHasRun(true)
+    getBmReductions({ from: from ? `${from}T00:00:00` : '', to: to ? `${to}T23:59:59` : '' })
+      .then(d => setRows(Array.isArray(d?.rows) ? d.rows : []))
+      .catch(e => { setError(e.message); setRows([]) })
+      .finally(() => setLoading(false))
+  }
+
+  // Multi-select dropdown options — distinct values present in the loaded result.
+  const options = useMemo(() => {
+    const uniq = key => [...new Set(rows.map(r => r[key]).filter(Boolean))].sort()
+    return { store_code: uniq('store_code'), category: uniq('category'), status: uniq('status') }
+  }, [rows])
+
+  const filtered = useMemo(() => rows.filter(r =>
+    (!filters.store_code.length || filters.store_code.includes(r.store_code)) &&
+    (!filters.category.length   || filters.category.includes(r.category)) &&
+    (!filters.status.length     || filters.status.includes(r.status))
+  ), [rows, filters])
+
+  const setFilter    = (k, v) => setFilters(f => ({ ...f, [k]: v }))
+  const clearFilters = () => setFilters(BM_EMPTY_FILTERS)
+  const anyFilter    = Object.values(filters).some(a => a.length)
+
+  const distinctProducts = useMemo(() => new Set(filtered.map(r => r.product_id)).size, [filtered])
+  const shown = filtered.slice(0, BM_MAX_SHOWN)
+
+  const exportExcel = async () => {
+    if (!filtered.length) { toast.error('Nothing to export.'); return }
+    setDownloading(true)
+    try {
+      const stamp = new Date().toISOString().slice(0, 10)
+      await downloadExcel(`Dead Stock - ${stamp}.xlsx`, filtered, BM_KEYS, BM_HEADERS)
+    } catch (e) { toast.error(e.message) } finally { setDownloading(false) }
+  }
+
+  return (
+    <div className="card">
+      <div className="card-body report-filter-card">
+        <div className="filter-row">
+          <div className="filter-field"><label>From</label>
+            <input type="date" value={from} onChange={e => setFrom(e.target.value)} /></div>
+          <div className="filter-field"><label>To</label>
+            <input type="date" value={to} onChange={e => setTo(e.target.value)} /></div>
+
+          <div className="filter-field filter-field--wide"><label>Store</label>
+            <MultiSelectDropdown value={filters.store_code} onChange={v => setFilter('store_code', v)}
+              options={options.store_code.map(x => ({ id: x, label: x }))} placeholder="All stores" />
+          </div>
+          <div className="filter-field filter-field--wide"><label>Category</label>
+            <MultiSelectDropdown value={filters.category} onChange={v => setFilter('category', v)}
+              options={options.category.map(x => ({ id: x, label: x }))} placeholder="All categories" />
+          </div>
+          <div className="filter-field filter-field--wide"><label>Product Status</label>
+            <MultiSelectDropdown value={filters.status} onChange={v => setFilter('status', v)}
+              options={options.status.map(x => ({ id: x, label: x }))} placeholder="All statuses" />
+          </div>
+
+          <div className="filter-actions">
+            <button className="btn btn-sm btn-primary" onClick={runReport} disabled={loading}>
+              {loading ? <><span className="spinner" /> Loading…</> : '▶ Run Report'}
+            </button>
+            <button className="btn btn-sm btn-outline" onClick={exportExcel} disabled={downloading || !filtered.length}>
+              {downloading ? <><span className="spinner spinner-dark" /> Preparing…</> : '↓ Excel'}
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-row" style={{ gap: 8, marginBottom: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span className="note" style={{ fontSize: 12 }}>
+            {!hasRun ? 'Set a date range and click Run Report.'
+              : loading ? 'Loading…'
+              : `${filtered.length.toLocaleString('en-IE')} row${filtered.length !== 1 ? 's' : ''} · ${distinctProducts.toLocaleString('en-IE')} distinct product${distinctProducts !== 1 ? 's' : ''}`}
+          </span>
+          {anyFilter && <button className="btn btn-sm btn-outline" onClick={clearFilters}>✕ Clear filters</button>}
+        </div>
+
+        <p className="note" style={{ fontSize: 12, marginTop: 0 }}>
+          Dead stock — B&amp;M (supplier 510001) one-off / clearance products from Department Check, excluding items in the B&amp;M Daily File that are not in the CN Code Master. Fill in <strong>QTY in Store</strong> and <strong>Auth Reduced Price</strong> per store.
+        </p>
+
+        {error && <div className="login-error" style={{ marginBottom: 8 }}>{error}</div>}
+        {hasRun && !loading && !filtered.length && !error && <p className="note">No products match{anyFilter ? ' these filters' : ' the criteria'}.</p>}
+
+        {!!shown.length && (
+          <>
+            <div className="table-wrap table-wrap--tall">
+              <table>
+                <thead><tr>{BM_HEADERS.map((h, i) => <th key={h} style={{ whiteSpace: 'nowrap', minWidth: BM_MIN_WIDTHS[i] }}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {shown.map((r, i) => (
+                    <tr key={i}>
+                      <td style={{ whiteSpace: 'nowrap' }}>{r.store_code}</td>
+                      <td className="td-code" style={{ whiteSpace: 'nowrap' }}>{r.product_id}</td>
+                      <td>{r.description}</td>
+                      <td>{r.category}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}>{r.status}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}>{r.retail_price != null && r.retail_price !== '' ? Number(r.retail_price).toFixed(2) : ''}</td>
+                      <td></td>
+                      <td></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {filtered.length > shown.length && (
+              <p className="note" style={{ fontSize: 12, marginTop: 8 }}>
+                Showing the first {BM_MAX_SHOWN.toLocaleString('en-IE')} of {filtered.length.toLocaleString('en-IE')} rows — use <strong>↓ Excel</strong> for the full list.
+              </p>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function HQReports() {
   const { session } = useStore()
   const toast = useToast()
@@ -354,12 +506,11 @@ function HQReports() {
   useEffect(() => {
     getTaskTypes().then(tt => {
       setTaskTypes(tt)
-      // Back office defaults to all task types EXCEPT Department Check (J) and
-      // Price Check (K) — the user can add those manually.
-      // Routine Expiry Sweep (M) is an operations check like J/K — a sweep logs
-      // one record per product, so leaving it in the default selection floods
-      // the HO records report. The user can still add it manually.
-      if (isBO) setTaskTypeIds(tt.map(t => t.code).filter(c => c !== 'J' && c !== 'K' && c !== 'M'))
+      // Back office defaults to all task types EXCEPT the operations checks —
+      // Department Check (J), Price Check (K), Stock Count (H), Routine Expiry
+      // Sweep (M) — the user can add those manually. A sweep logs one record
+      // per product, so leaving M in the default selection floods this report.
+      if (isBO) setTaskTypeIds(tt.map(t => t.code).filter(c => !['J', 'K', 'H', 'M'].includes(c)))
     }).catch(() => setTaskTypes([]))
     // Always load stores so the Store column can show names for all users (N12).
     // The store filter UI is only shown for back-office users below.

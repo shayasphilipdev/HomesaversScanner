@@ -358,7 +358,7 @@ export default function SpacePlan() {
                               <td className="td-right td-muted">{planned}</td>
                               <td className="td-right"><strong>{total}</strong></td>
                               <td className="td-right" style={varianceTone(variance)}>{fmtVar(variance)}</td>
-                              <td colSpan={categories.length} className="td-muted" style={{ fontSize: 12 }}>Enter counts per subcategory below ↓</td>
+                              <td colSpan={categories.length} className="td-muted" style={{ fontSize: 12 }}>Enter Outer wall and Inner Bays counts of each department separately ↓</td>
                             </tr>
                             {subs.map(sub => {
                               const stot = subcatTotal(cells, e.id, sub.id, categories)

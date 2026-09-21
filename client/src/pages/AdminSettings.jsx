@@ -472,6 +472,8 @@ function SettingsCards({ groups, values, updateValue, onReload, onSave, dirty, s
 function SyncDashboard({ syncRuns, onRefresh, values, toast }) {
   const altRuns      = syncRuns.filter(r => r.kind === 'alt_barcodes' || !r.kind).slice(0, 3)
   const pricesRuns   = syncRuns.filter(r => r.kind === 'prices').slice(0, 3)
+  const cnRuns       = syncRuns.filter(r => r.kind === 'cn_codes').slice(0, 5)
+  const bmRuns       = syncRuns.filter(r => r.kind === 'bm_daily').slice(0, 5)
   const manifestRuns = syncRuns.filter(r => r.kind === 'manifest').slice(0, 5)
 
   return (
@@ -480,7 +482,7 @@ function SyncDashboard({ syncRuns, onRefresh, values, toast }) {
         <div style={{ fontWeight: 700, fontSize: 15 }}>Data Sync</div>
         <button className="btn btn-sm btn-outline" style={{ marginLeft: 'auto' }} onClick={onRefresh}>↻ Refresh</button>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16 }}>
+      <div className="sync-grid">
         <SyncCard
           title="Alt Barcode Master"
           icon="🔖"
@@ -500,6 +502,26 @@ function SyncDashboard({ syncRuns, onRefresh, values, toast }) {
           toast={toast}
         />
         <SyncCard
+          title="CN Code Master"
+          icon="🛃"
+          runs={cnRuns}
+          rowsLabel="codes imported"
+          footnote="Pulled automatically every night (02:45) from the CN-code master app (Task Scheduler job 'Homesavers CN Code Sync'). Full replace of product codes; red = a run failed."
+          runCmd="powershell scripts\\sync-cn-codes.ps1"
+          toast={toast}
+        />
+        <SyncCard
+          title="B&M Daily File"
+          icon="📦"
+          runs={bmRuns}
+          rowsLabel="product codes"
+          sheetDefault="1"
+          endpoint="/bm-daily/upload-excel"
+          syncCmd="run_sync.bat bm-daily"
+          footnote="Pulled automatically every night (08:15) from the latest HomeSavers_*.xlsx B&M product file (Task Scheduler job 'Homesavers B&M Daily Sync'). Full replace of ProductIDs; red = a run failed."
+          toast={toast}
+        />
+        <SyncCard
           title="Delivery Manifests"
           icon="🚚"
           runs={manifestRuns}
@@ -513,7 +535,7 @@ function SyncDashboard({ syncRuns, onRefresh, values, toast }) {
   )
 }
 
-function SyncCard({ title, icon, runs, sheetDefault, endpoint, syncCmd, toast, rowsLabel = 'rows imported', footnote }) {
+function SyncCard({ title, icon, runs, sheetDefault, endpoint, syncCmd, toast, rowsLabel = 'rows imported', footnote, runCmd }) {
   const last = runs[0]
 
   const statusColor = !last ? '#888'
@@ -614,7 +636,7 @@ function SyncCard({ title, icon, runs, sheetDefault, endpoint, syncCmd, toast, r
           </>
         ) : (
           <p className="note" style={{ fontSize: 11, margin: 0 }}>
-            {footnote} Run now from CMD: <code style={{ fontSize: 11 }}>py scripts\{syncCmd}</code>
+            {footnote} Run now from CMD: <code style={{ fontSize: 11 }}>{runCmd || `py scripts\\${syncCmd}`}</code>
           </p>
         )}
       </div>

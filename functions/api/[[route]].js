@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-21-upca-alt-TEST'
+const API_REVISION   = '2026-09-21-scanlookup-scannedat-TEST'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -206,13 +206,6 @@ function canCreateTasks(s) { return hasRole(s, TASK_CREATORS) }
 // admin-or-own-action check and resets marked_for_deletion correctly.
 // Allowing 'pending' here too would let anyone bypass that check with a
 // plain PATCH -- so it's rejected below regardless of role, admin included.
-const STATUS_SETTERS = {
-  completed:         BO_ROLES,
-  no_change_needed:  BO_ROLES,
-  store_completed:   STORE_ROLES,
-  cleared:           STORE_ROLES,
-}
-
 // The 12th digit of a UPC-A, computed from the first eleven: positions 1,3,5…
 // are summed and tripled, positions 2,4,6… are summed, and the check digit is
 // whatever brings the total to the next multiple of ten. Deterministic — there
@@ -232,8 +225,10 @@ function upcaCheckDigit(eleven) {
 //
 // created_at is stamped server-side at insert, so anything that went through
 // the offline outbox lands timestamped at RECONNECT rather than at the moment
-// the shelf was walked — which misreports the audit. A client may send
-// scanned_at to say when the trigger was really pulled.
+// the shelf was walked — which misreports the audit. HS Wicklow Abbey St shows
+// a 0.44s median gap between Department Checks and Tullamore 1.06s; those are
+// drain bursts, not scanning. A client may send scanned_at to say when the
+// trigger was really pulled.
 //
 // Only trusted within a sane window, since it is client-supplied: no further
 // ahead than a little clock skew, and no older than the retention window.
@@ -246,6 +241,13 @@ function resolveScanTime(raw, fallbackIso) {
   if (t > nowMs + 5 * 60 * 1000)       return fallbackIso   // future — bad device clock
   if (t < nowMs - 30 * 24 * 3600_000)  return fallbackIso   // implausibly old
   return new Date(t).toISOString()
+}
+
+const STATUS_SETTERS = {
+  completed:         BO_ROLES,
+  no_change_needed:  BO_ROLES,
+  store_completed:   STORE_ROLES,
+  cleared:           STORE_ROLES,
 }
 
 function buildSessionForUser(_db, user) {
@@ -600,7 +602,7 @@ async function runAutoCleanup(db, env) {
 
     // 1 — Determine which records are due for deletion.
     const [recSetting] = await db.select('app_settings', { select: 'value', key: 'eq.scan_record_retention_days' })
-    const recDays   = Math.max(1, Number(recSetting?.value || 90))
+    const recDays   = Math.max(1, Number(recSetting?.value || 21))
     const recCutoff = new Date(Date.now() - recDays * 86400000).toISOString()
 
     // M19: delete the photos attached to those records BEFORE removing the rows
@@ -627,17 +629,17 @@ async function runAutoCleanup(db, env) {
     // whose records were already deleted in a previous run, plus M18: includes
     // store_task_instances.photo_url via the updated list_old_photos RPC).
     const [photoSetting] = await db.select('app_settings', { select: 'value', key: 'eq.photo_retention_days' })
-    const photoDays = Math.max(1, Number(photoSetting?.value || 7))
+    const photoDays = Math.max(1, Number(photoSetting?.value || 21))
     const oldPhotos = await db.rpc('list_old_photos', { days: photoDays })
     for (const o of (oldPhotos || [])) {
       await deleteStorageFile(o.name)
     }
 
     // 4 — Product Query board: remove questions (+ their answers + photos) older
-    // than the retention window (default 14 days). The board is a transient
+    // than the retention window (default 21 days). The board is a transient
     // "what is this product?" queue, not a long-term record.
     const [pqSetting] = await db.select('app_settings', { select: 'value', key: 'eq.product_query_retention_days' })
-    const pqDays   = Math.max(1, Number(pqSetting?.value || 14))
+    const pqDays   = Math.max(1, Number(pqSetting?.value || 21))
     const pqCutoff = new Date(Date.now() - pqDays * 86400000).toISOString()
     const doomedQ  = await db.select('product_questions', { select: 'id,photo_url', created_at: `lt.${pqCutoff}` })
     if (doomedQ.length) {
@@ -726,7 +728,11 @@ export async function onRequest(context) {
       // Touch the DB so Supabase counts it as activity.
       await db.select('app_settings', { select: 'key', limit: '1' })
       // `rev` answers "which build is actually live?" from outside, without a
-      // login. It matters whenever a schema change has to straddle a deploy.
+      // login. There was no way to tell before, and it matters whenever a
+      // schema change has to straddle a deploy: the alt_barcodes key swap left
+      // a window where old code against the new schema would have truncated
+      // the product master at 06:30 and then failed every chunk. Bump this
+      // whenever a deploy has to be confirmed before something unattended runs.
       return json({ ok: true, ts: new Date().toISOString(), rev: API_REVISION })
     }
 
@@ -956,6 +962,77 @@ export async function onRequest(context) {
       if ((request.headers.get('X-Sync-Secret') || '') !== env.PRODUCT_SYNC_SECRET) return err('Forbidden', 403)
       await db.rpc(path === '/prices/sync/reset' ? 'truncate_prices' : 'truncate_alt_barcodes', {})
       return json({ ok: true })
+    }
+
+    // ── CN-code master ────────────────────────────────────────────────────────
+    // Nightly full-replace list of product_prism_code values (the same value as
+    // ean_barcode in prices/alt_barcodes) from the external CN-code master.
+    // We store ONLY the code — a membership list of products in the customs /
+    // import CN-code master. The job (scripts/sync-cn-codes.ps1) calls /reset to
+    // empty the table, then posts the codes in chunks. Auth = PRODUCT_SYNC_SECRET.
+    if (path === '/cn-codes/sync/reset' && method === 'POST') {
+      if (!env.PRODUCT_SYNC_SECRET) return err('PRODUCT_SYNC_SECRET not configured', 500)
+      if ((request.headers.get('X-Sync-Secret') || '') !== env.PRODUCT_SYNC_SECRET) return err('Forbidden', 403)
+      await db.rpc('truncate_cn_code_master', {})
+      return json({ ok: true })
+    }
+
+    if (path === '/cn-codes/sync' && method === 'POST') {
+      if (!env.PRODUCT_SYNC_SECRET) return err('PRODUCT_SYNC_SECRET not configured', 500)
+      if ((request.headers.get('X-Sync-Secret') || '') !== env.PRODUCT_SYNC_SECRET) return err('Forbidden', 403)
+      const rows = await request.json()
+      if (!Array.isArray(rows)) return err('Body must be a JSON array', 400)
+      // Accept bare strings OR objects with a product_prism_code field; dedupe.
+      const seen = new Set()
+      let skipped = 0
+      for (const r of rows) {
+        const code = (typeof r === 'string' ? r : (r?.product_prism_code ?? '')).toString().trim()
+        if (!code) { skipped++; continue }
+        seen.add(code)
+      }
+      const clean = Array.from(seen, c => ({ product_prism_code: c }))
+      if (!clean.length) return json({ written: 0, skipped })
+      const upRes = await fetch(`${env.SUPABASE_URL}/rest/v1/cn_code_master?on_conflict=product_prism_code`, {
+        method: 'POST',
+        headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal,resolution=merge-duplicates' },
+        body: JSON.stringify(clean)
+      })
+      if (!upRes.ok) return err(`CN-code upsert failed: ${(await upRes.text()).slice(0, 400)}`, 400)
+      return json({ written: clean.length, skipped })
+    }
+
+    // ── B&M Daily File ────────────────────────────────────────────────────────
+    // Nightly full-replace list of ProductID (= ean_barcode) from the latest
+    // HomeSavers_*.xlsx B&M product file. Same shape as the CN-code sync; feeds
+    // the B&M Reductions report. Job: scripts/sync-bm-daily.ps1.
+    if (path === '/bm-daily/sync/reset' && method === 'POST') {
+      if (!env.PRODUCT_SYNC_SECRET) return err('PRODUCT_SYNC_SECRET not configured', 500)
+      if ((request.headers.get('X-Sync-Secret') || '') !== env.PRODUCT_SYNC_SECRET) return err('Forbidden', 403)
+      await db.rpc('truncate_bm_daily_file', {})
+      return json({ ok: true })
+    }
+
+    if (path === '/bm-daily/sync' && method === 'POST') {
+      if (!env.PRODUCT_SYNC_SECRET) return err('PRODUCT_SYNC_SECRET not configured', 500)
+      if ((request.headers.get('X-Sync-Secret') || '') !== env.PRODUCT_SYNC_SECRET) return err('Forbidden', 403)
+      const rows = await request.json()
+      if (!Array.isArray(rows)) return err('Body must be a JSON array', 400)
+      const seen = new Set()
+      let skipped = 0
+      for (const r of rows) {
+        const code = (typeof r === 'string' ? r : (r?.product_id ?? '')).toString().trim()
+        if (!code) { skipped++; continue }
+        seen.add(code)
+      }
+      const clean = Array.from(seen, c => ({ product_id: c }))
+      if (!clean.length) return json({ written: 0, skipped })
+      const upRes = await fetch(`${env.SUPABASE_URL}/rest/v1/bm_daily_file?on_conflict=product_id`, {
+        method: 'POST',
+        headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal,resolution=merge-duplicates' },
+        body: JSON.stringify(clean)
+      })
+      if (!upRes.ok) return err(`B&M daily upsert failed: ${(await upRes.text()).slice(0, 400)}`, 400)
+      return json({ written: clean.length, skipped })
     }
 
     // Server clock — the sync captures this BEFORE importing so it can later
@@ -2362,7 +2439,7 @@ export async function onRequest(context) {
     if (path === '/admin/cleanup/task-records' && method === 'POST') {
       if (!isAdminRole(session)) return err('Forbidden', 403)
       const [setting] = await db.select('app_settings', { select: 'value', key: 'eq.scan_record_retention_days' })
-      const days   = Math.max(1, Number(setting?.value || 90))
+      const days   = Math.max(1, Number(setting?.value || 21))
       const cutoff = new Date(Date.now() - days * 86400000).toISOString()
       // M19: delete attached photos before removing records so nothing is orphaned.
       const storBase = `${env.SUPABASE_URL}/storage/v1/object/public/task-photos/`
@@ -2391,7 +2468,7 @@ export async function onRequest(context) {
     if (path === '/admin/cleanup/photos' && method === 'POST') {
       if (!isAdminRole(session)) return err('Forbidden', 403)
       const [setting] = await db.select('app_settings', { select: 'value', key: 'eq.photo_retention_days' })
-      const days = Math.max(1, Number(setting?.value || 7))
+      const days = Math.max(1, Number(setting?.value || 21))
 
       const old = await db.rpc('list_old_photos', { days })
       let deleted = 0, failed = 0
@@ -3258,7 +3335,7 @@ export async function onRequest(context) {
       const tempId = String(form.get('tempId') || '')
 
       if (!file || !slot || !tempId) return err('file, slot, tempId required', 400)
-      if (!['product', 'barcode', 'store_task'].includes(slot)) return err('Invalid slot', 400)
+      if (!['product', 'barcode', 'store_task', 'message'].includes(slot)) return err('Invalid slot', 400)
       if (!/^[a-zA-Z0-9-]{8,64}$/.test(tempId))   return err('Invalid tempId', 400)
       // Hard cap so a giant phone-camera upload can't blow the Worker memory
       // budget. 25 MB is comfortably above a 4K JPEG / a normal PDF receipt.
@@ -3285,15 +3362,16 @@ export async function onRequest(context) {
         if (m === 'application/msword') return 'doc'
         return 'bin'
       }
-      const ext = (slot === 'product' || slot === 'barcode')
+      const ext = (slot === 'product' || slot === 'barcode' || slot === 'message')
         ? 'jpg'                                   // these are always compressed images
         : extFromMime(file.type)                  // store_task — keep the actual format
 
-      // store_task photos / files live under their own prefix so retention
+      // store_task and message photos live under their own prefix so retention
       // rules can target each kind separately if needed.
-      const objectPath = slot === 'store_task'
-        ? `store-tasks/${tempId}.${ext}`
-        : `${tempId}/${slot}.${ext}`
+      const objectPath =
+        slot === 'store_task' ? `store-tasks/${tempId}.${ext}` :
+        slot === 'message'    ? `messages/${tempId}.${ext}`    :
+        `${tempId}/${slot}.${ext}`
       const uploadUrl  = `${env.SUPABASE_URL}/storage/v1/object/task-photos/${objectPath}`
 
       const upRes = await fetch(uploadUrl, {
@@ -3333,21 +3411,22 @@ export async function onRequest(context) {
     // Joins suppliers so the scan-result UI can show "Supplier: X" subtly.
     // GET /alt-barcodes/lookup?barcode=  — scan lookup by barcode_no.
     // Returns the item details to show in the task body after a scan.
-    // GET /scan/lookup?barcode=… — TEST BRANCH ONLY.
+    // GET /scan/lookup?barcode=… — both halves of a scan lookup in one request.
     //
-    // Both halves of a Department Check lookup in one request. The client
-    // currently calls /alt-barcodes/lookup, waits for the EAN to come back,
-    // then calls /prices/lookup with it — two round trips over a shop wifi
-    // link, strictly sequential because the second needs the first's answer.
-    // Done here the two Supabase queries stay inside the edge Worker and the
-    // slow device link is crossed once.
+    // A caller otherwise hits /alt-barcodes/lookup, waits for the EAN to come
+    // back to the device, then calls /prices/lookup with it — two round trips
+    // over shop wifi, strictly sequential because the second needs the first's
+    // answer. Done here, both Supabase queries stay inside the edge Worker and
+    // the slow device link is crossed once.
     //
-    // Also halves Task J's Worker requests, which matters on its own: the
-    // account is on the 100k/day free plan and Task J alone is ~20k/day.
+    // Also halves the Worker requests for the caller, which matters on its own:
+    // the account is on the 100k/day free plan and Department Check alone is
+    // ~20k/day.
     //
-    // Returns the alt_barcodes row with the price fields merged in, so the
-    // shape is a superset of what the two endpoints returned separately.
-    // Both remain in place — every other task form still uses them.
+    // Returns the alt_barcodes row with the price row nested under `price`, so
+    // the shape is a superset of what the two endpoints return separately. Both
+    // of those remain in place and unchanged — every existing task form still
+    // uses them.
     if (path === '/scan/lookup' && method === 'GET') {
       const barcode = url.searchParams.get('barcode')
       if (!barcode) return json(null)
@@ -3362,23 +3441,12 @@ export async function onRequest(context) {
       let [alt] = await selectAlt(scanned)
       let recoveredFrom = null
 
-      // Some handhelds in the estate are configured not to transmit the UPC-A
-      // check digit, so a 12-digit US barcode arrives as 11 digits and never
-      // matches. Measured 2026-09-21: ~4.5% of unmatched Department Check
-      // scans, across six stores, still happening.
-      //
-      // An 11-digit code is never a valid retail barcode (UPC-A is 12, EAN-13
-      // is 13, EAN-8 is 8), so that length alone is the signature. The check
-      // digit is not a guess — it is arithmetically determined by the other
-      // eleven, giving exactly ONE candidate.
-      //
-      // The guard against inventing a product: the candidate is only accepted
-      // if it actually exists in alt_barcodes. A recovered hit is reported via
-      // recovered_from so the correction is visible rather than silent, and so
-      // the trimming stays detectable in the data instead of being papered over.
+      // Same trimmed-UPC-A recovery as /alt-barcodes/lookup, and the same
+      // guard: the candidate is only accepted if it actually exists in
+      // alt_barcodes, so a wrong guess resolves to nothing rather than to the
+      // wrong product. See that handler for the full reasoning.
       if (!alt && /^[0-9]{11}$/.test(scanned)) {
-        const candidate = scanned + upcaCheckDigit(scanned)
-        const [recovered] = await selectAlt(candidate)
+        const [recovered] = await selectAlt(scanned + upcaCheckDigit(scanned))
         if (recovered) { alt = recovered; recoveredFrom = scanned }
       }
 
@@ -4024,7 +4092,7 @@ export async function onRequest(context) {
       const recId = recMsgMatch[1]
       const inStoreScope = await recordInStoreScope(recId)
       const msgs = await db.select('task_record_messages', {
-        select:    'id,record_id,author_id,author_name,author_role,body,priority,msg_type,audience,recipient_id,recipient_name,is_read_by_store,is_read_by_bo,is_read_by_am,created_at',
+        select:    'id,record_id,author_id,author_name,author_role,body,priority,msg_type,photo_urls,audience,recipient_id,recipient_name,is_read_by_store,is_read_by_bo,is_read_by_am,created_at',
         record_id: `eq.${recId}`,
         order:     'created_at.asc'
       })
@@ -4048,7 +4116,6 @@ export async function onRequest(context) {
       // are internal HQ notes, role-scoped, and can be added on any record a
       // back-office user reached (reports / awaiting-reply / dropdown).
       if (audience === 'all' && !inStoreScope) return err('Record not found or not allowed', 404)
-      if (!body.body || !String(body.body).trim()) return err('Message body required', 400)
 
       // recipient is a display + visibility hint; it must belong to the chosen
       // audience's role group or it's dropped.
@@ -4059,6 +4126,13 @@ export async function onRequest(context) {
         if (rcpt && grp.includes(rcpt.role)) { recipientId = rcpt.id; recipientName = rcpt.display_name || null }
       }
 
+      const hasText   = body.body && String(body.body).trim()
+      // Only keep valid public URLs from our own task-photos bucket, cap at 3.
+      const photoBase = `${env.SUPABASE_URL}/storage/v1/object/public/task-photos/messages/`
+      const photoUrls = (Array.isArray(body.photo_urls) ? body.photo_urls : [])
+        .filter(u => typeof u === 'string' && u.startsWith(photoBase))
+        .slice(0, 3)
+      if (!hasText && !photoUrls.length) return err('Message body or a photo required', 400)
       const VALID_PRIORITY = ['high', 'normal']
       const VALID_TYPE     = ['information', 'query', 'action']
 
@@ -4086,7 +4160,8 @@ export async function onRequest(context) {
         author_id:   session.user_id || null,
         author_name: session.display_name || session.username || 'Unknown',
         author_role: session.role || 'unknown',
-        body:        String(body.body).trim(),
+        body:        hasText ? String(body.body).trim() : '',
+        photo_urls:  photoUrls,
         priority:    VALID_PRIORITY.includes(body.priority) ? body.priority : 'normal',
         msg_type:    VALID_TYPE.includes(body.msg_type) ? body.msg_type : 'query',
         audience,

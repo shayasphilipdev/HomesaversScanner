@@ -94,6 +94,13 @@ export const getProductMaster = ({ q = '', page = 1, filters = {} } = {}) => {
 // Distinct values for the Product Master dropdown filters.
 export const getProductMasterFilters = () => request('/product-master/filters')
 
+// Dead Stock report (back office only). Optional created_at range. Returns { rows: [...] }.
+export const getBmReductions = ({ from, to } = {}) => {
+  const q = new URLSearchParams()
+  if (from) q.set('from', from)
+  if (to)   q.set('to', to)
+  return request('/reports/bm-reductions' + (q.toString() ? `?${q}` : ''))
+}
 
 // Phase 3: scan lookup against the Alternate Barcode table (Barcode_No is the
 // primary key). Returns { barcode_no, ean_barcode, item_name, supl_id,
@@ -102,6 +109,18 @@ export const lookupAltBarcode = (barcode) =>
   (typeof navigator !== 'undefined' && !navigator.onLine)
     ? Promise.resolve(null)   // offline: don't fire a doomed request — it would hang the scan
     : request(`/alt-barcodes/lookup?barcode=${encodeURIComponent(barcode)}`)
+
+// Both halves of a scan lookup in one request, so the slow device link is
+// crossed once instead of twice. Returns the alt_barcodes row with the price
+// row nested under `price`, or null. See GET /scan/lookup in the Worker.
+//
+// Deliberately NO offline short-circuit, unlike lookupAltBarcode/lookupPrice
+// below. Callers need to tell "no signal" apart from "this barcode is genuinely
+// not in the master": a throw means the former, null means the latter, and they
+// are shown to the operator quite differently. request() fails fast on a
+// network error, and the caller is expected to bound it with its own timeout.
+export const scanLookup = (barcode) =>
+  request(`/scan/lookup?barcode=${encodeURIComponent(barcode)}`)
 
 // Look up a price row by EAN barcode.
 // Returns { ean_barcode, item_group, item_subgrp_id, product_type, sale_rate } or null.
@@ -306,19 +325,16 @@ export const getRecordMessages      = (id) => request(`/task-records/${id}/messa
 // audience: 'all' (store <-> back office, default) | 'backoffice' | 'area_managers'.
 // recipient_id: optional HQ user to name as the "To:" of a restricted message
 // (a visibility + display hint — the whole audience group still sees it).
-export const postRecordMessage      = (id, body, priority = 'normal', msg_type = 'query', audience = 'all', recipient_id = null) =>
-  request(`/task-records/${id}/messages`, { method: 'POST', body: { body, priority, msg_type, audience, recipient_id } })
+export const postRecordMessage      = (id, body, priority = 'normal', msg_type = 'query', photo_urls = [], audience = 'all', recipient_id = null) =>
+  request(`/task-records/${id}/messages`, { method: 'POST', body: { body, priority, msg_type, photo_urls, audience, recipient_id } })
 // HQ people selectable as a restricted message's named recipient.
 export const getMessageRecipients   = () => request('/message-recipients')
 // Permanently delete one message. Admin only (server-enforced).
 export const deleteRecordMessage    = (recordId, messageId) =>
   request(`/task-records/${recordId}/messages/${messageId}`, { method: 'DELETE' })
-// TEST BRANCH ONLY — both halves of a Department Check lookup in one request,
-// so the slow device link is crossed once instead of twice. Returns the
-// alt_barcodes row with a nested `price`. See DeptScan.jsx.
-export const scanLookup = (barcode) =>
-  request(`/scan/lookup?barcode=${encodeURIComponent(barcode)}`)
-
+// Upload one message photo to the shared task-photos bucket (messages/ prefix).
+export const uploadMessagePhoto     = (file) =>
+  uploadPhoto({ file, slot: 'message', tempId: (crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`) })
 // TEST BRANCH ONLY — upload a field diagnostic from a store handheld so the
 // result never has to be read off that screen and retyped. See ScanDoctor.jsx.
 export const postDeviceDiagnostic   = (kind, payload, user_agent) =>

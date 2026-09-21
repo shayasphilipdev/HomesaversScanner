@@ -1,7 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { useStore } from '../App.jsx'
 import { canAccessAdmin, canDoHQTasks, canDoStoreTasks, canSeeManagerDashboard } from '../lib/roles.js'
-import { isTestEnv } from '../lib/env.js'
 
 // Visible only on phones (CSS handles the breakpoint).
 // Thumb-reach navigation pinned to the bottom edge, with safe-area
@@ -86,9 +85,9 @@ export default function BottomNav() {
   if (canSeeManagerDashboard(session)) items.push({ to: '/manager', icon: 'manager', label: 'Manager' })
   // HO Tasks comes before Store Tasks (swapped) — it's the primary store action.
   if (canDoHQTasks(session))    items.push({ to: '/tasks', icon: 'ho', label: 'HO' })
-  // Department Scan — test app only, immediately after HO: this is the bar the
-  // handhelds actually use, so it matters most that it sits here.
-  if (isTestEnv() && canDoHQTasks(session)) items.push({ to: '/dept-scan', icon: null, glyph: '▥', label: 'Dept Scan' })
+  // Department Scan — this is the bar the handhelds actually use, so the
+  // placement right after HO matters most here.
+  if (canDoHQTasks(session))    items.push({ to: '/dept-scan', icon: null, glyph: '▥', label: 'Dept Scan' })
   if (canDoHQTasks(session))    items.push({ to: '/awaiting-reply', icon: 'replies', label: 'Replies' })
   items.push({ to: '/space-plan', icon: 'spacePlan', label: 'Space Plan' })
   if (appConfig?.competition_enabled !== false) items.push({ to: '/competition', icon: 'compete', label: 'Compete' })
