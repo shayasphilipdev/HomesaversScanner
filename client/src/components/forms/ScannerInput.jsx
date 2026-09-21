@@ -21,6 +21,11 @@ export default function ScannerInput({
   readerId = 'reader',
   inlineAction = null,  // node rendered to the right of the input (e.g. a Save
                         // button) so the action sits ABOVE the camera band.
+  resetSignal = 0,      // bump to clear every internal guard. After the caller
+                        // undoes a save, the SAME barcode has to be scannable
+                        // again immediately — otherwise the dedupe guards that
+                        // exist to swallow IME echoes swallow the deliberate
+                        // re-scan too.
   compactActions = null // node sharing ONE row with a shrunken camera button.
                         // Opt-in: without it the camera keeps its own
                         // full-width line, which every task form expects.
@@ -61,6 +66,18 @@ export default function ScannerInput({
     lastConfirmedRef.current = c
     onConfirmRef.current?.(code)
   }
+
+  // Wipe every dedupe guard on demand. These guards exist to swallow the
+  // Android IME re-injecting the previous barcode; after an undo the operator
+  // genuinely wants to scan that same barcode again, and without this the
+  // guards cannot tell the two apart and eat the real scan.
+  useEffect(() => {
+    if (!resetSignal) return
+    lastConfirmedRef.current = ''
+    lastSavedRef.current     = ''
+    lastSavedAtRef.current   = 0
+    prevValueRef.current     = ''
+  }, [resetSignal])
 
   const [cameraOn, setCameraOn]         = useState(false)
   const [cameraStatus, setCameraStatus] = useState('')

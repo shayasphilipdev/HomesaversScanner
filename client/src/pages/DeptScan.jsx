@@ -77,6 +77,8 @@ export default function DeptScan() {
   // Height of what is actually visible. With the keyboard up this is roughly
   // half the screen, and it is the only number this layout trusts.
   const [viewH, setViewH] = useState(0)
+  // Bumped on undo to clear ScannerInput's dedupe guards — see undoLast.
+  const [resetSignal, setResetSignal] = useState(0)
 
   const genRef     = useRef(0)
   const lastCodeRef = useRef('')
@@ -191,8 +193,22 @@ export default function DeptScan() {
     setRows(prev => prev.map(r => r.key === target.key ? { ...r, status: 'undoing' } : r))
     try {
       await deleteTaskRecord(target.id)
-      setRows(prev => prev.filter(r => r.key !== target.key))
-      lastCodeRef.current = ''      // let the same barcode be re-scanned straight away
+      // Drop the undone row and anything above it. Those can only be notices
+      // that never saved — duplicates, failures — since `target` is the first
+      // actually-saved row. Leaving a "Duplicate" line sitting on top after an
+      // undo reads as if the undo did not work.
+      setRows(prev => prev.slice(prev.findIndex(r => r.key === target.key) + 1))
+      // Undoing means the operator intends to scan that barcode again, so put
+      // the page back to a genuinely clean state. The box itself must be
+      // emptied: the Android IME re-commits the previous barcode after a save,
+      // so it is usually still sitting there, and a re-scan of a value the box
+      // already holds looks like no change at all. Then clear this page's own
+      // 3s duplicate window AND ScannerInput's echo guards, or the very
+      // mechanisms that swallow IME echoes will swallow the deliberate re-scan.
+      setCode('')
+      lastCodeRef.current = ''
+      lastAtRef.current   = 0
+      setResetSignal(n => n + 1)
       tone(520, 70)
     } catch (e) {
       setRows(prev => prev.map(r => r.key === target.key ? { ...r, status: 'saved' } : r))
@@ -301,6 +317,7 @@ export default function DeptScan() {
           lookupLoading={busy}
           readerId="reader-deptscan"
           placeholder="Scan"
+          resetSignal={resetSignal}
           // Undo shares one small row with the camera button rather than
           // taking a full-width line of its own — every pixel here is a pixel
           // the keyboard would otherwise take.
