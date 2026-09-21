@@ -65,19 +65,36 @@ Function `functions/api/[[route]].js` is the entire backend.
 So `test` should always be **`main` plus whatever is still under test** — never a
 branch that is missing live features.
 
-> 📌 **Current reality (2026-08-27):** the rule applies **going forward**. `test` is
-> *not* yet caught up — it is missing roughly 25 commits of live work (Dead Stock
-> report, CN-code master sync, B&M daily sync, most of the Dashboard evolution,
-> message-thread photo attachments, the pricing scroll fix, the 21-day retention
-> standardisation). Bringing it level would be `git merge main` into `test`, with
-> conflicts expected wherever the same change was already cherry-picked. The user
-> has decided to **leave this gap as-is for now** — do not "fix" it unprompted.
-> Note `git log test..main` overstates the gap (~40), because many of those commits
-> have same-content twins on `test` with different hashes from cherry-picks.
+> ### `test` = `main` + whatever is still under test
 >
-> Practical consequence: do not assume a feature present on `main` exists on `test`.
-> Check before relying on it — e.g. message-thread photo attachments exist only on
-> `main`, so screenshot paste support could not be wired into that component there.
+> That is the whole rule, in the owner's words (2026-09-21). Work in progress
+> lives on `test` **only until it ships**; once it is on `main` it stops being a
+> difference. So the set of differences should always be small, and should
+> shrink every time something ships.
+>
+> ✅ **Caught up 2026-09-21.** The backlog recorded here on 2026-08-27 is closed —
+> `git merge main` into `test` brought over Dead Stock, StoreBarList,
+> StoresMissingDeptCheck, the CN-code and B&M daily syncs, the Dashboard
+> evolution, message-thread photo attachments, the pricing scroll fix and the HO
+> Tasks second-click fix. Keep it closed by propagating each `main` change to
+> `test` as it lands, rather than letting a gap build up again.
+>
+> **Differences as of 2026-09-21** — nothing is currently mid-test, so only the
+> two permanent ones remain:
+>
+> | Difference | Where | Permanent? |
+> |---|---|---|
+> | Scan Doctor page + `POST /device-diagnostics` + `postDeviceDiagnostic()` | `pages/ScanDoctor.jsx`, its route, the Worker, `lib/api.js` | Yes — owner decided 2026-09-21 it does not go to live |
+> | Darker palette | `data-testenv` in `App.css`, stamped in `main.jsx` | Yes — it is how staff tell the two apps apart |
+>
+> ⚠️ The **TESTING MODE banner and the Test/Live toggle are NOT branch
+> differences.** That code is on *both* branches and keyed on the hostname via
+> `isTestEnv()`, as is the Task M gating. Do not "port" them, and do not count
+> them when checking how far the branches have drifted.
+>
+> `git log test..main` overstates the gap, because many commits have
+> same-content twins from earlier cherry-picks. `git diff main test --stat` is
+> the authoritative view.
 
 > ⚠️ Both apps share **one** Supabase database. A schema or `task_types` change is
 > visible to live immediately, regardless of which branch's code you deployed. Ship
