@@ -92,6 +92,13 @@ branch that is missing live features.
 > `isTestEnv()`, as is the Task M gating. Do not "port" them, and do not count
 > them when checking how far the branches have drifted.
 >
+> Note this distinction: since 2026-09-21 the Test/Live toggle *behaves*
+> differently on the two builds — hidden on live, shown on test — but it is
+> still **one piece of code on both branches**, not a branch difference. The
+> asymmetry comes from the hostname guard, not from the branches diverging. To
+> re-open the toggle on live for a future round of store testing, delete the
+> `if (!test) return null` line in `TaskForm.jsx` **on both branches**.
+>
 > `git log test..main` overstates the gap, because many commits have
 > same-content twins from earlier cherry-picks. `git diff main test --stat` is
 > the authoritative view.
@@ -567,6 +574,57 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 ---
 
 ## 11. Recent work
+
+### 2026-09-21 — Test App toggle hidden on live; historical trimmed UPC-A backfilled
+
+**Test App toggle is now test-only (in behaviour, not in code).** The one-tap
+Test/Live toggle on the HO Tasks screen (`TestAppToggle` in
+`client/src/components/TaskForm.jsx`) used to render on both builds. Stores could
+therefore cross into the test app with a single tap; records made there are
+tagged `source='test'`, never reach the live HO queues, and the store's scans
+were effectively lost. The component now early-returns `null` when
+`isTestEnv()` is false, so:
+
+| Build | Toggle |
+|---|---|
+| Live | hidden |
+| Test | shows "↩ Live App" — a tester can always get back |
+
+Back is the only direction that needs to stay open. The two-sided rendering
+underneath is deliberately left intact: **re-opening the toggle for the next
+round of store testing is deleting the `if (!test) return null` line**, nothing
+else. The change is on BOTH branches — it is hostname-keyed, so identical code
+produces the asymmetric behaviour, and `TaskForm.jsx` stays out of the
+main↔test diff.
+
+**Backfilled 177 historical trimmed-UPC-A records.** Several handhelds were set
+not to transmit the UPC-A check digit, so 12-digit US barcodes arrived as 11
+digits and matched nothing. The live recovery fix only helps new scans, so the
+existing rows were repaired in one statement: `barcode_no` corrected to the full
+12 digits, and `product_barcode` / `item_name` / `supl_id` / `supplier_code` /
+`item_status` / `barcode_status` / `details.item_group` populated from the
+master — exactly what the app now writes. `product_code` was deliberately left
+holding the original 11-digit scan, so the misconfigured devices stay
+detectable. 177 of 180 repaired, all with a department; the other 3 have a valid
+check digit but no such product in the master, so they were left alone rather
+than invented.
+
+Affected stores: Tallaght 74 · Ennis Ballymaley 45 · Athy 20 · Longford Axis 20
+· Crumlin 10 · Milford 5 · Edenderry 2 · Killarney 1. Only 1–20 September
+survived the 21-day retention, so this is the full *recoverable* set, not the
+full historical one.
+
+**Two schema traps worth remembering** (both produced wrong counts before being
+caught — see §12):
+
+- `alt_barcodes.ean_barcode` is **not** a barcode. It holds the internal item
+  code (`14-03-397-00`). The scannable barcode is `alt_barcodes.barcode_no`.
+  Joining a barcode against `ean_barcode` returns zero rows *silently*.
+- `alt_barcodes` has **multiple rows per `barcode_no`** (typically one Active +
+  one Inactive). A plain `LEFT JOIN` fans out and inflates `count(*)`. Use
+  `LEFT JOIN LATERAL (… ORDER BY barcode_status, item_status LIMIT 1)` — the
+  same ordering the Worker's `selectAlt()` uses, so it picks the row the app
+  would.
 
 ### 2026-09-21 — Department Scan shipped to live, plus the speed work behind it
 
