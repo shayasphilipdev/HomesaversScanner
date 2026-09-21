@@ -213,20 +213,11 @@ const STATUS_SETTERS = {
   cleared:           STORE_ROLES,
 }
 
-// When a record was actually scanned, as reported by the device.
-//
-// created_at is stamped server-side at insert, so anything that went through
-// the offline outbox lands timestamped at RECONNECT rather than at the moment
-// the shelf was walked — which misreports the audit. A client may send
-// scanned_at to say when the trigger was really pulled.
-//
-// Only trusted within a sane window, since it is client-supplied: no further
-// ahead than a little clock skew, and no older than the retention window.
-// Anything outside that, or unparseable, falls back to the server clock.
 // The 12th digit of a UPC-A, computed from the first eleven: positions 1,3,5…
 // are summed and tripled, positions 2,4,6… are summed, and the check digit is
 // whatever brings the total to the next multiple of ten. Deterministic — there
-// is exactly one valid check digit for any eleven digits.
+// is exactly one valid check digit for any eleven digits. Used to recover
+// scans from handhelds set not to transmit it (see /alt-barcodes/lookup).
 function upcaCheckDigit(eleven) {
   let odd = 0, even = 0
   for (let i = 0; i < 11; i++) {
@@ -237,6 +228,16 @@ function upcaCheckDigit(eleven) {
   return String((10 - ((odd * 3 + even) % 10)) % 10)
 }
 
+// When a record was actually scanned, as reported by the device.
+//
+// created_at is stamped server-side at insert, so anything that went through
+// the offline outbox lands timestamped at RECONNECT rather than at the moment
+// the shelf was walked — which misreports the audit. A client may send
+// scanned_at to say when the trigger was really pulled.
+//
+// Only trusted within a sane window, since it is client-supplied: no further
+// ahead than a little clock skew, and no older than the retention window.
+// Anything outside that, or unparseable, falls back to the server clock.
 function resolveScanTime(raw, fallbackIso) {
   if (typeof raw !== 'string' || !raw) return fallbackIso
   const t = Date.parse(raw)
