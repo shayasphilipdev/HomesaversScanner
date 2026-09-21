@@ -5,6 +5,7 @@ import { altFields } from '../components/forms/useTaskForm.jsx'
 import ScannerInput from '../components/forms/ScannerInput.jsx'
 import { useStore } from '../App.jsx'
 import { useCurrentStore } from '../lib/currentStore.jsx'
+import { getAll as outboxGetAll, remove as outboxRemove } from '../lib/outbox.js'
 
 // Department Scan — a dedicated, stripped-down loop for Task J, which is over
 // 90% of everything the estate records.
@@ -80,11 +81,18 @@ export default function DeptScan() {
   // Bumped on undo to clear ScannerInput's dedupe guards — see undoLast.
   const [resetSignal, setResetSignal] = useState(0)
 
+  // Always-current rows, for handlers that need them without re-subscribing.
+  const rowsRef    = useRef(rows)
+  rowsRef.current  = rows
   const genRef     = useRef(0)
   const lastCodeRef = useRef('')
   const lastAtRef   = useRef(0)
 
-  const savedCount = rows.filter(r => r.status === 'saved' || r.status === 'queued').length
+  const savedCount  = rows.filter(r => ['saved', 'queued', 'synced'].includes(r.status)).length
+  // Shown in the header rather than as an eighth table column: the operator
+  // must be able to see "some of this has not reached the server yet" without
+  // scrolling a table sideways.
+  const queuedCount = rows.filter(r => r.status === 'queued').length
 
   useEffect(() => {
     const measure = () => setViewH(window.visualViewport?.height || window.innerHeight)
@@ -125,6 +133,50 @@ export default function DeptScan() {
     }
   }, [])
 
+  // The outbox drains in the background — OfflineIndicator triggers it on the
+  // browser's `online` event and on tab visibility, and it is still mounted
+  // here (this page hides the nav with display:none, which does not unmount
+  // it). Without listening, a row scanned offline would keep saying "offline"
+  // long after it had actually reached the server. A row whose outbox entry
+  // has disappeared has been posted.
+  useEffect(() => {
+    const onOutboxChanged = async () => {
+      try {
+        const items = await outboxGetAll()
+        const stillQueued = new Set(items.map(i => i.id))
+        // Read from the ref, not from inside a setRows updater: React runs
+        // updaters asynchronously, so anything captured in there is still
+        // empty by the time the loop below runs.
+        const justSynced = rowsRef.current.filter(r =>
+          r.status === 'queued' && r.queuedId && !stillQueued.has(r.queuedId) &&
+          r.lookupFailed && !r.info)
+        setRows(prev => prev.map(r =>
+          r.status === 'queued' && r.queuedId && !stillQueued.has(r.queuedId)
+            ? { ...r, status: 'synced' }
+            : r))
+
+        // The drain resolves the product details server-side, so this page
+        // never sees them and the row would keep claiming the details are
+        // still to come. Fetch them back now that there is signal — but
+        // bounded, because a long offline stint could otherwise fire hundreds
+        // of requests the moment the wifi returns, against a 100k/day cap.
+        if (!navigator.onLine) return
+        for (const row of justSynced.slice(0, 10)) {
+          try {
+            const info = await scanLookup(row.barcode)
+            if (!info) continue
+            setRows(prev => prev.map(r => r.key === row.key
+              ? { ...r, info, price: info.price || null, dept: info.price?.item_group || null,
+                  name: info.item_name || null, lookupFailed: false }
+              : r))
+          } catch { /* leave the row as synced-without-detail */ }
+        }
+      } catch { /* the pill in the nav remains the source of truth */ }
+    }
+    window.addEventListener('hs:outbox-changed', onOutboxChanged)
+    return () => window.removeEventListener('hs:outbox-changed', onOutboxChanged)
+  }, [])
+
   const handleConfirm = useCallback(async (raw) => {
     const scanned = String(raw || '').trim()
     if (scanned.length < 4) return
@@ -150,11 +202,17 @@ export default function DeptScan() {
 
     // One request, not two sequential ones — the barcode→EAN→price chain is
     // resolved inside the Worker so this slow link is crossed once.
-    let info = null, price = null
+    //
+    // A THROW and a null are different things and must not be shown the same
+    // way: a null means the barcode really is not in the database, a throw
+    // usually means there is no signal in that aisle. Telling an operator
+    // "HO will update it soon" about a product HO already has, purely because
+    // the wifi dropped, would send them chasing nothing.
+    let info = null, price = null, lookupFailed = false
     try {
       info  = await scanLookup(scanned)
       price = info?.price || null
-    } catch { /* unknown barcodes, and lookup failures, still save */ }
+    } catch { lookupFailed = true }
     if (gen !== genRef.current) return
 
     const dept = price?.item_group || null
@@ -173,11 +231,19 @@ export default function DeptScan() {
         scanned_at:   new Date(now).toISOString(),
       })
       setRows(prev => prev.map(r => r.key === rowKey
-        ? { ...r, status: res?.queued ? 'queued' : 'saved', id: res?.queued ? null : res?.id, dept, name, info, price }
+        ? {
+            ...r,
+            status:   res?.queued ? 'queued' : 'saved',
+            id:       res?.queued ? null : res?.id,
+            // The outbox id, so Undo can pull a not-yet-synced scan back out
+            // of the queue instead of reaching past it to an older record.
+            queuedId: res?.queued ? res.id : null,
+            dept, name, info, price, lookupFailed,
+          }
         : r))
       soundSaved()
     } catch (e) {
-      setRows(prev => prev.map(r => r.key === rowKey ? { ...r, status: 'failed', dept, name, info, price } : r))
+      setRows(prev => prev.map(r => r.key === rowKey ? { ...r, status: 'failed', dept, name, info, price, lookupFailed } : r))
       setError(e?.message || 'Could not save')
     } finally {
       setBusy(false)
@@ -188,11 +254,24 @@ export default function DeptScan() {
   // the page to hit — one big target, not a small per-row control on a screen
   // whose touch digitiser is unreliable.
   const undoLast = async () => {
-    const target = rows.find(r => r.status === 'saved' && r.id)
+    // Stop at the FIRST row that actually recorded something, whatever state
+    // it is in. Searching past one for a deletable record is how you end up
+    // silently deleting an older, already-synced scan while the operator
+    // believes they undid the last one.
+    const target = rows.find(r => ['saved', 'queued', 'synced'].includes(r.status))
     if (!target) return
+    if (target.status === 'synced') {
+      // Queued offline, then synced in the background — the server gave the id
+      // to the outbox drain, not to this page, so there is nothing here to
+      // delete against. Say so rather than deleting the wrong thing.
+      setError('Already synced — remove it from HO Tasks.')
+      return
+    }
+    const previousStatus = target.status
     setRows(prev => prev.map(r => r.key === target.key ? { ...r, status: 'undoing' } : r))
     try {
-      await deleteTaskRecord(target.id)
+      if (previousStatus === 'queued') await outboxRemove(target.queuedId)
+      else                             await deleteTaskRecord(target.id)
       // Drop the undone row and anything above it. Those can only be notices
       // that never saved — duplicates, failures — since `target` is the first
       // actually-saved row. Leaving a "Duplicate" line sitting on top after an
@@ -211,7 +290,7 @@ export default function DeptScan() {
       setResetSignal(n => n + 1)
       tone(520, 70)
     } catch (e) {
-      setRows(prev => prev.map(r => r.key === target.key ? { ...r, status: 'saved' } : r))
+      setRows(prev => prev.map(r => r.key === target.key ? { ...r, status: previousStatus } : r))
       setError(e?.message || 'Could not undo')
     }
   }
@@ -263,8 +342,15 @@ export default function DeptScan() {
           fontSize: 13, minWidth: 0,
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }}>Department Check</strong>
+        {queuedCount > 0 && (
+          <span style={{
+            marginLeft: 'auto', flexShrink: 0,
+            background: 'var(--amber-soft)', color: 'var(--amber)',
+            borderRadius: 999, padding: '2px 8px', fontSize: 11, fontWeight: 700,
+          }}>{queuedCount} waiting</span>
+        )}
         <span style={{
-          marginLeft: 'auto', fontSize: 20, fontWeight: 800, lineHeight: 1,
+          marginLeft: queuedCount > 0 ? 8 : 'auto', fontSize: 20, fontWeight: 800, lineHeight: 1,
           fontVariantNumeric: 'tabular-nums', color: 'var(--green)',
         }}>{savedCount}</span>
       </div>
@@ -382,7 +468,12 @@ export default function DeptScan() {
                 return (
                   <tr key={r.key}>
                     <td colSpan={6} style={{ ...td, color: 'var(--amber)', fontWeight: 600 }}>
-                      {r.status === 'saving' ? 'Looking up…' : 'HO will update it soon'}
+                      {r.status === 'saving' ? 'Looking up…'
+                        // No signal, so we never got to ask. The product may be
+                        // perfectly well known — the details fill in on sync.
+                        : r.status === 'synced' ? 'Synced — details on HO Tasks'
+                        : r.lookupFailed ? 'Saved — details will fill in when back online'
+                        : 'HO will update it soon'}
                     </td>
                     <td style={{ ...td, fontFamily: 'monospace' }}>{r.barcode}</td>
                   </tr>

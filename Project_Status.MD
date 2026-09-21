@@ -589,6 +589,33 @@ three nav bars hidden on this page that left no usable exit. Replaced with an
 85×44 "← Back" button on the left. The bottom nav stays hidden by explicit
 decision: the screen space is worth more than the shortcut.
 
+**Offline behaviour (Department Scan).** Scanning works with no signal; the
+loop never blocks on the network.
+- The lookup throws and the save goes to the existing IndexedDB outbox
+  (`createTaskRecord` already queues on a network error). A **throw and a null
+  are treated differently**: null means the barcode genuinely is not in
+  `alt_barcodes` → "HO will update it soon"; a throw means no signal → "Saved —
+  details will fill in when back online". Telling an operator HO needs to add a
+  product it already has, because the wifi dropped, sends them chasing nothing.
+- The header shows an amber "**N waiting**" pill, because the table has no
+  status column and one would sit off-screen to the right.
+- `scanned_at` is stored in the queued body, so a batch that syncs hours later
+  still lands with the real trigger-pull time (see the `created_at` fix above).
+- **Undo works offline** — a queued row is pulled back out of the outbox by its
+  queue id. Undo now stops at the first row that recorded anything rather than
+  searching past it; previously, undoing while the newest row was queued would
+  silently delete an *older, already-synced* record.
+- On reconnect `OfflineIndicator` drains (it is still mounted here — this page
+  hides the nav with `display:none`, which does not unmount). The drain
+  enriches each record server-side, so the page never sees the result; it
+  listens for `hs:outbox-changed`, marks those rows synced, and re-fetches the
+  detail for **at most 10** of them so the table fills in rather than keeping a
+  stale "will fill in when back online". Bounded deliberately: a long offline
+  stint would otherwise fire hundreds of requests the moment wifi returns.
+- A row that synced in the background has no server id on this page, so Undo
+  refuses it with "Already synced — remove it from HO Tasks" instead of
+  deleting something else.
+
 **Detail table below the scan.** The recent-scans list is now a table, with
 columns `Product Id` (ean_barcode) · `Product Desc` (item_name) · `Department`
 (item_group) · `Product Status` (product_type — header wording is the
