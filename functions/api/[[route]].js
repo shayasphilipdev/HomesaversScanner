@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-21-upca-recovery-TEST'
+const API_REVISION   = '2026-09-21-upca-alt-TEST'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -3397,13 +3397,47 @@ export async function onRequest(context) {
     if (path === '/alt-barcodes/lookup' && method === 'GET') {
       const barcode = url.searchParams.get('barcode')
       if (!barcode) return json(null)
-      const rows = await db.select('alt_barcodes', {
+      // A barcode can belong to more than one product (273 in the current
+      // master), so this is no longer guaranteed to be a single row. Order so
+      // the ACTIVE one wins: 'Active' sorts before 'Inactive', and PostgREST
+      // leaves nulls last. Checked against the whole master -- every shared
+      // barcode is exactly one Active + one Inactive, so this never has to
+      // break a genuine tie. item_status is the tiebreaker if that ever
+      // changes; without the ordering, `limit 1` would return whichever row
+      // Postgres happened to hand back and a scan could resolve to a
+      // discontinued product.
+      const scanned = String(barcode).trim()
+      const selectAlt = (code) => db.select('alt_barcodes', {
         select: 'barcode_no,ean_barcode,item_name,supl_id,supplier_code,item_status,barcode_status',
-        barcode_no: `eq.${String(barcode).trim()}`,
+        barcode_no: `eq.${code}`,
         order: 'barcode_status.asc,item_status.asc',
         limit: '1'
       })
-      return json(rows[0] || null)
+
+      const rows = await selectAlt(scanned)
+      if (rows[0]) return json(rows[0])
+
+      // Several handhelds are configured not to transmit the UPC-A check
+      // digit, so a 12-digit US barcode arrives as 11 digits and never
+      // matches. Measured 2026-09-21: 73 such scans in 60 days across six
+      // stores (Tallaght, Athy, Ennis Ballymaley, Crumlin, Longford Axis,
+      // Milford). 49 of 55 stores are unaffected, so it is a per-device
+      // setting rather than the hardware.
+      //
+      // An 11-digit code is never a valid retail barcode (UPC-A is 12,
+      // EAN-13 is 13, EAN-8 is 8), so the length alone is the signature, and
+      // the check digit is arithmetically determined by the other eleven —
+      // exactly ONE candidate, not a guess among ten.
+      //
+      // The guard against inventing a product: the candidate is only returned
+      // if it actually exists in alt_barcodes. A miss falls through to null,
+      // exactly as before. recovered_from reports the correction so it is
+      // visible rather than silent; older clients simply ignore the field.
+      if (/^[0-9]{11}$/.test(scanned)) {
+        const recovered = await selectAlt(scanned + upcaCheckDigit(scanned))
+        if (recovered[0]) return json({ ...recovered[0], recovered_from: scanned })
+      }
+      return json(null)
     }
 
     // GET /product-master/filters — distinct values for the dropdown filters.
