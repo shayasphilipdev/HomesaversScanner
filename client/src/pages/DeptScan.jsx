@@ -216,22 +216,35 @@ export default function DeptScan() {
       {/* Header — deliberately one thin line. Every pixel here is a pixel not
           available above the keyboard. */}
       <div style={{
-        display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
+        display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px',
         background: 'var(--surface)', borderBottom: '1px solid var(--border)', flexShrink: 0,
       }}>
-        <strong style={{ fontSize: 13 }}>Department Scan</strong>
-        <span style={{
-          marginLeft: 'auto', fontSize: 20, fontWeight: 800, lineHeight: 1,
-          fontVariantNumeric: 'tabular-nums', color: 'var(--green)',
-        }}>{savedCount}</span>
+        {/* The ONLY way off this page — the nav, sidebar and bottom bar are
+            all hidden here. The first version was a 44x25 "Exit" chip in the
+            top-right corner and stores reported being stuck: about half the
+            Android minimum touch target, in the hardest corner to reach, with
+            a label that does not read as navigation. Now a full-height button
+            on the left, where a back control is expected. */}
         <button
           type="button"
           onClick={() => navigate('/tasks')}
+          aria-label="Back to HO Tasks"
           style={{
-            border: '1px solid var(--border)', background: 'var(--surface)', color: 'inherit',
-            borderRadius: 6, padding: '4px 10px', fontSize: 13, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,
+            minHeight: 44, padding: '0 14px',
+            border: '1px solid var(--border-strong)', borderRadius: 8,
+            background: 'var(--bg-soft)', color: 'inherit',
+            fontSize: 15, fontWeight: 700, cursor: 'pointer',
           }}
-        >Exit</button>
+        >← Back</button>
+        <strong style={{
+          fontSize: 13, minWidth: 0,
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        }}>Dept Scan</strong>
+        <span style={{
+          marginLeft: 'auto', fontSize: 24, fontWeight: 800, lineHeight: 1,
+          fontVariantNumeric: 'tabular-nums', color: 'var(--green)',
+        }}>{savedCount}</span>
       </div>
 
       {/* The result, directly under the header and above the scan box, because
