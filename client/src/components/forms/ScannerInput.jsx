@@ -434,7 +434,9 @@ export default function ScannerInput({
           <button
             type="button"
             // Same reason as the caller's compact action: never pull focus out
-            // of the scan box, or Android hides and re-shows the keyboard.
+            // of the scan box. pointerdown is the one that matters on touch —
+            // mousedown fires too late in the Android sequence to stop it.
+            onPointerDown={e => e.preventDefault()}
             onMouseDown={e => e.preventDefault()}
             onClick={() => setCameraOn(v => !v)}
             aria-label={cameraOn ? 'Stop camera' : 'Scan with camera'}

@@ -99,24 +99,29 @@ export default function DeptScan() {
   // operator then pulls the trigger, nothing happens, and there is nothing on
   // screen explaining why. That is the "it stopped scanning" failure.
   //
-  // The buttons on this page refuse focus in the first place (preventDefault
-  // on mousedown), which is what actually keeps the keyboard from bouncing.
-  // This is the safety net for anything that still manages to take it. It
-  // listens on focusin ONLY — a blanket click listener would refocus, and so
-  // re-open the keyboard, on any tap at all, including a tap to scroll the
-  // table. Real text fields are exempt so the camera's zoom slider works.
+  // Safety net for focus being lost entirely — NOT for focus landing on a
+  // control. That distinction is the whole point.
+  //
+  // Calling .focus() while a tap is being handled is itself what raises the
+  // Android keyboard: these handhelds scan through an IME that shows no
+  // keyboard, so nothing is visible normally, and a gesture-driven focus reads
+  // to Android as "the user wants to type". Restoring focus after every tap
+  // therefore summoned the keyboard on every Undo and every camera press.
+  //
+  // So the buttons refuse focus (above) and this only acts when focus has
+  // ended up nowhere at all — on <body>, after a re-render or a dismissed
+  // overlay. That case genuinely would stop scans arriving, and is rare enough
+  // that the keyboard appearing is the lesser problem.
   useEffect(() => {
-    const restore = (e) => {
-      const tag = e.target?.tagName
-      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return
+    const restore = () => {
+      const active = document.activeElement
+      if (active && active !== document.body) return   // something owns focus — leave it
       const box = document.querySelector('input.scan-input')
-      if (!box || document.activeElement === box) return
-      setTimeout(() => {
-        try { box.focus({ preventScroll: true }) } catch { box.focus() }
-      }, 0)
+      if (!box || active === box) return
+      try { box.focus({ preventScroll: true }) } catch { box.focus() }
     }
-    document.addEventListener('focusin', restore)
-    return () => document.removeEventListener('focusin', restore)
+    const id = setInterval(restore, 1500)
+    return () => clearInterval(id)
   }, [])
 
   // Always-current rows, for handlers that need them without re-subscribing.
@@ -461,12 +466,16 @@ export default function DeptScan() {
           compactActions={
             <button
               type="button"
-              // Do not take focus. Focus must stay in the scan box — that is
-              // the only thing the IME delivers to — and on Android moving it
-              // away hides the keyboard, then putting it back animates the
-              // keyboard up again. That bounce is what the floor reported as
-              // "Undo pops the keyboard". preventDefault on mousedown stops
-              // the focus transfer while still firing onClick.
+              // Do not take focus. On these handhelds the scanner's IME
+              // delivers scans with NO visible keyboard, so the keyboard only
+              // appears when something focuses the box during a user gesture —
+              // Android reads that as "the user wants to type". Preventing the
+              // default on pointerdown AND mousedown stops the button taking
+              // focus in the first place, so nothing has to put it back.
+              // pointerdown is the one that matters on touch; mousedown alone
+              // was not enough, because the focus shift happens earlier in the
+              // touch sequence. onClick still fires either way.
+              onPointerDown={e => e.preventDefault()}
               onMouseDown={e => e.preventDefault()}
               onClick={undoLast}
               disabled={!canUndo}
