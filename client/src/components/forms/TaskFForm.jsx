@@ -177,7 +177,7 @@ export default function TaskFForm({ onSaved, storeId }) {
             <button type="button" className="btn btn-outline" onClick={() => { setForm(EMPTY); setError('') }}>
               Clear
             </button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>
+            <button type="submit" className="btn btn-primary" disabled={saving || (lookupLoading && navigator.onLine)}>
               {saving ? <><span className="spinner" /> Saving…</> : 'Save Record'}
             </button>
           </div>

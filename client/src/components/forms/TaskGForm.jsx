@@ -82,7 +82,7 @@ export default function TaskGForm({ onSaved, storeId }) {
 
           <div className="flex-row mt-20" style={{ justifyContent: 'flex-end' }}>
             <button type="button" className="btn btn-outline" onClick={t.reset}>Clear</button>
-            <button type="submit" className="btn btn-primary" disabled={t.saving}>
+            <button type="submit" className="btn btn-primary" disabled={t.saving || (t.lookupLoading && navigator.onLine)}>
               {t.saving ? <><span className="spinner" /> Saving…</> : 'Save Record'}
             </button>
           </div>
