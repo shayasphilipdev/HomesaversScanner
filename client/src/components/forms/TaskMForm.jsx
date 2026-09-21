@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { createTaskRecord, lookupPrice } from '../../lib/api.js'
+import { createTaskRecord } from '../../lib/api.js'
 import { useStore } from '../../App.jsx'
 import ScannerInput from './ScannerInput.jsx'
 import { useTaskForm, LookupBanner, altFields } from './useTaskForm.jsx'
@@ -33,13 +33,11 @@ export default function TaskMForm({ onSaved, storeId }) {
   const mRef = useRef(null)
   const yRef = useRef(null)
 
-  const handleLookup = async ({ product, gen, genRef }) => {
-    if (!product.ean_barcode) return
-    try {
-      const price = await lookupPrice(product.ean_barcode)
-      if (gen !== genRef.current) return
-      setPriceInfo(price)
-    } catch { /* silent */ }
+  // Price/department ride along in the same /scan/lookup response the hook
+  // already made, so there is no second request and no generation race left
+  // for this handler to guard against.
+  const handleLookup = ({ product }) => {
+    setPriceInfo(product.price || null)
   }
 
   const t = useTaskForm({ initial: EMPTY, onLookup: handleLookup })

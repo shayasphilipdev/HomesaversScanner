@@ -1,5 +1,5 @@
-import { useState, useRef } from 'react'
-import { createTaskRecord, lookupPrice } from '../../lib/api.js'
+import { useState } from 'react'
+import { createTaskRecord } from '../../lib/api.js'
 import { useStore } from '../../App.jsx'
 import ScannerInput from './ScannerInput.jsx'
 import { useTaskForm, LookupBanner, altFields } from './useTaskForm.jsx'
@@ -13,17 +13,12 @@ export default function TaskJForm({ onSaved, storeId }) {
   const { session } = useStore()
   const [priceInfo, setPriceInfo] = useState(null)
 
-  // After the alt-barcode row resolves, do a second lookup for the department.
-  // Uses the gen/genRef forwarded from useTaskForm so a stale prices lookup
-  // (from a scan that was superseded by reset or a newer scan) never writes
-  // to priceInfo — preventing stale item_group from bleeding into the next record.
-  const handleLookup = async ({ product, gen, genRef }) => {
-    if (!product.ean_barcode) return
-    try {
-      const price = await lookupPrice(product.ean_barcode)
-      if (gen !== genRef.current) return   // superseded
-      setPriceInfo(price)
-    } catch { /* silent */ }
+  // The department arrives with the alt-barcode row in the SAME /scan/lookup
+  // response, so there is no second request and nothing to race: the hook has
+  // already discarded superseded generations before it calls onLookup, which
+  // is why this no longer needs the gen/genRef guard it used to carry.
+  const handleLookup = ({ product }) => {
+    setPriceInfo(product.price || null)
   }
 
   const t = useTaskForm({ initial: EMPTY, onLookup: handleLookup })

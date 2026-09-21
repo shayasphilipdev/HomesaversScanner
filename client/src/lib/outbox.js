@@ -10,7 +10,7 @@
 // Drain sequence is best-effort, in arrival order. Failures stay in the
 // queue and are retried next time the app comes online.
 
-import { getToken, lookupAltBarcode, lookupPrice } from './api.js'
+import { getToken, scanLookupOrNull } from './api.js'
 
 const DB_NAME = 'hs_outbox'
 const STORE   = 'requests'
@@ -200,7 +200,12 @@ export async function drain() {
           let body = item.body
           if (!body.product_barcode && body.product_code) {
             try {
-              const alt = await lookupAltBarcode(body.product_code)
+              // ONE request per queued record, not two. This runs once per
+              // record in the queue, so an offline aisle sweep used to cost
+              // 2N lookups the moment the signal came back — on top of the N
+              // posts. /scan/lookup returns the product and its price row
+              // together, halving that reconnect burst.
+              const alt = await scanLookupOrNull(body.product_code)
               if (alt) {
                 body = {
                   ...body,
@@ -211,11 +216,8 @@ export async function drain() {
                   item_status:     alt.item_status   || null,
                   barcode_status:  alt.barcode_status|| null,
                 }
-                if (alt.ean_barcode) {
-                  const price = await lookupPrice(alt.ean_barcode)
-                  if (price?.item_group) {
-                    body = { ...body, details: { ...(body.details || {}), item_group: price.item_group } }
-                  }
+                if (alt.price?.item_group) {
+                  body = { ...body, details: { ...(body.details || {}), item_group: alt.price.item_group } }
                 }
               }
             } catch { /* best effort — post whatever we have */ }
