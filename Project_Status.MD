@@ -575,6 +575,70 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-09-21 — Full audit of the scanning surface: 12 defects found and fixed
+
+Prompted by shipping the lookup refactor to live on a build check alone. Method
+was three-part: unit tests bundled from the REAL source with esbuild (not
+reimplementations), independent multi-agent review, and manual verification of
+every claim before acting. **Several agent findings were wrong and were
+discarded** — e.g. "6 records prove bad UPC-A recovery" (all 6 are genuine
+11-digit master entries). Verify before fixing.
+
+**The serious one — Department Scan was silently losing scans.**
+`handleConfirm` ran `if (gen !== genRef.current) return` *between* the lookup
+and `createTaskRecord`. A scan superseded by a newer one was therefore never
+saved: no beep, no outbox entry, and its row stuck on "Looking up…" for good.
+Reachable whenever a second scan arrives during a slow lookup — and the input is
+never disabled while one runs (ScannerInput draws a spinner but stays live), so
+on shop wifi the window is up to `LOOKUP_TIMEOUT_MS`. This was on the screen
+carrying **97% of all records** and matches the stuck/frozen reports from
+stores. The guard is gone; everything after it is keyed by the unique `rowKey`,
+and the busy spinner is still generation-gated.
+
+> The same pattern is **safe** in `useTaskForm` and `TaskHForm`, where the guard
+> gates UI state only — those forms save on a separate button press. Dept Scan
+> is the only screen that auto-saves, which is what made it dangerous there.
+
+**Found by the unit tests** (`altFields` 17 assertions, lookup helpers 10):
+
+- `altFields`: `recovered_from` with an empty `barcode_no` resolved to **null**,
+  dropping the barcode entirely. Introduced earlier the same day. Now requires
+  both halves. The Dept Scan double-application path is covered.
+- `withLookupTimeout` leaked its timer when the request won the race — a live
+  10s timer per scan, thousands a day. Cleared in `.finally()`.
+
+**The cascade worth remembering.** Gating Save on `lookupLoading` across all
+eleven forms (a correctness fix — it stops a record saving with every product
+column null) collided with a *pre-existing* bug: `reset()` bumped `genRef`
+without clearing `lookupLoading`, so an in-flight lookup's `finally` skipped the
+reset and the flag stuck true forever. Tapping Clear during a lookup then left
+the form **permanently unsavable**. A safe change plus a latent bug produced a
+worse failure than either alone. Root cause fixed in `reset()`.
+
+**The rest:**
+
+| Defect | Effect |
+|---|---|
+| Undo dropped rows still `saving` | Record commits with nothing on screen and no way to undo it |
+| Failed save rendered as success | Table said "Saved"; `savedCount` disagreed; nothing said which scan to redo |
+| `canUndo` required a server id | Undo disabled for the entire time a store is offline; the queued branch was dead code |
+| Post-sync refetch used bare `scanLookup` | One hung socket stalled a **sequential** loop over 10 rows |
+| `drain()` never restored `barcode_no` | Offline trimmed UPC-A landed in exactly the state 177 rows were backfilled out of |
+| Tasks C and F need a fetched vocabulary | Neither could be recorded offline at all; now cached in `localStorage` |
+| Task D required a read-only field | Unsavable whenever the lookup missed; also kept the previous product's name on a re-scan |
+| `MultiSelectDropdown` sized in `vh` | Opened under the Android keyboard; now measures the **visual** viewport and flips up |
+| `request()` spread options after headers | Latent: the first caller to pass headers would silently lose `Authorization` |
+
+**Verified clean:** sign-in at 360px (no horizontal scroll, no overflowing
+elements, no console errors); Dept Scan's 7-column table (scrolls inside its own
+`overflow:auto` container by design, description ellipsised).
+
+> ⚠️ **Not verified:** the logged-in forms were never driven end-to-end. That
+> needs a store PIN. Everything above rests on source reading, unit tests
+> against real code, and a clean build — not on operating the forms. Worth a
+> pass on the test app before trusting the UI-level fixes (failed-row rendering,
+> the dropdown flip, Task D).
+
 ### 2026-09-21 — Department Scan's speed work applied to every other task form
 
 Dept Scan's core win was collapsing the two strictly-sequential lookups into one
