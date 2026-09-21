@@ -85,6 +85,10 @@ export default function Nav() {
       <span className="nav-brand">Homesavers</span>
 
       {canDoHQTasks(session)    && <NavLink to="/tasks"       className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>HO Tasks</NavLink>}
+      {/* Department Scan — the fast single-purpose loop for Task J, which is
+          over 90% of everything recorded. Sits next to HO Tasks because it is
+          the same job done a faster way. */}
+      {canDoHQTasks(session)    && <NavLink to="/dept-scan" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Dept Scan</NavLink>}
       {canDoHQTasks(session)    && <NavLink to="/awaiting-reply" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Awaiting Reply</NavLink>}
       {canDoStoreTasks(session) && <NavLink to="/store-tasks" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Store Tasks</NavLink>}
       <NavLink to="/space-plan" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>Space Plan</NavLink>

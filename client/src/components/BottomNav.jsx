@@ -85,6 +85,9 @@ export default function BottomNav() {
   if (canSeeManagerDashboard(session)) items.push({ to: '/manager', icon: 'manager', label: 'Manager' })
   // HO Tasks comes before Store Tasks (swapped) — it's the primary store action.
   if (canDoHQTasks(session))    items.push({ to: '/tasks', icon: 'ho', label: 'HO' })
+  // Department Scan — this is the bar the handhelds actually use, so the
+  // placement right after HO matters most here.
+  if (canDoHQTasks(session))    items.push({ to: '/dept-scan', icon: null, glyph: '▥', label: 'Dept Scan' })
   if (canDoHQTasks(session))    items.push({ to: '/awaiting-reply', icon: 'replies', label: 'Replies' })
   items.push({ to: '/space-plan', icon: 'spacePlan', label: 'Space Plan' })
   if (appConfig?.competition_enabled !== false) items.push({ to: '/competition', icon: 'compete', label: 'Compete' })

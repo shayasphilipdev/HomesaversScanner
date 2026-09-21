@@ -14,6 +14,8 @@ export default function Sidebar() {
   ]
   if (canSeeManagerDashboard(session)) items.push({ to: '/manager', icon: '◑', label: 'Manager view' })
   if (canDoHQTasks(session))    items.push({ to: '/tasks',       icon: '✚', label: 'HO Tasks' })
+  // Department Scan — same job as HO Tasks' Department Check, faster loop.
+  if (canDoHQTasks(session))    items.push({ to: '/dept-scan', icon: '▥', label: 'Dept Scan' })
   if (canDoHQTasks(session))    items.push({ to: '/awaiting-reply', icon: '⏳', label: 'Awaiting Reply' })
   if (canDoStoreTasks(session)) items.push({ to: '/store-tasks', icon: '☑', label: 'Store Tasks' })
   items.push({ to: '/space-plan', icon: '▦', label: 'Space Plan' })

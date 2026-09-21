@@ -19,8 +19,18 @@ export default function ScannerInput({
   value, onChange, label, placeholder = 'Scan or type…',
   onConfirm, lookupLoading,
   readerId = 'reader',
-  inlineAction = null   // node rendered to the right of the input (e.g. a Save
+  inlineAction = null,  // node rendered to the right of the input (e.g. a Save
                         // button) so the action sits ABOVE the camera band.
+  resetSignal = 0,      // bump to clear every internal guard. After the caller
+                        // undoes a save, the SAME barcode has to be scannable
+                        // again immediately — otherwise the dedupe guards that
+                        // exist to swallow IME echoes swallow the deliberate
+                        // re-scan too.
+  compactActions = null // node sharing ONE row with a shrunken camera button.
+                        // Opt-in: without it the camera keeps its own
+                        // full-width line, which every task form expects.
+                        // Department Scan passes its Undo here, because the
+                        // strip above the Android keyboard is its whole budget.
 }) {
   const inputRef   = useRef(null)
   const scannerRef = useRef(null)
@@ -56,6 +66,18 @@ export default function ScannerInput({
     lastConfirmedRef.current = c
     onConfirmRef.current?.(code)
   }
+
+  // Wipe every dedupe guard on demand. These guards exist to swallow the
+  // Android IME re-injecting the previous barcode; after an undo the operator
+  // genuinely wants to scan that same barcode again, and without this the
+  // guards cannot tell the two apart and eat the real scan.
+  useEffect(() => {
+    if (!resetSignal) return
+    lastConfirmedRef.current = ''
+    lastSavedRef.current     = ''
+    lastSavedAtRef.current   = 0
+    prevValueRef.current     = ''
+  }, [resetSignal])
 
   const [cameraOn, setCameraOn]         = useState(false)
   const [cameraStatus, setCameraStatus] = useState('')
@@ -180,6 +202,10 @@ export default function ScannerInput({
     // That is preferred over having to tap the field before every scan.
     const el = inputRef.current
     if (!el) return
+    // While the camera is open the field must stay blurred — see the effect
+    // below. Refocusing here after a camera scan would put the keyboard back
+    // over the viewfinder.
+    if (cameraOn) return
     const doFocus = () => {
       try { el.focus({ preventScroll: true }) } catch { el.focus() }
     }
@@ -187,12 +213,38 @@ export default function ScannerInput({
     const t1  = setTimeout(doFocus, 150)
     const t2  = setTimeout(doFocus, 400)
     return () => { cancelAnimationFrame(raf); clearTimeout(t1); clearTimeout(t2) }
-  }, [value])
+  }, [value, cameraOn])
+
+  // Keep the keyboard off the viewfinder.
+  //
+  // A camera scan is decoded from the video and pushed straight through
+  // onChange/confirm — it never goes near the input — so the field does not
+  // need focus while the camera is open. On a phone a focused field means a
+  // keyboard sitting over the very thing the user is trying to aim, so blur
+  // it. Focus is restored when the camera closes, otherwise a scanner gun
+  // would have nowhere to deliver to afterwards.
+  // Read at call time by the window-refocus listener, which subscribes once.
+  const cameraOnRef = useRef(false)
+  cameraOnRef.current = cameraOn
+  const wasCameraOnRef = useRef(false)
+  useEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    if (cameraOn) {
+      try { el.blur() } catch { /* nothing focused */ }
+    } else if (wasCameraOnRef.current) {
+      try { el.focus({ preventScroll: true }) } catch { el.focus() }
+    }
+    wasCameraOnRef.current = cameraOn
+  }, [cameraOn])
 
   // Refocus whenever the window/tab regains attention — covers the case where
   // the user switches apps (stock lookup, camera app) and comes back.
   useEffect(() => {
     const refocus = () => {
+      // Not while the camera is open — that would drop the keyboard back over
+      // the viewfinder the moment the user returns to the tab.
+      if (cameraOnRef.current) return
       if (value === '') {
         try { inputRef.current?.focus({ preventScroll: true }) } catch { inputRef.current?.focus() }
       }
@@ -336,11 +388,11 @@ export default function ScannerInput({
       setTorchOn(false); setZoomCaps(null); setTorchCap(false)
       // html5-qrcode's stop() THROWS SYNCHRONOUSLY ("Cannot stop, scanner is
       // not running or paused") when the scanner never actually started —
-      // camera permission denied, no camera on the device, or start() still in
-      // flight. A synchronous throw never reaches .catch(), so it escaped this
-      // cleanup and tripped the ErrorBoundary: tapping Scan with Camera and
-      // then closing it straight away took the whole page down to "Something
-      // went wrong". Handle both the sync throw and the async rejection.
+      // camera permission denied, no camera, or start still in flight. A
+      // synchronous throw never reaches .catch(), so it escaped this cleanup
+      // and tripped the ErrorBoundary: tapping Camera on and straight back off
+      // took the whole page down to "Something went wrong". Handle both the
+      // sync throw and the async rejection.
       const scanner = scannerRef.current
       scannerRef.current = null
       if (scanner) {
@@ -373,9 +425,11 @@ export default function ScannerInput({
   }
 
   return (
-    <div className="form-group">
-      <label>{label}</label>
-      <div className="flex-row" style={{ gap: 8, alignItems: 'stretch' }}>
+    <div className="form-group" style={compactActions ? { gap: 0 } : undefined}>
+      {/* An empty label still costs a line box and the group's gap — on
+          Department Scan that is space the keyboard would take. */}
+      {label ? <label>{label}</label> : null}
+      <div className="flex-row" style={{ gap: 6, alignItems: 'stretch' }}>
         <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
           <input
             ref={inputRef}
@@ -403,8 +457,31 @@ export default function ScannerInput({
           )}
         </div>
         {inlineAction}
+        {/* Compact mode: camera and the caller's actions sit on the SAME row
+            as the input — scan box, then a square icon-only camera, then the
+            action. Opt-in; task forms A–M are untouched. */}
+        {compactActions && cameraEnabled && (
+          <button
+            type="button"
+            // Same reason as the caller's compact action: never pull focus out
+            // of the scan box. pointerdown is the one that matters on touch —
+            // mousedown fires too late in the Android sequence to stop it.
+            onPointerDown={e => e.preventDefault()}
+            onMouseDown={e => e.preventDefault()}
+            onClick={() => setCameraOn(v => !v)}
+            aria-label={cameraOn ? 'Stop camera' : 'Scan with camera'}
+            title={cameraOn ? 'Stop camera' : 'Scan with camera'}
+            style={{
+              flexShrink: 0, width: 38, padding: 0, fontSize: 17, lineHeight: 1,
+              borderRadius: 8, cursor: 'pointer',
+              border: '1px solid var(--border-strong)',
+              background: cameraOn ? 'var(--red-soft)' : 'var(--bg-soft)',
+            }}
+          >{cameraOn ? '✕' : '📷'}</button>
+        )}
+        {compactActions}
       </div>
-      {cameraEnabled && (
+      {!compactActions && cameraEnabled && (
         <div style={{ marginTop: 8 }}>
           <button
             type="button"
