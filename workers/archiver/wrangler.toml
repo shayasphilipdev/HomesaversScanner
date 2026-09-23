@@ -43,12 +43,20 @@ crons = ["30 1 * * *"]
 [vars]
 SUPABASE_URL = "https://eggspkdengnxktwkdwpw.supabase.co"
 
-# PHASE 2 = SHADOW MODE. The archiver writes to D1 and deletes NOTHING;
-# pg_cron keeps purging exactly as it does today. That makes this phase
-# unable to lose data that was not already being lost every night, and lets
-# us compare what D1 received against what Postgres removed before trusting
-# it with deletion. Phase 3 flips this to "0" and moves deletion here.
-SHADOW_MODE = "1"
+# PHASE 3 = LIVE. The archiver writes to D1 and then stamps
+# task_records.archived_at on what landed. It still deletes NOTHING -- deletion
+# stays with pg_cron's purge_old_task_records(), which now refuses to remove a
+# Task J record while archived_at is NULL.
+#
+# That pairing is the point: before it, "archiver at 01:30, purge at 02:00" was
+# a convention about clock times, and a failed archiver meant Postgres deleted
+# records that were never archived. Now a failed archiver simply leaves records
+# in Supabase -- visible and recoverable -- because nothing marked them.
+#
+# Set back to "1" to return to archive-only behaviour; the purge then has
+# nothing marked to act on and Task J stops being purged, so do not leave it
+# there for long.
+SHADOW_MODE = "0"
 
 [[d1_databases]]
 binding       = "ARCHIVE"

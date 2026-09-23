@@ -4,13 +4,21 @@
 // are older than scan_record_retention_days, so the 6-month history the business
 // wants can exist without Supabase's 500 MB free tier having to hold it.
 //
-// PHASE 2 RUNS IN SHADOW MODE (env.SHADOW_MODE === '1'): it writes to D1 and
-// deletes NOTHING. pg_cron's purge_old_task_records() continues to delete on its
-// own schedule at 02:00 UTC exactly as it does today. The consequence worth
-// stating plainly: in shadow mode this cannot lose anything that was not already
-// being destroyed every night, and if the archiver is wrong we find out by
-// comparing counts rather than by losing records. Phase 3 flips SHADOW_MODE off
-// and narrows the Postgres purge so it can only delete what D1 already holds.
+// THE ARCHIVER NEVER DELETES. Deletion stays with pg_cron's
+// purge_old_task_records(); this only says, by stamping task_records.archived_at,
+// what D1 is confirmed to be holding. One deleter, one claimer.
+//
+// env.SHADOW_MODE === '1'  — archive only. Nothing is stamped, so the purge
+//   guard has nothing to act on and the pre-archive behaviour continues
+//   unchanged. This cannot lose anything that was not already being destroyed
+//   nightly, which is what made it safe to point at production first.
+//
+// env.SHADOW_MODE === '0'  — archive, then stamp archived_at on what landed.
+//   Paired with the guarded purge, which refuses to delete a Task J record while
+//   archived_at is NULL, this is what turns "the archiver runs at 01:30 and the
+//   purge at 02:00" from a convention about clock times into something Postgres
+//   enforces. If the archiver stops running, J records accumulate in Supabase --
+//   visible, and recoverable -- instead of being silently deleted unarchived.
 //
 // Scope is task_type 'J' only. Every other type keeps its current lifecycle,
 // which is what leaves /reports/aging (Tasks A-F are deliberately purge-exempt)
@@ -32,6 +40,41 @@ const SELECT_COLS = [
 ].join(',')
 
 const ms = (iso) => (iso ? Date.parse(iso) : null)
+
+// Stamp archived_at on records D1 has confirmed it holds. This is the whole
+// point of Phase 3: purge_old_task_records() refuses to delete a Task J record
+// while archived_at is NULL, so the archiver running before the purge stops
+// being a convention about clock times and becomes something Postgres enforces.
+//
+// Chunked because PostgREST takes the id list in the URL and a uuid is 36
+// characters — 500 of them would be an 18 KB URL. 100 keeps it near 4 KB.
+//
+// Safe against the stats triggers: trg_task_stats_capture_update early-returns
+// unless status or the photo columns change, so stamping this on a three-week-old
+// row does not rewrite that day's task_stats_daily counts.
+async function markArchived(env, ids, nowIso) {
+  const CHUNK = 100
+  let marked = 0
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const slice = ids.slice(i, i + CHUNK)
+    const res = await fetch(
+      `${env.SUPABASE_URL}/rest/v1/task_records?id=in.(${slice.join(',')})`, {
+        method: 'PATCH',
+        headers: {
+          apikey: env.SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${env.SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({ archived_at: nowIso }),
+      })
+    if (!res.ok) {
+      throw new Error(`Supabase PATCH ${res.status}: ${(await res.text()).slice(0, 300)}`)
+    }
+    marked += slice.length
+  }
+  return marked
+}
 
 async function sb(env, path) {
   const res = await fetch(`${env.SUPABASE_URL}/rest/v1/${path}`, {
@@ -98,7 +141,7 @@ const INSERT_SQL = `
 export async function runArchive(env, triggerKind) {
   const startedAt = Date.now()
   const shadow    = env.SHADOW_MODE === '1'
-  let scanned = 0, inserted = 0, alreadyHad = 0, deleted = 0, error = null
+  let scanned = 0, inserted = 0, alreadyHad = 0, deleted = 0, marked = 0, error = null
 
   try {
     const cutoffIso  = await retentionCutoffIso(env)
@@ -137,6 +180,15 @@ export async function runArchive(env, triggerKind) {
         else                 alreadyHad++
       }
 
+      // Only after D1 has committed the batch. D1 batches are atomic, so a
+      // resolved batch() means every row in it is durably in the archive --
+      // which is the claim archived_at is about to make to Postgres. In shadow
+      // mode nothing is marked, so the purge guard has nothing to act on and
+      // the old behaviour continues unchanged.
+      if (!shadow) {
+        marked += await markArchived(env, rows.map(r => r.id), new Date(archivedAtMs).toISOString())
+      }
+
       const last = rows[rows.length - 1].created_at
       // A whole page sharing one timestamp would otherwise re-read itself
       // forever. Stepping 1ms past it is safe because the cursor is only ever
@@ -147,8 +199,9 @@ export async function runArchive(env, triggerKind) {
       if (rows.length < BATCH) break
     }
 
-    // Phase 3 will delete here, guarded on D1 confirming it holds the ids.
-    // Deliberately absent in Phase 2.
+    // Deletion stays with pg_cron's purge_old_task_records(); the archiver
+    // never deletes. It only states, via archived_at, what D1 is holding --
+    // and the purge decides what to do about that. One deleter, one claimer.
   } catch (e) {
     error = String(e?.message || e).slice(0, 500)
   }
@@ -158,14 +211,14 @@ export async function runArchive(env, triggerKind) {
     await env.ARCHIVE.prepare(
       `INSERT OR REPLACE INTO archive_runs
          (started_at_ms, trigger_kind, cutoff_iso, shadow, scanned, inserted,
-          already_had, deleted, duration_ms, error)
-       VALUES (?,?,?,?,?,?,?,?,?,?)`
+          already_had, deleted, marked, duration_ms, error)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`
     ).bind(startedAt, triggerKind, new Date(startedAt).toISOString(),
-           shadow ? 1 : 0, scanned, inserted, alreadyHad, deleted,
+           shadow ? 1 : 0, scanned, inserted, alreadyHad, deleted, marked,
            durationMs, error).run()
   } catch { /* the run itself matters more than the bookkeeping of it */ }
 
-  return { startedAt, shadow, scanned, inserted, alreadyHad, deleted, durationMs, error }
+  return { startedAt, shadow, scanned, inserted, alreadyHad, deleted, marked, durationMs, error }
 }
 
 export default {
