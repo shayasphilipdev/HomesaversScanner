@@ -575,6 +575,57 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-09-23 — Archive Phases 3–4a: the guard, and the read endpoint
+
+**Phase 3 — the purge guard.** `task_records.archived_at` is stamped by the
+archiver once D1 confirms it holds a record, and `purge_old_task_records()` now
+refuses to delete a Task J record while it is NULL. Before this, "archiver at
+01:30, purge at 02:00" was a convention about clock times: a failed archiver
+meant Postgres deleted unarchived records with nothing to detect it. Now a
+failed archiver leaves records in Supabase — visible and recoverable — because
+nothing marked them. ~3 MB/day against 257 MB of headroom, so ~3 months to
+notice.
+
+Verified without deleting anything: with 547 J records past the cutoff and none
+marked, the purge predicate selects **0** of them. H still selects its 514;
+B/C/K unaffected.
+
+> Stamping is safe against `trg_task_stats_capture_update`, which early-returns
+> unless status or the photo columns change — so marking a three-week-old row
+> does not rewrite that day's `task_stats_daily` and shrink a historical
+> dashboard bar. Checked in the trigger body before relying on it.
+
+**Phase 4a — `GET /api/reports/archive`.** A SEPARATE endpoint, not a branch
+inside `/reports/task-records`. That export is tuned around the free-tier 10ms
+CPU budget — its JSON path formats rows *inside Postgres*
+(`report_task_records_flat_page`) because per-row Worker formatting was silently
+killing requests. Merging a second source in would reintroduce exactly that, and
+an archive fault could then break live reporting. Kept apart, the client
+concatenates — cheap, because the sources are **disjoint by date** at the
+retention cutoff.
+
+Bounds are mandatory, not defensive: D1 bills rows SCANNED, and since
+2026-09-01 the free plan *fails* queries past 5M rows/day. `from`/`to` required,
+window capped at 200 days, store scope applied, keyset paging on the primary
+key. Measured: a date-bounded page reports **`rows_read: 3` for 3 rows** — the
+`WITHOUT ROWID` key doing its job. An id-only lookup, by contrast, reads the
+whole table (547 for 2), so reports must never be unbounded.
+
+`status` is returned as **'Archived'** whatever it was when the record moved;
+the original value stays in D1 for back-office reporting.
+
+> ⚠️ **Not yet verified end to end.** The endpoint is deployed and its SQL and
+> read cost are proven directly against D1, but an authenticated call has not
+> been made — so the D1 binding reaching the Pages Function runtime, and the row
+> mapping, are unconfirmed. Needs a logged-in session.
+
+**Two honest gaps in archived rows:** `selling_price` and `product_type` come
+from a `prices` join the RPC does in Postgres, and D1 cannot reach Postgres, so
+they are blank. And `source='test'` is not filtered — because the live reports
+do not filter it either.
+
+**Phase 4b (client checkbox) and Phase 5 (store Current/Archived) remain.**
+
 ### 2026-09-23 — Department Check archive to Cloudflare D1 (Phases 1–2 done)
 
 Six months of retention cannot live in Supabase: the free tier is 500 MB, the
