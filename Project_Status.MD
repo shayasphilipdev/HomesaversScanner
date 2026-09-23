@@ -575,6 +575,67 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-09-23 — Department Check archive to Cloudflare D1 (Phases 1–2 done)
+
+Six months of retention cannot live in Supabase: the free tier is 500 MB, the
+database is already at 243 MB, and six months of `task_records` would be ~542 MB
+on its own. So a record now spends its first 21 days in Postgres
+(`scan_record_retention_days`) and the rest of its life in D1.
+
+**Scope is `task_type = 'J'` only** — Department Check, including Department
+Scan. That is what keeps everything else intact: `/reports/aging` depends on
+Tasks A–F being purge-exempt, and Expiry Overview depends on Task M keeping 180
+days in Postgres. Measured, not assumed: Task J has **0 message threads and 0
+`pricing_items` rows**, so the `ON DELETE CASCADE` on those tables is a non-issue
+at this scope.
+
+**Phase 1 — D1 database + schema.** `homesavers-archive`,
+`6c728765-d614-4282-a648-4b3fc3bf78fe`. One table, `WITHOUT ROWID` with
+`PRIMARY KEY (created_at_ms, id)` so the table is physically date-ordered —
+which is what protects the 5M rows/day free read limit, since D1 bills rows
+SCANNED, not returned. Schema and reasoning in `d1-archive-schema.sql`.
+
+> **A single database, not the monthly shards first sketched.** Task J populates
+> only 15 of 36 columns (13 are NULL across all 163,517 live rows), and the
+> window held here is ~159 days, not 180 — six months minus the 21 in Supabase.
+> That puts the archive at ~210 MB of the 500 MB **per-database** free limit.
+> Note the limit that matters: 5 GB is the *account* total across up to 10
+> databases; a single database is capped at 500 MB on the free plan.
+
+**Phase 2 — archiver Worker, shadow mode.** `homesavers-archiver`, cron
+`30 1 * * *`. It must be a separate Worker: Pages Functions cannot run on a
+schedule, and Postgres cannot push to D1 (`pg_net` is not installed). 01:30 UTC
+is deliberately 30 minutes ahead of pg_cron's 02:00 purge; both are UTC.
+
+Shadow mode writes to D1 and deletes nothing, so it cannot lose anything that
+was not already being destroyed nightly.
+
+**First live run verified against Postgres:**
+
+| | |
+|---|---|
+| Run | `scanned 548 · inserted 547 · alreadyHad 1 · deleted 0 · 946ms · error null` |
+| Row count | **547 in D1 = 547 due in Postgres** |
+| Department fidelity | 496 with / 51 without — matches Postgres exactly |
+| Field check | two records compared column by column: byte-identical, including ms timestamps |
+| Test rows | 0 on both sides |
+
+`alreadyHad: 1` is the paging design working: 548 rows at 500/page means one
+boundary row repeats on the inclusive cursor and is absorbed by
+`INSERT OR IGNORE` — which is what the composite primary key is for.
+
+**Why Phase 3 is still needed.** Shadow mode preserves data only by *winning a
+race*: the archiver runs at 01:30, pg_cron deletes at 02:00. If the archiver
+fails one night, Postgres deletes anyway and those records are gone. Phase 3
+narrows `purge_old_task_records()` so it can only delete what D1 confirms it
+holds, which turns the ordering from a convention into a guarantee.
+
+**Read-cost note for the reporting phase.** A lookup by `id` alone scans the
+table — the spot-check above reported `rows_read: 547` to return 2 rows. Reports
+must stay bounded by date and store, which the primary key and
+`idx_archive_store_created` cover; an unbounded id lookup over ~844k rows would
+cost ~844k of the 5M daily read budget.
+
 ### 2026-09-21 — Full audit of the scanning surface: 12 defects found and fixed
 
 Prompted by shipping the lookup refactor to live on a build check alone. Method
