@@ -1,0 +1,49 @@
+# Department Check archiver — a SEPARATE Worker from the Pages project.
+#
+# It has to be separate: Pages Functions cannot run on a schedule (cron triggers
+# are a Workers feature), and Postgres cannot push to D1 (pg_net is not
+# installed), so nothing already deployed can drive this.
+#
+# Deploy from this directory:
+#   npx wrangler deploy
+# then set its two secrets:
+#   npx wrangler secret put SUPABASE_ANON_KEY        # same key the Pages project already holds
+#   npx wrangler secret put ARCHIVE_TRIGGER_SECRET   # any long random string; gates POST /run only
+#
+# ARCHIVE_TRIGGER_SECRET is deliberately its own value rather than reusing the
+# anon key — an auth token for "run the archiver now" and a database credential
+# should not share a lifetime, and whoever needs one should not thereby get the
+# other.
+
+name = "homesavers-archiver"
+main = "src/index.js"
+compatibility_date = "2026-09-23"
+account_id = "565191064c74a1e202aa0211133c895d"
+
+# 01:30 UTC. The database is on UTC and pg_cron runs purge_old_task_records()
+# at 02:00 UTC, so this deliberately lands 30 minutes ahead of it. Cloudflare
+# cron triggers are UTC too, so the two are directly comparable.
+[triggers]
+crons = ["30 1 * * *"]
+
+# Kept on deliberately, not by default: it is the only way to trigger a run on
+# demand instead of waiting for 01:30, which is how Phase 2 gets verified. The
+# single route it exposes is POST /run, which refuses with 500 until
+# ARCHIVE_TRIGGER_SECRET is set and 403 without the matching header. Everything
+# else 404s. Turn this off once the archive is trusted and the cron is enough.
+workers_dev = true
+
+[vars]
+SUPABASE_URL = "https://eggspkdengnxktwkdwpw.supabase.co"
+
+# PHASE 2 = SHADOW MODE. The archiver writes to D1 and deletes NOTHING;
+# pg_cron keeps purging exactly as it does today. That makes this phase
+# unable to lose data that was not already being lost every night, and lets
+# us compare what D1 received against what Postgres removed before trusting
+# it with deletion. Phase 3 flips this to "0" and moves deletion here.
+SHADOW_MODE = "1"
+
+[[d1_databases]]
+binding       = "ARCHIVE"
+database_name = "homesavers-archive"
+database_id   = "6c728765-d614-4282-a648-4b3fc3bf78fe"
