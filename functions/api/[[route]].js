@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-23-stockcount-store-owned'
+const API_REVISION   = '2026-09-23-archive-read'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -4461,6 +4461,144 @@ export async function onRequest(context) {
     }
 
     // ── Reports ───────────────────────────────────────────────────────────
+    // GET /reports/archive — Department Check records that have aged out of
+    // Supabase and now live only in the Cloudflare D1 archive.
+    //
+    // A SEPARATE endpoint rather than a branch inside /reports/task-records,
+    // deliberately. That export is tuned around the free-tier 10ms CPU budget:
+    // its JSON path formats rows inside Postgres (report_task_records_flat_page)
+    // precisely because doing it per-row in the Worker was silently killing
+    // requests. Merging a second source into it would reintroduce exactly that
+    // work, and a fault in the archive path could then break live reporting.
+    // Here the two stay independent, and the client concatenates -- which is
+    // cheap because the sources are disjoint by date: everything here is older
+    // than the retention cutoff, everything there is newer.
+    //
+    // D1 bills rows SCANNED, not returned, and the free plan now FAILS queries
+    // past 5,000,000 rows/day rather than warning. So the bounds below are
+    // mandatory, not defensive: an unbounded query over ~844k archived rows
+    // would spend a sixth of the daily budget in one request.
+    if (path === '/reports/archive' && method === 'GET') {
+      if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled for this account', 403)
+      if (!env.ARCHIVE) return err('Archive is not configured on this deployment', 500)
+
+      const p    = url.searchParams
+      const from = p.get('from')
+      const to   = p.get('to')
+      // Required, not optional-with-a-default: a missing bound here is a full
+      // table scan, and the caller almost certainly did not mean to ask for one.
+      if (!from || !to) return err('from and to are required when reading the archive', 400)
+
+      const fromMs = Date.parse(`${from}T00:00:00Z`)
+      const toMs   = Date.parse(`${to}T23:59:59.999Z`)
+      if (isNaN(fromMs) || isNaN(toMs) || toMs < fromMs) return err('Invalid date range', 400)
+
+      // The archive only ever holds ~6 months, so a window wider than that is a
+      // mistake rather than a request.
+      const MAX_WINDOW_DAYS = 200
+      if (toMs - fromMs > MAX_WINDOW_DAYS * 86400000) {
+        return err(`Archive range is limited to ${MAX_WINDOW_DAYS} days`, 400)
+      }
+
+      // Same scope rule as every other report: a store login sees its own
+      // stores and nothing else.
+      const scope        = await scopedStoreIds(db, session)
+      const csvA         = (v) => (v || '').split(',').map(x => x.trim()).filter(x => x && x !== 'all')
+      const storesWanted = csvA(p.get('storeId'))
+      let storeIds = null
+      if (storesWanted.length) {
+        const allowed = scope === null ? storesWanted : storesWanted.filter(id => scope.includes(id))
+        if (!allowed.length) return json({ rows: [], cursor: null, done: true })
+        storeIds = allowed
+      } else if (scope !== null) {
+        if (!scope.length) return json({ rows: [], cursor: null, done: true })
+        storeIds = scope
+      }
+
+      // Keyset on the primary key (created_at_ms, id). The table is WITHOUT
+      // ROWID with that key, so it is physically ordered this way and a page is
+      // a contiguous read rather than a scan -- which is the whole reason the
+      // schema is shaped like that.
+      const afterMs = p.get('after_created_at_ms')
+      const afterId = p.get('after_id')
+
+      const where = ['created_at_ms >= ?', 'created_at_ms <= ?']
+      const args  = [fromMs, toMs]
+      if (storeIds) {
+        where.push(`store_id IN (${storeIds.map(() => '?').join(',')})`)
+        args.push(...storeIds)
+      }
+      if (afterMs && afterId) {
+        where.push('(created_at_ms > ? OR (created_at_ms = ? AND id > ?))')
+        args.push(Number(afterMs), Number(afterMs), afterId)
+      }
+
+      // Page size is a CPU budget as much as a row budget: every row here is
+      // mapped in JS, which is the cost the live export moved into Postgres.
+      const PAGE = 2000
+      args.push(PAGE)
+
+      const sql = `SELECT id, created_at_ms, store_name, product_code, barcode_no,
+                          product_barcode, item_name, supl_id, supplier_code,
+                          item_status, barcode_status, department, status, source
+                     FROM dept_scan_archive
+                    WHERE ${where.join(' AND ')}
+                    ORDER BY created_at_ms ASC, id ASC
+                    LIMIT ?`
+
+      const res  = await env.ARCHIVE.prepare(sql).bind(...args).all()
+      const rows = res?.results || []
+
+      // Same flat shape the live export emits, so the client can concatenate
+      // the two without knowing which source a row came from. Columns a
+      // Department Check never populates stay empty rather than absent, or the
+      // CSV would misalign.
+      //
+      // status is reported as 'Archived' regardless of what it was when it
+      // moved: to a store these are simply old records. The original value is
+      // still in the archive for back-office reporting.
+      const flatArchived = (r) => ({
+        barcode_no:          r.barcode_no || r.product_code || '',
+        product_barcode:     r.product_barcode || '',
+        item_name:           r.item_name || '',
+        selling_price:       '',
+        product_type:        '',
+        task_type:           'Department Check',
+        store_name:          r.store_name || '',
+        uom:                 '',
+        quantity:            '',
+        supl_id:             r.supl_id || '',
+        item_status:         r.item_status || '',
+        barcode_status:      r.barcode_status || '',
+        notes:               '',
+        status:              'Archived',
+        review_notes:        '',
+        photo_product_url:   '',
+        photo_barcode_url:   '',
+        details:             r.department ? `Department: ${r.department}` : '',
+        expiry_date:         '',
+        days_to_expiry:      '',
+        action:              '',
+        created_at:          fmtReportDate(new Date(r.created_at_ms).toISOString()),
+        supplier_code:       r.supplier_code || '',
+        actual_product_name: '',
+      })
+
+      const last   = rows[rows.length - 1]
+      const cursor = rows.length === PAGE && last
+        ? { after_created_at_ms: last.created_at_ms, after_id: last.id }
+        : null
+
+      return json({
+        rows:      rows.map(flatArchived),
+        cursor,
+        done:      cursor === null,
+        // Surfaced so a caller can see what the page actually cost against the
+        // daily read budget instead of guessing.
+        rows_read: res?.meta?.rows_read ?? null,
+      })
+    }
+
     if (path === '/reports/task-records' && method === 'GET') {
       if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled for this account', 403)
       const p        = url.searchParams

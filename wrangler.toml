@@ -23,3 +23,15 @@ CLOUDFLARE_ACCOUNT_ID = "565191064c74a1e202aa0211133c895d"
 # Set up a free cron at https://cron-job.org — call every 5 days:
 #   GET https://homesaversscanner.pages.dev/api/ping
 # No auth required. Returns { ok: true, ts: "..." }.
+
+# ── Department Check archive (Cloudflare D1) ──────────────────────────────────
+# Read-only from the Pages Function: GET /api/reports/archive serves records
+# that have aged out of Supabase. The archiver Worker (workers/archiver) is the
+# only thing that writes here.
+#
+# ONE database serves both apps, exactly as one Supabase project does. Test-app
+# records carry source='test' here too, so they stay excludable.
+[[d1_databases]]
+binding       = "ARCHIVE"
+database_name = "homesavers-archive"
+database_id   = "6c728765-d614-4282-a648-4b3fc3bf78fe"
