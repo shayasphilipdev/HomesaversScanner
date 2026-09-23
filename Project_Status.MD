@@ -575,6 +575,67 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-09-23 — Archive Phases 4b and 5: reports read-through, and Current/Archived
+
+**Phase 4b — "Include archived" on the export.** Back office only, OFF by
+default. Wired into the Excel export, not the on-screen grid: those are separate
+paths (`getTaskRecords` feeds the grid, the report endpoint feeds the export),
+and the export is where six months of history is actually consumed. Extending
+the grid is a deliberate non-goal, not an oversight.
+
+Skipped entirely when the task-type filter excludes Department Check, since that
+is all the archive holds.
+
+Two bugs found by driving the real page, neither of which the unit tests could
+have caught:
+
+- **The endpoint rejected the date format the page actually sends.** Reports
+  uses `datetime-local` inputs and passes `2026-08-24T00:00`; the endpoint
+  appended a time to it, producing `2026-08-24T00:00T00:00:00Z`, and returned
+  400 for *every* request the page made. The tests used bare dates because that
+  is the format I assumed — the assumption was the bug, so a test written from
+  it could never fail. Bounds now parse with `new Date(v)`, the same way the
+  live export does, so the two paths cannot disagree about a range.
+- **`rows.unshift(...archived)` would overflow the call stack.** Spreading an
+  array as arguments is bounded by the engine's argument limit, and this list
+  reaches ~844k rows at six months. It would have failed only after months of
+  data accumulated. Replaced with `concat`.
+
+Verified end to end: `archiveCalls 1 · archiveRowsReturned 547 · livePages 1 ·
+xlsxBytes 6,934,041 · err null`.
+
+**Phase 5 — stores see two states.** "Pending / Completed by HO / No change
+needed / Store confirmed / Clear" is head-office vocabulary about who owes whom
+an answer. A store only needs to know whether a record is live or archived, so
+store logins now get **Current / Archived** and nothing else. Back office keeps
+the real statuses, because the management performance reports are built on them.
+
+> **Current is not a new filter.** It is exactly what a store already got by
+> default — no status selected, so the server applies `neq.cleared`. The default
+> view is byte-for-byte unchanged; only the control is simpler.
+
+**The rename is DISPLAY ONLY.** Every stored value stays `'cleared'`. Live and
+test share one Supabase and this is a PWA, so renaming the stored value would
+break any store on a cached bundle — and a new status value is blocked by CHECK
+constraints regardless. Verified after the change that the writes, the
+`includeCleared` wire param and the dropdown id are all still the literal
+`'cleared'`.
+
+Renamed across three separate `STATUS_LABEL` maps, both copies of the row
+actions (TaskRecordList and Reports each have their own), both bulk buttons, and
+the detail modal's timestamp row. Dashboard's map had **no `cleared` entry at
+all** — its consumer falls back to the raw DB value, so a cleared record printed
+a lowercase `cleared` on screen. Fixed, since Phase 4 makes archived records
+reachable.
+
+Verified on the deployed test app: the back-office dropdown reads
+*Pending · Completed by HO · No change needed · Store confirmed · **Archived***,
+and back office correctly does **not** see the store control.
+
+> ⚠️ **The store-side control is unverified.** It renders only for `!isBO`, and
+> no store login has been available. Same blocker as the three outstanding UI
+> checks.
+
 ### 2026-09-23 — Archive Phases 3–4a: the guard, and the read endpoint
 
 **Phase 3 — the purge guard.** `task_records.archived_at` is stamped by the
