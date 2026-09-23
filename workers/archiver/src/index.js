@@ -185,10 +185,18 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url)
     if (url.pathname !== '/run') return new Response('Not found', { status: 404 })
-    if (!env.ARCHIVE_TRIGGER_SECRET) {
+    const expected = (env.ARCHIVE_TRIGGER_SECRET || '').trim()
+    if (!expected) {
       return new Response('ARCHIVE_TRIGGER_SECRET not configured', { status: 500 })
     }
-    if ((request.headers.get('X-Archive-Secret') || '') !== env.ARCHIVE_TRIGGER_SECRET) {
+    // Both sides trimmed. Piping a value into `wrangler secret put` — the
+    // obvious way to set one without it passing through a prompt — stores the
+    // shell's trailing newline with it, and on Windows that is CRLF. The
+    // request header cannot carry that, so the two never match and the only
+    // symptom is a 403 that looks exactly like a wrong secret. Whitespace
+    // around a secret carries no meaning, so refusing on it is a trap with no
+    // upside.
+    if ((request.headers.get('X-Archive-Secret') || '').trim() !== expected) {
       return new Response('Forbidden', { status: 403 })
     }
     const result = await runArchive(env, 'manual')
