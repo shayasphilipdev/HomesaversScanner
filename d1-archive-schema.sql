@@ -117,3 +117,22 @@ CREATE TABLE IF NOT EXISTS dept_scan_archive (
 -- shape is known -- cheaper to judge then than to carry a guess now.
 CREATE INDEX IF NOT EXISTS idx_archive_store_created
   ON dept_scan_archive (store_id, created_at_ms);
+
+-- ── Run log ──────────────────────────────────────────────────────────────────
+-- One row per archiver run. Phase 2 runs in shadow mode, so the only way to
+-- know whether the archiver is correct is to compare what it says it moved
+-- against what Postgres actually removed that night -- which needs the numbers
+-- written down somewhere durable. `shadow` records which mode produced the row,
+-- so a later audit cannot mistake a shadow run for a real one.
+CREATE TABLE IF NOT EXISTS archive_runs (
+  started_at_ms INTEGER PRIMARY KEY,
+  trigger_kind  TEXT    NOT NULL,   -- 'cron' | 'manual'
+  cutoff_iso    TEXT    NOT NULL,   -- retention cutoff this run used
+  shadow        INTEGER NOT NULL,   -- 1 = wrote D1 but deleted nothing
+  scanned       INTEGER NOT NULL,   -- rows read from Postgres
+  inserted      INTEGER NOT NULL,   -- rows that landed (meta.changes = 1)
+  already_had   INTEGER NOT NULL,   -- rows the primary key already held
+  deleted       INTEGER NOT NULL,   -- always 0 until Phase 3
+  duration_ms   INTEGER NOT NULL,
+  error         TEXT
+);
