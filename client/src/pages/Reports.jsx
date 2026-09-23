@@ -609,7 +609,7 @@ function HQReports() {
         }
       }
       let cols = null, headers = null
-      const rows = []
+      let rows = []
       let cursor = null
       for (let i = 0; i < 1000; i++) {
         const params = new URLSearchParams(baseParams)
@@ -656,7 +656,12 @@ function HQReports() {
           if (!page.cursor) break
           aCursor = page.cursor
         }
-        rows.unshift(...archived)
+        // NOT rows.unshift(...archived): spreading an array as arguments is
+        // bounded by the engine's argument limit, and this list reaches ~844k
+        // rows once six months of retention has accumulated -- which overflows
+        // the call stack rather than merely being slow. concat builds a new
+        // array with no per-element argument.
+        rows = archived.concat(rows)
       }
 
       const n = new Date()
