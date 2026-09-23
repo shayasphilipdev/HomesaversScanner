@@ -213,7 +213,7 @@ const TIME_FIELDS = [
   ['reviewed_at',        'Reviewed'],
   ['completed_at',       'Completed by HO'],
   ['store_completed_at', 'Store confirmed'],
-  ['cleared_at',         'Cleared'],
+  ['cleared_at',         'Archived'],
   ['priced_at',          'Priced'],
   ['pricing_removed_at', 'Pricing removed'],
 ]

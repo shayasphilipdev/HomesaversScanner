@@ -12,7 +12,10 @@ const STATUS_LABEL = {
   pending:          'Pending',
   completed:        'HO completed',
   no_change_needed: 'No change',
-  store_completed:  'Store confirmed'
+  store_completed:  'Store confirmed',
+  // Was missing entirely: the consumer falls back to the raw DB value, so a
+  // cleared record printed a lowercase 'cleared' on screen.
+  cleared:          'Archived'
 }
 
 // Date presets, the local/UTC convention and the range->bucket rule all live in

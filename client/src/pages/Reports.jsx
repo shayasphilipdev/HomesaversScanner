@@ -48,7 +48,7 @@ const STATUS_LABEL = {
   completed:        { label: 'Completed by HO',  cls: 'badge-completed' },
   no_change_needed: { label: 'No change needed', cls: 'badge-pending' },
   store_completed:  { label: 'Store confirmed',  cls: 'badge-store-done' },
-  cleared:          { label: 'Clear',            cls: 'badge-store-done' }
+  cleared:          { label: 'Archived',         cls: 'badge-store-done' }
 }
 
 const SUBTITLES = {
@@ -944,20 +944,56 @@ function HQReports() {
               />
             </div>
 
-            <div className="filter-field filter-field--wide"><label>Status</label>
-              <MultiSelectDropdown
-                value={statusIds}
-                onChange={setStatusIds}
-                options={[
-                  { id: 'pending',          label: 'Pending' },
-                  { id: 'completed',        label: 'Completed by HO' },
-                  { id: 'no_change_needed', label: 'No change needed' },
-                  { id: 'store_completed',  label: 'Store confirmed' },
-                  { id: 'cleared',          label: 'Clear (archived)' }
-                ]}
-                placeholder="Any status (excl. cleared)"
-              />
-            </div>
+            {/* Stores get two states, not five. "Pending / Completed by HO /
+                No change needed / Store confirmed / Clear" is head-office
+                vocabulary about who owes whom an answer; a store only needs to
+                know whether a record is still live or has gone to the archive.
+                Back office keeps the real statuses below, because the
+                management performance reports are built on them.
+
+                Current is not a new filter -- it is exactly what a store
+                already got by default (no status selected, so the server
+                applies neq.cleared). Archived adds the records they cleared
+                plus everything that has aged out into D1. */}
+            {!isBO ? (
+              <div className="filter-field filter-field--narrow"><label>Records</label>
+                <div className="flex-row" style={{ gap: 6 }}>
+                  {[['current', 'Current'], ['archived', 'Archived']].map(([id, lbl]) => {
+                    const active = (id === 'archived') === includeArchive
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        className={`btn btn-sm ${active ? 'btn-primary' : 'btn-outline'}`}
+                        onClick={() => {
+                          if (id === 'archived') { setIncludeArchive(true);  setStatusIds(['cleared']) }
+                          else                   { setIncludeArchive(false); setStatusIds([]) }
+                        }}
+                        style={{ whiteSpace: 'nowrap' }}
+                      >{lbl}</button>
+                    )
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="filter-field filter-field--wide"><label>Status</label>
+                <MultiSelectDropdown
+                  value={statusIds}
+                  onChange={setStatusIds}
+                  options={[
+                    { id: 'pending',          label: 'Pending' },
+                    { id: 'completed',        label: 'Completed by HO' },
+                    { id: 'no_change_needed', label: 'No change needed' },
+                    { id: 'store_completed',  label: 'Store confirmed' },
+                    // Display only -- the id stays 'cleared'. Live and test share
+                    // one Supabase and this is a PWA, so renaming the stored
+                    // value would break stores running a cached bundle.
+                    { id: 'cleared',          label: 'Archived' }
+                  ]}
+                  placeholder="Any status (excl. Archived)"
+                />
+              </div>
+            )}
 
             <div className="filter-field filter-field--narrow"><label>Product Status</label>
               <MultiSelectDropdown
@@ -1074,7 +1110,7 @@ function HQReports() {
               <strong>{selected.size} selected</strong>
               <span style={{ marginLeft: 'auto' }} />
               <button className="btn btn-sm btn-primary" disabled={busy} onClick={bulkClear}>
-                {busy ? <><span className="spinner" /> Clearing…</> : `✓ Clear selected (${selected.size})`}
+                {busy ? <><span className="spinner" /> Archiving…</> : `✓ Archive selected (${selected.size})`}
               </button>
               {selectedJkIds.length > 0 && (
                 <button className="btn btn-sm" disabled={busy} onClick={() => setDeleteTarget({ ids: selectedJkIds })}
@@ -1209,8 +1245,8 @@ function HQReports() {
                             >🔍</button>
                             {!isBO && (reviewed || storeCanClearNow) && (
                               <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => clearOne(r.id)}
-                                title={reviewed ? 'PO actioned — clear from list' : 'Mark as actioned — clear from list'}>
-                                ✓ Clear
+                                title={reviewed ? 'PO actioned — move to the archive' : 'Mark as actioned — move to the archive'}>
+                                ✓ Archive
                               </button>
                             )}
                             <button
