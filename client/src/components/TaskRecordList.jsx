@@ -12,7 +12,7 @@ const STATUS_LABEL = {
   completed:        { label: 'Completed by HO',  cls: 'badge-completed' },
   no_change_needed: { label: 'No change needed', cls: 'badge-pending' },
   store_completed:  { label: 'Store confirmed',  cls: 'badge-store-done' },
-  cleared:          { label: 'Clear',            cls: 'badge-store-done' },
+  cleared:          { label: 'Archived',         cls: 'badge-store-done' },
 }
 
 function formatDT(iso) {
@@ -210,7 +210,7 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
               onClick={handleBulkClear}
               disabled={bulkClearing}
             >
-              {bulkClearing ? <><span className="spinner" /> Clearing…</> : `✓ Clear selected (${selectedClearableCount})`}
+              {bulkClearing ? <><span className="spinner" /> Archiving…</> : `✓ Archive selected (${selectedClearableCount})`}
             </button>
           )}
           {selected.size > 0 && (
@@ -312,14 +312,14 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
                           )}
                           {/* Store: clear HO-reviewed records (standard flow) */}
                           {!isBO && reviewed && (
-                            <button className="btn btn-sm btn-primary" onClick={() => markCleared(r.id)} title="PO actioned — clear from list">
-                              ✓ Clear
+                            <button className="btn btn-sm btn-primary" onClick={() => markCleared(r.id)} title="PO actioned — move to the archive">
+                              ✓ Archive
                             </button>
                           )}
                           {/* Store: clear J/K directly from pending (no HO review needed) */}
                           {storeCanClearNow && (
-                            <button className="btn btn-sm btn-primary" onClick={() => markCleared(r.id)} title="Mark as actioned — clear from list">
-                              ✓ Clear
+                            <button className="btn btn-sm btn-primary" onClick={() => markCleared(r.id)} title="Mark as actioned — move to the archive">
+                              ✓ Archive
                             </button>
                           )}
                           <button
