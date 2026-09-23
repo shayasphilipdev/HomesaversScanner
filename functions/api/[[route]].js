@@ -150,11 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-<<<<<<< HEAD
 const API_REVISION   = '2026-09-23-stockcount-store-owned-TEST'
-=======
-const API_REVISION   = '2026-09-23-stockcount-store-owned'
->>>>>>> 3b2c9cc (Treat Stock Count as a store-owned floor record, like Price Check)
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
