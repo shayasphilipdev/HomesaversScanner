@@ -470,6 +470,11 @@ function HQReports() {
         ? ['pending']
         : ['pending', 'no_change_needed', 'store_completed'])
   const [statusIds, setStatusIds]     = useState(defaultStatusIds)
+  // Archived (Cloudflare D1) rows are OFF unless deliberately asked for. That is
+  // the requirement, and it is also what keeps the default export cheap: D1
+  // bills rows SCANNED and the free plan fails past 5M/day, so nobody should pay
+  // for six months of history to run today's report.
+  const [includeArchive, setIncludeArchive] = useState(false)
   // Alt-barcode snapshot status, captured when the product was scanned.
   const [itemStatusIds, setItemStatusIds]       = useState([])
   const [barcodeStatusIds, setBarcodeStatusIds] = useState([])
@@ -619,6 +624,39 @@ function HQReports() {
         rows.push(...page.rows)
         if (!page.next_cursor) break
         cursor = page.next_cursor
+      }
+
+      // Archived Department Check rows, only when the box is ticked.
+      //
+      // Fetched from a SEPARATE endpoint rather than merged server-side: the
+      // live export formats its rows inside Postgres to stay under the Worker
+      // CPU budget, and folding a second source into that would undo it. The
+      // join is trivial here because the two are disjoint by date -- the archive
+      // begins exactly where Supabase retention ends -- so archived rows simply
+      // go in front of the live ones rather than being interleaved.
+      //
+      // Skipped entirely when the report is filtered to task types that exclude
+      // Department Check, since that is all the archive holds.
+      const archiveWanted = includeArchive &&
+        (taskTypeIds.length === 0 || taskTypeIds.includes('J'))
+      if (archiveWanted) {
+        const archived = []
+        let aCursor = null
+        for (let i = 0; i < 500; i++) {
+          const ap = new URLSearchParams({ from, to })
+          if (storeIds.length) ap.set('storeId', storeIds.join(','))
+          if (aCursor) {
+            ap.set('after_created_at_ms', aCursor.after_created_at_ms)
+            ap.set('after_id',            aCursor.after_id)
+          }
+          if (i > 0) await sleep(150)
+          const res  = await authedFetch(`/api/reports/archive?${ap}`)
+          const page = await res.json()
+          archived.push(...(page.rows || []))
+          if (!page.cursor) break
+          aCursor = page.cursor
+        }
+        rows.unshift(...archived)
       }
 
       const n = new Date()
@@ -937,6 +975,23 @@ function HQReports() {
                 minPanelWidth={110}
               />
             </div>
+
+            {/* Back office only. Stores get the simpler Current / Archived control
+                in its own phase -- the HO status vocabulary is not theirs. */}
+            {isBO && (
+              <div className="filter-field filter-field--narrow">
+                <label>Archive</label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                  <input
+                    type="checkbox"
+                    checked={includeArchive}
+                    onChange={e => setIncludeArchive(e.target.checked)}
+                    style={{ width: 16, height: 16, margin: 0 }}
+                  />
+                  <span style={{ fontSize: 13 }}>Include archived</span>
+                </label>
+              </div>
+            )}
 
             <div className="filter-actions">
               <button className="btn btn-sm btn-primary" onClick={runReport} disabled={loading}>
