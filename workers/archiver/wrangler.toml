@@ -20,18 +20,25 @@ main = "src/index.js"
 compatibility_date = "2026-09-23"
 account_id = "565191064c74a1e202aa0211133c895d"
 
+# Kept on deliberately, not by default: it is the only way to trigger a run on
+# demand instead of waiting for 01:30, which is how Phase 2 gets verified. The
+# single route it exposes is POST /run, which refuses with 500 until
+# ARCHIVE_TRIGGER_SECRET is set and 403 without the matching header. Everything
+# else 404s. Turn this off once the archive is trusted and the cron is enough.
+#
+# MUST stay above [triggers]: a bare TOML key after a table header is parsed as
+# part of that table, so when this sat lower down wrangler read it as
+# triggers.workers_dev, warned "Unexpected fields found in triggers field", and
+# ignored it.
+workers_dev = true
+
+
 # 01:30 UTC. The database is on UTC and pg_cron runs purge_old_task_records()
 # at 02:00 UTC, so this deliberately lands 30 minutes ahead of it. Cloudflare
 # cron triggers are UTC too, so the two are directly comparable.
 [triggers]
 crons = ["30 1 * * *"]
 
-# Kept on deliberately, not by default: it is the only way to trigger a run on
-# demand instead of waiting for 01:30, which is how Phase 2 gets verified. The
-# single route it exposes is POST /run, which refuses with 500 until
-# ARCHIVE_TRIGGER_SECRET is set and 403 without the matching header. Everything
-# else 404s. Turn this off once the archive is trusted and the cron is enough.
-workers_dev = true
 
 [vars]
 SUPABASE_URL = "https://eggspkdengnxktwkdwpw.supabase.co"
