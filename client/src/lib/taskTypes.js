@@ -26,13 +26,20 @@ export const TASK_FORMS = {
 // M (Routine Expiry Sweep) belongs here: a sweep writes one record per product —
 // 20-60 of them — and carries no query for HO to answer, so waiting on review
 // just buries the store's own list.
-export const STORE_CLEARABLE = new Set(['J', 'K', 'M'])
+// H (Stock Count) joins them: like a Department or Price Check it is something
+// the store records on the floor and acts on itself, not a query it is asking HO
+// to answer. Waiting for a review that is never coming is why 468 of its 535
+// rows had sat pending for over three weeks.
+export const STORE_CLEARABLE = new Set(['J', 'K', 'M', 'H'])
 
 // Task types ANY user may PERMANENTLY delete. Deliberately NOT M: the backend
 // delete filters only allow J/K for store roles, and sweep rows are the source
 // data behind the HO Expiry Overview report. Clearing is a reversible archive;
 // deleting is not.
-export const HARD_DELETABLE = new Set(['J', 'K'])
+// H is included for the same reason as J and K — it is the store's own floor
+// record. Still deliberately NOT M, whose rows are the source data behind the HO
+// Expiry Overview report.
+export const HARD_DELETABLE = new Set(['J', 'K', 'H'])
 
 export const FREQUENCY_LABEL = {
   daily:    'Daily',

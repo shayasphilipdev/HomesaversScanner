@@ -59,15 +59,16 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
     }
   }, [autoOpenId, records])
 
-  // Rows eligible for store-side bulk clear (unchanged: store users, J/K pending).
+  // Rows eligible for store-side bulk clear: store users, STORE_CLEARABLE types
+  // (J/K/M/H) still pending.
   const clearableRows = isBO ? [] : records.filter(r =>
     STORE_CLEARABLE.has(r.task_type) && r.status === 'pending'
   )
   const clearableSet = new Set(clearableRows.map(r => r.id))
   const hasBulkClear = clearableRows.length > 0
 
-  // Rows the user can bulk-action: permanently delete (J/K, any user) or, store
-  // side, clear (J/K/M still pending). Kept separate — a sweep row is clearable
+  // Rows the user can bulk-action: permanently delete (HARD_DELETABLE, any user)
+  // or, store side, clear (STORE_CLEARABLE still pending). Kept separate — a sweep row is clearable
   // but must never show a permanent-delete button.
   const selectableRows = records.filter(r => HARD_DELETABLE.has(r.task_type) || clearableSet.has(r.id))
   const selectedClearableCount = [...selected].filter(id => clearableSet.has(id)).length
@@ -197,7 +198,7 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
 
   return (
     <div className="card">
-      {/* Bulk toolbar: store Clear (archive; J/K/M) + Delete (permanent; J/K only). */}
+      {/* Bulk toolbar: store Clear (archive; STORE_CLEARABLE) + Delete (permanent; HARD_DELETABLE). */}
       {showBulkToolbar && selectableRows.length > 0 && (
         <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <button className="btn btn-sm btn-outline" onClick={toggleAll}>
@@ -252,7 +253,8 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
               const description = r.item_name || r.description || r.product_name_label || ''
               const barcodeNo  = r.barcode_no || r.product_code || ''
               const reviewed = r.status === 'completed' || r.status === 'no_change_needed'
-              // Store-side: J/K records can be cleared directly from pending.
+              // Store-side: the store's own floor records (STORE_CLEARABLE) can be
+              // cleared directly from pending, with no HO review.
               const storeCanClearNow = !isBO && STORE_CLEARABLE.has(r.task_type) && r.status === 'pending'
               // Permanent delete stays J/K-only. A sweep (M) row is clearable but
               // must NOT show a delete button — the backend rejects it for store

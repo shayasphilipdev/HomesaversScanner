@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-21-scanlookup-scannedat'
+const API_REVISION   = '2026-09-23-stockcount-store-owned'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -3713,8 +3713,10 @@ export async function onRequest(context) {
       return json({ updated: updated.length })
     }
 
-    // Bulk clear (store users) — mark many J/K pending records as cleared.
-    // Store users may only clear their own records; task_type must be J or K.
+    // Bulk clear (store users) — mark many pending store-task records as cleared.
+    // Store users may only clear their own records, and only the task types the
+    // store owns on the floor: J/K/M/H. H (Stock Count) was added with J/K/M —
+    // it is the store's own record, not a query awaiting an HO answer.
     // Back office can bulk-clear any records (no task_type restriction).
     if (path === '/task-records/bulk-clear' && method === 'POST') {
       if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled', 403)
@@ -3738,7 +3740,7 @@ export async function onRequest(context) {
         // client/src/lib/taskTypes.js. Clearing only archives the row; the
         // permanent-delete filters below stay J/K-only on purpose.
         if (!isBO) {
-          filter['or'] = '(and(task_type.in.(J,K,M),status.eq.pending),status.in.(completed,no_change_needed))'
+          filter['or'] = '(and(task_type.in.(J,K,M,H),status.eq.pending),status.in.(completed,no_change_needed))'
         }
       }
 
@@ -4346,9 +4348,10 @@ export async function onRequest(context) {
       if (scope !== null) {
         if (!scope.length) return err('Record not found or not allowed', 404)
         filter['store_id'] = `in.(${scope.join(',')})`
-        // Store users may permanently delete Department/Price Check (J/K) records
-        // in their stores, plus their own store-confirmed records (existing rule).
-        if (!isBO) filter['or'] = '(status.eq.store_completed,task_type.in.(J,K))'
+        // Store users may permanently delete their own floor records —
+        // Department Check, Price Check and Stock Count (J/K/H) — in their
+        // stores, plus their own store-confirmed records (existing rule).
+        if (!isBO) filter['or'] = '(status.eq.store_completed,task_type.in.(J,K,H))'
       }
       // Fetch the record first so we can delete any attached photos from storage.
       const [rec] = await db.select('task_records', {
@@ -4397,7 +4400,7 @@ export async function onRequest(context) {
         const filter = { id: `in.(${chunk.join(',')})` }
         if (scope !== null) {
           filter['store_id'] = `in.(${scope.join(',')})`
-          if (!isBO) filter['or'] = '(status.eq.store_completed,task_type.in.(J,K))'
+          if (!isBO) filter['or'] = '(status.eq.store_completed,task_type.in.(J,K,H))'
         }
         // Grab photos for the rows we're allowed to delete BEFORE removing them.
         const doomed  = await db.select('task_records', { select: 'photo_product_url,photo_barcode_url', ...filter })
@@ -4437,10 +4440,12 @@ export async function onRequest(context) {
       }
 
       const statuses = String(body.status || '').split(',').map(s => s.trim()).filter(s => s && s !== 'all')
-      // Respect the report's task-type selection, but only ever J/K.
+      // Respect the report's task-type selection, but only ever the store's own
+      // floor records (J/K/H) — never a query type awaiting an HO answer.
       const wantedTypes = String(body.taskType || '').split(',').map(s => s.trim()).filter(Boolean)
-      const jkTypes = (wantedTypes.length ? wantedTypes : ['J', 'K']).filter(t => t === 'J' || t === 'K')
-      if (!jkTypes.length) return json({ deleted: 0, done: true })      // report has no J/K types selected
+      const STORE_OWNED = ['J', 'K', 'H']
+      const jkTypes = (wantedTypes.length ? wantedTypes : STORE_OWNED).filter(t => STORE_OWNED.includes(t))
+      if (!jkTypes.length) return json({ deleted: 0, done: true })      // report has no store-owned types selected
 
       const BATCH = 2000
       const res = await db.rpc('delete_jk_records_batch', {
