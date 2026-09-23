@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-23-archive-read-TEST'
+const API_REVISION   = '2026-09-23-archive-read2-TEST'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -4513,8 +4513,23 @@ export async function onRequest(context) {
       // table scan, and the caller almost certainly did not mean to ask for one.
       if (!from || !to) return err('from and to are required when reading the archive', 400)
 
-      const fromMs = Date.parse(`${from}T00:00:00Z`)
-      const toMs   = Date.parse(`${to}T23:59:59.999Z`)
+      // Accept BOTH shapes the callers actually send. Reports.jsx uses
+      // datetime-local inputs and passes "2026-08-24T00:00"; other callers pass
+      // a bare "2026-08-24". Appending a time to a value that already has one
+      // produced "2026-08-24T00:00T00:00:00Z" -- silently a 400 for every
+      // request the Reports page made.
+      //
+      // Parsed with `new Date(v)`, deliberately the same way the live export
+      // does (`new Date(from).toISOString()`), so the two paths cannot disagree
+      // about which rows fall inside a range.
+      const parseBound = (v, endOfDay) => {
+        const t = String(v).trim()
+        return /^\d{4}-\d{2}-\d{2}$/.test(t)
+          ? new Date(`${t}${endOfDay ? 'T23:59:59.999' : 'T00:00:00'}`).getTime()
+          : new Date(t).getTime()
+      }
+      const fromMs = parseBound(from, false)
+      const toMs   = parseBound(to,   true)
       if (isNaN(fromMs) || isNaN(toMs) || toMs < fromMs) return err('Invalid date range', 400)
 
       // The archive only ever holds ~6 months, so a window wider than that is a
