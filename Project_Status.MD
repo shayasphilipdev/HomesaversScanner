@@ -575,6 +575,141 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-09-24 — 7-week retention: 2 weeks live + 5 weeks archive
+
+**The model.** A task record is kept `scan_record_retention_days` in Postgres,
+then `archive_retention_days` in the Cloudflare D1 archive, then deleted for
+good. Both are admin-editable on the Settings page.
+
+```
+created --[ scan_record_retention_days ]--> D1 --[ archive_retention_days ]--> gone
+            (target 14, currently 21)            (35)
+```
+
+Dashboard statistics are **unaffected and stay 180 days**: they live in the
+`task_stats_daily` rollup governed by `stats_rollup_retention_days`, which
+survives both stages. That independence is the whole reason the record windows
+can be shortened at all.
+
+| Phase | What shipped |
+|---|---|
+| 1 | `archive_retention_days` setting + range validation on every retention field, client and server |
+| 2 | Archive covers **every task type**, all 36 columns, whole `details` |
+| 3a | **One** purge rule, archive-guarded, for every type |
+| 4 | The D1 purge — which had never existed |
+| 5 | `archived_at` → `d1_copied_at` (and why the status value was *not* renamed) |
+| 6 | One **Archive** action; **Delete is admin-only** |
+
+**Deliberately NOT a second Supabase-side setting.** The plan called for
+`supabase_retention_days`. `scan_record_retention_days` already means exactly
+"how long a record stays in Postgres" and is read in six places that each delete
+or protect data (the purge, the rollup clamp, the rebuild guard,
+`runAutoCleanup`, the admin cleanup endpoint, the archiver). Renaming it buys a
+tidier name for six chances to leave one consumer reading a key that no longer
+exists and silently falling back to a hardcoded 21. The Settings **label**
+carries the meaning; the key name stays put.
+
+**Deliberately NOT renaming status `'cleared'` → `'archived'`.** Also in the
+plan; dropped after inventorying it. Eight functions embed the literal
+(`dashboard_stats`, `dashboard_stats_v2`, `manager_overview`,
+`report_task_records_flat_page`, `report_task_records_page`,
+`rollup_task_stats_daily`, both realtime stats triggers), plus two CHECK
+constraints, **two partial indexes** (`WHERE status <> 'cleared'`), the
+`task_stats_daily.cleared` column and 5,678 rows. And this is a PWA sharing one
+Supabase between live and test: a store on a cached bundle would keep sending
+`status=cleared` against a constraint that no longer allowed it, so its Archive
+action would fail until the device happened to refresh. Every user-visible
+surface already reads **Archived**. The requirement was that only genuinely
+archived records show as Archived — delivered in Phase 2, when
+`/reports/archive` stopped hardcoding the status for every D1 row.
+
+**The purge is now one rule.** Three branches (M's 180 days, J's archive guard,
+and an `ELSE` exempting anything still `pending`) collapsed to:
+
+```sql
+DELETE FROM task_records
+WHERE created_at < v_cutoff AND d1_copied_at IS NOT NULL;
+```
+
+Nothing is deleted until the archiver has confirmed D1 holds it. **The direction
+of failure inverted**: the old rule deleted on a clock and trusted that the 01:30
+Worker had run before the 02:00 job, so a dead archiver meant Postgres destroyed
+unarchived records. Now a dead archiver means records accumulate in Postgres,
+visible and recoverable, and the purge quietly does nothing.
+
+Verified before applying: the old rule would have deleted 2 records, the new rule
+0, because everything past the cutoff was still unarchived.
+
+**Two paths bypassed the guard and now don't**: `runAutoCleanup` (fires on any
+back-office login) and `POST /admin/cleanup/task-records`. Both issued their own
+DELETE instead of calling the function, so either could permanently destroy a
+record the archiver had not yet copied. Two deleters is tolerable; two rules is
+not.
+
+**Consequences accepted by the owner**, all measuring zero affected rows today:
+
+- An unanswered head-office query (A–I) is no longer purge-exempt, so
+  `/reports/aging` can never again show a backlog older than the total window.
+  That report exists to chase exactly those records — its meaning has changed
+  permanently.
+- Task M (Expiry) drops from 180 days to the standard window.
+  `expiry_record_retention_days` is left in `app_settings`, now unread.
+
+**Storage, re-measured.** The `d1-archive-schema.sql` SIZING block was labelled
+"measured, not estimated" and was wrong in both inputs: it said 5,310
+records/day (real: ~8,150, and ~10,100 over the last week) and ~200 bytes/row
+(real: ~390 — the old figure was text payload only, excluding the index and
+SQLite's row overhead). The abandoned 6-month plan would have been ~598 MB,
+**over** D1's 500 MB free limit, not the 42% claimed. At 5 weeks it is ~111 MB,
+so the month-sharding escape hatch is no longer needed.
+
+**Archiver throughput** went from 25s/60 pages to 180s/400. The old ceiling was
+right for J-only steady state (~8,000 records, under 20 seconds) and far too
+small for the catch-up that narrowing the window creates (~48,000 records at
+once). The work is network I/O rather than CPU and the sweep is idempotent, so a
+longer run risks nothing. The real ceiling during catch-up is D1's **100,000
+rows/day write limit** — 2 writes per record — so a backlog spreads over two
+nights.
+
+**Delete became admin-only.** It was the one action that destroyed data with no
+way back, offered to the least-trained users on the screens they use most.
+Enforced on all three delete endpoints, not merely hidden. Admin may now delete
+any task type; "Delete all matching" still requires an explicit task-type filter,
+because one button meaning "delete everything in range" is not something to be
+one click from.
+
+**Archive confirms, and deliberately not in red.** Archiving is reversible;
+dressing it in the delete modal's red trains people to click through warnings,
+and the next warning they click through is the permanent one. The dialog states
+the retention period and how to get the record back, reading both numbers from
+`/app-config` so changing the setting cannot make it lie.
+
+**Reports read D1 automatically** when the date range reaches past the live
+window — the user picks dates and statuses, never a storage location. The
+"Archived" control is now purely a **status** filter, applying in both stores.
+Those were conflated before: whether a user archived a record and whether it has
+aged out of Postgres are independent, and a record can be either, both or
+neither. This is why `/reports/archive` gained mandatory status and task-type
+filters — D1 now holds every status, so without them an archived row would
+surface in a report whose filter excludes it purely because of where it lives.
+
+Reverse needed no change: it already renders on any non-pending row, so it covers
+Archived.
+
+> **Phase 3b is the one step left: change Live record retention from 21 to 14**
+> on the Settings page. Everything needed for it is deployed. It was held back
+> deliberately so one night runs first with the all-types archiver and the new
+> purge at the current window (~1,300 records) rather than debugging them for the
+> first time against a ~48,000-record catch-up. The guard makes the flip safe
+> whenever it happens: the purge cannot outrun the archiver, so falling behind
+> delays deletion instead of losing anything.
+
+Archiver tests: 38 → 81 (`scratchpad/archiver.test.mjs`), including a non-J
+record end to end, `details` round-tripping, a mixed-type sweep, the per-run
+purge ceiling, and three refusals — shadow mode never deletes, a failed sweep
+never purges, and a blank `archive_retention_days` falls back to 35 rather than 0
+(which would delete the entire archive).
+
 ### 2026-09-23 — Archive Phases 4b and 5: reports read-through, and Current/Archived
 
 **Phase 4b — "Include archived" on the export.** Back office only, OFF by
