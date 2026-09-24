@@ -262,6 +262,19 @@ export const getTaskRecords = ({ storeId, taskType, status, limit, offset, filte
   return request('/task-records' + (q.toString() ? `?${q}` : ''))
 }
 
+// Which of these barcodes appear more than once under the SAME task type,
+// within the same filter the grid is showing. Sends one barcode per row on
+// screen; the COUNT still runs over the whole filtered set server-side, so a
+// row whose twin sits on an unloaded page is still flagged.
+//
+// POST because the body carries up to 1,000 barcodes. Never throws: highlighting
+// is an aid, not the report, so a failure here leaves the rows unhighlighted
+// rather than taking the page down.
+export const getDuplicateKeys = (body) =>
+  request('/task-records/duplicate-keys', { method: 'POST', body: JSON.stringify(body) })
+    .then(r => r?.keys || [])
+    .catch(() => [])
+
 // Tries the network first; on offline / network failure the request is
 // queued in IndexedDB (see lib/outbox.js) and replayed when we come back
 // online. Returns { queued: true, id } in that case so forms can show

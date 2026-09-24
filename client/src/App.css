@@ -471,6 +471,40 @@ body {
 /* Amber left border = has active message thread */
 .tr-has-msg  { border-left: 4px solid #F59E0B; }
 
+/* Priced row on the Pricing page. Was an inline style that also hardcoded #fff
+   for the unpriced case, which rendered a white row on a dark background. */
+.tr-priced { background: var(--surface-warm); }
+
+/* Violet = another record of the SAME task type carries this barcode.
+   Deliberately a tint AND a border, not one or the other: this is the only row
+   state that can coincide with the two above (a reviewed record can also be a
+   duplicate), so it needs a channel of its own rather than competing for the
+   left border. Violet because nothing else in the app uses it -- green, amber,
+   red, blue and gold are all taken by status, messages, delete, store-done and
+   pricing. */
+.tr-duplicate { background: var(--dup-soft, #F5F1FE); }
+.tr-duplicate > td:first-child { box-shadow: inset 4px 0 0 0 var(--dup, #7C5CD6); }
+
+/* The duplicate tint must not swallow the selected-row highlight, which is set
+   inline on the <tr>; keeping the tint on the cells lets both read at once. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .tr-duplicate { background: rgba(124, 92, 214, .16); }
+}
+:root[data-theme="dark"] .tr-duplicate { background: rgba(124, 92, 214, .16); }
+
+/* Pricing-state bubble on a report row. One shape, four states, so the eye
+   learns one thing. Gold = money, hollow = gone from the Pricing page. */
+.pbub {
+  display: inline-flex; align-items: center; justify-content: center;
+  margin-left: 6px; width: 18px; height: 18px; border-radius: 50%;
+  font-size: 11px; font-weight: 700; vertical-align: middle;
+  line-height: 1; flex: none;
+}
+.pbub-waiting { background: #FFF8E6; color: #8A6D1A; border: 1px dashed #D9BE6A; }
+.pbub-priced  { background: #FCF3D9; color: #8A6D1A; border: 1px solid  #E7D39A; }
+.pbub-priced-removed { background: transparent; color: #8A6D1A; border: 1px solid #C9B26A; }
+.pbub-removed { background: transparent; color: transparent; border: 1px dashed #C9B26A; }
+
 /* ── Page header ── */
 .page-header {
   display: flex;

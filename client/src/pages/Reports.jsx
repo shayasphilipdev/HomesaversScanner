@@ -7,11 +7,12 @@ import {
   adminListTemplates, getStoreTaskReportRows,
   clearToken, getProductMaster, getProductMasterFilters,
   getSpacePlanReport, getCompetitorReport, sendToPricing, getBmReductions,
-  reverseTaskRecordStatus
+  reverseTaskRecordStatus, getDuplicateKeys
 } from '../lib/api.js'
 import { COMPETITION_REPORT_COLS, COMPETITION_REPORT_HEADERS, COMPETITION_REPORT_MIN_WIDTHS } from '../lib/competitionOptions.js'
 import { TASK_FORMS, STORE_ARCHIVABLE } from '../lib/taskTypes.js'
 import { isAdminRole } from '../lib/roles.js'
+import { PRICING_STATES, pricingState, dupKey } from '../lib/pricingState.js'
 import ConfirmArchiveModal from '../components/ConfirmArchiveModal.jsx'
 import { downloadExcel } from '../lib/excel.js'
 import { useToast } from '../components/Toast.jsx'
@@ -501,6 +502,12 @@ function HQReports() {
   const [deleting, setDeleting]       = useState(false)
   // "Delete ALL matching J/K" (filter-based, batched) confirmation + progress.
   const isAdmin = isAdminRole(session)
+  // Pricing-state filter (the four states the bubble shows). Empty = no filter.
+  const [pricingStateIds, setPricingStateIds] = useState([])
+  // "task_type|barcode_no" keys that occur more than once under the same task,
+  // across all stores, within the current filter. Computed server-side because
+  // the grid is paged -- a browser-side check would only see loaded rows.
+  const [dupKeys, setDupKeys] = useState(() => new Set())
   // Archive confirmation. archiveTarget = { ids:[...] } or null.
   const [archiveTarget, setArchiveTarget] = useState(null)
   const [matchDelete, setMatchDelete]   = useState(false)
@@ -547,7 +554,8 @@ function HQReports() {
       filters:  {
         from, to,
         ...(itemStatusIds.length    ? { item_status:    itemStatusIds.join(',') }    : {}),
-        ...(barcodeStatusIds.length ? { barcode_status: barcodeStatusIds.join(',') } : {})
+        ...(barcodeStatusIds.length ? { barcode_status: barcodeStatusIds.join(',') } : {}),
+        ...(pricingStateIds.length  ? { pricing_state:  pricingStateIds.join(',') }  : {})
       }
     })
   }
@@ -582,6 +590,34 @@ function HQReports() {
       setLoading(false)
     }
   }
+
+  // Duplicate barcodes, resolved server-side.
+  //
+  // Runs off `records` rather than inside runReport so it covers "Load more"
+  // too, and so a slow aggregate never delays the grid appearing. It asks only
+  // about the barcodes currently on screen; the COUNT still runs over the whole
+  // filtered set, so a row whose twin sits on an unloaded page is still flagged.
+  //
+  // The filters passed here must match fetchPage above -- the highlight is
+  // meaningless if it is computed over a different set than the rows shown.
+  useEffect(() => {
+    const barcodes = [...new Set(records.map(r => r.barcode_no).filter(Boolean))]
+    if (!barcodes.length) { setDupKeys(new Set()); return }
+    let cancelled = false
+    getDuplicateKeys({
+      barcodes,
+      from, to,
+      task_type:      taskTypeIds.join(','),
+      status:         statusIds.join(','),
+      item_status:    itemStatusIds.join(','),
+      barcode_status: barcodeStatusIds.join(','),
+      pricing_state:  pricingStateIds.join(','),
+      includeCleared: showingArchived ? '1' : '0',
+    }).then(keys => { if (!cancelled) setDupKeys(new Set(keys)) })
+    // getDuplicateKeys never rejects -- it resolves to [] on failure, so a dead
+    // aggregate leaves rows unhighlighted instead of breaking the report.
+    return () => { cancelled = true }
+  }, [records])
 
   const downloadXLSX = async () => {
     setDownloading(true); setError('')
@@ -1006,6 +1042,24 @@ function HQReports() {
               />
             </div>
 
+            {/* Pricing state. Back office only -- Pricing is a head-office
+                workflow and the states are its vocabulary. Options are listed in
+                the order the business reads them: what is still waiting, then
+                what is done, then what has left the Pricing page. Filtering is
+                server-side, so it applies across every page of the report and
+                not just the rows loaded. */}
+            {isBO && (
+              <div className="filter-field filter-field--wide"><label>Pricing</label>
+                <MultiSelectDropdown
+                  value={pricingStateIds}
+                  onChange={setPricingStateIds}
+                  options={PRICING_STATES.map(p => ({ id: p.id, label: p.label }))}
+                  placeholder="Any (incl. never sent)"
+                  searchable={false}
+                />
+              </div>
+            )}
+
             <div className="filter-field filter-field--narrow"><label>Barcode Status</label>
               <MultiSelectDropdown
                 value={barcodeStatusIds}
@@ -1144,9 +1198,15 @@ function HQReports() {
                   const canArchive = isBO
                     ? (reviewed || r.status === 'store_completed')
                     : selectableSet.has(r.id)
+                  // Another record of the SAME task type carries this barcode.
+                  // dupKeys is resolved server-side over the whole filtered set,
+                  // so this stays true for a row whose twin is on a page that
+                  // has not been loaded.
+                  const isDup = dupKeys.has(dupKey(r))
                   return (
                     <Fragment key={r.id}>
-                      <tr>
+                      <tr className={isDup ? 'tr-duplicate' : undefined}
+                          title={isDup ? 'Another record of this task type has the same barcode' : undefined}>
                         {showCheckCol && (
                           <td>
                             {isSelectable && (
@@ -1158,23 +1218,22 @@ function HQReports() {
                         <td>{storesById[r.store_id]?.store_name || <span className="td-muted">—</span>}</td>
                         <td className="td-code" style={{ whiteSpace: 'nowrap' }}>
                           {r.product_barcode || r.product_code || <span className="td-muted">—</span>}
-                          {/* € = priced (still on the Pricing page). Empty bubble =
-                              was sent for pricing but later removed from it. */}
-                          {r.pricing_removed_at ? (
-                            <span title={`Was sent for pricing — removed ${formatDT(r.pricing_removed_at)}`} style={{
-                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                              marginLeft: 6, width: 18, height: 18, borderRadius: '50%',
-                              background: 'transparent', border: '1px solid #C9B26A',
-                              verticalAlign: 'middle'
-                            }} />
-                          ) : r.priced_at && (
-                            <span title={`Priced ${formatDT(r.priced_at)}`} style={{
-                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                              marginLeft: 6, width: 18, height: 18, borderRadius: '50%',
-                              background: '#FCF3D9', color: '#8A6D1A', border: '1px solid #E7D39A',
-                              fontSize: 11, fontWeight: 700, verticalAlign: 'middle'
-                            }}>€</span>
-                          )}
+                          {/* Pricing bubble — four states now, not two.
+                              Dashed = not priced, solid = priced; filled = still
+                              on the Pricing page, hollow = removed from it. The
+                              old version showed nothing at all for "sent but not
+                              priced yet", which was the state most worth seeing. */}
+                          {(() => {
+                            const ps = pricingState(r)
+                            if (!ps) return null
+                            const when = r.pricing_removed_at || r.priced_at || r.sent_to_pricing_at
+                            return (
+                              <span className={`pbub ${ps.cls}`}
+                                    title={`${ps.hint}${when ? ` — ${formatDT(when)}` : ''}`}>
+                                {ps.glyph}
+                              </span>
+                            )
+                          })()}
                         </td>
                         <td>{desc || <span className="td-muted">—</span>}</td>
                         <td className="td-code">{r.barcode_no || r.product_code || ''}</td>
