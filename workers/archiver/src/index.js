@@ -5,7 +5,7 @@
 // wants can exist without Supabase's 500 MB free tier having to hold it.
 //
 // THE ARCHIVER NEVER DELETES. Deletion stays with pg_cron's
-// purge_old_task_records(); this only says, by stamping task_records.archived_at,
+// purge_old_task_records(); this only says, by stamping task_records.d1_copied_at,
 // what D1 is confirmed to be holding. One deleter, one claimer.
 //
 // env.SHADOW_MODE === '1'  — archive only. Nothing is stamped, so the purge
@@ -13,9 +13,9 @@
 //   unchanged. This cannot lose anything that was not already being destroyed
 //   nightly, which is what made it safe to point at production first.
 //
-// env.SHADOW_MODE === '0'  — archive, then stamp archived_at on what landed.
+// env.SHADOW_MODE === '0'  — archive, then stamp d1_copied_at on what landed.
 //   Paired with the guarded purge, which refuses to delete a Task J record while
-//   archived_at is NULL, this is what turns "the archiver runs at 01:30 and the
+//   d1_copied_at is NULL, this is what turns "the archiver runs at 01:30 and the
 //   purge at 02:00" from a convention about clock times into something Postgres
 //   enforces. If the archiver stops running, J records accumulate in Supabase --
 //   visible, and recoverable -- instead of being silently deleted unarchived.
@@ -72,9 +72,9 @@ const SELECT_COLS = [
 
 const ms = (iso) => (iso ? Date.parse(iso) : null)
 
-// Stamp archived_at on records D1 has confirmed it holds. This is the whole
+// Stamp d1_copied_at on records D1 has confirmed it holds. This is the whole
 // point of Phase 3: purge_old_task_records() refuses to delete a Task J record
-// while archived_at is NULL, so the archiver running before the purge stops
+// while d1_copied_at is NULL, so the archiver running before the purge stops
 // being a convention about clock times and becomes something Postgres enforces.
 //
 // Chunked because PostgREST takes the id list in the URL and a uuid is 36
@@ -97,7 +97,7 @@ async function markArchived(env, ids, nowIso) {
           'Content-Type': 'application/json',
           Prefer: 'return=minimal',
         },
-        body: JSON.stringify({ archived_at: nowIso }),
+        body: JSON.stringify({ d1_copied_at: nowIso }),
       })
     if (!res.ok) {
       throw new Error(`Supabase PATCH ${res.status}: ${(await res.text()).slice(0, 300)}`)
@@ -112,7 +112,7 @@ async function markArchived(env, ids, nowIso) {
 // The cutoff is measured from created_at and spans BOTH stages -- a record's
 // total life is scan_record_retention_days + archive_retention_days, which is
 // the "7 weeks" the business asked for and what the Archive button promises the
-// user. Measuring the D1 window from archived_at instead would make total life
+// user. Measuring the D1 window from the copy time instead would make total life
 // depend on when the archiver happened to get to a row, so a night the Worker
 // missed would silently extend that record's life.
 //
@@ -266,7 +266,7 @@ const INSERT_SQL = `
     (id, created_at_ms, updated_at_ms, cleared_at_ms, store_id, store_name,
      product_code, barcode_no, product_barcode, item_name, supl_id,
      supplier_code, item_status, barcode_status, department, status, source,
-     archived_at_ms, task_type, description, uom, quantity, notes,
+     d1_copied_at_ms, task_type, description, uom, quantity, notes,
      product_name_label, actual_product_name, supplier_name_text,
      photo_product_url, photo_barcode_url, review_notes, reviewed_at_ms,
      completed_at_ms, store_completed_at_ms, priced_at_ms, pricing_removed_at_ms,
@@ -326,7 +326,7 @@ export async function runArchive(env, triggerKind) {
 
       // Only after D1 has committed the batch. D1 batches are atomic, so a
       // resolved batch() means every row in it is durably in the archive --
-      // which is the claim archived_at is about to make to Postgres. In shadow
+      // which is the claim d1_copied_at is about to make to Postgres. In shadow
       // mode nothing is marked, so the purge guard has nothing to act on and
       // the old behaviour continues unchanged.
       if (!shadow) {
@@ -344,7 +344,7 @@ export async function runArchive(env, triggerKind) {
     }
 
     // Deletion from POSTGRES stays with pg_cron's purge_old_task_records(); the
-    // archiver never deletes there. It only states, via archived_at, what D1 is
+    // archiver never deletes there. It only states, via d1_copied_at, what D1 is
     // holding -- and the purge decides what to do about that. One deleter, one
     // claimer.
     //

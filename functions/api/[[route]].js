@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-24-retention-p3a-TEST'
+const API_REVISION   = '2026-09-24-retention-p5-TEST'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -619,7 +619,7 @@ async function runAutoCleanup(db, env) {
 
     // M19: delete the photos attached to those records BEFORE removing the rows
     // so we never orphan storage files (photos can't be found once the record is gone).
-    // archived_at=not.is.null is the SAME guard purge_old_task_records() applies,
+    // d1_copied_at=not.is.null is the SAME guard purge_old_task_records() applies,
     // and it has to be repeated here because this path does not go through that
     // function -- it issues its own DELETE. Without it, a back-office login was
     // enough to permanently destroy a record the archiver had not yet copied to
@@ -629,7 +629,7 @@ async function runAutoCleanup(db, env) {
       select:      'photo_product_url,photo_barcode_url',
       status:      'in.(cleared,store_completed)',
       updated_at:  `lt.${recCutoff}`,
-      archived_at: 'not.is.null'
+      d1_copied_at: 'not.is.null'
     })
     for (const r of doomed) {
       for (const photoUrl of [r.photo_product_url, r.photo_barcode_url].filter(Boolean)) {
@@ -642,7 +642,7 @@ async function runAutoCleanup(db, env) {
     await db.remove('task_records', {
       status:      'in.(cleared,store_completed)',
       updated_at:  `lt.${recCutoff}`,
-      archived_at: 'not.is.null'
+      d1_copied_at: 'not.is.null'
     })
 
     // 3 — Delete any remaining old photos by age (catch-all — covers photos
@@ -2504,7 +2504,7 @@ export async function onRequest(context) {
         select:      'photo_product_url,photo_barcode_url',
         status:      'in.(cleared,store_completed)',
         updated_at:  `lt.${cutoff}`,
-        archived_at: 'not.is.null'
+        d1_copied_at: 'not.is.null'
       })
       for (const r of doomedRecs) {
         for (const u of [r.photo_product_url, r.photo_barcode_url].filter(Boolean)) {
@@ -2518,7 +2518,7 @@ export async function onRequest(context) {
       const removed = await db.remove('task_records', {
         status:      `in.(cleared,store_completed)`,
         updated_at:  `lt.${cutoff}`,
-        archived_at: 'not.is.null'
+        d1_copied_at: 'not.is.null'
       })
       return json({ deleted: removed.length, days, cutoff })
     }
