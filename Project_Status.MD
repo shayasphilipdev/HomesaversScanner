@@ -575,6 +575,133 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-09-24 (later still) — Duplicate highlighting, four Pricing states, full record History
+
+Three requests, plus the filter option that came with the second.
+
+#### 1. Duplicate-barcode highlighting
+
+Records sharing a `barcode_no` under the same `task_type` are highlighted violet
+in **Reports** and **Pricing** (`.tr-duplicate`, tint + left bar, so it composes
+with the existing green/amber left borders instead of competing for them).
+
+**Computed in Postgres, not the browser.** The grid pages 200 rows and appends on
+*Load more*, so a client-side check calls a record unique whenever its twin sits
+on an unloaded page — the one case worth catching. New RPC
+`task_record_duplicate_keys`, on its own endpoint
+(`POST /task-records/duplicate-keys`) rather than folded into the grid query:
+`GET /task-records` is PostgREST and cannot express GROUP BY/HAVING, and the
+Excel path is a CPU-tuned RPC that has already tripped the Worker budget once. If
+the aggregate fails the grid still renders, unhighlighted.
+
+**It asks only about the barcodes on screen, while still COUNTING over the whole
+filtered set.** Without that narrowing, "Department Check over 30 days" returns
+**19,197 keys (~290 KB)** every report run and an unfiltered report hits the
+20,000 cap and silently under-reports. With it, **~49**.
+
+**Scope is across all stores**, by the owner's decision. Measured before
+building, because the number decides whether the feature is useful:
+
+| task type | rows | dup across stores | dup same store |
+|---|---|---|---|
+| J Department Check | 171,303 | **94.4%** | 25.5% |
+| K Price Check | 3,962 | 78.0% | 77.5% |
+| B Non-Scans | 119 | 27.7% | 13.4% |
+| C Wrong Prices | 66 | 28.8% | 9.1% |
+| G Promotion Error | 30 | 56.7% | 20.0% |
+
+Right for the reports back office actually runs — their default task-type filter
+excludes J/K/H/M, leaving the 28–57% band where a shared barcode genuinely means
+two stores hit the same problem. It degenerates only when the report is filtered
+*to* Department Check, where nearly every row lights up because 55 stores
+legitimately scan the same products.
+
+#### 2. The Pricing bubble: two states → four
+
+| state | derivation |
+|---|---|
+| In Pricing, not priced | `sent_to_pricing_at` set, other two null |
+| Priced | `priced_at` set, `pricing_removed_at` null |
+| Priced and deleted | both set |
+| Not priced but deleted | `pricing_removed_at` set, `priced_at` null |
+
+The old bubble **could not show the first state at all**: sending a record to
+Pricing wrote nothing to `task_records`, and `pricing_items` is HARD deleted on
+removal, so afterwards a join has nothing left to find. New
+`sent_to_pricing_at` column, backfilled for all 67 records that ever touched
+Pricing (2 in pricing · 0 priced · 52 priced-and-removed · 13 removed-unpriced).
+States 3 and 4 were already distinguishable — removal stamps
+`pricing_removed_at` and deliberately does **not** clear `priced_at`.
+
+One definition in `client/src/lib/pricingState.js`, mirrored by the `or=` filter
+in `GET /task-records` and the CASE in the duplicate RPC.
+
+#### 3. The option: a Pricing filter
+
+The four states as a back-office filter, server-side so it spans every page. The
+same states are passed to the duplicate RPC — otherwise the highlight would stop
+matching the rows on screen.
+
+#### 4. Record History shows every change
+
+It was a **status ledger and nothing else**: five writers, and every other
+mutation invisible — note edits, photos, send/price/remove on Pricing, messages,
+thread resolution.
+
+It could not show more without a schema change: `to_status` was `NOT NULL` with a
+CHECK limiting it to the five statuses, and there was no kind column, so a
+non-status event was physically unstorable.
+
+> **The trap, and why sequencing mattered.** The obvious workaround — reuse the
+> record's current status as `to_status` — silently changes **permissions**. Both
+> the API and `RecordDetailModal` decide who may reverse a status by finding the
+> most recent event whose `to_status` equals the record's status and comparing
+> its author to the session. A pricing event stamped with the current status
+> would make whoever *priced* the record, rather than the reviewer who set its
+> status, the only non-admin able to reverse it. Both gates were narrowed to
+> `event_type = 'status'` **before any new writer existed**.
+
+Schema: `event_type` (default `'status'`, so existing rows and all five existing
+writers keep their exact meaning), `field` / `old_value` / `new_value`,
+`to_status` relaxed to nullable, and the CHECK rewritten to constrain only rows
+claiming to be status transitions. A second CHECK keeps the vocabulary closed.
+
+New events: sent to Pricing (**one batched insert**, not one per record — a
+Worker is capped at 50 subrequests and the old bulk-clear loop already lost 77%
+of its events that way), priced, removed from Pricing, note added/changed/cleared,
+photo added/replaced/removed, message posted, thread resolved/reopened.
+
+Message events record only **that** a message happened. The thread is already on
+the record, restricted audiences exist, and the History panel has no audience
+filter — copying the body would leak an internal note to everyone who can see the
+record.
+
+#### Three bugs caught before shipping, each invisible to the obvious check
+
+- **PGRST203.** `CREATE OR REPLACE FUNCTION` only replaces when the *signature*
+  matches; adding `p_barcodes` and then `p_pricing_states` left **three
+  overloads**, and PostgREST refuses every call when it cannot choose. Invisible
+  to `execute_sql`, which resolves positionally without complaint — it only
+  appeared when the RPC was called over REST, the way the app calls it.
+- **A CHECK that passed on NULL.** `event_type <> 'status' OR to_status = ANY(...)`
+  accepts a status row with `to_status` NULL, because `NULL = ANY(...)` is NULL
+  and a CHECK passes on NULL rather than failing. With `NOT NULL` just removed,
+  nothing else would have stopped it. Now requires `to_status IS NOT NULL`
+  explicitly. Found by a BEGIN/ROLLBACK harness that deliberately tried to insert
+  one.
+- **An event kind the CHECK rejected.** The photo writer used `event_type 'photo'`
+  before it was in the vocabulary. The constraint did its job — but
+  `writeActivityEvent` is best-effort and swallows failures, so the only symptom
+  would have been a history line that never appeared.
+
+Also fixed in passing: Pricing rows hardcoded `background: #fff` inline, so every
+unpriced row rendered white on a dark background. Now a class.
+
+**Not done, deliberately:** the archiver's `d1_copied_at` stamp writes no event —
+it is a separate Worker with no session, so it would attribute to 'unknown'
+unless a system-actor convention is agreed. Deletes still destroy history via
+`ON DELETE CASCADE` rather than appending a terminal event.
+
 ### 2026-09-24 (later) — Archived is just a status; dropdown toolbar holds two rows
 
 **The "Include archived" checkbox is gone.** Archived is an ordinary status now,
