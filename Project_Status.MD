@@ -620,6 +620,13 @@ Two causes, both fixed:
 One shared component, so this covers the three dropdowns asked for and every
 other toolbar dropdown with it.
 
+**Pricing's Task type dropdown no longer shows a search box** (`searchable={false}`).
+It appeared automatically at 8+ options and there are 12 task types, but they all
+fit the panel without scrolling — so the field only cost a tap and took the focus.
+It also pulled in the "Select every option" row, which means nothing when the list
+is not filtered, so turning search off leaves exactly the two-row toolbar. Reports'
+*Stores* dropdown keeps its search: 55 stores genuinely need it.
+
 ### 2026-09-24 — 7-week retention: 2 weeks live + 5 weeks archive
 
 **The model.** A task record is kept `scan_record_retention_days` in Postgres,
