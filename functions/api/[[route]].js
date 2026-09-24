@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-24-retention-p2'
+const API_REVISION   = '2026-09-24-retention-p3a'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -619,10 +619,17 @@ async function runAutoCleanup(db, env) {
 
     // M19: delete the photos attached to those records BEFORE removing the rows
     // so we never orphan storage files (photos can't be found once the record is gone).
+    // archived_at=not.is.null is the SAME guard purge_old_task_records() applies,
+    // and it has to be repeated here because this path does not go through that
+    // function -- it issues its own DELETE. Without it, a back-office login was
+    // enough to permanently destroy a record the archiver had not yet copied to
+    // D1, which is precisely the loss the nightly guard exists to prevent.
+    // There are two deleters; there must not be two rules.
     const doomed = await db.select('task_records', {
-      select:     'photo_product_url,photo_barcode_url',
-      status:     'in.(cleared,store_completed)',
-      updated_at: `lt.${recCutoff}`
+      select:      'photo_product_url,photo_barcode_url',
+      status:      'in.(cleared,store_completed)',
+      updated_at:  `lt.${recCutoff}`,
+      archived_at: 'not.is.null'
     })
     for (const r of doomed) {
       for (const photoUrl of [r.photo_product_url, r.photo_barcode_url].filter(Boolean)) {
@@ -631,10 +638,11 @@ async function runAutoCleanup(db, env) {
       }
     }
 
-    // 2 — Now safe to delete the records.
+    // 2 — Now safe to delete the records. Same archive guard as the select above.
     await db.remove('task_records', {
-      status:     'in.(cleared,store_completed)',
-      updated_at: `lt.${recCutoff}`
+      status:      'in.(cleared,store_completed)',
+      updated_at:  `lt.${recCutoff}`,
+      archived_at: 'not.is.null'
     })
 
     // 3 — Delete any remaining old photos by age (catch-all — covers photos
@@ -2487,10 +2495,16 @@ export async function onRequest(context) {
       const cutoff = new Date(Date.now() - days * 86400000).toISOString()
       // M19: delete attached photos before removing records so nothing is orphaned.
       const storBase = `${env.SUPABASE_URL}/storage/v1/object/public/task-photos/`
+      // Same archive guard as purge_old_task_records() and runAutoCleanup: a
+      // record is only removable once the archiver has confirmed D1 holds it.
+      // This is the admin's manual pull of the same lever, so it must obey the
+      // same rule -- an admin pressing a maintenance button is not a decision
+      // to destroy records that have not been archived yet.
       const doomedRecs = await db.select('task_records', {
-        select:     'photo_product_url,photo_barcode_url',
-        status:     'in.(cleared,store_completed)',
-        updated_at: `lt.${cutoff}`
+        select:      'photo_product_url,photo_barcode_url',
+        status:      'in.(cleared,store_completed)',
+        updated_at:  `lt.${cutoff}`,
+        archived_at: 'not.is.null'
       })
       for (const r of doomedRecs) {
         for (const u of [r.photo_product_url, r.photo_barcode_url].filter(Boolean)) {
@@ -2502,8 +2516,9 @@ export async function onRequest(context) {
         }
       }
       const removed = await db.remove('task_records', {
-        status:     `in.(cleared,store_completed)`,
-        updated_at: `lt.${cutoff}`
+        status:      `in.(cleared,store_completed)`,
+        updated_at:  `lt.${cutoff}`,
+        archived_at: 'not.is.null'
       })
       return json({ deleted: removed.length, days, cutoff })
     }

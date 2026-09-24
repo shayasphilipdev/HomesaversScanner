@@ -26,9 +26,27 @@
 // J-only archiver would mean every other type is destroyed unarchived -- so the
 // two scopes have to move together, and Phase 3 is the commit that moves them.
 
-const BATCH          = 500      // PostgREST caps a page at 1000; 500 keeps each D1 batch modest
-const TIME_BUDGET_MS = 25_000   // stop starting new pages after this; the next run picks up the rest
-const MAX_PAGES      = 60       // hard backstop against a paging bug looping forever
+const BATCH          = 500       // PostgREST caps a page at 1000; 500 keeps each D1 batch modest
+const TIME_BUDGET_MS = 180_000   // stop starting new pages after this; the next run picks up the rest
+const MAX_PAGES      = 400       // hard backstop against a paging bug looping forever
+
+// The budget was 25s / 60 pages, which was right for a J-only archive in steady
+// state (~8,000 records a night, done in under 20 seconds). It is not enough for
+// a CATCH-UP: narrowing the Postgres window from 21 days to 14 exposes ~48,000
+// records at once, and at ~4,000 per 25-second run that would take a fortnight
+// of nights to absorb.
+//
+// Raising it is safe in every direction that matters:
+//   - The work is almost entirely network I/O, not CPU, so a longer wall clock
+//     does not approach the Worker CPU limit.
+//   - The run is idempotent (INSERT OR IGNORE on the primary key), so being cut
+//     off part-way costs nothing -- the next run resumes from the same sweep.
+//   - It finishes 30 minutes before the 02:00 purge either way.
+//   - Nothing is deleted that this has not archived, so falling behind delays
+//     deletion rather than causing loss.
+// The real ceiling during catch-up is D1's 100,000 rows/day write limit: each
+// record costs 2 writes (table + index), so ~30,000 records is a night's worth
+// and the backlog clears in two.
 
 // EVERY column of task_records, for every task type.
 //
