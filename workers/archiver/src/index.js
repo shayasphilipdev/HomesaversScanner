@@ -107,6 +107,46 @@ async function markArchived(env, ids, nowIso) {
   return marked
 }
 
+// Stage 3: delete from D1 what has outlived the whole chain.
+//
+// The cutoff is measured from created_at and spans BOTH stages -- a record's
+// total life is scan_record_retention_days + archive_retention_days, which is
+// the "7 weeks" the business asked for and what the Archive button promises the
+// user. Measuring the D1 window from archived_at instead would make total life
+// depend on when the archiver happened to get to a row, so a night the Worker
+// missed would silently extend that record's life.
+//
+// Chunked, and capped per run. A plain `DELETE WHERE created_at_ms < ?` is
+// correct and would normally touch ~8,000 rows a night, but if the deleter were
+// ever off for a long stretch the catch-up could blow through D1's 100,000
+// rows/day write limit in a single statement -- and past that limit the free
+// plan FAILS queries rather than warning, which would take the archiver's
+// inserts down with it. Better to spread a backlog over several nights than to
+// break both halves for a day.
+//
+// Row-value IN is used because the table is WITHOUT ROWID, so there is no rowid
+// to limit on; (created_at_ms, id) is the primary key and the physical order, so
+// each chunk is a contiguous read.
+const PURGE_CHUNK      = 1000
+const PURGE_MAX_CHUNKS = 20      // 20,000 rows/run ceiling = 40,000 D1 writes
+
+async function purgeArchive(env, cutoffMs) {
+  let purged = 0
+  for (let i = 0; i < PURGE_MAX_CHUNKS; i++) {
+    const res = await env.ARCHIVE.prepare(
+      `DELETE FROM task_record_archive
+        WHERE (created_at_ms, id) IN (
+          SELECT created_at_ms, id FROM task_record_archive
+           WHERE created_at_ms < ?
+           ORDER BY created_at_ms ASC, id ASC
+           LIMIT ?)`).bind(cutoffMs, PURGE_CHUNK).run()
+    const n = res?.meta?.changes ?? 0
+    purged += n
+    if (n < PURGE_CHUNK) break
+  }
+  return purged
+}
+
 async function sb(env, path) {
   const res = await fetch(`${env.SUPABASE_URL}/rest/v1/${path}`, {
     headers: {
@@ -132,20 +172,26 @@ async function settingInt(env, key, fallback) {
   return Number.isFinite(n) && n >= 1 ? Math.floor(n) : fallback
 }
 
-// Stage 1 of the retention chain: how long a record stays in Postgres. The
-// archiver and purge_old_task_records() read the SAME key deliberately, so they
-// cannot disagree about which records are due to move.
-async function retentionCutoffIso(env) {
-  const days = await settingInt(env, 'scan_record_retention_days', 21)
-  return new Date(Date.now() - days * 86_400_000).toISOString()
-}
-
-// Stage 2: how long a record then stays in D1 before being deleted for good.
-// Read here in Phase 1 purely so the plumbing is proven before Phase 4 makes it
-// delete anything -- runArchive reports it, so a manual run shows whether the
-// setting is reaching this Worker at all.
-async function archiveRetentionDays(env) {
-  return settingInt(env, 'archive_retention_days', 35)
+// The two stages of the retention chain, read together so one run can never
+// apply a stale value of one against a fresh value of the other.
+//
+//   created ──[ retentionDays ]──► D1 ──[ archiveDays ]──► deleted
+//
+// retentionDays is the SAME key purge_old_task_records() reads, deliberately, so
+// the archiver and the Postgres purge cannot disagree about which records are
+// due to move.
+async function retentionSettings(env) {
+  const retentionDays = await settingInt(env, 'scan_record_retention_days', 21)
+  const archiveDays   = await settingInt(env, 'archive_retention_days', 35)
+  return {
+    retentionDays,
+    archiveDays,
+    // Records older than this move from Postgres to D1.
+    cutoffIso:  new Date(Date.now() - retentionDays * 86_400_000).toISOString(),
+    // Records older than this leave D1 for good. Measured from created_at across
+    // BOTH stages, so total life is exactly what the Archive button promises.
+    purgeMs:    Date.now() - (retentionDays + archiveDays) * 86_400_000,
+  }
 }
 
 // D1 cannot join back to Postgres, so the store NAME has to be snapshotted onto
@@ -231,12 +277,15 @@ export async function runArchive(env, triggerKind) {
   const startedAt = Date.now()
   const shadow    = env.SHADOW_MODE === '1'
   let scanned = 0, inserted = 0, alreadyHad = 0, deleted = 0, marked = 0, error = null
-  let archiveDays = null, cutoffSeen = null
+  let purged = 0
+  let archiveDays = null, retentionDays = null, cutoffSeen = null
 
   try {
-    const cutoffIso  = await retentionCutoffIso(env)
-    cutoffSeen  = cutoffIso
-    archiveDays = await archiveRetentionDays(env)
+    const cfg = await retentionSettings(env)
+    retentionDays = cfg.retentionDays
+    archiveDays   = cfg.archiveDays
+    cutoffSeen    = cfg.cutoffIso
+    const cutoffIso = cfg.cutoffIso
     const storeNames = await storeNameMap(env)
     const stmt       = env.ARCHIVE.prepare(INSERT_SQL)
 
@@ -294,9 +343,22 @@ export async function runArchive(env, triggerKind) {
       if (rows.length < BATCH) break
     }
 
-    // Deletion stays with pg_cron's purge_old_task_records(); the archiver
-    // never deletes. It only states, via archived_at, what D1 is holding --
-    // and the purge decides what to do about that. One deleter, one claimer.
+    // Deletion from POSTGRES stays with pg_cron's purge_old_task_records(); the
+    // archiver never deletes there. It only states, via archived_at, what D1 is
+    // holding -- and the purge decides what to do about that. One deleter, one
+    // claimer.
+    //
+    // D1 is the other half, and it is this Worker's alone: nothing else can
+    // reach the archive, so without the call below the archive grew forever.
+    // That was the gap that made "keep 6 months and purge after that" only half
+    // implemented.
+    //
+    // Deliberately AFTER the sweep and inside the same try: if archiving failed
+    // this run, skip the deletion too. A broken archiver is a reason to stop
+    // destroying things, not to carry on.
+    if (!shadow) {
+      purged = await purgeArchive(env, cfg.purgeMs)
+    }
   } catch (e) {
     error = String(e?.message || e).slice(0, 500)
   }
@@ -306,22 +368,29 @@ export async function runArchive(env, triggerKind) {
     await env.ARCHIVE.prepare(
       `INSERT OR REPLACE INTO archive_runs
          (started_at_ms, trigger_kind, cutoff_iso, shadow, scanned, inserted,
-          already_had, deleted, marked, duration_ms, error)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+          already_had, deleted, marked, purged, duration_ms, error)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
     ).bind(startedAt, triggerKind, new Date(startedAt).toISOString(),
            shadow ? 1 : 0, scanned, inserted, alreadyHad, deleted, marked,
-           durationMs, error).run()
+           purged, durationMs, error).run()
   } catch { /* the run itself matters more than the bookkeeping of it */ }
 
-  // cutoffIso and archiveDays are echoed so a manual run answers "which settings
-  // is this Worker actually seeing?" without a second query. They are the two
-  // numbers that decide what moves and what is destroyed, and both come from a
-  // table something else can edit.
+  // The settings are echoed so a manual run answers "which values is this Worker
+  // actually seeing?" without a second query. They are the numbers that decide
+  // what moves and what is destroyed, and both come from a table something else
+  // can edit.
+  //
+  // `deleted` is rows removed from POSTGRES and is always 0 -- the archiver does
+  // not delete there. `purged` is rows removed from D1, which it does.
   return {
-    startedAt, shadow, scanned, inserted, alreadyHad, deleted, marked,
+    startedAt, shadow, scanned, inserted, alreadyHad, deleted, marked, purged,
     durationMs, error,
-    cutoffIso:   cutoffSeen,
+    cutoffIso:    cutoffSeen,
+    retentionDays,
     archiveDays,
+    totalLifeDays: (retentionDays != null && archiveDays != null)
+      ? retentionDays + archiveDays
+      : null,
   }
 }
 
