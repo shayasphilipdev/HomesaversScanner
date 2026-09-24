@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-24-full-history'
+const API_REVISION   = '2026-09-24-full-history2'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -4562,12 +4562,21 @@ export async function onRequest(context) {
       // audit row only if the status actually changes. review_notes is read at
       // the same time so a note edit can record what it replaced -- one extra
       // column on a SELECT that was already happening in the status case.
-      let preStatus = null, preNotes = null
-      const notesTouched = Object.prototype.hasOwnProperty.call(updates, 'review_notes')
-      if (updates.status !== undefined || notesTouched) {
-        const [pre] = await db.select('task_records', { select: 'status,review_notes', id: `eq.${id}`, limit: '1' })
-        preStatus = pre?.status || null
-        preNotes  = pre?.review_notes ?? null
+      // Fields worth a history line when they change on their own. Everything
+      // here used to be silent: the event write below is gated on a status
+      // change, so a note edit or a replaced photo left no trace whatsoever.
+      const WATCHED = {
+        review_notes:      { kind: 'note',  label: 'Back-office note' },
+        photo_product_url: { kind: 'photo', label: 'Product photo' },
+        photo_barcode_url: { kind: 'photo', label: 'Barcode photo' },
+      }
+      const touched = Object.keys(WATCHED).filter(f => Object.prototype.hasOwnProperty.call(updates, f))
+      let preStatus = null, pre = null
+      if (updates.status !== undefined || touched.length) {
+        const cols = ['status', ...Object.keys(WATCHED)].join(',')
+        const [row] = await db.select('task_records', { select: cols, id: `eq.${id}`, limit: '1' })
+        pre = row || null
+        preStatus = row?.status || null
       }
       const updated = await db.update('task_records', filter, { ...updates, updated_at: new Date().toISOString() })
       if (!updated.length) return err('Record not found or not allowed', 404)
@@ -4581,16 +4590,27 @@ export async function onRequest(context) {
           note:        updates.review_notes || null
         })
       }
-      // A note edited on its own left NO trace at all: the event write above is
-      // gated on a status change, so review_notes only ever reached the history
-      // as a piggy-backed note on a simultaneous status change. Skipped when the
-      // status also changed, because that event already carries the note.
-      if (notesTouched && !statusChanged && (updates.review_notes ?? null) !== preNotes) {
-        await writeActivityEvent(db, {
-          record_id: id, event_type: 'note', session,
-          field: 'review_notes', old_value: preNotes, new_value: updates.review_notes ?? null,
-          note: (updates.review_notes ?? null) === null ? 'Back-office note cleared' : 'Back-office note updated'
-        })
+      // Changes that came WITHOUT a status change. Skipped when the status also
+      // moved, because that event already carries the note and a second line for
+      // the same click would just be noise.
+      if (!statusChanged) {
+        for (const f of touched) {
+          const before = pre?.[f] ?? null
+          const after  = updates[f] ?? null
+          if (before === after) continue
+          const meta = WATCHED[f]
+          // A photo URL is a long signed-ish storage path; recording the whole
+          // thing in old_value/new_value would make the history unreadable and
+          // tell the reader nothing they can act on. What changed is the fact.
+          const isPhoto = meta.kind === 'photo'
+          await writeActivityEvent(db, {
+            record_id: id, event_type: isPhoto ? 'photo' : 'note', session,
+            field:     f,
+            old_value: isPhoto ? (before ? 'present' : null) : before,
+            new_value: isPhoto ? (after  ? 'present' : null) : after,
+            note: `${meta.label} ${after ? (before ? 'replaced' : 'added') : 'removed'}`
+          })
+        }
       }
       return json(updated[0])
     }

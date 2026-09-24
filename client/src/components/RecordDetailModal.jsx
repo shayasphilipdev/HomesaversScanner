@@ -271,6 +271,7 @@ const EVENT_LABEL = {
   pricing_priced:   'Priced',
   pricing_removed:  'Removed from Pricing',
   note:             'Back-office note',
+  photo:            'Photo',
   message:          'Message',
   message_resolved: 'Message thread',
 }
@@ -281,11 +282,15 @@ function describeEvent(ev) {
     return <>{ev.from_status || '—'} → <strong>{ev.to_status}</strong></>
   }
   const label = EVENT_LABEL[kind] || kind
+  // new_value is only shown where it is something a reader can use. A photo's
+  // is the sentinel 'present' (the real value is a long storage URL, useless
+  // here) and a note's is the note text, which the `note` column already
+  // renders in quotes -- printing either would be noise.
+  const SHOW_VALUE = kind === 'pricing_priced'
   return (
     <>
       <strong>{label}</strong>
-      {kind === 'note' && <span> {ev.old_value ? 'changed' : 'added'}</span>}
-      {kind !== 'note' && ev.new_value && <span> · {ev.new_value}</span>}
+      {SHOW_VALUE && ev.new_value && <span> · €{ev.new_value}</span>}
     </>
   )
 }
