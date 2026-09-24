@@ -10,5 +10,7 @@ Thumbs.db
 
 # Local report job config (holds SMTP password) + generated previews
 scripts/aging-report.config.json
+scripts/dept-check-weekly.config.json
+scripts/dept-check-weekly-preview.html
 scripts/aging-report-preview.html
 scripts/__pycache__/
