@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-24-dropdown-depth2'
+const API_REVISION   = '2026-09-24-dupkeys-fix'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -3843,6 +3843,15 @@ export async function onRequest(context) {
     if (path === '/task-records/duplicate-keys' && method === 'POST') {
       if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled for this account', 403)
       const b = await request.json().catch(() => ({}))
+      // Refuse a body that is not an object, loudly. A double-JSON-encoded body
+      // parses to a STRING, every field then reads as undefined, and this
+      // endpoint would answer {keys:[]} with a 200 -- a wrong answer that looks
+      // exactly like a correct one, so the rows just never highlight and nothing
+      // anywhere reports a problem. That is precisely how the client's own
+      // JSON.stringify bug got as far as production.
+      if (!b || typeof b !== 'object' || Array.isArray(b)) {
+        return err('Body must be a JSON object', 400)
+      }
 
       const arr = (v) => {
         const a = Array.isArray(v) ? v : String(v || '').split(',')
