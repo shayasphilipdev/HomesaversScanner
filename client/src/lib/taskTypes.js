@@ -22,24 +22,30 @@ export const TASK_FORMS = {
   I: { name: 'Miscellaneous Tasks',  implemented: true,  warning: null }
 }
 
-// Task types a store user can clear directly from Pending, with no HO review.
-// M (Routine Expiry Sweep) belongs here: a sweep writes one record per product —
-// 20-60 of them — and carries no query for HO to answer, so waiting on review
+// Task types a store user can ARCHIVE directly from Pending, with no HO review.
+// M (Routine Expiry Sweep) belongs here: a sweep writes one record per product --
+// 20-60 of them -- and carries no query for HO to answer, so waiting on review
 // just buries the store's own list.
 // H (Stock Count) joins them: like a Department or Price Check it is something
 // the store records on the floor and acts on itself, not a query it is asking HO
-// to answer. Waiting for a review that is never coming is why 468 of its 535
-// rows had sat pending for over three weeks.
-export const STORE_CLEARABLE = new Set(['J', 'K', 'M', 'H'])
+// to answer.
+//
+// Beyond these a store may also archive anything HO has already reviewed
+// (completed / no_change_needed) and its own store_completed records, of ANY
+// type -- that part is status-driven rather than type-driven, so it is not a set.
+// Keep in step with the bulk-clear filter in functions/api/[[route]].js.
+//
+// Was STORE_CLEARABLE. "Clear" is gone from the product: there is one action,
+// Archive, and it is reversible.
+export const STORE_ARCHIVABLE = new Set(['J', 'K', 'M', 'H'])
 
-// Task types ANY user may PERMANENTLY delete. Deliberately NOT M: the backend
-// delete filters only allow J/K for store roles, and sweep rows are the source
-// data behind the HO Expiry Overview report. Clearing is a reversible archive;
-// deleting is not.
-// H is included for the same reason as J and K — it is the store's own floor
-// record. Still deliberately NOT M, whose rows are the source data behind the HO
-// Expiry Overview report.
-export const HARD_DELETABLE = new Set(['J', 'K', 'H'])
+// NOTE: there is deliberately NO task-type set for permanent delete any more.
+//
+// It used to be HARD_DELETABLE = {J, K, H} -- the store's own floor records,
+// which any user could destroy outright. Delete is now ADMIN ONLY and is not
+// restricted by type: the type list existed to stop stores destroying a query
+// record awaiting an HO answer, which is moot once stores cannot delete at all.
+// Gate on the session role, not on the task type.
 
 export const FREQUENCY_LABEL = {
   daily:    'Daily',

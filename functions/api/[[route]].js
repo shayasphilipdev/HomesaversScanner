@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-24-retention-p5-TEST'
+const API_REVISION   = '2026-09-24-retention-p6-TEST'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -3339,13 +3339,29 @@ export async function onRequest(context) {
     if (path === '/app-config' && method === 'GET') {
       const rows = await db.select('app_settings', {
         select: 'key,value',
-        key: 'in.(scanner_camera_enabled,competition_enabled)'
+        key: 'in.(scanner_camera_enabled,competition_enabled,scan_record_retention_days,archive_retention_days)'
       })
       const byKey = Object.fromEntries(rows.map(r => [r.key, r.value]))
+      // Retention is surfaced here because the Archive confirmation tells the
+      // user how long the record will be kept, and that promise has to come
+      // from the settings rather than a number typed into the UI -- otherwise
+      // changing retention silently makes the dialog lie. Read by every signed-in
+      // user, store logins included, so it cannot live behind /admin/settings.
+      const posInt = (v, dflt) => {
+        const n = Number(String(v ?? '').trim())
+        return Number.isFinite(n) && n >= 1 ? Math.floor(n) : dflt
+      }
+      const liveDays    = posInt(byKey.scan_record_retention_days, 21)
+      const archiveDays = posInt(byKey.archive_retention_days, 35)
       return json({
         scanner_camera_enabled: byKey.scanner_camera_enabled === 'true',
         // Default ON when the row is absent, so a fresh deploy shows the module.
-        competition_enabled: byKey.competition_enabled !== 'false'
+        competition_enabled: byKey.competition_enabled !== 'false',
+        retention: {
+          live_days:    liveDays,
+          archive_days: archiveDays,
+          total_days:   liveDays + archiveDays,
+        },
       })
     }
 
@@ -3798,8 +3814,14 @@ export async function onRequest(context) {
         // query for HO — keep this in step with STORE_CLEARABLE in
         // client/src/lib/taskTypes.js. Clearing only archives the row; the
         // permanent-delete filters below stay J/K-only on purpose.
+        // Archive now has to cover everywhere Clear OR Delete used to appear,
+        // because Delete has become admin-only. Clear allowed J/K/M/H still
+        // pending plus anything HO had reviewed; Delete additionally allowed a
+        // store's own store_completed records. Without that last clause a store
+        // would be left with a record it can neither tidy away nor delete.
+        // Keep in step with STORE_ARCHIVABLE in client/src/lib/taskTypes.js.
         if (!isBO) {
-          filter['or'] = '(and(task_type.in.(J,K,M,H),status.eq.pending),status.in.(completed,no_change_needed))'
+          filter['or'] = '(and(task_type.in.(J,K,M,H),status.eq.pending),status.in.(completed,no_change_needed,store_completed))'
         }
       }
 
@@ -4423,18 +4445,30 @@ export async function onRequest(context) {
       return json(updated[0])
     }
 
+    // PERMANENT delete. Admin only, as of the 7-week retention change.
+    //
+    // Everyone else now gets Archive instead, which is reversible and keeps the
+    // record readable for the rest of its retention window. Deleting was
+    // previously available to store users for their own floor records (J/K/H)
+    // and for anything store-confirmed -- the one action in the app that
+    // destroyed data with no way back, offered to its least-trained users, on
+    // the screens they use most. Archive covers every reason they had to press
+    // it.
+    //
+    // Admin may delete ANY task type: the old J/K/H restriction existed to stop
+    // stores destroying query records awaiting an HO answer, which is moot once
+    // only admin can reach it.
     if (recMatch && method === 'DELETE') {
       if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled for this account', 403)
+      if (!isAdminRole(session)) {
+        return err('Only an administrator can permanently delete a record. Use Archive instead.', 403)
+      }
       const id     = recMatch[1]
       const filter = { id: `eq.${id}` }
       const scope = await scopedStoreIds(db, session)
       if (scope !== null) {
         if (!scope.length) return err('Record not found or not allowed', 404)
         filter['store_id'] = `in.(${scope.join(',')})`
-        // Store users may permanently delete their own floor records —
-        // Department Check, Price Check and Stock Count (J/K/H) — in their
-        // stores, plus their own store-confirmed records (existing rule).
-        if (!isBO) filter['or'] = '(status.eq.store_completed,task_type.in.(J,K,H))'
       }
       // Fetch the record first so we can delete any attached photos from storage.
       const [rec] = await db.select('task_records', {
@@ -4459,12 +4493,13 @@ export async function onRequest(context) {
       return json({ ok: true })
     }
 
-    // Bulk PERMANENT delete (hard delete, not the soft 'clear'). Store users may
-    // only delete J/K (Department/Price Check) records, plus their own
-    // store-confirmed ones; back office may delete any record in scope. Removes
-    // the rows and their photos from storage.
+    // Bulk PERMANENT delete. Admin only -- same rule and same reasoning as the
+    // single delete above. Removes the rows and their photos from storage.
     if (path === '/task-records/bulk-delete' && method === 'POST') {
       if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled', 403)
+      if (!isAdminRole(session)) {
+        return err('Only an administrator can permanently delete records. Use Archive instead.', 403)
+      }
       const { ids } = await request.json()
       if (!Array.isArray(ids) || !ids.length) return err('ids required', 400)
       const safeIds = ids.filter(i => /^[a-f0-9-]{36}$/.test(i))
@@ -4483,7 +4518,6 @@ export async function onRequest(context) {
         const filter = { id: `in.(${chunk.join(',')})` }
         if (scope !== null) {
           filter['store_id'] = `in.(${scope.join(',')})`
-          if (!isBO) filter['or'] = '(status.eq.store_completed,task_type.in.(J,K,H))'
         }
         // Grab photos for the rows we're allowed to delete BEFORE removing them.
         const doomed  = await db.select('task_records', { select: 'photo_product_url,photo_barcode_url', ...filter })
@@ -4508,6 +4542,9 @@ export async function onRequest(context) {
     // pagination and deletes everything matching, in the caller's scope.
     if (path === '/task-records/delete-jk-matching' && method === 'POST') {
       if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled', 403)
+      if (!isAdminRole(session)) {
+        return err('Only an administrator can permanently delete records. Use Archive instead.', 403)
+      }
       const body  = await request.json().catch(() => ({}))
       const scope = await scopedStoreIds(db, session)
 
@@ -4523,12 +4560,18 @@ export async function onRequest(context) {
       }
 
       const statuses = String(body.status || '').split(',').map(s => s.trim()).filter(s => s && s !== 'all')
-      // Respect the report's task-type selection, but only ever the store's own
-      // floor records (J/K/H) — never a query type awaiting an HO answer.
+      // Whatever task types the report is filtered to. The old J/K/H allow-list
+      // existed to stop a store destroying a query record awaiting an HO answer;
+      // this endpoint is admin-only now, so that guard has nothing left to
+      // protect against and would only surprise an admin whose filter said one
+      // thing while the delete quietly did another.
+      //
+      // A type list is still REQUIRED. Defaulting an unfiltered report to "all
+      // types" would turn one button into "delete everything in range", which is
+      // not a thing anyone should be one click away from.
       const wantedTypes = String(body.taskType || '').split(',').map(s => s.trim()).filter(Boolean)
-      const STORE_OWNED = ['J', 'K', 'H']
-      const jkTypes = (wantedTypes.length ? wantedTypes : STORE_OWNED).filter(t => STORE_OWNED.includes(t))
-      if (!jkTypes.length) return json({ deleted: 0, done: true })      // report has no store-owned types selected
+      if (!wantedTypes.length) return json({ deleted: 0, done: true })
+      const jkTypes = wantedTypes
 
       const BATCH = 2000
       const res = await db.rpc('delete_jk_records_batch', {
@@ -4629,6 +4672,28 @@ export async function onRequest(context) {
       if (storeIds) {
         where.push(`store_id IN (${storeIds.map(() => '?').join(',')})`)
         args.push(...storeIds)
+      }
+
+      // The archive is now read AUTOMATICALLY whenever a report's date range
+      // reaches past the live window -- the user picks dates, not a storage
+      // location. That makes these filters mandatory rather than an
+      // optimisation: D1 holds every status and every task type, so without
+      // them an archived record would appear in a report whose status filter
+      // excludes it, purely because of where the row happens to live.
+      //
+      // Mirrors the live query's rule exactly, including the default: no status
+      // selected means "anything except archived".
+      const wantTypes = csvA(p.get('taskType'))
+      if (wantTypes.length) {
+        where.push(`task_type IN (${wantTypes.map(() => '?').join(',')})`)
+        args.push(...wantTypes)
+      }
+      const wantStatus = csvA(p.get('status'))
+      if (wantStatus.length) {
+        where.push(`status IN (${wantStatus.map(() => '?').join(',')})`)
+        args.push(...wantStatus)
+      } else if (p.get('includeCleared') !== '1') {
+        where.push(`status <> 'cleared'`)
       }
       if (afterMs && afterId) {
         where.push('(created_at_ms > ? OR (created_at_ms = ? AND id > ?))')

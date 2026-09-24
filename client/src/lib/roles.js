@@ -16,6 +16,16 @@ export const ROLE_KEYS = [
 export const STORE_ROLE_KEYS = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 export const HQ_ROLE_KEYS    = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
 
+// Mirrors ADMIN_ROLES in functions/api/[[route]].js. These are the only roles
+// that may PERMANENTLY delete a task record -- everyone else archives instead.
+// The server enforces this; this list only decides whether the button is drawn,
+// so the two must agree or a user sees a control that always 403s.
+export const ADMIN_ROLE_KEYS = ['admin', 'buying_manager', 'buying_head']
+
+export function isAdminRole(session) {
+  return !!session?.role && ADMIN_ROLE_KEYS.includes(session.role)
+}
+
 export const ROLES = {
   sales_assistant: {
     key: 'sales_assistant', label: 'Sales Assistant', scope: 'store',
