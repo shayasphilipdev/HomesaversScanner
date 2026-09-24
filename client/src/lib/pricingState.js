@@ -67,11 +67,30 @@ export function pricingState(r) {
   return id ? BY_ID[id] : null
 }
 
+// Task types excluded from duplicate highlighting.
+//
+// Department Check is excluded by decision, on measured evidence: 55 stores
+// legitimately scan the same products, so 94.4% of all J records share a barcode
+// with another J record. On a store's default report that highlighted 196 of 200
+// rows -- a signal present on almost everything is not a signal, and it buried
+// the cases that do matter. The query types sit at 28-57%, where a shared
+// barcode genuinely means two stores hit the same problem.
+//
+// This is the ONLY place the exclusion lives. dupKey() returns null for these,
+// which makes both the request (no pointless barcodes sent) and the highlight
+// (no key can ever match) skip them together -- they cannot drift apart.
+export const DUP_EXCLUDED_TASK_TYPES = new Set(['J'])
+
 // "TASKTYPE|BARCODE" — the key the server returns from
 // POST /task-records/duplicate-keys. Built in one place so the two sides cannot
 // disagree about separator or which barcode field is canonical (barcode_no is
 // the corrected one; product_code is what was physically scanned).
+//
+// Returns null when the record cannot or should not be keyed: no barcode, or an
+// excluded task type.
 export function dupKey(r) {
   const bc = r?.barcode_no
-  return bc ? `${r.task_type}|${bc}` : null
+  if (!bc) return null
+  if (DUP_EXCLUDED_TASK_TYPES.has(r.task_type)) return null
+  return `${r.task_type}|${bc}`
 }
