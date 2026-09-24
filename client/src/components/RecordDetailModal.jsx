@@ -123,7 +123,14 @@ function ReverseStatusButton({ record, events, onUpdated }) {
 
   if (record.status === 'pending') return null
   const isAdmin = session.role === 'admin'
-  const statusEvents    = (events || []).filter(e => e.to_status === record.status)
+  // event_type must be checked here too. This picks "the last event whose
+  // to_status equals the record's status" to decide who may reverse, and the
+  // ledger now also carries pricing / note / message events. Those have
+  // to_status NULL so they cannot match today -- the explicit filter is what
+  // keeps that true if a future event kind ever carries a status.
+  // Defaults to 'status' so a cached response from before the column existed
+  // still behaves.
+  const statusEvents    = (events || []).filter(e => (e.event_type || 'status') === 'status' && e.to_status === record.status)
   const lastStatusEvent = statusEvents[statusEvents.length - 1]
   const canReverse = isAdmin || (!!session.userId && lastStatusEvent?.by_user_id === session.userId)
   if (!canReverse) return null
@@ -249,6 +256,37 @@ function Row({ label, value, mono }) {
         {value}
       </div>
     </div>
+  )
+}
+
+// The history rendered every row as `from -> to`, because every row WAS a status
+// transition. It now also carries pricing moves, note edits and message
+// activity, which have no from/to at all -- through the old template those
+// printed "— → " with nothing after the arrow.
+//
+// event_type defaults to 'status', so a row written before the column existed,
+// or served from a cached response, still reads correctly.
+const EVENT_LABEL = {
+  pricing_sent:     'Sent to Pricing',
+  pricing_priced:   'Priced',
+  pricing_removed:  'Removed from Pricing',
+  note:             'Back-office note',
+  message:          'Message',
+  message_resolved: 'Message thread',
+}
+
+function describeEvent(ev) {
+  const kind = ev.event_type || 'status'
+  if (kind === 'status' || kind === 'created') {
+    return <>{ev.from_status || '—'} → <strong>{ev.to_status}</strong></>
+  }
+  const label = EVENT_LABEL[kind] || kind
+  return (
+    <>
+      <strong>{label}</strong>
+      {kind === 'note' && <span> {ev.old_value ? 'changed' : 'added'}</span>}
+      {kind !== 'note' && ev.new_value && <span> · {ev.new_value}</span>}
+    </>
   )
 }
 
@@ -489,9 +527,9 @@ export default function RecordDetailModal({ record, storeName, open, onClose, sh
                   <ol style={{ margin: 0, paddingLeft: 16, fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
                     {events.map(ev => (
                       <li key={ev.id} style={{ marginBottom: 2 }}>
-                        {ev.from_status || '—'} → <strong>{ev.to_status}</strong>
+                        {describeEvent(ev)}
                         {' · '}{ev.by_user_name}
-                        {' · '}{new Date(ev.at).toLocaleString('en-IE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                        {' · '}{new Date(ev.at).toLocaleString('en-IE', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
                         {ev.note && <span> · “{ev.note}”</span>}
                       </li>
                     ))}
