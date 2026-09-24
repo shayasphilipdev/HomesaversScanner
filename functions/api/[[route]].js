@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-24-dupes-pricing-states'
+const API_REVISION   = '2026-09-24-full-history'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -342,6 +342,35 @@ function taskEventRow({ record_id, from_status, to_status, session, note }) {
     by_user_id:   session?.user_id || null,
     by_user_name: session?.display_name || session?.username || 'unknown',
     note:         note || null
+  }
+}
+
+// Non-status activity: a pricing move, a note edit, a message. Deliberately a
+// separate helper so a caller cannot accidentally emit one that looks like a
+// status transition -- to_status stays NULL, which is exactly what keeps it out
+// of the reverse-status gates above.
+function activityEventRow({ record_id, event_type, session, field, old_value, new_value, note }) {
+  return {
+    record_id,
+    event_type,
+    from_status:  null,
+    to_status:    null,
+    field:        field     || null,
+    old_value:    old_value == null ? null : String(old_value).slice(0, 500),
+    new_value:    new_value == null ? null : String(new_value).slice(0, 500),
+    by_user_id:   session?.user_id || null,
+    by_user_name: session?.display_name || session?.username || 'unknown',
+    note:         note || null
+  }
+}
+
+// Best-effort, like the status writer: the history must never fail the thing the
+// user actually asked for.
+async function writeActivityEvent(db, args) {
+  try {
+    await db.insert('task_record_events', activityEventRow(args))
+  } catch (e) {
+    console.warn('[audit] activity event write failed:', e?.message || e)
   }
 }
 
@@ -1823,6 +1852,13 @@ export async function onRequest(context) {
           await db.update('task_records', { id: `in.(${backIds.join(',')})` },
                           { sent_to_pricing_at: now, pricing_removed_at: null })
         } catch { /* cosmetic — the record may already have been purged */ }
+        // One insert for the batch, not one per record: a Worker is capped at 50
+        // subrequests and a large send would otherwise lose most of its history
+        // silently, exactly as the bulk-clear loop once did.
+        await writeTaskEvents(db, backIds.map(rid => activityEventRow({
+          record_id: rid, event_type: 'pricing_sent', session,
+          note: 'Sent to Pricing'
+        })))
       }
       return json({ added: toInsert.length, skipped: records.length - toInsert.length })
     }
@@ -1939,6 +1975,10 @@ export async function onRequest(context) {
         // since removed" bubble (no €). Record may already be purged — ignore.
         if (existing[0].task_record_id) {
           try { await db.update('task_records', { id: `eq.${existing[0].task_record_id}` }, { pricing_removed_at: new Date().toISOString() }) } catch { /* purged */ }
+          await writeActivityEvent(db, {
+            record_id: existing[0].task_record_id, event_type: 'pricing_removed', session,
+            note: 'Removed from Pricing'
+          })
         }
         return json({ deleted: true })
       }
@@ -1964,6 +2004,10 @@ export async function onRequest(context) {
       // € flag in the Reports window — only while the original record exists.
       if (existing[0].task_record_id) {
         try { await db.update('task_records', { id: `eq.${existing[0].task_record_id}` }, { priced_at: now }) } catch { /* record may be purged */ }
+        await writeActivityEvent(db, {
+          record_id: existing[0].task_record_id, event_type: 'pricing_priced', session,
+          field: 'new_selling_price', new_value: newSp, note: 'Priced'
+        })
       }
       return json(upd[0] ?? upd)
     }
@@ -2483,7 +2527,7 @@ export async function onRequest(context) {
       const offset = Math.max(0, Number(p.get('offset')) || 0)
 
       const params = {
-        select: 'id,record_id,from_status,to_status,by_user_id,by_user_name,at,note',
+        select: 'id,record_id,event_type,field,old_value,new_value,from_status,to_status,by_user_id,by_user_name,at,note',
         order:  'at.desc',
         limit:  String(limit),
         offset: String(offset)
@@ -3945,7 +3989,7 @@ export async function onRequest(context) {
         if (!own || !scope.includes(own.store_id)) return err('Record not found or not allowed', 404)
       }
       const rows = await db.select('task_record_events', {
-        select: 'id,record_id,from_status,to_status,by_user_id,by_user_name,at,note',
+        select: 'id,record_id,event_type,field,old_value,new_value,from_status,to_status,by_user_id,by_user_name,at,note',
         record_id: `eq.${recId}`,
         order: 'at.asc'
       })
@@ -3978,12 +4022,19 @@ export async function onRequest(context) {
       if (rec.status === 'pending') return err('This record is already Pending', 400)
 
       if (!isOnlyAdmin(session)) {
+        // event_type=eq.status is LOAD-BEARING, not tidiness. This picks "the
+        // last event whose to_status equals the record's current status" to
+        // decide who may reverse it. Now that the ledger also carries pricing,
+        // note and message events, a non-status row matching here would hand the
+        // reverse right to whoever priced the record instead of the reviewer who
+        // set its status. Narrowed BEFORE any new writer existed, deliberately.
         const [lastEvent] = await db.select('task_record_events', {
-          select:    'by_user_id',
-          record_id: `eq.${id}`,
-          to_status: `eq.${rec.status}`,
-          order:     'at.desc',
-          limit:     '1'
+          select:     'by_user_id',
+          record_id:  `eq.${id}`,
+          event_type: 'eq.status',
+          to_status:  `eq.${rec.status}`,
+          order:      'at.desc',
+          limit:      '1'
         })
         if (!session.user_id || !lastEvent || lastEvent.by_user_id !== session.user_id) {
           return err('You can only reverse a status change you made yourself', 403)
@@ -4234,6 +4285,11 @@ export async function onRequest(context) {
       await db.update('task_records', { id: `eq.${recId}` }, resolve
         ? { messages_resolved_at: new Date().toISOString(), messages_resolved_by_name: who }
         : { messages_resolved_at: null, messages_resolved_by_name: null })
+      await writeActivityEvent(db, {
+        record_id: recId, event_type: 'message_resolved', session,
+        field: 'messages_resolved_at', new_value: resolve ? 'resolved' : 'reopened',
+        note: resolve ? 'Message thread resolved' : 'Message thread reopened'
+      })
       return json({ ok: true, resolved: resolve })
     }
 
@@ -4330,6 +4386,16 @@ export async function onRequest(context) {
           { messages_resolved_at: null, messages_resolved_by_name: null }
         ).catch(() => {})
       }
+      // The message BODY is deliberately not copied into the event. The thread
+      // is already readable on the record, restricted audiences exist
+      // (backoffice / area_managers), and the history panel has no audience
+      // filter -- copying the text would leak a restricted note to everyone who
+      // can see the record. The event records only that a message happened.
+      await writeActivityEvent(db, {
+        record_id: recId, event_type: 'message', session,
+        field: 'audience', new_value: audience,
+        note: audience === 'all' ? 'Message posted' : `Internal note posted (${audience})`
+      })
       return json(inserted[0] ?? inserted, 201)
     }
 
@@ -4493,21 +4559,37 @@ export async function onRequest(context) {
         updates.cleared_at = new Date().toISOString()
       }
       // Capture the pre-update status so we can write a precise from->to
-      // audit row only if the status actually changes.
-      let preStatus = null
-      if (updates.status !== undefined) {
-        const [pre] = await db.select('task_records', { select: 'status', id: `eq.${id}`, limit: '1' })
+      // audit row only if the status actually changes. review_notes is read at
+      // the same time so a note edit can record what it replaced -- one extra
+      // column on a SELECT that was already happening in the status case.
+      let preStatus = null, preNotes = null
+      const notesTouched = Object.prototype.hasOwnProperty.call(updates, 'review_notes')
+      if (updates.status !== undefined || notesTouched) {
+        const [pre] = await db.select('task_records', { select: 'status,review_notes', id: `eq.${id}`, limit: '1' })
         preStatus = pre?.status || null
+        preNotes  = pre?.review_notes ?? null
       }
       const updated = await db.update('task_records', filter, { ...updates, updated_at: new Date().toISOString() })
       if (!updated.length) return err('Record not found or not allowed', 404)
-      if (updates.status !== undefined && updates.status !== preStatus) {
+      const statusChanged = updates.status !== undefined && updates.status !== preStatus
+      if (statusChanged) {
         await writeTaskEvent(db, {
           record_id:   id,
           from_status: preStatus,
           to_status:   updates.status,
           session,
           note:        updates.review_notes || null
+        })
+      }
+      // A note edited on its own left NO trace at all: the event write above is
+      // gated on a status change, so review_notes only ever reached the history
+      // as a piggy-backed note on a simultaneous status change. Skipped when the
+      // status also changed, because that event already carries the note.
+      if (notesTouched && !statusChanged && (updates.review_notes ?? null) !== preNotes) {
+        await writeActivityEvent(db, {
+          record_id: id, event_type: 'note', session,
+          field: 'review_notes', old_value: preNotes, new_value: updates.review_notes ?? null,
+          note: (updates.review_notes ?? null) === null ? 'Back-office note cleared' : 'Back-office note updated'
         })
       }
       return json(updated[0])
