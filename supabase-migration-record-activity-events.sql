@@ -82,6 +82,7 @@ ALTER TABLE public.task_record_events
     'status',            -- a status transition (everything that exists today)
     'created',           -- reserved: creation currently logs as a status row
     'note',              -- back-office review_notes edited
+    'photo',             -- a product/barcode photo added, replaced or removed
     'pricing_sent',      -- copied to the Pricing page
     'pricing_priced',    -- a price was saved
     'pricing_removed',   -- removed from the Pricing page
