@@ -88,13 +88,33 @@ async function sb(env, path) {
   return res.json()
 }
 
-// The cutoff is read from app_settings every run rather than baked in, so
-// changing "Scan record retention (days)" on the Settings page moves this too
-// and the archiver can never disagree with the Postgres purge about the date.
+// Settings are read from app_settings every run rather than baked in, so
+// changing them on the Settings page moves this too and the archiver can never
+// disagree with the Postgres purge about a date.
+//
+// Falls back for anything absent, blank or non-numeric. The Settings endpoint
+// range-checks these on write now, but this Worker must not assume it is the
+// only writer -- a row edited directly in Postgres bypasses that entirely.
+async function settingInt(env, key, fallback) {
+  const rows = await sb(env, `app_settings?select=value&key=eq.${key}&limit=1`)
+  const n = Number(String(rows?.[0]?.value ?? '').trim())
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : fallback
+}
+
+// Stage 1 of the retention chain: how long a record stays in Postgres. The
+// archiver and purge_old_task_records() read the SAME key deliberately, so they
+// cannot disagree about which records are due to move.
 async function retentionCutoffIso(env) {
-  const rows = await sb(env, `app_settings?select=value&key=eq.scan_record_retention_days&limit=1`)
-  const days = Math.max(1, Number(rows?.[0]?.value) || 21)
+  const days = await settingInt(env, 'scan_record_retention_days', 21)
   return new Date(Date.now() - days * 86_400_000).toISOString()
+}
+
+// Stage 2: how long a record then stays in D1 before being deleted for good.
+// Read here in Phase 1 purely so the plumbing is proven before Phase 4 makes it
+// delete anything -- runArchive reports it, so a manual run shows whether the
+// setting is reaching this Worker at all.
+async function archiveRetentionDays(env) {
+  return settingInt(env, 'archive_retention_days', 35)
 }
 
 // D1 cannot join back to Postgres, so the store NAME has to be snapshotted onto
@@ -142,9 +162,12 @@ export async function runArchive(env, triggerKind) {
   const startedAt = Date.now()
   const shadow    = env.SHADOW_MODE === '1'
   let scanned = 0, inserted = 0, alreadyHad = 0, deleted = 0, marked = 0, error = null
+  let archiveDays = null, cutoffSeen = null
 
   try {
     const cutoffIso  = await retentionCutoffIso(env)
+    cutoffSeen  = cutoffIso
+    archiveDays = await archiveRetentionDays(env)
     const storeNames = await storeNameMap(env)
     const stmt       = env.ARCHIVE.prepare(INSERT_SQL)
 
@@ -218,7 +241,16 @@ export async function runArchive(env, triggerKind) {
            durationMs, error).run()
   } catch { /* the run itself matters more than the bookkeeping of it */ }
 
-  return { startedAt, shadow, scanned, inserted, alreadyHad, deleted, marked, durationMs, error }
+  // cutoffIso and archiveDays are echoed so a manual run answers "which settings
+  // is this Worker actually seeing?" without a second query. They are the two
+  // numbers that decide what moves and what is destroyed, and both come from a
+  // table something else can edit.
+  return {
+    startedAt, shadow, scanned, inserted, alreadyHad, deleted, marked,
+    durationMs, error,
+    cutoffIso:   cutoffSeen,
+    archiveDays,
+  }
 }
 
 export default {
