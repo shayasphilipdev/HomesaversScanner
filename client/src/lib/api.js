@@ -271,7 +271,12 @@ export const getTaskRecords = ({ storeId, taskType, status, limit, offset, filte
 // is an aid, not the report, so a failure here leaves the rows unhighlighted
 // rather than taking the page down.
 export const getDuplicateKeys = (body) =>
-  request('/task-records/duplicate-keys', { method: 'POST', body: JSON.stringify(body) })
+  // NOTE: pass the OBJECT. request() stringifies options.body itself, so
+  // JSON.stringify here double-encodes it -- the Worker's request.json() then
+  // yields a string, every field reads as undefined, and the endpoint takes its
+  // "no barcodes" early return and answers {keys:[]} with a 200. Silent: the
+  // call succeeds, the rows simply never highlight.
+  request('/task-records/duplicate-keys', { method: 'POST', body })
     .then(r => r?.keys || [])
     .catch(() => [])
 
