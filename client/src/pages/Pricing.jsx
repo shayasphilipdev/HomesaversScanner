@@ -194,6 +194,12 @@ export default function Pricing() {
                 onChange={setTaskTypeIds}
                 options={taskTypes.map(t => ({ id: t.code, label: t.name }))}
                 placeholder="All task types"
+                /* No search box. It appears automatically at 8+ options and
+                   there are 12 task types -- but they all fit in the panel
+                   without scrolling, so the field only cost a tap and took the
+                   focus. It also brought the "Select every option" row with it,
+                   which is meaningless when nothing is filtered out. */
+                searchable={false}
               />
             </div>
 
