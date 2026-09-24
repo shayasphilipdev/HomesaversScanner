@@ -575,6 +575,35 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-09-24 — Department Check excluded from duplicate highlighting
+
+Once highlighting actually worked, the store's default report showed **196 of
+200 rows violet**. That is the data being honest rather than a bug -- 55 stores
+legitimately scan the same products, so 94.4% of Department Check records share a
+barcode with another -- but a signal present on almost everything is not a
+signal, and it buried the cases that matter.
+
+`DUP_EXCLUDED_TASK_TYPES = new Set(['J'])` in `client/src/lib/pricingState.js`,
+applied inside `dupKey()`, which already returned null for a record with no
+barcode. One rule, so the request and the highlight skip the same records: no
+pointless barcodes are sent and no key can ever match. Reports and Pricing both
+build their barcode list through `dupKey()` now instead of reading `barcode_no`
+directly, so they cannot drift.
+
+The RPC is untouched and still counts every type, so widening this again is a
+one-line client change.
+
+Verified on the store login, before and after:
+
+| report | rows | highlighted |
+|---|---|---|
+| default (all Department Check) | 200 | 196 → **0** |
+| query types only | 6 | **1** |
+
+The one that remains is the point of the feature: *MATCH ATTAX 26/27 CARD PACKET*
+raised as **Wrong Prices** by HS Roscommon on 14 Sept and HS Tallaght on 18 Sept
+— two stores hitting the same pricing problem four days apart.
+
 ### 2026-09-24 — The blocked UI checks, finally run on a store login
 
 A store session (Tallaght, `sales_assistant`, 375x812) was made available, which
