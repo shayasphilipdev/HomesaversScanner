@@ -1,4 +1,4 @@
-import { PRESETS, PRESET_LABELS, rangeLabel } from '../lib/dateRange.js'
+import { PRESETS, PRESET_LABELS, rangeLabel, weekRangeLabel, startOfIsoWeek, addDays, todayDay } from '../lib/dateRange.js'
 
 // Shared date-range control. Two shapes, same state:
 //
@@ -41,7 +41,21 @@ export default function DateRangePicker({
       aria-label="Date range"
       title="Date range"
     >
-      {PRESETS.map(k => <option key={k} value={k}>{PRESET_LABELS[k]}</option>)}
+      {/* The two calendar-week presets name the week they resolve to:
+          "Last week - Week 38 (14/09/26 - 20/09/26)". "Last week" on its own is
+          a relative phrase that stops being true the moment someone reads it on
+          a different day or forwards a screenshot, and the week number is what
+          the business actually uses to refer to a week.
+          Resolved at render, not at mount, so a tab left open overnight cannot
+          keep naming yesterday's week. */}
+      {PRESETS.map(k => (
+        <option key={k} value={k}>
+          {k === 'this_week' || k === 'last_week'
+            ? `${PRESET_LABELS[k]} — ${weekRangeLabel(
+                k === 'this_week' ? todayDay() : addDays(startOfIsoWeek(todayDay()), -7))}`
+            : PRESET_LABELS[k]}
+        </option>
+      ))}
     </select>
   )
 
