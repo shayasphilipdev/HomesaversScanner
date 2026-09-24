@@ -601,7 +601,10 @@ function HQReports() {
   // The filters passed here must match fetchPage above -- the highlight is
   // meaningless if it is computed over a different set than the rows shown.
   useEffect(() => {
-    const barcodes = [...new Set(records.map(r => r.barcode_no).filter(Boolean))]
+    // Derived through dupKey so the request and the highlight share one rule:
+    // a record dupKey() will not key (no barcode, or an excluded task type such
+    // as Department Check) is not asked about either.
+    const barcodes = [...new Set(records.filter(r => dupKey(r)).map(r => r.barcode_no))]
     if (!barcodes.length) { setDupKeys(new Set()); return }
     let cancelled = false
     getDuplicateKeys({

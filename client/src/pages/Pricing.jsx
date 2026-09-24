@@ -73,7 +73,10 @@ export default function Pricing() {
       // of the SAME task type carries this barcode, anywhere in the chain.
       // includeCleared is on because a pricing item's originating record may
       // since have been archived, and it is still a real second occurrence.
-      const barcodes = [...new Set(rows.map(it => it.record?.barcode_no).filter(Boolean))]
+      // Same rule as Reports, via dupKey: excluded task types are neither asked
+      // about nor highlighted.
+      const barcodes = [...new Set(
+        rows.map(it => it.record).filter(r => dupKey(r)).map(r => r.barcode_no))]
       if (barcodes.length) {
         getDuplicateKeys({ barcodes, includeCleared: '1' })
           .then(keys => setDupKeys(new Set(keys)))
