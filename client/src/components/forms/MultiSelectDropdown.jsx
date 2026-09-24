@@ -52,6 +52,12 @@ export default function MultiSelectDropdown({
   // is up. So: flip above the trigger when there is not enough room below, and
   // cap the height to whatever is actually visible.
   const GAP = 6
+  // Was 360. On a 375x812 phone the Task types panel measured 311px tall around
+  // 640px of content -- 329px of the list simply unreachable below the fold.
+  // 560 lets a full 12-option list render without scrolling wherever there is
+  // room for it; `avail` still clamps to what is actually visible, so this is a
+  // ceiling, never a forced height.
+  const MAX_PANEL_H = 560
   const place = () => {
     const r = btnRef.current?.getBoundingClientRect()
     if (!r) return
@@ -60,12 +66,21 @@ export default function MultiSelectDropdown({
     const viewH      = vv?.height ?? window.innerHeight
     const spaceBelow = (viewTop + viewH) - r.bottom - GAP
     const spaceAbove = (r.top - viewTop) - GAP
-    const up         = spaceBelow < 160 && spaceAbove > spaceBelow
-    const avail      = Math.max(120, Math.floor(up ? spaceAbove : spaceBelow))
+    // Open on whichever side has more room WHENEVER the panel would otherwise be
+    // clipped -- not only when below is nearly unusable.
+    //
+    // The old rule was `spaceBelow < 160`, which only rescued the Android-keyboard
+    // case. A filter sitting mid-page has plenty of room by that test (311px here)
+    // and still cannot show its list, while the space above it goes unused. The
+    // 160 floor is kept as a hard minimum so a trigger near the top of the screen
+    // does not flip into a sliver.
+    const clippedBelow = spaceBelow < MAX_PANEL_H
+    const up           = spaceAbove > spaceBelow && (spaceBelow < 160 || clippedBelow) && spaceAbove >= 160
+    const avail        = Math.max(120, Math.floor(up ? spaceAbove : spaceBelow))
     setRect({
       left:   r.left,
       width:  r.width,
-      maxH:   Math.min(360, avail),
+      maxH:   Math.min(MAX_PANEL_H, avail),
       // `position: fixed` resolves against the layout viewport, so anchor with
       // bottom when opening upward rather than converting to a top offset.
       top:    up ? null : r.bottom + GAP,
