@@ -18,9 +18,14 @@ import { useEffect } from 'react'
 //   busy        — disables buttons and shows a spinner while the request runs
 //   totalDays   — full retention window, live + archive, from /app-config
 //   liveDays    — the live half, used for the detail line
+//   storeWording— true for a store login, which sees a Current / Archived pair
+//                 under "Records" rather than the back office's Status dropdown.
+//                 The instruction has to name the control the reader can
+//                 actually see, or it is worse than no instruction.
 //   onConfirm / onCancel
 export default function ConfirmArchiveModal({
-  open, count = 1, busy = false, totalDays, liveDays, onConfirm, onCancel,
+  open, count = 1, busy = false, totalDays, liveDays, storeWording = false,
+  onConfirm, onCancel,
 }) {
   // Esc closes (but never confirms).
   useEffect(() => {
@@ -86,13 +91,18 @@ export default function ConfirmArchiveModal({
             everyday lists{period ? <> and be kept for <strong>{period}</strong></> : ''}.
           </p>
 
+          {/* Says "choose", not "tick": the back-office control is an option in
+              the Status dropdown and the store control is a Current / Archived
+              pair. There is no checkbox any more -- it was removed once Archived
+              became an ordinary status -- so wording tied to one would have sent
+              people looking for a control that is not there. */}
           <div style={{
             fontSize: 13, margin: '12px 0 0', padding: '10px 12px',
             background: 'rgba(46,120,214,.07)', border: '1px solid rgba(46,120,214,.25)',
             borderRadius: 8, color: 'var(--text)', lineHeight: 1.5,
           }}>
-            To see {many ? 'them' : 'it'} again, go to <strong>Reports</strong> and
-            tick <strong>Archived</strong>.
+            To see {many ? 'them' : 'it'} again, open <strong>Reports</strong> and
+            choose <strong>Archived</strong> under <strong>{storeWording ? 'Records' : 'Status'}</strong>.
           </div>
 
           <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '10px 0 0', lineHeight: 1.5 }}>
