@@ -979,6 +979,11 @@ function HQReports() {
                 onChange={setTaskTypeIds}
                 options={taskTypes.map(t => ({ id: t.code, label: t.name }))}
                 placeholder="All task types"
+                /* No search box. It appears automatically at 8+ options and there
+                   are 12 task types -- a list short enough to read at a glance, so
+                   the field only cost a tap, took the focus, and ate ~45px of a
+                   panel that was already clipping the list on a phone. */
+                searchable={false}
               />
             </div>
 
