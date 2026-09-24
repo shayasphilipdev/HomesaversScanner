@@ -575,6 +575,51 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-09-24 (later) — Archived is just a status; dropdown toolbar holds two rows
+
+**The "Include archived" checkbox is gone.** Archived is an ordinary status now,
+picked from the back-office **Status** dropdown like any other. The checkbox was
+a second control for one question and the two could disagree — tick the box,
+then choose a status, and the box quietly meant nothing. The `includeArchived`
+state went with it: `statusIds` is the single source of truth, and the store's
+**Current / Archived** pair reads and writes it directly (`showingArchived =
+statusIds.includes('cleared')`).
+
+Stores keep their pair, because they do not get the Status dropdown at all.
+
+**The Archive dialog named a control that no longer exists.** It said "go to
+Reports and tick Archived". It now says *choose* Archived, and names the right
+control for who is reading it — **Status** for back office, **Records** for a
+store (`storeWording={!isBO}`). They genuinely see different controls, and an
+instruction pointing at the wrong one is worse than no instruction.
+
+**Dropdown toolbar (`MultiSelectDropdown`) now holds exactly two rows.** The
+two-row structure was already in the code; what was missing was that the first
+row could *wrap*. Measured against the deployed stylesheet, injected into the
+real page so the real `.btn` metrics applied:
+
+| panel width | 220px | 170px | 140px | while searching |
+|---|---|---|---|---|
+| before | 2 rows | **3** | **3** | **3** |
+| after | 2 rows | 2 | 2 | 2 + the optional line |
+
+Two causes, both fixed:
+
+1. `flex-wrap: wrap` with `flex: 1`. A flex item defaults to `min-width: auto`
+   and refuses to shrink below its content, so on a narrow panel **Clear all**
+   dropped to its own line. Now `flex-wrap: nowrap` + `min-width: 0`, and the
+   labels ellipsis rather than wrapping inside the button and doubling its
+   height.
+2. **The case that actually bit.** All three dropdowns named — Reports' *Stores*
+   and *Task types*, Pricing's *Task type* — have 8+ options, so they show a
+   search box (`searchable ?? options.length >= 8`). Typing added a third
+   "✓ Every" button to the row, which pushed **Clear all** onto its own line at
+   any width. That button now gets its **own full-width line**, so the two
+   buttons that are always present are never squeezed by one that usually is not.
+
+One shared component, so this covers the three dropdowns asked for and every
+other toolbar dropdown with it.
+
 ### 2026-09-24 — 7-week retention: 2 weeks live + 5 weeks archive
 
 **The model.** A task record is kept `scan_record_retention_days` in Postgres,
