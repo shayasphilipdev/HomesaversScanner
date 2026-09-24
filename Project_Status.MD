@@ -575,6 +575,100 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-09-24 — Weekly Department Check email, calendar weeks, coverage counts
+
+#### The Monday 09:00 email
+
+Who did **not** do a Department Check last calendar week, plus how much the rest
+did. Scheduled task **Homesavers Department Check Weekly**, Mon 09:00, first run
+**28/09/2026** (reporting Week 39).
+
+```
+scripts/dept-check-weekly.py
+   └─ GET /api/reports/dept-check-week      (header: X-Sync-Secret)
+        └─ RPC dept_check_summary(from, to, store_ids)
+```
+
+Deliberately a SECOND script rather than another section in `aging-report.py`:
+that one runs Wednesday 08:00 about the pending query backlog and wants a
+different schedule, recipients and failure mode. One report per invocation is
+the existing convention — `deploy-scripts.ps1` and every Task Scheduler entry
+assume it.
+
+Recipients are in the git-ignored `dept-check-weekly.config.json` (SMTP reused
+from the aging report, so one mail account to maintain). Only the example ships.
+
+The **API** works out which week "last week" is, not the script — that matters at
+a year boundary, where 2024-12-30 is week 1 of ISO-2025. Verified against
+Postgres `to_char(d,'IW')` on seven dates including 2026-12-28 (wk 53) and
+2027-01-04 (wk 1).
+
+Proven end to end against live before scheduling:
+
+> Week 38 (14/09/26 - 20/09/26): **11 of 59 stores missed**; 60,615 records,
+> 386 departments.
+
+#### One definition, two consumers
+
+`dept_check_summary` backs both the email and the Dashboard card, so the screen
+and the email can never disagree about what counts as having done a Department
+Check. `GET /reports/dept-check-week` accepts **either** `X-Sync-Secret`
+(chain-wide, for the script) **or** a back-office session (store-scoped, for the
+Dashboard).
+
+Two decisions worth keeping:
+
+- **LEFT JOIN from `stores`, not an inner join.** A store that did nothing
+  produces no `task_records` rows and would silently vanish from a report about
+  exactly those stores.
+- **`source='test'` excluded.** Telling management a store did its check because
+  somebody exercised the test app is worse than no report.
+
+"Departments" is the **distinct** count of `details->>'item_group'`, not the
+number of scans: 400 records across 2 departments is a very different week from
+400 across 12, and only the second is a real check.
+
+#### Calendar weeks
+
+A week now says which week it is, in the form the business uses:
+
+| where | shows |
+|---|---|
+| date picker | `This week — Week 39 (21/09/26 - 27/09/26)` |
+| chart axis | `Wk 39`, with `Week 39 (21/09/26 - 27/09/26)` as the title |
+
+Relabelled **client-side** from the bucket start date the response already
+carries, rather than reopening `dashboard_stats_v2` — a large, CPU-tuned
+function — purely to change a caption. The axis follows the bucket the SERVER
+says it used, so it can never label a week the data is not bucketed by.
+
+> **A wrong turn worth recording.** The first attempt taught `rangeLabel()` to
+> render the week — but nothing renders `rangeLabel`. The Dashboard uses its own
+> `dataRangeLabel()`, and that one deliberately reports the days that actually
+> had ACTIVITY rather than the selected window, so labelling it "Week 39" would
+> be wrong whenever a store only scanned Mon–Wed. The week name belongs where the
+> range is *chosen*, which is the picker.
+
+#### Coverage counts on the Dashboard
+
+The **No Department Check** card now also shows records, distinct departments and
+"N of M stores" for the selected range, from the same endpoint as the email.
+Fetched separately from the main stats so a slow aggregate never delays the
+dashboard, and the helper resolves to `null` rather than throwing — a failure
+costs two figures on one card, not the page.
+
+#### The thing that could silently break it
+
+A Monday 09:00 report about the previous Mon–Sun reads records up to **8 days
+old**, against a 14-day Postgres window — about **6 days of margin**. If
+`scan_record_retention_days` is ever taken below **9**, the email still sends and
+the numbers are quietly wrong. The Settings floor of 10 is what keeps that safe;
+do not lower it without revisiting this report.
+
+**Not visually verified:** the Dashboard card's new counts render only for
+`isBO`, and the available session is a store login. The endpoint itself is proven
+(the email script drives the same RPC against live).
+
 ### 2026-09-24 — Department Check excluded from duplicate highlighting
 
 Once highlighting actually worked, the store's default report showed **196 of
