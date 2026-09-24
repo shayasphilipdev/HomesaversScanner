@@ -875,13 +875,24 @@ surface in a report whose filter excludes it purely because of where it lives.
 Reverse needed no change: it already renders on any non-pending row, so it covers
 Archived.
 
-> **Phase 3b is the one step left: change Live record retention from 21 to 14**
-> on the Settings page. Everything needed for it is deployed. It was held back
-> deliberately so one night runs first with the all-types archiver and the new
-> purge at the current window (~1,300 records) rather than debugging them for the
-> first time against a ~48,000-record catch-up. The guard makes the flip safe
-> whenever it happens: the purge cannot outrun the archiver, so falling behind
-> delays deletion instead of losing anything.
+> **Phase 3b DONE, 2026-09-24:** `scan_record_retention_days` 21 -> 14, on the
+> owner's instruction. The full 7-week chain is now live: 14 days in Postgres,
+> 35 in D1.
+>
+> Measured at the moment of the flip: **49,892** records became due, **none** of
+> them archived yet, and the purge predicate selected **0** — the guard doing
+> exactly its job. At ~2 D1 writes per record the backlog is ~99,800 writes
+> against a 100,000/day free limit, so it drains over **two or three nights**,
+> and Postgres holds more than 14 days until it does. Nothing is at risk while
+> that happens: the purge only ever deletes what the archiver has confirmed.
+>
+> Note this is also the FIRST night the all-types archiver and the rewritten
+> purge run at all, and they run against the catch-up rather than the ~1,300
+> records a pre-flip night would have given them. Worth checking
+> `archive_runs` tomorrow.
+>
+> `photo_retention_days` was separately changed to **49** during the same
+> session, which lines photo lifetime up with the full record window.
 
 Archiver tests: 38 → 81 (`scratchpad/archiver.test.mjs`), including a non-J
 record end to end, `details` round-tripping, a mixed-type sweep, the per-run
