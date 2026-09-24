@@ -62,6 +62,33 @@ export function startOfIsoWeek(day) {
   return isoDay(d)
 }
 
+// ISO-8601 week number: the week containing that week's Thursday. Matches
+// Postgres to_char(d,'IW') and the API's isoWeekNo() -- verified against the
+// database on seven dates including the awkward ones (2026-12-28 is week 53,
+// 2024-12-30 is week 1 of ISO-2025).
+export function isoWeekNumber(day) {
+  const d = parseDay(day)
+  d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7))   // -> that week's Thursday
+  const jan4 = parseDay(`${d.getFullYear()}-01-04`)
+  jan4.setDate(jan4.getDate() + 3 - ((jan4.getDay() + 6) % 7))
+  return 1 + Math.round((d - jan4) / (7 * 86400000))
+}
+
+// "Week 39 (21/09/26 - 27/09/26)" — the form the business uses. Takes any day in
+// the week and reports the whole Mon-Sun span it belongs to.
+export function weekRangeLabel(day) {
+  const mon = startOfIsoWeek(day)
+  const sun = addDays(mon, 6)
+  const dd  = (d) => {
+    const [y, m, x] = d.split('-')
+    return `${x}/${m}/${y.slice(2)}`
+  }
+  return `Week ${isoWeekNumber(mon)} (${dd(mon)} - ${dd(sun)})`
+}
+
+// Short form for a chart axis, where the full label does not fit.
+export const weekShortLabel = (day) => `Wk ${isoWeekNumber(day)}`
+
 export function startOfMonth(day) {
   const d = parseDay(day)
   d.setDate(1)
@@ -153,7 +180,16 @@ const fmtDay = (day) =>
   parseDay(day).toLocaleDateString('en-IE', { day: 'numeric', month: 'short' })
 
 export function rangeLabel({ preset, fromDay, toDay }) {
+  // A calendar week says which week it is. "Last week" is a relative phrase that
+  // stops being true the moment someone forwards a screenshot or reads it on a
+  // Monday morning; "Week 39 (21/09/26 - 27/09/26)" does not.
+  if ((preset === 'this_week' || preset === 'last_week') && fromDay) return weekRangeLabel(fromDay)
   if (preset && preset !== 'custom' && PRESET_LABELS[preset]) return PRESET_LABELS[preset]
+  // A hand-picked range that happens to be exactly one Mon-Sun week is a
+  // calendar week too, whatever route the user took to it.
+  if (fromDay && toDay && startOfIsoWeek(fromDay) === fromDay && addDays(fromDay, 6) === toDay) {
+    return weekRangeLabel(fromDay)
+  }
   if (!fromDay || !toDay) return ''
   return fromDay === toDay ? fmtDay(fromDay) : `${fmtDay(fromDay)} – ${fmtDay(toDay)}`
 }

@@ -32,11 +32,12 @@ $files = @(
   'local_upload_server.py',  # run_sync.bat "server" job
   'manifest-generator.py',
   'run-manifest.vbs',
-  'aging-report.py'
+  'aging-report.py',
+  'dept-check-weekly.py'     # Monday 09:00 "who missed Department Check" email
 )
 
 # Git-ignored, so it only exists locally — copy it if present, never fail on it.
-$optional = @('aging-report.config.json')
+$optional = @('aging-report.config.json', 'dept-check-weekly.config.json')
 
 $copied = 0; $skipped = 0; $missing = @()
 

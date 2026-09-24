@@ -1,12 +1,12 @@
 ﻿import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../App.jsx'
-import { getDashboardStats, getStores, getAreas } from '../lib/api.js'
+import { getDashboardStats, getStores, getAreas, getDeptCheckWeek } from '../lib/api.js'
 import { ADMIN_ROLES } from '../lib/roles.js'
 import { TASK_FORMS } from '../lib/taskTypes.js'
 import { downloadExcel } from '../lib/excel.js'
 import Skeleton from '../components/Skeleton.jsx'
 import DateRangePicker from '../components/DateRangePicker.jsx'
-import { useDateRange, addDays } from '../lib/dateRange.js'
+import { useDateRange, addDays, weekRangeLabel, weekShortLabel } from '../lib/dateRange.js'
 
 const STATUS_LABEL = {
   pending:          'Pending',
@@ -56,6 +56,9 @@ export default function Dashboard() {
   const [stores, setStores]         = useState([])
   const [areas, setAreas]           = useState([])
   const [stats, setStats]           = useState(null)
+  // Department Check record + distinct-department counts for the selected range.
+  // Back office only, because the endpoint is.
+  const [deptSummary, setDeptSummary] = useState(null)
   const [loading, setLoading]       = useState(true)
   const [error, setError]           = useState('')
 
@@ -114,6 +117,14 @@ export default function Dashboard() {
       .then(setStats)
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
+
+    // Fetched separately so a slow aggregate never delays the whole dashboard,
+    // and a failure costs two figures on one card rather than the page.
+    // getDeptCheckWeek resolves to null instead of throwing.
+    if (isBO) {
+      setDeptSummary(null)
+      getDeptCheckWeek({ from: params.from, to: params.to }).then(setDeptSummary)
+    }
   }, [params.from, params.to, bucket, scope, scopedStoreIds, isBO])
 
   const totals = stats?.totals   || { all: 0, pending: 0, completed: 0, no_change_needed: 0, store_completed: 0 }
@@ -188,14 +199,17 @@ export default function Dashboard() {
       <div className="dash-row dash-row--thirds">
         <TaskDonutOps    rows={stats?.by_task_type || []} dataDays={stats?.by_day || []} dataFrom={stats?.data_from} dataTo={stats?.data_to} loading={loading} />
         <TaskDonutChecks rows={stats?.by_task_type || []} dataDays={stats?.by_day || []} dataFrom={stats?.data_from} dataTo={stats?.data_to} loading={loading} />
-        {isBO && <StoresMissingDeptCheck deptCheck={stats?.dept_check_range} allStores={scopeStores} scopeStoreIds={scopedStoreIds} statsFrom={stats?.stats_from} loading={loading} />}
+        {isBO && <StoresMissingDeptCheck deptCheck={stats?.dept_check_range} allStores={scopeStores} scopeStoreIds={scopedStoreIds} statsFrom={stats?.stats_from} loading={loading} summary={deptSummary} />}
       </div>
 
       {isBO && <StoreDonutGrid rows={stats?.by_store || []} loading={loading} allStores={scopeStores} dataDays={stats?.by_day || []} dataFrom={stats?.data_from} dataTo={stats?.data_to} />}
       {!isBO && <RecentList rows={stats?.recent || []} loading={loading} isBO={isBO} />}
 
       {/* Activity — moved below the store graph and made compact (secondary info). */}
-      <ActivityChart byDay={stats?.by_day || []} loading={loading} compact />
+      {/* The server echoes back the bucket it actually used; prefer that over the
+          client's suggestion so the axis can never label a week that the data is
+          not bucketed by. */}
+      <ActivityChart byDay={stats?.by_day || []} loading={loading} compact bucket={stats?.bucket || bucket} />
     </div>
   )
 }
@@ -236,7 +250,7 @@ function SplitKpiCard({ loading, feature, hoLabel, hoValue, hoSub, opsLabel, ops
   )
 }
 
-function ActivityChart({ byDay, loading, compact }) {
+function ActivityChart({ byDay, loading, compact, bucket }) {
   const days = Array.isArray(byDay) ? byDay : []
 
   const hoTotal  = days.reduce((s, d) => s + (d.ho_count  || 0), 0)
@@ -372,10 +386,22 @@ function ActivityChart({ byDay, loading, compact }) {
       <div className="ac-axis">
         {/* The RPC sends a ready-made label per bucket ("04 Sep" / "Wk 01 Sep" /
             "Sep 2026") because the bucket size varies with the selected range.
-            dayLabel is the fallback for a day-bucketed response without one. */}
-        {dd.map((d, i) => (
-          <span key={`${d.date || ''}-${i}`}>{d.label || dayLabel(d.date, dd[i - 1]?.date)}</span>
-        ))}
+            dayLabel is the fallback for a day-bucketed response without one.
+            WEEK buckets are relabelled here rather than server-side: the bucket
+            start date is already in the response, so the week number can be
+            derived without reopening dashboard_stats_v2 — a large, CPU-tuned
+            function — purely to change a caption. The axis gets "Wk 39"; the
+            full "Week 39 (21/09/26 - 27/09/26)" is the title, because the whole
+            string is far too wide for a tick on a phone. */}
+        {dd.map((d, i) => {
+          const isWeek = bucket === 'week' && d.date
+          return (
+            <span key={`${d.date || ''}-${i}`}
+                  title={isWeek ? weekRangeLabel(d.date) : undefined}>
+              {isWeek ? weekShortLabel(d.date) : (d.label || dayLabel(d.date, dd[i - 1]?.date))}
+            </span>
+          )
+        })}
       </div>
     </div>
   )
@@ -589,7 +615,7 @@ function StoreDonutGrid({ rows, loading, allStores, dataDays, dataFrom, dataTo }
 // computed server-side (task_stats_daily for prior days + live records for
 // today), so it survives the nightly purge that deletes J records after the
 // retention window regardless of status.
-function StoresMissingDeptCheck({ deptCheck, allStores, scopeStoreIds, statsFrom, loading }) {
+function StoresMissingDeptCheck({ deptCheck, allStores, scopeStoreIds, statsFrom, loading, summary }) {
   const doneJ = new Set(deptCheck?.store_ids || [])
   const missing = (allStores || [])
     .filter(s => s.is_active !== false)
@@ -622,6 +648,19 @@ function StoresMissingDeptCheck({ deptCheck, allStores, scopeStoreIds, statsFrom
         <span style={{ minWidth: 0 }}>
           No Department Check
           <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}> ({winLabel})</span>
+          {/* Scans and coverage for the same range. "Departments" is the count of
+              DISTINCT departments recorded, not the number of scans -- two very
+              different things, and the one that says whether a check was
+              thorough. Chain-level here because the list below is the stores
+              that did NOT do one; the per-store breakdown is in the Monday
+              email. */}
+          {summary?.totals && (
+            <span style={{ display: 'block', fontWeight: 400, fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>
+              {summary.totals.records.toLocaleString('en-IE')} record{summary.totals.records === 1 ? '' : 's'}
+              {' · '}{summary.totals.departments.toLocaleString('en-IE')} department{summary.totals.departments === 1 ? '' : 's'}
+              {' · '}{summary.totals.did} of {summary.totals.stores} stores
+            </span>
+          )}
         </span>
         {!loading && <span className="chip" style={{ marginLeft: 'auto', flexShrink: 0 }}><span className="chip-dot" />{missing.length}</span>}
       </div>

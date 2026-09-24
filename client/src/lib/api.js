@@ -270,6 +270,19 @@ export const getTaskRecords = ({ storeId, taskType, status, limit, offset, filte
 // POST because the body carries up to 1,000 barcodes. Never throws: highlighting
 // is an aid, not the report, so a failure here leaves the rows unhighlighted
 // rather than taking the page down.
+// Department Check coverage for a date range: per active store, the record count
+// and the count of DISTINCT departments covered. Same endpoint the Monday email
+// uses, so the screen and the email can never disagree about what counts as
+// having done a Department Check. Never throws -- these are supplementary
+// figures on a card that must still render without them.
+export const getDeptCheckWeek = ({ from, to } = {}) => {
+  const q = new URLSearchParams()
+  if (from) q.set('from', from)
+  if (to)   q.set('to',   to)
+  return request('/reports/dept-check-week' + (q.toString() ? `?${q}` : ''))
+    .catch(() => null)
+}
+
 export const getDuplicateKeys = (body) =>
   // NOTE: pass the OBJECT. request() stringifies options.body itself, so
   // JSON.stringify here double-encodes it -- the Worker's request.json() then
