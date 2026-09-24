@@ -33,6 +33,12 @@ export default function TaskTypePicker({ taskTypes, selected, onSelect }) {
           value={selected ? [selected] : []}
           onChange={arr => onSelect(arr[0] || null)}
           placeholder="— Pick a task type —"
+          /* No search box. It appears automatically at 8+ options and there are
+             12 task types. This is the picker a store opens before every single
+             record, on a phone: a search field there costs a tap and pulls the
+             keyboard up over the very list it is meant to help you read.
+             CurrentStorePicker deliberately keeps its search -- 55 stores. */
+          searchable={false}
         />
       </div>
     </div>
