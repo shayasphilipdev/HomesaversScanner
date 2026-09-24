@@ -10,7 +10,9 @@ import {
   reverseTaskRecordStatus
 } from '../lib/api.js'
 import { COMPETITION_REPORT_COLS, COMPETITION_REPORT_HEADERS, COMPETITION_REPORT_MIN_WIDTHS } from '../lib/competitionOptions.js'
-import { TASK_FORMS, STORE_CLEARABLE, HARD_DELETABLE } from '../lib/taskTypes.js'
+import { TASK_FORMS, STORE_ARCHIVABLE } from '../lib/taskTypes.js'
+import { isAdminRole } from '../lib/roles.js'
+import ConfirmArchiveModal from '../components/ConfirmArchiveModal.jsx'
 import { downloadExcel } from '../lib/excel.js'
 import { useToast } from '../components/Toast.jsx'
 import MultiSelectDropdown from '../components/forms/MultiSelectDropdown.jsx'
@@ -444,7 +446,10 @@ function BMReductionsReport() {
 }
 
 function HQReports() {
-  const { session } = useStore()
+  // appConfig carries the retention windows: the Archive dialog quotes them, and
+  // the report uses the live window to decide by itself whether the D1 archive
+  // needs reading for this date range.
+  const { session, appConfig } = useStore()
   const toast = useToast()
   const isBO = session.mode === 'backoffice'
 
@@ -470,11 +475,14 @@ function HQReports() {
         ? ['pending']
         : ['pending', 'no_change_needed', 'store_completed'])
   const [statusIds, setStatusIds]     = useState(defaultStatusIds)
-  // Archived (Cloudflare D1) rows are OFF unless deliberately asked for. That is
-  // the requirement, and it is also what keeps the default export cheap: D1
-  // bills rows SCANNED and the free plan fails past 5M/day, so nobody should pay
-  // for six months of history to run today's report.
-  const [includeArchive, setIncludeArchive] = useState(false)
+  // "Show archived RECORDS" -- a STATUS filter, not a storage location.
+  //
+  // It used to mean "also read Cloudflare D1", which conflated two unrelated
+  // things: whether a record was archived by a user, and whether it happens to
+  // have aged out of Postgres. A record can be either, both or neither. Now the
+  // user asks for a date range and a status; where the rows physically live is
+  // the app's problem, not theirs.
+  const [includeArchived, setIncludeArchived] = useState(false)
   // Alt-barcode snapshot status, captured when the product was scanned.
   const [itemStatusIds, setItemStatusIds]       = useState([])
   const [barcodeStatusIds, setBarcodeStatusIds] = useState([])
@@ -493,6 +501,9 @@ function HQReports() {
   const [detailRecord, setDetailRecord] = useState(null)
   const [deleting, setDeleting]       = useState(false)
   // "Delete ALL matching J/K" (filter-based, batched) confirmation + progress.
+  const isAdmin = isAdminRole(session)
+  // Archive confirmation. archiveTarget = { ids:[...] } or null.
+  const [archiveTarget, setArchiveTarget] = useState(null)
   const [matchDelete, setMatchDelete]   = useState(false)
   const [matchDeleting, setMatchDeleting] = useState(false)
   const [matchDeleted, setMatchDeleted] = useState(0)
@@ -580,7 +591,8 @@ function HQReports() {
       if (storeIds.length)    baseParams.storeId   = storeIds.join(',')
       if (taskTypeIds.length) baseParams.task_type = taskTypeIds.join(',')
       if (statusIds.length)   baseParams.status    = statusIds.join(',')
-      if (statusIds.includes('cleared')) baseParams.includeCleared = '1'
+      // Either an explicit Archived selection, or the back-office checkbox.
+      if (statusIds.includes('cleared') || (!statusIds.length && includeArchived)) baseParams.includeCleared = '1'
       if (itemStatusIds.length)    baseParams.item_status    = itemStatusIds.join(',')
       if (barcodeStatusIds.length) baseParams.barcode_status = barcodeStatusIds.join(',')
 
@@ -635,16 +647,29 @@ function HQReports() {
       // begins exactly where Supabase retention ends -- so archived rows simply
       // go in front of the live ones rather than being interleaved.
       //
-      // Skipped entirely when the report is filtered to task types that exclude
-      // Department Check, since that is all the archive holds.
-      const archiveWanted = includeArchive &&
-        (taskTypeIds.length === 0 || taskTypeIds.includes('J'))
+      // Read AUTOMATICALLY whenever the requested range reaches back past the
+      // live window -- there is nothing for the user to tick. Anything newer
+      // than the cutoff cannot be in D1 yet, so a report on the last fortnight
+      // never pays for an archive query. The live window comes from
+      // /app-config so this stays correct when the setting changes.
+      //
+      // One day of slack: the archiver and the purge run overnight, so a record
+      // exactly on the boundary may be in either store for a few hours.
+      const liveDays   = appConfig?.retention?.live_days ?? 21
+      const liveCutoff = Date.now() - (liveDays - 1) * 86400000
+      const archiveWanted = new Date(from).getTime() < liveCutoff
       if (archiveWanted) {
         const archived = []
         let aCursor = null
         for (let i = 0; i < 500; i++) {
           const ap = new URLSearchParams({ from, to })
-          if (storeIds.length) ap.set('storeId', storeIds.join(','))
+          if (storeIds.length)    ap.set('storeId',  storeIds.join(','))
+          // Same filters the live query uses, or an archived row would show up
+          // in a report whose status filter excludes it purely because of where
+          // it is stored.
+          if (taskTypeIds.length) ap.set('taskType', taskTypeIds.join(','))
+          if (statusIds.length)   ap.set('status',   statusIds.join(','))
+          else if (includeArchived) ap.set('includeCleared', '1')
           if (aCursor) {
             ap.set('after_created_at_ms', aCursor.after_created_at_ms)
             ap.set('after_id',            aCursor.after_id)
@@ -657,10 +682,9 @@ function HQReports() {
           aCursor = page.cursor
         }
         // NOT rows.unshift(...archived): spreading an array as arguments is
-        // bounded by the engine's argument limit, and this list reaches ~844k
-        // rows once six months of retention has accumulated -- which overflows
-        // the call stack rather than merely being slow. concat builds a new
-        // array with no per-element argument.
+        // bounded by the engine's argument limit, and this list grows with
+        // retention -- it overflows the call stack rather than merely being
+        // slow. concat builds a new array with no per-element argument.
         rows = archived.concat(rows)
       }
 
@@ -680,14 +704,16 @@ function HQReports() {
 
   // Selection.
   //  · Back office: select pending records to review.
-  //  · Store users: select records they're allowed to clear — J/K/M still
-  //    pending, plus anything HO has already reviewed (completed /
-  //    no_change_needed). Kept in step with STORE_CLEARABLE in lib/taskTypes.js
-  //    and with the backend bulk-clear filter.
+  //  · Store users: select records they're allowed to ARCHIVE — their own floor
+  //    types still pending, plus anything HO has reviewed, plus their own
+  //    store_completed records. That last group is new: it used to be covered by
+  //    Delete, which stores no longer have. Kept in step with STORE_ARCHIVABLE
+  //    in lib/taskTypes.js and with the backend bulk-clear filter.
   const pendingIds = useMemo(() => records.filter(r => r.status === 'pending').map(r => r.id), [records])
   const storeClearableIds = useMemo(() => records.filter(r =>
     r.status === 'completed' || r.status === 'no_change_needed' ||
-    (STORE_CLEARABLE.has(r.task_type) && r.status === 'pending')
+    r.status === 'store_completed' ||
+    (STORE_ARCHIVABLE.has(r.task_type) && r.status === 'pending')
   ).map(r => r.id), [records])
 
   const selectableIds  = isBO ? pendingIds : storeClearableIds
@@ -695,11 +721,6 @@ function HQReports() {
   const showCheckCol   = isBO || storeClearableIds.length > 0
   const allSelectableSelected = selectableIds.length > 0 && selectableIds.every(id => selected.has(id))
 
-  // J/K (Department/Price Check) records — permanently deletable by every user.
-  const jkIdSet = useMemo(
-    () => new Set(records.filter(r => r.task_type === 'J' || r.task_type === 'K').map(r => r.id)),
-    [records]
-  )
 
   // Prev/Next inside the Details popup slide through the currently-loaded
   // page of records — not a separate fetch. Naturally disables at either end
@@ -707,7 +728,6 @@ function HQReports() {
   // until the popup is reopened, which is fine — this is for browsing what's
   // already on screen, not paging through the full report from inside there.
   const detailIndex = detailRecord ? records.findIndex(r => r.id === detailRecord.id) : -1
-  const selectedJkIds = [...selected].filter(id => jkIdSet.has(id))
 
   const confirmDelete = async () => {
     const ids = deleteTarget?.ids || []
@@ -830,41 +850,24 @@ function HQReports() {
     }
   }
 
-  // Store-side bulk clear — mark every selected (clearable) record as Clear.
-  // Cleared records drop out of the default report view, so remove them
-  // optimistically; on failure re-run the report to restore the true state.
-  const bulkClear = async () => {
-    if (!selected.size) return
-    const ids = [...selected]
-    const n   = ids.length
+  // ARCHIVE, single or bulk, always behind the same confirmation so the
+  // retention promise is worded identically however it was reached. Archived
+  // records drop out of the default report view, so they are removed
+  // optimistically; on failure the report re-runs and restores the true state.
+  const runArchive = async () => {
+    const ids = (archiveTarget?.ids || []).filter(Boolean)
+    setArchiveTarget(null)
+    if (!ids.length) return
+    const n = ids.length
 
-    setRecords(rs => rs.filter(r => !selected.has(r.id)))
+    setRecords(rs => rs.filter(r => !ids.includes(r.id)))
     setTotal(t => Math.max(0, t - n))
     setSelected(new Set())
-    toast.success(`${n} record${n === 1 ? '' : 's'} cleared.`)
+    toast.success(`${n} record${n === 1 ? '' : 's'} archived.`)
 
     setBusy(true); setError('')
     try {
       await bulkClearTaskRecords(ids)
-    } catch (e) {
-      setError(e.message); toast.error(`Reverted — ${e.message}`)
-      runReport()
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  // Per-row equivalent of bulkClear, for the phone-app row button — selecting
-  // a checkbox just to clear one record is a lot of taps on a small screen.
-  // Same optimistic-remove-then-sync shape as bulkClear, just for one id.
-  const clearOne = async (id) => {
-    setRecords(rs => rs.filter(r => r.id !== id))
-    setTotal(t => Math.max(0, t - 1))
-    toast.success('Record cleared.')
-
-    setBusy(true); setError('')
-    try {
-      await bulkClearTaskRecords([id])
     } catch (e) {
       setError(e.message); toast.error(`Reverted — ${e.message}`)
       runReport()
@@ -945,29 +948,30 @@ function HQReports() {
             </div>
 
             {/* Stores get two states, not five. "Pending / Completed by HO /
-                No change needed / Store confirmed / Clear" is head-office
+                No change needed / Store confirmed / Archived" is head-office
                 vocabulary about who owes whom an answer; a store only needs to
-                know whether a record is still live or has gone to the archive.
+                know whether a record is still in play or has been archived.
                 Back office keeps the real statuses below, because the
                 management performance reports are built on them.
 
                 Current is not a new filter -- it is exactly what a store
                 already got by default (no status selected, so the server
-                applies neq.cleared). Archived adds the records they cleared
-                plus everything that has aged out into D1. */}
+                applies neq.cleared). Archived shows the archived ones instead.
+                Neither says anything about Postgres or D1: the date range
+                decides that, on its own. */}
             {!isBO ? (
               <div className="filter-field filter-field--narrow"><label>Records</label>
                 <div className="flex-row" style={{ gap: 6 }}>
                   {[['current', 'Current'], ['archived', 'Archived']].map(([id, lbl]) => {
-                    const active = (id === 'archived') === includeArchive
+                    const active = (id === 'archived') === includeArchived
                     return (
                       <button
                         key={id}
                         type="button"
                         className={`btn btn-sm ${active ? 'btn-primary' : 'btn-outline'}`}
                         onClick={() => {
-                          if (id === 'archived') { setIncludeArchive(true);  setStatusIds(['cleared']) }
-                          else                   { setIncludeArchive(false); setStatusIds([]) }
+                          if (id === 'archived') { setIncludeArchived(true);  setStatusIds(['cleared']) }
+                          else                   { setIncludeArchived(false); setStatusIds([]) }
                         }}
                         style={{ whiteSpace: 'nowrap' }}
                       >{lbl}</button>
@@ -1017,19 +1021,24 @@ function HQReports() {
               />
             </div>
 
-            {/* Back office only. Stores get the simpler Current / Archived control
-                in its own phase -- the HO status vocabulary is not theirs. */}
+            {/* Back office only -- stores get the simpler Current / Archived
+                control above. This adds ARCHIVED-STATUS records to whatever is
+                already selected; it says nothing about Postgres vs D1, which
+                the date range decides by itself. Ignored while an explicit
+                status filter is set, since that filter already answers the
+                question. */}
             {isBO && (
               <div className="filter-field filter-field--narrow">
-                <label>Archive</label>
+                <label>Archived</label>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                   <input
                     type="checkbox"
-                    checked={includeArchive}
-                    onChange={e => setIncludeArchive(e.target.checked)}
+                    checked={includeArchived}
+                    disabled={statusIds.length > 0}
+                    onChange={e => setIncludeArchived(e.target.checked)}
                     style={{ width: 16, height: 16, margin: 0 }}
                   />
-                  <span style={{ fontSize: 13 }}>Include archived</span>
+                  <span style={{ fontSize: 13, opacity: statusIds.length > 0 ? .5 : 1 }}>Include archived</span>
                 </label>
               </div>
             )}
@@ -1060,16 +1069,20 @@ function HQReports() {
               <span className="note" style={{ fontSize: 12 }}>· {pendingIds.length} pending</span>
             )}
             {!isBO && storeClearableIds.length > 0 && (
-              <span className="note" style={{ fontSize: 12 }}>· {storeClearableIds.length} clearable</span>
+              <span className="note" style={{ fontSize: 12 }}>· {storeClearableIds.length} archivable</span>
             )}
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              {total > 0 && (taskTypeIds.length === 0 || taskTypeIds.some(t => t === 'J' || t === 'K')) && (
+              {/* Admin only, and it requires an explicit task-type filter: the
+                  server refuses an unfiltered request rather than treating it
+                  as "every type", because one button that means "delete
+                  everything in range" is not something to be one click from. */}
+              {isAdmin && total > 0 && taskTypeIds.length > 0 && (
                 <button
                   className="btn btn-sm"
                   onClick={() => setMatchDelete(true)}
-                  title="Permanently delete every J/K record matching this report — all pages"
+                  title="Permanently delete every record matching this report — all pages"
                   style={{ background: '#C0392B', color: '#fff', border: 'none', fontWeight: 600 }}
-                >🗑 Delete all matching J/K</button>
+                >🗑 Delete all matching</button>
               )}
               {hasMore && (
                 <button className="btn btn-sm btn-outline" onClick={loadMore} disabled={loading}>
@@ -1094,10 +1107,10 @@ function HQReports() {
                 title="Copy the selected records to the Pricing page (originals stay here)">
                 € Send to Pricing ({selected.size})
               </button>
-              {selectedJkIds.length > 0 && (
-                <button className="btn btn-sm" disabled={busy} onClick={() => setDeleteTarget({ ids: selectedJkIds })}
+              {isAdmin && (
+                <button className="btn btn-sm" disabled={busy} onClick={() => setDeleteTarget({ ids: [...selected] })}
                   style={{ background: '#C0392B', color: '#fff', border: 'none', fontWeight: 600 }}>
-                  🗑 Delete J/K ({selectedJkIds.length})
+                  🗑 Delete ({selected.size})
                 </button>
               )}
               <button className="btn btn-sm btn-outline" disabled={busy} onClick={() => setSelected(new Set())}>
@@ -1109,15 +1122,10 @@ function HQReports() {
             <div className="flex-row" style={{ padding: '12px 18px', background: 'var(--surface-warm)', borderBottom: '1px solid var(--border)', gap: 8, flexWrap: 'wrap' }}>
               <strong>{selected.size} selected</strong>
               <span style={{ marginLeft: 'auto' }} />
-              <button className="btn btn-sm btn-primary" disabled={busy} onClick={bulkClear}>
-                {busy ? <><span className="spinner" /> Archiving…</> : `✓ Archive selected (${selected.size})`}
+              <button className="btn btn-sm btn-primary" disabled={busy}
+                onClick={() => setArchiveTarget({ ids: [...selected].filter(id => selectableSet.has(id)) })}>
+                {`📦 Archive selected (${[...selected].filter(id => selectableSet.has(id)).length})`}
               </button>
-              {selectedJkIds.length > 0 && (
-                <button className="btn btn-sm" disabled={busy} onClick={() => setDeleteTarget({ ids: selectedJkIds })}
-                  style={{ background: '#C0392B', color: '#fff', border: 'none', fontWeight: 600 }}>
-                  🗑 Delete J/K ({selectedJkIds.length})
-                </button>
-              )}
               <button className="btn btn-sm btn-outline" disabled={busy} onClick={() => setSelected(new Set())}>
                 Clear selection
               </button>
@@ -1155,11 +1163,13 @@ function HQReports() {
                   const isPending = r.status === 'pending'
                   const isSelectable = selectableSet.has(r.id)
                   const desc = r.item_name || r.description || r.product_name_label || ''
-                  // Store-side per-row Clear — same two paths as the old
-                  // TaskRecordList row: HO already reviewed it, or it's a
-                  // J/K/M row a store can clear straight from pending.
+                  // ARCHIVE covers everywhere Clear or Delete used to appear.
+                  // selectableSet already encodes the store-side rule, so the
+                  // row button and the bulk bar cannot drift apart.
                   const reviewed = r.status === 'completed' || r.status === 'no_change_needed'
-                  const storeCanClearNow = !isBO && STORE_CLEARABLE.has(r.task_type) && isPending
+                  const canArchive = isBO
+                    ? (reviewed || r.status === 'store_completed')
+                    : selectableSet.has(r.id)
                   return (
                     <Fragment key={r.id}>
                       <tr>
@@ -1243,10 +1253,11 @@ function HQReports() {
                               title="All details for this record"
                               onClick={() => setDetailRecord(r)}
                             >🔍</button>
-                            {!isBO && (reviewed || storeCanClearNow) && (
-                              <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => clearOne(r.id)}
-                                title={reviewed ? 'PO actioned — move to the archive' : 'Mark as actioned — move to the archive'}>
-                                ✓ Archive
+                            {canArchive && (
+                              <button className="btn btn-sm btn-primary" disabled={busy}
+                                onClick={() => setArchiveTarget({ ids: [r.id] })}
+                                title="Move to the archive — reversible">
+                                📦 Archive
                               </button>
                             )}
                             <button
@@ -1254,7 +1265,7 @@ function HQReports() {
                               title="Messages"
                               onClick={() => toggleMessages(r.id)}
                             >💬</button>
-                            {HARD_DELETABLE.has(r.task_type) && (
+                            {isAdmin && (
                               <button
                                 className="btn btn-sm"
                                 title="Permanently delete this record"
@@ -1312,6 +1323,16 @@ function HQReports() {
         dateTo={to}
         onConfirm={confirmDelete}
         onCancel={() => { if (!deleting) setDeleteTarget(null) }}
+      />
+
+      <ConfirmArchiveModal
+        open={!!archiveTarget}
+        count={archiveTarget?.ids.length || 1}
+        busy={busy}
+        totalDays={appConfig?.retention?.total_days}
+        liveDays={appConfig?.retention?.live_days}
+        onConfirm={runArchive}
+        onCancel={() => setArchiveTarget(null)}
       />
 
       <ConfirmDeleteModal
