@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-23-archive-read2-TEST'
+const API_REVISION   = '2026-09-24-retention-p1-TEST'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -2386,6 +2386,38 @@ export async function onRequest(context) {
       if (!isAdminRole(session)) return err('Forbidden', 403)
       const updates = await request.json()  // { key: value, ... }
       const now = new Date().toISOString()
+
+      // Range-check the settings that decide what gets DELETED. This endpoint is
+      // otherwise deliberately generic -- any key, value stored as String(value)
+      // verbatim -- and every consumer validates at read time with
+      // `Math.max(1, Number(v) || 21)`. That pattern silently swallows a bad
+      // value and substitutes a default, so an admin who typed a retention of
+      // "" or "abc" would be told it saved, see it on the page, and get the
+      // hardcoded 21 forever. Failing the write is the honest outcome.
+      //
+      // The floor of 10 on scan_record_retention_days is load-bearing, not
+      // cosmetic: rollup_task_stats_daily() clamps its recompute window to
+      // (retention - 3), so below 10 it can no longer recompute a full week and
+      // the 180-day dashboard quietly starts losing late status changes.
+      const NUM_LIMITS = {
+        scan_record_retention_days:  { min: 10, max: 365 },
+        archive_retention_days:      { min: 1,  max: 365 },
+        photo_retention_days:        { min: 1,  max: 365 },
+        product_query_retention_days:{ min: 1,  max: 365 },
+        stats_rollup_retention_days: { min: 1,  max: 1095 },
+        stats_rollup_window_days:    { min: 1,  max: 60 },
+      }
+      for (const [k, v] of Object.entries(updates)) {
+        const lim = NUM_LIMITS[k]
+        if (!lim) continue
+        const s = String(v ?? '').trim()
+        if (!/^\d+$/.test(s)) return err(`${k} must be a whole number of days`, 400)
+        const n = Number(s)
+        if (n < lim.min || n > lim.max) {
+          return err(`${k} must be between ${lim.min} and ${lim.max}`, 400)
+        }
+      }
+
       const rows = Object.entries(updates)
         .filter(([k]) => k !== 'backoffice_pin_hash')
         .map(([key, value]) => ({ key, value: String(value), updated_at: now }))

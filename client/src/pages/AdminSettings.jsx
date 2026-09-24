@@ -136,25 +136,40 @@ const KEY_META = {
     hidden: true,   // not wired to anything — kept in DB, hidden from the UI
     hint:  'Planned feature — currently unused.'
   },
+  // Stage 1 of the retention chain. The key name is historical — it governs how
+  // long a task record stays in Postgres, which is what the label says.
+  // Floor of 10 is not cosmetic: the nightly statistics job clamps its recompute
+  // window to (this − 3), so anything below 10 starts silently degrading the
+  // 180-day dashboard.
   scan_record_retention_days: {
     section: 'Retention',
-    label: 'Scan record retention (days)',
-    hint:  'Cleared / store-confirmed task records older than this are removed by the "Delete old task records" cleanup (and the nightly auto-cleanup).'
+    label: 'Live record retention (days)',
+    num:   { min: 10, max: 365 },
+    hint:  'Stage 1 — how long a task record stays in the live database and in the store\'s day-to-day lists. When it passes this age it moves to the archive; it is not lost. Minimum 10 (below that the nightly statistics job cannot recompute a full week).'
+  },
+  archive_retention_days: {
+    section: 'Retention',
+    label: 'Archive retention (days)',
+    num:   { min: 1, max: 365 },
+    hint:  'Stage 2 — how long a record is kept in the archive AFTER it leaves the live database. Total life of a record = this + Live record retention. Archived records are still reportable: tick "Archived" in Reports.'
   },
   photo_retention_days: {
     section: 'Retention',
     label: 'Photo retention (days)',
+    num:   { min: 1, max: 365 },
     hint:  'Photos older than this can be removed via the cleanup button below.'
   },
   stats_rollup_retention_days: {
     section: 'Retention',
     label: 'Dashboard statistics retention (days)',
-    hint:  'How long the per-day dashboard statistics (task_stats_daily) are kept — counts only, no records. Default 180 (6 months). These survive the record cleanup above, which is what keeps long-range dashboard reports accurate.'
+    num:   { min: 1, max: 1095 },
+    hint:  'How long the per-day dashboard statistics (task_stats_daily) are kept — counts only, no records. Default 180 (6 months). These survive BOTH retention stages above, which is what keeps long-range dashboard reports accurate however short the record windows get.'
   },
   stats_rollup_window_days: {
     section: 'Retention',
     label: 'Statistics recompute window (days)',
-    hint:  'How many past days the nightly statistics job recalculates, so late status changes are picked up. Must stay below Scan record retention — it is clamped automatically to (retention − 3), because recomputing a day whose records are already deleted would zero that day.'
+    num:   { min: 1, max: 60 },
+    hint:  'How many past days the nightly statistics job recalculates, so late status changes are picked up. Must stay below Live record retention — it is clamped automatically to (retention − 3), because recomputing a day whose records have already moved to the archive would zero that day.'
   },
   // ── Capacity ───────────────────────────────────────────────────────────
   capacity_db_limit_bytes: {
@@ -176,6 +191,21 @@ const KEY_META = {
     readonly: true,
     hint:  'When the nightly retention cleanup last ran. Read-only — set automatically.'
   }
+}
+
+// Returns a reason string when a numeric setting is out of range, or '' when it
+// is fine. Shared by the input (red border) and save() (blocks the request), so
+// the two can never disagree about what is acceptable.
+export function numInvalid(key, raw) {
+  const meta = KEY_META[key]
+  if (!meta?.num) return ''
+  const s = String(raw ?? '').trim()
+  if (s === '') return 'cannot be blank'
+  if (!/^\d+$/.test(s)) return 'must be a whole number'
+  const n = Number(s)
+  if (n < meta.num.min) return `must be at least ${meta.num.min}`
+  if (n > meta.num.max) return `must be at most ${meta.num.max}`
+  return ''
 }
 
 // Format an ISO timestamp for the read-only System fields; pass through plain
@@ -254,6 +284,19 @@ export default function AdminSettings() {
       const original = Object.fromEntries(settings.map(r => [r.key, r.value]))
       const changed  = Object.fromEntries(Object.entries(values).filter(([k, v]) => v !== original[k]))
       if (!Object.keys(changed).length) { setDirty(false); return }
+
+      // Refuse the whole save rather than sending a bad number. These values
+      // drive deletion; a rejected save is recoverable, a retention period of
+      // "" or 0 that every consumer quietly replaces with its own default is
+      // not — the admin would believe a change took effect that never did.
+      const bad = Object.entries(changed)
+        .map(([k, v]) => [k, numInvalid(k, v)])
+        .filter(([, reason]) => reason)
+      if (bad.length) {
+        const msg = bad.map(([k, reason]) => `${KEY_META[k]?.label || k} ${reason}`).join('; ')
+        setError(msg); toast.error(msg)
+        return
+      }
       await adminUpdateSettings(changed)
       toast.success('Settings saved.')
       await load()
@@ -427,6 +470,18 @@ function SettingsCards({ groups, values, updateValue, onReload, onSave, dirty, s
           <input type="number" min="0" step="1"
             value={values[s.key] ? Math.round(Number(values[s.key]) / 1048576) : ''}
             onChange={e => updateValue(s.key, e.target.value === '' ? '' : String(Math.round(Number(e.target.value) * 1048576)))} />
+        ) : meta.num ? (
+          // These decide what gets deleted, and the PATCH endpoint is generic —
+          // it stores String(value) verbatim, so "abc" was a legal retention
+          // period until now. Every consumer then fell back to its hardcoded
+          // default, silently ignoring the setting the admin thought they had
+          // changed. numInvalid() below blocks the save; this input just makes
+          // the valid range visible.
+          <input type="number" inputMode="numeric"
+            min={meta.num.min} max={meta.num.max} step="1"
+            value={values[s.key] ?? ''}
+            onChange={e => updateValue(s.key, e.target.value)}
+            style={numInvalid(s.key, values[s.key]) ? { borderColor: '#C0392B' } : undefined} />
         ) : (
           <input type="text" value={values[s.key] || ''} onChange={e => updateValue(s.key, e.target.value)} />
         )}
