@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-24-pricing-tt-nosearch-TEST'
+const API_REVISION   = '2026-09-24-dupes-pricing-states-TEST'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -1809,10 +1809,20 @@ export async function onRequest(context) {
       }
       if (toInsert.length) {
         await db.insert('pricing_items', toInsert)
-        // Re-sending a previously-removed record puts it back in pricing —
-        // clear the "removed" marker so Reports stops showing the empty bubble.
         const backIds = toInsert.map(t => t.task_record_id)
-        try { await db.update('task_records', { id: `in.(${backIds.join(',')})`, pricing_removed_at: 'not.is.null' }, { pricing_removed_at: null }) } catch { /* cosmetic */ }
+        // Stamp the original so the report can tell "in Pricing, not priced yet"
+        // from "never sent". Nothing else records that: the pricing_items row is
+        // HARD deleted on removal, so a join has nothing left to find, and
+        // priced_at / pricing_removed_at only ever describe what happened AFTER
+        // this point.
+        //
+        // Re-sending a previously-removed record puts it back in Pricing, so the
+        // "removed" marker is cleared in the same write -- otherwise the row
+        // would report itself as both currently in Pricing and removed from it.
+        try {
+          await db.update('task_records', { id: `in.(${backIds.join(',')})` },
+                          { sent_to_pricing_at: now, pricing_removed_at: null })
+        } catch { /* cosmetic — the record may already have been purged */ }
       }
       return json({ added: toInsert.length, skipped: records.length - toInsert.length })
     }
@@ -3666,7 +3676,7 @@ export async function onRequest(context) {
       const scope = await scopedStoreIds(db, session)
       // null = unrestricted; otherwise filter to the scope's stores.
       const params = {
-        select: 'id,task_type,store_id,supplier_name_text,product_code,product_barcode,product_name_label,actual_product_name,description,uom,quantity,notes,photo_product_url,photo_barcode_url,details,status,review_notes,reviewed_at,marked_for_deletion,completed_at,store_completed_at,cleared_at,created_at,updated_at,barcode_no,item_name,supl_id,supplier_code,item_status,barcode_status,priced_at,pricing_removed_at,messages_resolved_at,messages_resolved_by_name',
+        select: 'id,task_type,store_id,supplier_name_text,product_code,product_barcode,product_name_label,actual_product_name,description,uom,quantity,notes,photo_product_url,photo_barcode_url,details,status,review_notes,reviewed_at,marked_for_deletion,completed_at,store_completed_at,cleared_at,created_at,updated_at,barcode_no,item_name,supl_id,supplier_code,item_status,barcode_status,priced_at,pricing_removed_at,sent_to_pricing_at,messages_resolved_at,messages_resolved_by_name',
         order:  'created_at.desc',
         limit:  String(limit),
         offset: String(offset)
@@ -3694,6 +3704,25 @@ export async function onRequest(context) {
       const bsv = csv(barcodeStatus)
       if (bsv.length) params['barcode_status'] = bsv.length === 1
         ? `ilike.${bsv[0]}` : `in.(${bsv.join(',')})`
+
+      // Pricing state — the four states the report bubble shows, expressed as
+      // PostgREST predicates over the three timestamps that define them. Kept in
+      // step with pricingStateId() in client/src/lib/pricingState.js and the
+      // CASE in task_record_duplicate_keys().
+      //
+      // Multiple selections OR together, which is why this uses `or=` rather
+      // than stacking column filters: each state is a CONJUNCTION of three
+      // column tests, so several states cannot be expressed as one flat AND.
+      const PRICING_PREDICATE = {
+        in_pricing:       'and(sent_to_pricing_at.not.is.null,priced_at.is.null,pricing_removed_at.is.null)',
+        priced:           'and(priced_at.not.is.null,pricing_removed_at.is.null)',
+        priced_removed:   'and(priced_at.not.is.null,pricing_removed_at.not.is.null)',
+        removed_unpriced: 'and(priced_at.is.null,pricing_removed_at.not.is.null)',
+      }
+      const wantPricing = csv(p.get('pricing_state')).filter(x => PRICING_PREDICATE[x])
+      if (wantPricing.length) {
+        params['or'] = `(${wantPricing.map(x => PRICING_PREDICATE[x]).join(',')})`
+      }
 
       // C7: hide store-confirmed records that are pending deletion from all
       // task list views. They remain in the DB until the retention cleanup runs.
@@ -3747,6 +3776,69 @@ export async function onRequest(context) {
         // pagination is always correct even when total is approximate.
         has_more: flat.length === limit
       })
+    }
+
+    // POST /task-records/duplicate-keys — which of these barcodes appear more
+    // than once under the SAME task type, within the same filter the grid is
+    // showing.
+    //
+    // Deliberately its own endpoint rather than a field on GET /task-records.
+    // That list is served by PostgREST, which cannot express GROUP BY/HAVING,
+    // and the Excel path is a CPU-tuned RPC that has already tripped the Worker
+    // budget once. Here the aggregate is isolated: if it is slow or fails, the
+    // grid still renders and the rows simply are not highlighted.
+    //
+    // POST, not GET, because the body carries one barcode per row on screen --
+    // up to 1,000 of them, which is past what belongs in a URL.
+    //
+    // ACROSS ALL STORES, by the owner's decision, so store scope is deliberately
+    // NOT applied to the count. A store therefore sees a row highlighted whose
+    // twin is in another store and not visible to them -- that is what "across
+    // all stores" means here. The caller only ever learns about barcodes it
+    // already supplied from its own visible rows, so nothing is enumerable.
+    if (path === '/task-records/duplicate-keys' && method === 'POST') {
+      if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled for this account', 403)
+      const b = await request.json().catch(() => ({}))
+
+      const arr = (v) => {
+        const a = Array.isArray(v) ? v : String(v || '').split(',')
+        const out = [...new Set(a.map(x => String(x).trim()).filter(x => x && x !== 'all'))]
+        return out.length ? out : null
+      }
+      // Only ever asked about the barcodes actually on screen. Without this the
+      // reply for "Department Check, 30 days" is 19,197 keys (~290 KB) every
+      // time; with it, ~49. The COUNT still runs over the whole filtered set, so
+      // a row whose twin is on an unloaded page is still flagged.
+      const barcodes = arr(b.barcodes)
+      if (!barcodes) return json({ keys: [] })
+      if (barcodes.length > 1000) return err('Too many barcodes in one request', 400)
+
+      const iso = (v) => { if (!v) return null; const d = new Date(v); return isNaN(d) ? null : d.toISOString() }
+
+      let keys = []
+      try {
+        // Parameters mirror GET /task-records above. If a filter is added there
+        // it must be added here too, or the highlight stops matching the rows.
+        const rows = await db.rpc('task_record_duplicate_keys', {
+          p_store_ids:       null,                    // see "ACROSS ALL STORES" above
+          p_task_types:      arr(b.task_type),
+          p_statuses:        arr(b.status),
+          p_include_cleared: b.includeCleared === '1' || b.includeCleared === true,
+          p_item_status:     arr(b.item_status),
+          p_barcode_status:  arr(b.barcode_status),
+          p_from:            iso(b.from),
+          p_to:              iso(b.to),
+          p_limit:           20000,
+          p_barcodes:        barcodes,
+          p_pricing_states:  arr(b.pricing_state),
+        })
+        keys = (rows || []).map(r => (typeof r === 'string' ? r : r.k)).filter(Boolean)
+      } catch (e) {
+        // Highlighting is an aid, not the report. A failure here must never take
+        // the grid down with it.
+        return json({ keys: [], error: String(e?.message || e).slice(0, 200) })
+      }
+      return json({ keys })
     }
 
     // Bulk review (back office) — mark many records as completed or

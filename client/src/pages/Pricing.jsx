@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../App.jsx'
 import { useToast } from '../components/Toast.jsx'
 import { downloadExcel } from '../lib/excel.js'
-import { getPricingItems, savePricingItem, deletePricingItem, getPricingReport, getTaskTypes } from '../lib/api.js'
+import { getPricingItems, savePricingItem, deletePricingItem, getPricingReport, getTaskTypes, getDuplicateKeys} from '../lib/api.js'
 import { VAT_OPTIONS, vatPct, marginPct } from '../lib/pricingOptions.js'
 import AgeClock from '../components/AgeClock.jsx'
 import MultiSelectDropdown from '../components/forms/MultiSelectDropdown.jsx'
+import { dupKey } from '../lib/pricingState.js'
 import RecordDetailModal from '../components/RecordDetailModal.jsx'
 
 // Pricing — back office only. Records sent here from Reports are priced:
@@ -33,6 +34,8 @@ export default function Pricing() {
   const toast = useToast()
   const isBO = session.mode === 'backoffice'
 
+  // "task_type|barcode_no" keys duplicated across the chain (server-computed).
+  const [dupKeys, setDupKeys] = useState(() => new Set())
   const [items, setItems]       = useState([])
   const [edits, setEdits]       = useState({})     // id → {new_selling_price, vat_rate, pricing_notes}
   const [statusFilter, setStatusFilter] = useState('all')
@@ -66,6 +69,17 @@ export default function Pricing() {
         return new Date(b.created_at) - new Date(a.created_at)
       })
       setItems(rows)
+      // Duplicate barcodes, same definition as the Reports page: another record
+      // of the SAME task type carries this barcode, anywhere in the chain.
+      // includeCleared is on because a pricing item's originating record may
+      // since have been archived, and it is still a real second occurrence.
+      const barcodes = [...new Set(rows.map(it => it.record?.barcode_no).filter(Boolean))]
+      if (barcodes.length) {
+        getDuplicateKeys({ barcodes, includeCleared: '1' })
+          .then(keys => setDupKeys(new Set(keys)))
+      } else {
+        setDupKeys(new Set())
+      }
       // Seed row edits from stored values so re-opening shows what was saved.
       setEdits(Object.fromEntries(rows.map(it => [it.id, {
         new_selling_price: it.new_selling_price ?? '',
@@ -258,10 +272,13 @@ export default function Pricing() {
                   const vp = liveVat(it)
                   const mg = liveMargin(it)
                   const isPriced = it.pricing_status === 'priced'
+                  const isDup = dupKeys.has(dupKey({ task_type: r.task_type, barcode_no: r.barcode_no }))
                   const isSaving = savingIds.has(it.id)
                   const empty = <span className="td-muted">—</span>
                   return (
-                    <tr key={it.id} style={{ background: isPriced ? 'var(--surface-warm)' : '#fff' }}>
+                    <tr key={it.id}
+                        className={[isPriced && 'tr-priced', isDup && 'tr-duplicate'].filter(Boolean).join(' ') || undefined}
+                        title={isDup ? 'Another record of this task type has the same barcode' : undefined}>
                       <td className="td-code" style={{ whiteSpace: 'nowrap' }}>{r.barcode_no || r.product_code || empty}</td>
                       <td className="td-code" style={{ whiteSpace: 'nowrap' }}>{it.product_barcode || empty}</td>
                       <td>{r.item_name || r.description || r.product_name_label || empty}</td>
