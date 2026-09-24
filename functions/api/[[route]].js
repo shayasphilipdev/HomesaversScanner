@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-24-dupes-no-deptcheck'
+const API_REVISION   = '2026-09-24-deptcheck-week'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -1160,6 +1160,106 @@ export async function onRequest(context) {
     // Wrong Description, Price Marked, DRS) for the pending/days-pending tables,
     // plus a count of ALL tasks (any status) those types generated yesterday.
     // Secret-authed like the sync jobs, so it MUST sit before the session gate.
+    // GET /reports/dept-check-week — Department Check coverage for a calendar
+    // week: which active stores did one, how many records, and how many DISTINCT
+    // departments each covered.
+    //
+    // TWO CALLERS, two ways in:
+    //   * the Monday 09:00 email script, with X-Sync-Secret, chain-wide;
+    //   * the Dashboard, with a back-office session, scoped to their stores.
+    // One endpoint rather than two so the email and the screen can never drift
+    // apart about what "did a Department Check" means.
+    //
+    // Defaults to the LAST COMPLETE calendar week (Mon 00:00 - Sun 23:59:59),
+    // computed server-side so the caller never has to get week arithmetic right.
+    // ?from/?to override it for testing or an ad-hoc week.
+    if (path === '/reports/dept-check-week' && method === 'GET') {
+      const secretOk = !!env.PRODUCT_SYNC_SECRET &&
+        (request.headers.get('X-Sync-Secret') || '') === env.PRODUCT_SYNC_SECRET
+      if (!secretOk && !isBackOffice(session)) return err('Forbidden', 403)
+
+      const p = url.searchParams
+
+      // Monday-based, matching Postgres date_trunc('week'), the ISO week number
+      // and startOfIsoWeek() in client/src/lib/dateRange.js. Built from UTC
+      // parts because every day bucket in this system is a UTC day.
+      const weekBounds = (offsetWeeks) => {
+        const now = new Date()
+        const d   = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+        const dow = (d.getUTCDay() + 6) % 7                 // Mon=0 … Sun=6
+        d.setUTCDate(d.getUTCDate() - dow + offsetWeeks * 7)
+        const from = new Date(d)
+        const to   = new Date(d); to.setUTCDate(to.getUTCDate() + 6)
+        to.setUTCHours(23, 59, 59, 999)
+        return { from, to }
+      }
+      // ISO-8601 week number: the week containing the Thursday of that week.
+      const isoWeekNo = (dt) => {
+        const d = new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate()))
+        d.setUTCDate(d.getUTCDate() + 3 - ((d.getUTCDay() + 6) % 7))   // -> that Thursday
+        const jan4 = new Date(Date.UTC(d.getUTCFullYear(), 0, 4))
+        jan4.setUTCDate(jan4.getUTCDate() + 3 - ((jan4.getUTCDay() + 6) % 7))
+        return 1 + Math.round((d - jan4) / (7 * 86400000))
+      }
+
+      const wk   = weekBounds(-1)                            // last COMPLETE week
+      const from = p.get('from') ? new Date(p.get('from')) : wk.from
+      const to   = p.get('to')   ? new Date(p.get('to'))   : wk.to
+      if (isNaN(from) || isNaN(to)) return err('Invalid date range', 400)
+
+      // Store scope only applies to a session caller; the email is chain-wide.
+      let storeIds = null
+      if (!secretOk) {
+        const scope = await scopedStoreIds(db, session)
+        if (scope !== null) {
+          if (!scope.length) return json({ stores: [], totals: { stores: 0, missed: 0, records: 0 } })
+          storeIds = scope
+        }
+      }
+
+      const rows = await db.rpc('dept_check_summary', {
+        p_from:      from.toISOString(),
+        p_to:        to.toISOString(),
+        p_store_ids: storeIds,
+      }) || []
+
+      const stores = rows.map(r => ({
+        store_id:    r.store_id,
+        store_code:  r.store_code,
+        store_name:  r.store_name,
+        records:     Number(r.records) || 0,
+        departments: Number(r.departments) || 0,
+        did_check:   Number(r.records) > 0,
+        first_at:    r.first_at,
+        last_at:     r.last_at,
+      }))
+      const did    = stores.filter(s => s.did_check)
+      const missed = stores.filter(s => !s.did_check)
+
+      const d2 = (n) => String(n).padStart(2, '0')
+      const ddmmyy = (d) => `${d2(d.getUTCDate())}/${d2(d.getUTCMonth() + 1)}/${String(d.getUTCFullYear()).slice(2)}`
+
+      return json({
+        week: {
+          number: isoWeekNo(from),
+          from:   from.toISOString(),
+          to:     to.toISOString(),
+          // The exact label the business uses: "Week 39 (21/09/26 - 27/09/26)".
+          label:  `Week ${isoWeekNo(from)} (${ddmmyy(from)} - ${ddmmyy(to)})`,
+        },
+        totals: {
+          stores:      stores.length,
+          did:         did.length,
+          missed:      missed.length,
+          records:     stores.reduce((a, s) => a + s.records, 0),
+          departments: stores.reduce((a, s) => a + s.departments, 0),
+        },
+        stores,
+        missed,
+        now: new Date().toISOString(),
+      })
+    }
+
     if (path === '/reports/aging' && method === 'GET') {
       if (!env.PRODUCT_SYNC_SECRET) return err('PRODUCT_SYNC_SECRET not configured', 500)
       if ((request.headers.get('X-Sync-Secret') || '') !== env.PRODUCT_SYNC_SECRET) return err('Forbidden', 403)
