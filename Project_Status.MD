@@ -575,6 +575,79 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-09-24 — The blocked UI checks, finally run on a store login
+
+A store session (Tallaght, `sales_assistant`, 375x812) was made available, which
+unblocked four checks that had been outstanding since Monday. All four pass, and
+driving the real pages found one bug that every other form of testing had missed.
+
+| # | Check | Result |
+|---|---|---|
+| 1 | Dept Scan failed-row message | pass (verified earlier) |
+| 2 | Task C reason dropdown vs the keyboard | **pass** |
+| 3 | Task D saves when the lookup misses | **pass** |
+| 4 | Save not stuck after Clear mid-lookup | **pass** |
+| 5 | Phase 6 store *Current / Archived* control | **renders** |
+
+**Check 4** is the one that mattered most — it is where the Save-gating change
+met the pre-existing `reset()` bug. Measured live:
+
+```
+mid-lookup                spinner ✓   Save disabled ✓   (correct gating)
+right after Clear         spinner ✓   Save disabled
+after lookup would land   spinner ✗   Save ENABLED      <- reset() fix holding
+new scan afterwards       works, Save enabled
+```
+
+**Check 2** passes because of the dropdown work below: the panel opened *upward*
+(top 301 → bottom 539, trigger at 545), fully visible, 0px hidden. Simulating a
+300px Android keyboard puts `spaceBelow` at **−77px** — the trigger is under the
+keyboard line — and the placement maths correctly chooses to flip.
+
+**Check 3**'s only surprise was not a bug: Task D's "Exactly what is printed on
+the product" stayed empty after a missed lookup. That field is a **read-only
+reference** for Task D (`onChange` is `undefined` when `taskType === 'D'`,
+`TaskDIForm.jsx:107`) and is deliberately not required; `actual_product_name` is
+the required one. Blank after a miss is correct.
+
+#### Dropdowns: measured, then fixed
+
+The Reports *Task types* panel on a 375px phone was **311px tall around 640px of
+content — 329px of the list unreachable** — and carried a search box for 12
+options. Three causes:
+
+- panel cap was 360px → now **560**;
+- the flip-upward rule only fired when space below was under 160px, which rescued
+  the Android-keyboard case and nothing else. A filter mid-page has "plenty" of
+  room by that test and still cannot show its list while the space above goes
+  unused. Now it opens on whichever side has more room whenever the panel would
+  be clipped, with the 160 floor kept so a trigger near the top does not flip
+  into a sliver;
+- `searchable={false}` on **all three** task-type dropdowns — Reports, Pricing
+  and `TaskTypePicker` (the one a store opens before every record, where the
+  search field cost a tap and pulled the keyboard over the list it was meant to
+  help read). Result on the same screen: **560px, 32px hidden**.
+
+`CurrentStorePicker` and Reports' *Stores* keep their search: 55 stores need it.
+
+#### The bug only the real page could find
+
+Duplicate highlighting shipped and highlighted nothing. The endpoint answered
+**`200 {"keys":[]}`** for barcodes that are genuinely duplicated 16, 16 and 11
+times.
+
+`request()` already stringifies `options.body`. `getDuplicateKeys` passed
+`JSON.stringify(body)` on top, so the Worker's `request.json()` returned a
+**string**; `b.barcodes` read as `undefined` and the handler took its "no
+barcodes supplied" early return. Every other POST helper in `api.js` passes the
+raw object — this one was the outlier.
+
+A wrong answer indistinguishable from a right one: 200, well-formed, empty.
+Nothing logged, nothing threw, the rows just stayed plain — the build passed, the
+scope check passed, the RPC was verified over REST, and none of it could see this.
+The endpoint now rejects a non-object body with a **400** so the next instance is
+loud rather than silent.
+
 ### 2026-09-24 (later still) — Duplicate highlighting, four Pricing states, full record History
 
 Three requests, plus the filter option that came with the second.
