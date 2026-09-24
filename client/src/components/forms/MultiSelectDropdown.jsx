@@ -190,22 +190,36 @@ export default function MultiSelectDropdown({
             borderBottom: '1px solid var(--border-soft)', position: 'sticky', top: 0,
             background: 'var(--surface)'
           }}>
-            {/* Select-all/Clear-all share the row and shrink to fit; Done gets
-                its own full-width line below so it never gets crowded out or
-                clipped at a narrow panel width. */}
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              <button type="button" className="btn btn-sm btn-outline" onClick={selectAll} style={{ flex: 1 }}>
+            {/* EXACTLY two rows: Select all + Clear all share the first, Done
+                owns the second.
+                  - nowrap, because with wrap enabled a narrow panel (or a long
+                    translated label) drops Clear all onto its own line and the
+                    toolbar silently becomes three rows.
+                  - minWidth 0 overrides a flex item's default `min-width: auto`,
+                    which otherwise refuses to shrink a button below its
+                    content and is what forces that wrap in the first place.
+                  - the labels then ellipsis rather than wrapping inside the
+                    button and doubling its height. */}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'nowrap' }}>
+              <button type="button" className="btn btn-sm btn-outline" onClick={selectAll}
+                style={{ flex: '1 1 0', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 ✓ Select all{q ? ` (${filtered.length})` : ''}
               </button>
-              {q && (
-                <button type="button" className="btn btn-sm btn-outline" onClick={selectEvery} title="Select every option, including those hidden by the search filter" style={{ flex: 1 }}>
-                  ✓ Every ({options.length})
-                </button>
-              )}
-              <button type="button" className="btn btn-sm btn-outline" onClick={clearAll} style={{ flex: 1 }}>
+              <button type="button" className="btn btn-sm btn-outline" onClick={clearAll}
+                style={{ flex: '1 1 0', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 ✕ Clear all
               </button>
             </div>
+            {/* Only exists while a search is filtering the list, and given its
+                own full-width line rather than a third seat on the row above --
+                otherwise the two buttons that are always there would be squeezed
+                by one that usually is not. */}
+            {q && (
+              <button type="button" className="btn btn-sm btn-outline" onClick={selectEvery}
+                title="Select every option, including those hidden by the search filter">
+                ✓ Select every option ({options.length})
+              </button>
+            )}
             <button type="button" className="btn btn-sm btn-primary" onClick={() => setOpen(false)}>
               Done
             </button>

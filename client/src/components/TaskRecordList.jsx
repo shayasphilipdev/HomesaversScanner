@@ -391,6 +391,7 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
         busy={archiving}
         totalDays={appConfig?.retention?.total_days}
         liveDays={appConfig?.retention?.live_days}
+        storeWording={!isBO}
         onConfirm={runArchive}
         onCancel={() => { if (!archiving) setArchiveTarget(null) }}
       />

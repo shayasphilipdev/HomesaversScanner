@@ -475,14 +475,13 @@ function HQReports() {
         ? ['pending']
         : ['pending', 'no_change_needed', 'store_completed'])
   const [statusIds, setStatusIds]     = useState(defaultStatusIds)
-  // "Show archived RECORDS" -- a STATUS filter, not a storage location.
-  //
-  // It used to mean "also read Cloudflare D1", which conflated two unrelated
-  // things: whether a record was archived by a user, and whether it happens to
-  // have aged out of Postgres. A record can be either, both or neither. Now the
-  // user asks for a date range and a status; where the rows physically live is
-  // the app's problem, not theirs.
-  const [includeArchived, setIncludeArchived] = useState(false)
+  // Archived is just a status. Back office picks it from the Status dropdown
+  // like any other; a store gets the Current / Archived pair below, which sets
+  // the same statusIds. There is deliberately no separate "include archived"
+  // state any more -- it was a second source of truth for one question, and the
+  // two could disagree (tick the box, then choose a status, and the box quietly
+  // meant nothing).
+  const showingArchived = statusIds.includes('cleared')
   // Alt-barcode snapshot status, captured when the product was scanned.
   const [itemStatusIds, setItemStatusIds]       = useState([])
   const [barcodeStatusIds, setBarcodeStatusIds] = useState([])
@@ -591,8 +590,7 @@ function HQReports() {
       if (storeIds.length)    baseParams.storeId   = storeIds.join(',')
       if (taskTypeIds.length) baseParams.task_type = taskTypeIds.join(',')
       if (statusIds.length)   baseParams.status    = statusIds.join(',')
-      // Either an explicit Archived selection, or the back-office checkbox.
-      if (statusIds.includes('cleared') || (!statusIds.length && includeArchived)) baseParams.includeCleared = '1'
+      if (showingArchived) baseParams.includeCleared = '1'
       if (itemStatusIds.length)    baseParams.item_status    = itemStatusIds.join(',')
       if (barcodeStatusIds.length) baseParams.barcode_status = barcodeStatusIds.join(',')
 
@@ -669,7 +667,8 @@ function HQReports() {
           // it is stored.
           if (taskTypeIds.length) ap.set('taskType', taskTypeIds.join(','))
           if (statusIds.length)   ap.set('status',   statusIds.join(','))
-          else if (includeArchived) ap.set('includeCleared', '1')
+          // No status selected means the same here as it does live: everything
+          // except archived. The server applies that default itself.
           if (aCursor) {
             ap.set('after_created_at_ms', aCursor.after_created_at_ms)
             ap.set('after_id',            aCursor.after_id)
@@ -963,16 +962,13 @@ function HQReports() {
               <div className="filter-field filter-field--narrow"><label>Records</label>
                 <div className="flex-row" style={{ gap: 6 }}>
                   {[['current', 'Current'], ['archived', 'Archived']].map(([id, lbl]) => {
-                    const active = (id === 'archived') === includeArchived
+                    const active = (id === 'archived') === showingArchived
                     return (
                       <button
                         key={id}
                         type="button"
                         className={`btn btn-sm ${active ? 'btn-primary' : 'btn-outline'}`}
-                        onClick={() => {
-                          if (id === 'archived') { setIncludeArchived(true);  setStatusIds(['cleared']) }
-                          else                   { setIncludeArchived(false); setStatusIds([]) }
-                        }}
+                        onClick={() => setStatusIds(id === 'archived' ? ['cleared'] : [])}
                         style={{ whiteSpace: 'nowrap' }}
                       >{lbl}</button>
                     )
@@ -1020,28 +1016,6 @@ function HQReports() {
                 minPanelWidth={110}
               />
             </div>
-
-            {/* Back office only -- stores get the simpler Current / Archived
-                control above. This adds ARCHIVED-STATUS records to whatever is
-                already selected; it says nothing about Postgres vs D1, which
-                the date range decides by itself. Ignored while an explicit
-                status filter is set, since that filter already answers the
-                question. */}
-            {isBO && (
-              <div className="filter-field filter-field--narrow">
-                <label>Archived</label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 400, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                  <input
-                    type="checkbox"
-                    checked={includeArchived}
-                    disabled={statusIds.length > 0}
-                    onChange={e => setIncludeArchived(e.target.checked)}
-                    style={{ width: 16, height: 16, margin: 0 }}
-                  />
-                  <span style={{ fontSize: 13, opacity: statusIds.length > 0 ? .5 : 1 }}>Include archived</span>
-                </label>
-              </div>
-            )}
 
             <div className="filter-actions">
               <button className="btn btn-sm btn-primary" onClick={runReport} disabled={loading}>
@@ -1331,6 +1305,7 @@ function HQReports() {
         busy={busy}
         totalDays={appConfig?.retention?.total_days}
         liveDays={appConfig?.retention?.live_days}
+        storeWording={!isBO}
         onConfirm={runArchive}
         onCancel={() => setArchiveTarget(null)}
       />
