@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-24-retention-p1-TEST'
+const API_REVISION   = '2026-09-24-retention-p2-TEST'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -421,6 +421,18 @@ function fmtDetails(d) {
     parts.push(`${label}: ${v}`)
   }
   return parts.join('; ')
+}
+
+// Days between a Task M record's expiry date and the day it was raised. Hoisted
+// to module scope so the live export and the D1 archive read share ONE
+// definition: they produce the same report and a user concatenates their rows,
+// so any drift between two copies would show up as the same column computed two
+// different ways either side of the retention cutoff.
+function daysToExpiry(exp, createdIso) {
+  if (!exp || !/^\d{4}-\d{2}-\d{2}$/.test(exp)) return ''
+  const e = Date.parse(exp + 'T00:00:00Z')
+  const c = Date.parse(String(createdIso || '').slice(0, 10) + 'T00:00:00Z')
+  return (isNaN(e) || isNaN(c)) ? '' : String(Math.round((e - c) / 86400000))
 }
 
 // Shared by GET /pricing/items and GET /pricing/report so the on-screen grid
@@ -4517,7 +4529,7 @@ export async function onRequest(context) {
     }
 
     // ── Reports ───────────────────────────────────────────────────────────
-    // GET /reports/archive — Department Check records that have aged out of
+    // GET /reports/archive — task records of ANY type that have aged out of
     // Supabase and now live only in the Cloudflare D1 archive.
     //
     // A SEPARATE endpoint rather than a branch inside /reports/task-records,
@@ -4564,8 +4576,12 @@ export async function onRequest(context) {
       const toMs   = parseBound(to,   true)
       if (isNaN(fromMs) || isNaN(toMs) || toMs < fromMs) return err('Invalid date range', 400)
 
-      // The archive only ever holds ~6 months, so a window wider than that is a
-      // mistake rather than a request.
+      // A ceiling on one request, not a statement about how much the archive
+      // holds (that is archive_retention_days, 35 today). Kept well above the
+      // real window so raising the setting does not silently start rejecting
+      // reports, and low enough that an unbounded-looking range is still
+      // refused -- D1 bills rows SCANNED and the free plan FAILS past 5,000,000
+      // a day rather than warning.
       const MAX_WINDOW_DAYS = 200
       if (toMs - fromMs > MAX_WINDOW_DAYS * 86400000) {
         return err(`Archive range is limited to ${MAX_WINDOW_DAYS} days`, 400)
@@ -4611,8 +4627,12 @@ export async function onRequest(context) {
 
       const sql = `SELECT id, created_at_ms, store_name, product_code, barcode_no,
                           product_barcode, item_name, supl_id, supplier_code,
-                          item_status, barcode_status, department, status, source
-                     FROM dept_scan_archive
+                          item_status, barcode_status, department, status, source,
+                          task_type, description, uom, quantity, notes,
+                          product_name_label, actual_product_name,
+                          photo_product_url, photo_barcode_url, review_notes,
+                          details_json
+                     FROM task_record_archive
                     WHERE ${where.join(' AND ')}
                     ORDER BY created_at_ms ASC, id ASC
                     LIMIT ?`
@@ -4620,48 +4640,75 @@ export async function onRequest(context) {
       const res  = await env.ARCHIVE.prepare(sql).bind(...args).all()
       const rows = res?.results || []
 
-      // Same flat shape the live export emits, so the client can concatenate
-      // the two without knowing which source a row came from. Columns a
-      // Department Check never populates stay empty rather than absent, or the
-      // CSV would misalign.
+      // Same flat shape the live export emits, so the client can concatenate the
+      // two without knowing which source a row came from.
       //
-      // status is reported as 'Archived' regardless of what it was when it
-      // moved: to a store these are simply old records. The original value is
-      // still in the archive for back-office reporting.
-      const flatArchived = (r) => ({
-        barcode_no:          r.barcode_no || r.product_code || '',
-        product_barcode:     r.product_barcode || '',
-        item_name:           r.item_name || '',
-        selling_price:       '',
-        product_type:        '',
-        task_type:           'Department Check',
-        store_name:          r.store_name || '',
-        uom:                 '',
-        quantity:            '',
-        supl_id:             r.supl_id || '',
-        item_status:         r.item_status || '',
-        barcode_status:      r.barcode_status || '',
-        notes:               '',
-        status:              'Archived',
-        review_notes:        '',
-        photo_product_url:   '',
-        photo_barcode_url:   '',
-        details:             r.department ? `Department: ${r.department}` : '',
-        expiry_date:         '',
-        days_to_expiry:      '',
-        action:              '',
-        created_at:          fmtReportDate(new Date(r.created_at_ms).toISOString()),
-        supplier_code:       r.supplier_code || '',
-        actual_product_name: '',
-      })
+      // A record keeps its ORIGINAL status here. The J-only version reported
+      // every archived row as 'Archived' on the reasoning that to a store these
+      // are simply old records -- but that conflated "where the row is stored"
+      // with "what happened to it", so a completed query and one nobody ever
+      // answered came back looking identical. 'Archived' is now a real status a
+      // user sets, and D1 is just where a record lives after the Postgres
+      // window; the two are independent and are reported independently.
+      const taskTypeNameArch = Object.fromEntries(
+        (await db.select('task_types', { select: 'code,name' })).map(t => [t.code, t.name]))
+
+      const flatArchived = (r) => {
+        // Stored whole rather than flattened, so every type's details survive:
+        // C's reason_code, F's drs_size, M's expiry fields. Malformed JSON must
+        // not fail a whole page of an otherwise good report.
+        let d = null
+        try { d = r.details_json ? JSON.parse(r.details_json) : null } catch { d = null }
+        // Pre-Phase-2 rows have no details_json -- only the one flattened key.
+        if (!d && r.department) d = { item_group: r.department }
+        const createdIso = new Date(r.created_at_ms).toISOString()
+        return {
+          barcode_no:          r.barcode_no || r.product_code || '',
+          product_barcode:     r.product_barcode || '',
+          item_name:           r.item_name || r.description || r.product_name_label || '',
+          // Not archived: both come from the ItemMaster join the live export
+          // does at report time, not from task_records, so there is nothing to
+          // have copied. Blank rather than absent keeps the CSV columns aligned.
+          selling_price:       '',
+          product_type:        '',
+          task_type:           taskTypeNameArch[r.task_type] || r.task_type || '',
+          store_name:          r.store_name || '',
+          uom:                 r.uom || '',
+          quantity:            r.quantity ?? '',
+          supl_id:             r.supl_id || '',
+          item_status:         r.item_status || '',
+          barcode_status:      r.barcode_status || '',
+          notes:               r.notes || '',
+          status:              r.status,
+          review_notes:        r.review_notes || '',
+          photo_product_url:   r.photo_product_url || '',
+          photo_barcode_url:   r.photo_barcode_url || '',
+          details:             fmtDetails(d),
+          expiry_date:         d?.expiry_date || '',
+          days_to_expiry:      daysToExpiry(d?.expiry_date, createdIso),
+          action:              d?.action_taken || '',
+          created_at:          fmtReportDate(createdIso),
+          supplier_code:       r.supplier_code || '',
+          actual_product_name: r.actual_product_name || '',
+        }
+      }
 
       const last   = rows[rows.length - 1]
       const cursor = rows.length === PAGE && last
         ? { after_created_at_ms: last.created_at_ms, after_id: last.id }
         : null
 
+      // Back-office comments are dropped from the payload entirely for a store
+      // login, not blanked -- the same rule the live export applies, and for the
+      // same reason: a blank field still confirms the field exists. The client
+      // builds the sheet from the live export's `cols`, which already omits this
+      // for them, so nothing visible changes either way; this is about what
+      // leaves the Worker, not what reaches the spreadsheet.
+      const outRows = rows.map(flatArchived)
+      if (!isBO) for (const r of outRows) delete r.review_notes
+
       return json({
-        rows:      rows.map(flatArchived),
+        rows:      outRows,
         cursor,
         done:      cursor === null,
         // Surfaced so a caller can see what the page actually cost against the
@@ -4728,12 +4775,7 @@ export async function onRequest(context) {
       const taskTypeName = Object.fromEntries(taskTypes.map(t => [t.code, t.name]))
       const storeName    = Object.fromEntries(stores.map(s => [s.id, s.store_name]))
 
-      const daysToExpiry = (exp, createdIso) => {
-        if (!exp || !/^\d{4}-\d{2}-\d{2}$/.test(exp)) return ''
-        const e = Date.parse(exp + 'T00:00:00Z')
-        const c = Date.parse(String(createdIso || '').slice(0, 10) + 'T00:00:00Z')
-        return (isNaN(e) || isNaN(c)) ? '' : String(Math.round((e - c) / 86400000))
-      }
+      // daysToExpiry is module-level so the D1 archive read uses the same one.
       const flatten = r => ({
         barcode_no:          r.barcode_no || r.product_code || '',
         product_barcode:     r.product_barcode || '',

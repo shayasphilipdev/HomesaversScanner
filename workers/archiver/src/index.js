@@ -20,23 +20,36 @@
 //   enforces. If the archiver stops running, J records accumulate in Supabase --
 //   visible, and recoverable -- instead of being silently deleted unarchived.
 //
-// Scope is task_type 'J' only. Every other type keeps its current lifecycle,
-// which is what leaves /reports/aging (Tasks A-F are deliberately purge-exempt)
-// and Expiry Overview (Task M keeps 180 days in Postgres) untouched.
+// Scope is EVERY task type as of Phase 2 of the 7-week retention change. It was
+// task_type 'J' only until then, which was safe exactly as long as the purge
+// also singled J out. Once the purge deletes every type at the same age, a
+// J-only archiver would mean every other type is destroyed unarchived -- so the
+// two scopes have to move together, and Phase 3 is the commit that moves them.
 
 const BATCH          = 500      // PostgREST caps a page at 1000; 500 keeps each D1 batch modest
 const TIME_BUDGET_MS = 25_000   // stop starting new pages after this; the next run picks up the rest
 const MAX_PAGES      = 60       // hard backstop against a paging bug looping forever
 
-// Only the columns Task J actually populates. Measured across all 163,517 live
-// J rows: completed_at, store_completed_at, notes, description, quantity, uom,
-// photos, review_notes, reviewed_at, product_name_label, actual_product_name,
-// supplier_name_text and priced_at are NULL for every one of them, so asking
-// for them would cost bytes on every page for nothing.
+// EVERY column of task_records, for every task type.
+//
+// This deliberately reverses the original J-only decision. That version selected
+// 16 columns because all 163,517 live J rows had the rest NULL, which was true
+// and is now the wrong basis: Task B carries description and two photo URLs, A
+// carries uom and quantity, D and I carry product_name_label, and completed_at /
+// store_completed_at / reviewed_at / review_notes apply to every type -- they
+// are empty for J only because nothing ever reviews a Department Check.
+//
+// Omitted on purpose: messages_resolved_at and messages_resolved_by_name, which
+// describe a message thread that is not archived and would mean nothing without
+// it.
 const SELECT_COLS = [
-  'id', 'store_id', 'product_code', 'barcode_no', 'product_barcode',
+  'id', 'task_type', 'store_id', 'product_code', 'barcode_no', 'product_barcode',
   'item_name', 'supl_id', 'supplier_code', 'item_status', 'barcode_status',
   'details', 'status', 'source', 'created_at', 'updated_at', 'cleared_at',
+  'description', 'uom', 'quantity', 'notes', 'product_name_label',
+  'actual_product_name', 'supplier_name_text', 'photo_product_url',
+  'photo_barcode_url', 'review_notes', 'reviewed_at', 'completed_at',
+  'store_completed_at', 'priced_at', 'pricing_removed_at', 'marked_for_deletion',
 ].join(',')
 
 const ms = (iso) => (iso ? Date.parse(iso) : null)
@@ -126,8 +139,24 @@ async function storeNameMap(env) {
 }
 
 function toArchiveRow(r, storeNames, archivedAtMs) {
-  let department = null
-  try { department = r.details?.item_group ?? null } catch { /* malformed details */ }
+  // `details` is kept WHOLE as JSON text, not flattened. Only J and K put
+  // item_group in there; C stores {reason_code, current_price}, E the
+  // price_marked_* pair, F {drs_size, units_per_package}, G the promotion_*
+  // pair, H {shop_floor_count} and M the five expiry fields the Expiry Overview
+  // report reads. The J-only archiver extracted one key and discarded the rest,
+  // which for any other type would silently empty those report columns.
+  //
+  // `department` stays as a cheap pre-extracted copy so Department Check reads
+  // -- 97.5% of the archive -- never have to parse JSON.
+  let department  = null
+  let detailsJson = null
+  try {
+    department = r.details?.item_group ?? null
+    if (r.details != null && Object.keys(r.details).length) {
+      detailsJson = JSON.stringify(r.details)
+    }
+  } catch { /* malformed details must not abort the run */ }
+
   return [
     r.id,
     ms(r.created_at),
@@ -147,16 +176,38 @@ function toArchiveRow(r, storeNames, archivedAtMs) {
     r.status,
     r.source ?? null,
     archivedAtMs,
+    r.task_type,
+    r.description ?? null,
+    r.uom ?? null,
+    r.quantity ?? null,
+    r.notes ?? null,
+    r.product_name_label ?? null,
+    r.actual_product_name ?? null,
+    r.supplier_name_text ?? null,
+    r.photo_product_url ?? null,
+    r.photo_barcode_url ?? null,
+    r.review_notes ?? null,
+    ms(r.reviewed_at),
+    ms(r.completed_at),
+    ms(r.store_completed_at),
+    ms(r.priced_at),
+    ms(r.pricing_removed_at),
+    detailsJson,
+    r.marked_for_deletion ? 1 : 0,
   ]
 }
 
 const INSERT_SQL = `
-  INSERT OR IGNORE INTO dept_scan_archive
+  INSERT OR IGNORE INTO task_record_archive
     (id, created_at_ms, updated_at_ms, cleared_at_ms, store_id, store_name,
      product_code, barcode_no, product_barcode, item_name, supl_id,
      supplier_code, item_status, barcode_status, department, status, source,
-     archived_at_ms)
-  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+     archived_at_ms, task_type, description, uom, quantity, notes,
+     product_name_label, actual_product_name, supplier_name_text,
+     photo_product_url, photo_barcode_url, review_notes, reviewed_at_ms,
+     completed_at_ms, store_completed_at_ms, priced_at_ms, pricing_removed_at_ms,
+     details_json, marked_for_deletion)
+  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
 
 export async function runArchive(env, triggerKind) {
   const startedAt = Date.now()
@@ -181,9 +232,12 @@ export async function runArchive(env, triggerKind) {
     for (let page = 0; page < MAX_PAGES; page++) {
       if (Date.now() - startedAt > TIME_BUDGET_MS) break
 
+      // No task_type filter: the archive now covers EVERY type. Scoping this to
+      // 'J' while the purge deletes all types is precisely the failure this
+      // phase exists to prevent -- a non-J record would be destroyed having
+      // never been archived.
       const rows = await sb(env,
         `task_records?select=${SELECT_COLS}` +
-        `&task_type=eq.J` +
         `&created_at=gte.${encodeURIComponent(cursor)}` +
         `&created_at=lt.${encodeURIComponent(cutoffIso)}` +
         `&order=created_at.asc,id.asc&limit=${BATCH}`)
