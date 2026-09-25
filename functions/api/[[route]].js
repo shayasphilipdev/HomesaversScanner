@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-25-dept-breakdown'
+const API_REVISION   = '2026-09-25-aging-49d'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -1217,6 +1217,25 @@ export async function onRequest(context) {
         }
       }
 
+      // dept_check_summary and dept_check_department_breakdown both read
+      // task_records, which after the 7-week change holds only
+      // scan_record_retention_days. The Dashboard's range selector goes to 180
+      // days, so a caller can ask for a window this query CANNOT answer -- and
+      // it would answer anyway, with 14 days of rows under a 180-day heading.
+      // Reporting the live floor lets the card say so instead of quietly
+      // under-counting. The Monday email always asks for last week, which is
+      // inside the floor, so it never sees this.
+      let liveFloorIso = null
+      try {
+        const [rs] = await db.select('app_settings', {
+          select: 'value', key: 'eq.scan_record_retention_days', limit: '1'
+        })
+        const days = Number(rs?.value)
+        if (Number.isFinite(days) && days > 0) {
+          liveFloorIso = new Date(Date.now() - days * 86400000).toISOString()
+        }
+      } catch { liveFloorIso = null }
+
       const rows = await db.rpc('dept_check_summary', {
         p_from:      from.toISOString(),
         p_to:        to.toISOString(),
@@ -1270,6 +1289,12 @@ export async function onRequest(context) {
       for (const s of stores) s.departments_breakdown = byStoreDept[s.store_id] || {}
 
       return json({
+        // Present only when the caller asked for more history than Postgres
+        // holds. The card turns this into one line of plain English rather than
+        // letting a short answer pass as a complete one.
+        live_window: liveFloorIso && from.toISOString() < liveFloorIso
+          ? { truncated: true, from: liveFloorIso }
+          : { truncated: false, from: from.toISOString() },
         department_totals: Object.entries(deptTotals)
           .map(([department, records]) => ({ department, records }))
           .sort((a, b) => b.records - a.records),
@@ -1305,7 +1330,93 @@ export async function onRequest(context) {
       // would eventually 502 the weekly email with no warning. An RPC's
       // return value isn't subject to the REST row cap the way a table
       // SELECT is, so one call is enough regardless of backlog size.
-      const records = await db.rpc('aging_report_records', { p_task_types: TYPES }) || []
+      const live = await db.rpc('aging_report_records', { p_task_types: TYPES }) || []
+
+      // ── The other 35 days: the same query against the D1 archive ─────────
+      //
+      // Until the 7-week retention change an unanswered A-F query was
+      // purge-EXEMPT, so the whole backlog sat in Postgres and one table was
+      // the whole story. That exemption is gone: Postgres holds
+      // scan_record_retention_days (14) and D1 holds the next
+      // archive_retention_days (35). Reading Postgres alone would now report a
+      // backlog that quietly STOPS at 14 days -- and the failure mode is the
+      // dangerous direction, because "oldest: 14 days" reads as good news
+      // exactly when the old queries have been moved out from under it.
+      //
+      // Both windows come from app_settings, never from a literal 49. The
+      // Settings page can change them, and an aging horizon that disagreed
+      // with the horizon the Archive button promises would be its own bug.
+      let horizonDays = 49
+      let archived = []
+      try {
+        const sRows = await db.select('app_settings', {
+          select: 'key,value',
+          key: 'in.(scan_record_retention_days,archive_retention_days)'
+        })
+        const sv = Object.fromEntries((sRows || []).map(r => [r.key, Number(r.value)]))
+        const liveDays = Number.isFinite(sv.scan_record_retention_days) ? sv.scan_record_retention_days : 14
+        const archDays = Number.isFinite(sv.archive_retention_days)     ? sv.archive_retention_days     : 35
+        horizonDays = liveDays + archDays
+
+        if (env.ARCHIVE) {
+          // Bounded at the horizon on purpose. A record older than
+          // liveDays+archDays has been purged from D1 and cannot be actioned by
+          // anyone, so reporting it as an outstanding query would be asking the
+          // office to chase a row that no longer exists.
+          const floorMs = Date.now() - horizonDays * 86400000
+          // marked_for_deletion is 0/1 here, not boolean, and is NULL on every
+          // row archived before Phase 2 -- so NULL has to be treated as false
+          // rather than filtered away.
+          const aSql = `SELECT id, created_at_ms, store_id, store_name, task_type,
+                               product_code, product_barcode, description,
+                               product_name_label, item_name, quantity
+                          FROM task_record_archive
+                         WHERE status = 'pending'
+                           AND task_type IN (${TYPES.map(() => '?').join(',')})
+                           AND created_at_ms >= ?
+                           AND (marked_for_deletion IS NULL OR marked_for_deletion = 0)
+                           AND (source IS NULL OR source <> 'test')
+                         ORDER BY created_at_ms ASC
+                         LIMIT 20000`
+          const aRes = await env.ARCHIVE.prepare(aSql).bind(...TYPES, floorMs).all()
+          const aRows = aRes?.results || []
+
+          if (aRows.length) {
+            // D1 snapshots store_name but NOT store_code -- it was never needed
+            // for a report that prints the name. This one prints both, so the
+            // code is resolved from Postgres. 55 rows, one subrequest, and a
+            // store that has since been deleted still shows its archived name.
+            const codeById = new Map(
+              (await db.select('stores', { select: 'id,store_code' }) || [])
+                .map(r => [r.id, r.store_code]))
+            archived = aRows.map(r => ({
+              id:           r.id,
+              task_type:    r.task_type,
+              store_code:   codeById.get(r.store_id) || '',
+              store_name:   r.store_name || '(unknown store)',
+              product_code: r.product_code || r.product_barcode || '',
+              description:  r.product_name_label || r.description || r.item_name || '',
+              quantity:     r.quantity,
+              created_at:   new Date(r.created_at_ms).toISOString()
+            }))
+          }
+        }
+      } catch (e) {
+        // Never fail the whole email over the archive half. A report missing its
+        // older rows is recoverable; no report at all on a Wednesday morning is
+        // the thing people actually notice, and the archive is a copy -- there
+        // is nothing here that exists only in D1 and nowhere else.
+        archived = []
+      }
+
+      // The archiver copies a record to D1 at 01:30; pg_cron deletes it from
+      // Postgres afterwards. In the gap between those two jobs the SAME record
+      // is in BOTH databases, so a plain concat would double-count it every
+      // night. Postgres wins the tie: it is the row that can still be edited.
+      const seen = new Set(live.map(r => r.id))
+      const records = live
+        .concat(archived.filter(r => !seen.has(r.id)))
+        .sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0))
 
       // Tasks created in the last 7 days (any status), per type — recent
       // activity, not aging. Includes the two check tasks (Department / Price)
@@ -1325,7 +1436,17 @@ export async function onRequest(context) {
       const missing = await db.rpc('stores_missing_dept_check_v2', { p_days: 7 })
       const stores_no_dept_check = (missing || []).map(m => ({ store_code: m.store_code, store_name: m.store_name }))
 
-      return json({ now: new Date().toISOString(), total: records.length, records, created_last7, stores_no_dept_check })
+      return json({
+        now: new Date().toISOString(),
+        total: records.length,
+        records,
+        created_last7,
+        stores_no_dept_check,
+        // What the report is allowed to see, so the email prints the real
+        // window instead of a hardcoded "49" that drifts when Settings change.
+        horizon_days: horizonDays,
+        sources: { live: live.length, archive: records.length - live.length }
+      })
     }
 
     const session = await authenticate(request, env)

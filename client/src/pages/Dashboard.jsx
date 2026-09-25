@@ -701,76 +701,181 @@ function StoresMissingDeptCheck({ deptCheck, allStores, scopeStoreIds, statsFrom
 //
 // Sorted fewest-departments-first so thin coverage surfaces without scrolling —
 // the same ordering the Monday email uses, and the same RPC behind both.
-function DeptCheckByStore({ summary, loading }) {
-  const stores = summary?.stores || []
-  const rows = [...stores].sort((a, b) =>
-    (a.departments - b.departments) || (a.records - b.records) ||
-    String(a.store_name).localeCompare(String(b.store_name)))
+// Department Check RECORDS by department, one stacked bar per store.
+//
+// This replaced a card that showed how MANY departments each store touched. A
+// count cannot tell four real departments apart from four real ones plus three
+// that got a single stray scan, and it answers a question nobody asked: the
+// business question is "of this store's 4,047 records, how many were
+// HOMEWARES". So the bar is now split BY department and sized BY records.
+//
+// Palette: VALIDATED with the dataviz validator against BOTH dashboard
+// surfaces, not chosen by eye.
+//   light (#EEF2F9)  band PASS | chroma PASS | CVD 11.4 deutan | normal 23.3
+//   dark  (#161D2C)  band PASS | chroma PASS | CVD 10.8 protan | normal 17.8
+// The dark steps are the SAME HUES re-stepped into the dark band [0.48, 0.67],
+// not a mechanical lightening: at dark-mode lightness the light steps lose
+// their deutan separation, and the pair that collapses first is crimson against
+// green. Each set carries a sub-3:1 contrast warning on one swatch, discharged
+// the way the validator requires -- a legend, a record count printed beside
+// every bar, and hover text on every segment. Identity is never colour alone.
+const DEPT_HUES_LIGHT = ['#B85C1A', '#0E9B90', '#E0A92E', '#7A4FA8',
+                         '#6F9B2E', '#B8324F', '#2E6FD4', '#C4457E']
+const DEPT_HUES_DARK  = ['#BE5900', '#07978C', '#9C7205', '#A31EFF',
+                         '#496D04', '#E10653', '#0270FC', '#DA047F']
+const DEPT_OTHER = { light: '#B9A894', dark: '#8A7A66' }
+// Unattributed is a DATA-QUALITY state, not a department, so it deliberately
+// does not consume one of the eight categorical hues.
+const DEPT_NONE  = { light: '#9C9186', dark: '#6E6559' }
 
-  const maxDept = Math.max(1, ...rows.map(r => r.departments))
-  const t = summary?.totals
+function DeptCheckByStore({ summary, loading }) {
+  const [theme, setTheme] = useState(
+    () => document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light')
+  useEffect(() => {
+    // The theme lives on <html data-theme>, so a toggle repaints nothing by
+    // itself -- these colours are inline styles, not CSS variables. Watching the
+    // attribute is what keeps the bars in step with the rest of the page.
+    const el = document.documentElement
+    const ob = new MutationObserver(() =>
+      setTheme(el.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'))
+    ob.observe(el, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => ob.disconnect()
+  }, [])
+  const HUES  = theme === 'dark' ? DEPT_HUES_DARK : DEPT_HUES_LIGHT
+  const OTHER = DEPT_OTHER[theme]
+  const NONE  = DEPT_NONE[theme]
+
+  const stores = summary?.stores || []
+  const totals = summary?.department_totals || []
+
+  // Department -> colour is decided ONCE, chain-wide, and shared by every bar.
+  // If each store ranked its own top eight, the same hue would mean HOMEWARES
+  // on one row and TOYS on the next.
+  const { colorOf, ranked } = useMemo(() => {
+    const r = totals.filter(d => d.department !== '(none)').slice(0, 8)
+                    .map(d => d.department)
+    const m = new Map(r.map((d, i) => [d, HUES[i]]))
+    return {
+      ranked: r,
+      colorOf: (d) => d === '(none)' ? NONE : (m.get(d) || OTHER),
+    }
+  }, [totals, theme])
+
+  // Busiest first: the question this card answers is who is doing the work.
+  const rows = useMemo(() => [...stores].sort((a, b) =>
+    (b.records - a.records) || String(a.store_name).localeCompare(String(b.store_name))
+  ), [stores])
+  const top = Math.max(1, ...rows.map(r => r.records))
+  const nf  = (n) => Number(n || 0).toLocaleString('en-IE')
+  const t   = summary?.totals
+
+  const otherTotal = totals
+    .filter(d => d.department !== '(none)' && !ranked.includes(d.department))
+    .reduce((a, d) => a + d.records, 0)
+  const noneTotal = (totals.find(d => d.department === '(none)') || {}).records || 0
 
   return (
     <div className="card" style={{ marginTop: 16 }}>
       <div className="card-header">
         <span style={{ minWidth: 0 }}>
-          Department Check by store
+          Department Check records by department
           {t && (
             <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--text-muted)' }}>
-              {' '}({t.records.toLocaleString('en-IE')} records · {t.departments.toLocaleString('en-IE')} departments · {t.did} of {t.stores} stores)
+              {' '}({nf(t.records)} records &middot; {t.did} of {t.stores} stores)
             </span>
           )}
         </span>
       </div>
-      <div className="card-body" style={{ maxHeight: 420, overflowY: 'auto', paddingTop: 4 }}>
+
+      {/* Postgres keeps only scan_record_retention_days of task_records, so a
+          180-day range on the selector cannot be answered in full. Saying which
+          window the numbers actually cover beats letting 14 days pass for 180. */}
+      {!loading && summary?.live_window?.truncated && (
+        <div style={{ padding: '8px 16px 0', fontSize: 11.5, color: 'var(--text-muted)' }}>
+          Live records only reach back to{' '}
+          {new Date(summary.live_window.from).toLocaleDateString('en-IE')} &mdash;
+          older Department Checks have moved to the archive and are not counted here.
+        </div>
+      )}
+
+      {/* Legend, always present -- with eight series, colour alone would be
+          guesswork. Wraps rather than scrolls, so it survives a narrow card. */}
+      {!loading && summary && ranked.length > 0 && (
+        <div style={{
+          display: 'flex', flexWrap: 'wrap', gap: '6px 14px',
+          padding: '10px 16px 2px', fontSize: 11.5, color: 'var(--text-muted)'
+        }}>
+          {ranked.map(d => (
+            <span key={d} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 10, height: 10, borderRadius: 2, background: colorOf(d), flex: 'none' }} />
+              {d}
+            </span>
+          ))}
+          {otherTotal > 0 && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 10, height: 10, borderRadius: 2, background: OTHER, flex: 'none' }} />
+              Other
+            </span>
+          )}
+          {noneTotal > 0 && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 10, height: 10, borderRadius: 2, background: NONE, flex: 'none' }} />
+              No department
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className="card-body" style={{ maxHeight: 460, overflowY: 'auto', paddingTop: 8 }}>
         {loading || !summary ? (
           <div style={{ textAlign: 'center', padding: 24 }}><span className="spinner spinner-dark" /></div>
         ) : !rows.length ? (
           <div className="empty-state" style={{ padding: 20 }}><p style={{ fontSize: 13 }}>No stores in scope.</p></div>
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr>
-                <th align="left"  style={{ padding: '6px 8px', fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Store</th>
-                <th align="right" style={{ padding: '6px 8px', fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Records</th>
-                <th align="right" style={{ padding: '6px 8px', fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Departments</th>
-                <th style={{ width: '32%' }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(r => {
-                const none = r.records === 0
-                return (
-                  <tr key={r.store_id} style={none ? { background: 'var(--red-soft, #FDECEA)' } : undefined}>
-                    <td style={{ padding: '5px 8px', borderBottom: '1px solid var(--border-soft)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 220 }}>
-                      {r.store_name}
-                      {none && <strong style={{ color: 'var(--red, #C0392B)' }}> · none</strong>}
-                    </td>
-                    <td align="right" style={{ padding: '5px 8px', borderBottom: '1px solid var(--border-soft)', fontVariantNumeric: 'tabular-nums' }}>
-                      {r.records.toLocaleString('en-IE')}
-                    </td>
-                    <td align="right" style={{ padding: '5px 8px', borderBottom: '1px solid var(--border-soft)', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
-                      {r.departments}
-                    </td>
-                    {/* A bar, because 14 vs 3 departments should be visible at a
-                        glance rather than read off. Relative to the best store in
-                        scope, not an absolute target -- there is no canonical
-                        department list to measure against. */}
-                    <td style={{ padding: '5px 8px', borderBottom: '1px solid var(--border-soft)' }}>
-                      <div style={{ background: 'var(--bg-soft)', borderRadius: 99, height: 8, overflow: 'hidden' }}>
-                        <div style={{
-                          width: `${Math.round((r.departments / maxDept) * 100)}%`,
-                          height: '100%', borderRadius: 99,
-                          background: none ? 'var(--red, #C0392B)' : '#2E78D6'
-                        }} />
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        )}
+        ) : rows.map(r => {
+          const bd    = r.departments_breakdown || {}
+          const parts = Object.entries(bd).sort((a, b) => b[1] - a[1])
+          const none  = r.records === 0
+          return (
+            <div key={r.store_id} style={{ padding: '7px 4px', borderBottom: '1px solid var(--border-soft)' }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, fontSize: 13 }}>
+                <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {r.store_name}
+                </span>
+                {none && <strong style={{ color: 'var(--red, #C0392B)', fontSize: 12 }}>no check</strong>}
+                <span style={{ marginLeft: 'auto', fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>
+                  {nf(r.records)}
+                </span>
+              </div>
+              {/* Bar LENGTH is this store against the busiest; the SEGMENTS are
+                  what its records were made of. Two facts, one mark. */}
+              <div style={{
+                marginTop: 5, height: 12, borderRadius: 3, overflow: 'hidden',
+                background: 'var(--bg-soft)', display: 'flex',
+                width: `${none ? 0 : Math.max(4, Math.round((r.records / top) * 100))}%`
+              }}>
+                {parts.map(([dept, n]) => (
+                  <div
+                    key={dept}
+                    title={`${dept}: ${nf(n)} (${((n / Math.max(1, r.records)) * 100).toFixed(1)}%)`}
+                    style={{
+                      width: `${(n / Math.max(1, r.records)) * 100}%`,
+                      background: colorOf(dept),
+                      /* A 1px surface gap so touching segments stay countable
+                         rather than reading as one wide block. */
+                      boxShadow: 'inset -1px 0 0 0 var(--surface)'
+                    }}
+                  />
+                ))}
+              </div>
+              {parts.length > 0 && (
+                <div style={{ marginTop: 3, fontSize: 11, color: 'var(--text-muted)' }}>
+                  {parts.slice(0, 2).map(([d, n]) => `${d} ${nf(n)}`).join(' \u00b7 ')}
+                  {parts.length > 2 && ` \u00b7 +${parts.length - 2} more`}
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
     </div>
   )

@@ -1,17 +1,13 @@
 {
   "_comment": "Copy this file to aging-report.config.json (same folder) and fill in the values. Do NOT commit the real file - it holds the SMTP password.",
-
   "base_url": "https://homesaversscanner.pages.dev",
-
   "recipients": [
     "manager1@homesavers.ie",
     "manager2@homesavers.ie"
   ],
-
   "cc": [
     "supervisor@homesavers.ie"
   ],
-
   "smtp": {
     "host": "smtp-relay.brevo.com",
     "port": 587,
@@ -20,15 +16,38 @@
     "password": "PUT-YOUR-BREVO-SMTP-KEY-HERE",
     "from": "Homesavers Scanner <orders.homesavers@outlook.com>"
   },
-
   "overdue_days": 3,
   "subject_prefix": "Homesavers Aging Report",
-
   "aging_buckets": [
-    { "label": "0-1 days",  "min": 0,  "max": 1 },
-    { "label": "2-3 days",  "min": 2,  "max": 3 },
-    { "label": "4-7 days",  "min": 4,  "max": 7 },
-    { "label": "8-14 days", "min": 8,  "max": 14 },
-    { "label": "15+ days",  "min": 15, "max": null }
+    {
+      "label": "0-1 days",
+      "min": 0,
+      "max": 1
+    },
+    {
+      "label": "2-3 days",
+      "min": 2,
+      "max": 3
+    },
+    {
+      "label": "4-7 days",
+      "min": 4,
+      "max": 7
+    },
+    {
+      "label": "8-14 days",
+      "min": 8,
+      "max": 14
+    },
+    {
+      "label": "15-28 days",
+      "min": 15,
+      "max": 28
+    },
+    {
+      "label": "29+ days",
+      "min": 29,
+      "max": null
+    }
   ]
 }

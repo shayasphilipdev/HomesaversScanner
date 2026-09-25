@@ -131,8 +131,18 @@ def fetch_records(cfg, secret):
     resp.raise_for_status()
     data = resp.json()
     now = parse_iso(data.get("now")) or dt.datetime.now(dt.timezone.utc)
+    # meta carries what the endpoint could actually SEE. Records now come from
+    # two databases -- Postgres for the first 14 days, Cloudflare D1 for the
+    # next 35 -- and horizon_days is the sum of the two retention settings, not
+    # a constant. Printing it means the email can never claim a longer memory
+    # than it has. Older deployed endpoints return neither key; the defaults
+    # below keep this script working against them.
+    meta = {
+        "horizon_days": int(data.get("horizon_days") or 49),
+        "sources": data.get("sources") or {},
+    }
     return (data.get("records", []), now, data.get("created_last7", {}) or {},
-            data.get("stores_no_dept_check", []) or [])
+            data.get("stores_no_dept_check", []) or [], meta)
 
 
 def enrich(records, now, buckets):
@@ -168,7 +178,7 @@ ALERT    = "#B42318"
 FONT     = "Segoe UI,Arial,Helvetica,sans-serif"
 
 
-def build_html(by_cat, cfg, now, created_last7, stores_no_dept=None):
+def build_html(by_cat, cfg, now, created_last7, stores_no_dept=None, meta=None):
     buckets = cfg["aging_buckets"]
     overdue = int(cfg["overdue_days"])
     bucket_labels = [b["label"] for b in buckets]
@@ -277,29 +287,38 @@ def build_html(by_cat, cfg, now, created_last7, stores_no_dept=None):
         H.append(sbox(SHORT.get(code, code), int(created_last7.get(code, 0))))
     H.append('</tr></table></td></tr>')
 
-    # Stores with no Department Check in the last 7 days (excludes today, the
-    # report-generation day). Active stores only.
-    sdc = stores_no_dept or []
-    _cnt = f" &mdash; {len(sdc)} store(s)" if sdc else ""
-    H.append(f'<tr><td style="padding:16px 24px 2px;font-family:{FONT};font-size:16px;'
-             f'font-weight:700;color:#1f2724;">Stores with no Department Check'
-             f'<span style="font-size:13px;font-weight:400;color:#5b665e;"> last 7 days, excl. today{_cnt}</span></td></tr>')
-    if not sdc:
-        H.append(f'<tr><td style="padding:4px 24px 10px;font-family:{FONT};font-size:13px;color:{TEXT};">'
-                 'All active stores completed at least one Department Check.</td></tr>')
-    else:
-        H.append('<tr><td style="padding:4px 18px 8px;">'
-                 '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">')
-        H.append('<tr>' + th("Store Code", "left") + th("Store", "left") + '</tr>')
-        for s in sdc:
-            H.append('<tr>' + td(str(s.get("store_code", "")), "left") + td(str(s.get("store_name", "")), "left") + '</tr>')
-        H.append('</table></td></tr>')
+    # The "Stores with no Department Check" box was REMOVED on 2026-09-25.
+    # It now has its own dedicated report -- dept-check-weekly.py, Monday 09:00 --
+    # which covers last calendar week with the previous week alongside it and the
+    # per-department split. Two reports answering the same question in different
+    # windows is how they end up disagreeing in a meeting.
+    #
+    # stores_no_dept_check is still returned by GET /reports/aging; it is simply
+    # no longer rendered here. Left in place so the Monday report, which has no
+    # equivalent endpoint of its own for that shape, is unaffected.
+
+    # Pending queries live in TWO databases now: Postgres for the first
+    # scan_record_retention_days, Cloudflare D1 for the next
+    # archive_retention_days. The report reads both. Saying so matters, because
+    # anything older than the sum of those two has been permanently deleted and
+    # will never appear here again -- so "oldest: 40 days" is a real ceiling,
+    # not an observation about how old the backlog happens to be.
+    m = meta or {}
+    horizon = int(m.get("horizon_days") or 49)
+    src = m.get("sources") or {}
+    n_arch = int(src.get("archive") or 0)
+    scope_note = (f'This report covers pending queries up to <strong>{horizon} days</strong> old &mdash; '
+                  f'the full retention window. Records older than that are permanently deleted '
+                  f'and cannot appear here.')
+    if n_arch:
+        scope_note += f' {n_arch:,} of the rows above were read from the archive.'
 
     # Footer
     H.append(f'<tr><td style="padding:16px 24px 24px;font-family:{FONT};font-size:13px;'
              f'color:#5b665e;line-height:1.6;border-top:1px solid #eef2ee;">'
              'Detailed line-by-line records are attached as Excel files, one per query type. '
              'Please action the pending queries at your earliest convenience.<br><br>'
+             f'{scope_note}<br><br>'
              f'Kind regards,<br><strong style="color:{HEAD_TX};">Homesavers Scanner</strong></td></tr>')
 
     H.append('</table></td></tr></table></body></html>')
@@ -380,7 +399,7 @@ def main():
     secret = read_secret()
 
     try:
-        records, now, created_last7, stores_no_dept = fetch_records(cfg, secret)
+        records, now, created_last7, stores_no_dept, meta = fetch_records(cfg, secret)
     except Exception as e:
         log(f"Could not fetch report data: {e}", "ERROR")
         sys.exit(1)
@@ -390,7 +409,7 @@ def main():
     enriched = enrich(records, now, cfg["aging_buckets"])
     by_cat = {code: [x for x in enriched if x["task_type"] == code] for code, _ in CATEGORIES}
 
-    html = build_html(by_cat, cfg, now, created_last7, stores_no_dept)
+    html = build_html(by_cat, cfg, now, created_last7, stores_no_dept, meta)
 
     attachments = []
     for code, name in CATEGORIES:
