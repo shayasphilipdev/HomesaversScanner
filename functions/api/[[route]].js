@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-24-week-labels'
+const API_REVISION   = '2026-09-25-dup-chip-deptstore'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -3963,7 +3963,7 @@ export async function onRequest(context) {
       // time; with it, ~49. The COUNT still runs over the whole filtered set, so
       // a row whose twin is on an unloaded page is still flagged.
       const barcodes = arr(b.barcodes)
-      if (!barcodes) return json({ keys: [] })
+      if (!barcodes) return json({ keys: [], counts: {} })
       if (barcodes.length > 1000) return err('Too many barcodes in one request', 400)
 
       const iso = (v) => { if (!v) return null; const d = new Date(v); return isNaN(d) ? null : d.toISOString() }
@@ -3985,13 +3985,23 @@ export async function onRequest(context) {
           p_barcodes:        barcodes,
           p_pricing_states:  arr(b.pricing_state),
         })
-        keys = (rows || []).map(r => (typeof r === 'string' ? r : r.k)).filter(Boolean)
+        // {key: count}, not just a list. "Duplicate x16" tells the reader
+        // something "Duplicate" does not, and the count is already computed by
+        // the HAVING, so it is free.
+        keys = (rows || [])
+          .map(r => (typeof r === 'string' ? { k: r, n: 2 } : r))
+          .filter(r => r && r.k)
       } catch (e) {
         // Highlighting is an aid, not the report. A failure here must never take
         // the grid down with it.
-        return json({ keys: [], error: String(e?.message || e).slice(0, 200) })
+        return json({ keys: [], counts: {}, error: String(e?.message || e).slice(0, 200) })
       }
-      return json({ keys })
+      // `keys` stays for any caller that only needs membership; `counts` carries
+      // how many records share each key.
+      return json({
+        keys:   keys.map(r => r.k),
+        counts: Object.fromEntries(keys.map(r => [r.k, Number(r.n) || 2])),
+      })
     }
 
     // Bulk review (back office) — mark many records as completed or

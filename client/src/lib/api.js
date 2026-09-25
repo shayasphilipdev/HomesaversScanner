@@ -290,8 +290,8 @@ export const getDuplicateKeys = (body) =>
   // "no barcodes" early return and answers {keys:[]} with a 200. Silent: the
   // call succeeds, the rows simply never highlight.
   request('/task-records/duplicate-keys', { method: 'POST', body })
-    .then(r => r?.keys || [])
-    .catch(() => [])
+    .then(r => r?.counts || {})
+    .catch(() => ({}))
 
 // Tries the network first; on offline / network failure the request is
 // queued in IndexedDB (see lib/outbox.js) and replayed when we come back

@@ -507,7 +507,9 @@ function HQReports() {
   // "task_type|barcode_no" keys that occur more than once under the same task,
   // across all stores, within the current filter. Computed server-side because
   // the grid is paged -- a browser-side check would only see loaded rows.
-  const [dupKeys, setDupKeys] = useState(() => new Set())
+  // key -> how many records share it. A Map, not a Set, so the row can say
+  // "Duplicate x16" rather than just that it is one.
+  const [dupKeys, setDupKeys] = useState(() => new Map())
   // Archive confirmation. archiveTarget = { ids:[...] } or null.
   const [archiveTarget, setArchiveTarget] = useState(null)
   const [matchDelete, setMatchDelete]   = useState(false)
@@ -605,7 +607,7 @@ function HQReports() {
     // a record dupKey() will not key (no barcode, or an excluded task type such
     // as Department Check) is not asked about either.
     const barcodes = [...new Set(records.filter(r => dupKey(r)).map(r => r.barcode_no))]
-    if (!barcodes.length) { setDupKeys(new Set()); return }
+    if (!barcodes.length) { setDupKeys(new Map()); return }
     let cancelled = false
     getDuplicateKeys({
       barcodes,
@@ -616,7 +618,7 @@ function HQReports() {
       barcode_status: barcodeStatusIds.join(','),
       pricing_state:  pricingStateIds.join(','),
       includeCleared: showingArchived ? '1' : '0',
-    }).then(keys => { if (!cancelled) setDupKeys(new Set(keys)) })
+    }).then(counts => { if (!cancelled) setDupKeys(new Map(Object.entries(counts))) })
     // getDuplicateKeys never rejects -- it resolves to [] on failure, so a dead
     // aggregate leaves rows unhighlighted instead of breaking the report.
     return () => { cancelled = true }
@@ -1210,7 +1212,8 @@ function HQReports() {
                   // dupKeys is resolved server-side over the whole filtered set,
                   // so this stays true for a row whose twin is on a page that
                   // has not been loaded.
-                  const isDup = dupKeys.has(dupKey(r))
+                  const dupCount = dupKeys.get(dupKey(r)) || 0
+                  const isDup = dupCount > 1
                   return (
                     <Fragment key={r.id}>
                       <tr className={isDup ? 'tr-duplicate' : undefined}
@@ -1244,7 +1247,18 @@ function HQReports() {
                           })()}
                         </td>
                         <td>{desc || <span className="td-muted">—</span>}</td>
-                        <td className="td-code">{r.barcode_no || r.product_code || ''}</td>
+                        <td className="td-code">
+                          {r.barcode_no || r.product_code || ''}
+                          {/* The chip, not just the tint: a row colour is easy to
+                              miss on a dense grid, and the count is the part that
+                              makes it actionable. */}
+                          {isDup && (
+                            <span className="dup-chip"
+                                  title={`${dupCount} ${TASK_FORMS[r.task_type]?.name || r.task_type} records share this barcode`}>
+                              ×{dupCount}
+                            </span>
+                          )}
+                        </td>
                         <td>
                           <div className="flex-row" style={{ gap: 6 }}>
                             {r.photo_product_url && <a href={r.photo_product_url} target="_blank" rel="noopener noreferrer">📷 product</a>}
