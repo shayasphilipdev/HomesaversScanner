@@ -9,7 +9,6 @@ import TaskEForm  from './forms/TaskEForm.jsx'
 import TaskFForm  from './forms/TaskFForm.jsx'
 import TaskGForm  from './forms/TaskGForm.jsx'
 import TaskHForm  from './forms/TaskHForm.jsx'
-import TaskJForm  from './forms/TaskJForm.jsx'
 import TaskKForm  from './forms/TaskKForm.jsx'
 import TaskMForm  from './forms/TaskMForm.jsx'
 
@@ -127,6 +126,30 @@ export default function TaskForm({ taskType, storeId, onSaved }) {
     )
   }
 
+  // Department Check (J) has its own dedicated, faster page (Dept Scan) built
+  // for exactly this job. Keeping TaskJForm reachable here too just gave
+  // people two places to do the same scan with no reason to pick one over
+  // the other, so this page now points them at Dept Scan instead of
+  // rendering the form.
+  if (taskType === 'J') {
+    return (
+      <>
+        {reminder}
+        <div className="card" style={{ marginBottom: 24 }}>
+          <div className="card-body">
+            <div className="warning-box" style={{ marginBottom: 0 }}>
+              <span className="warning-icon">▥</span>
+              <div>
+                Use <strong>Dept Scan</strong> to record Department Checks — it's built for this and faster.{' '}
+                <a href="/dept-scan" style={{ fontWeight: 600 }}>Go to Dept Scan →</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </>
+    )
+  }
+
   switch (taskType) {
     case 'A': return <>{reminder}<TaskAForm storeId={storeId} onSaved={onSaved} /></>
     case 'B': return <>{reminder}<TaskBForm storeId={storeId} onSaved={onSaved} /></>
@@ -137,7 +160,6 @@ export default function TaskForm({ taskType, storeId, onSaved }) {
     case 'F': return <>{reminder}<TaskFForm storeId={storeId} onSaved={onSaved} /></>
     case 'G': return <>{reminder}<TaskGForm storeId={storeId} onSaved={onSaved} /></>
     case 'H': return <>{reminder}<TaskHForm storeId={storeId} onSaved={onSaved} /></>
-    case 'J': return <>{reminder}<TaskJForm storeId={storeId} onSaved={onSaved} /></>
     case 'K': return <>{reminder}<TaskKForm storeId={storeId} onSaved={onSaved} /></>
     case 'M': return <>{reminder}<TaskMForm storeId={storeId} onSaved={onSaved} /></>
     default:  return <div className="card"><div className="card-body">No form registered for {taskType}.</div></div>

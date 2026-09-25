@@ -62,10 +62,12 @@ export default function Tasks() {
         // Routine Expiry Sweep (M) is test-only for now — hide it on the live app.
         const rows = isTestEnv() ? all : all.filter(t => t.code !== 'M')
         setTaskTypes(rows)
-        // Store users default to Department Check (J); back office defaults to
-        // the first daily task type, then whatever is first.
+        // Store users default to Non-Scans (B) — Department Check (J) now
+        // points them at the dedicated Dept Scan page instead of a form here
+        // (see TaskForm.jsx), so it's no longer a sensible default. Back
+        // office defaults to the first daily task type, then whatever is first.
         const first = !isBO
-          ? (rows.find(t => t.code === 'J') || rows.find(t => t.frequency === 'daily') || rows[0])
+          ? (rows.find(t => t.code === 'B') || rows.find(t => t.frequency === 'daily') || rows[0])
           : (rows.find(t => t.frequency === 'daily') || rows[0])
         if (first && !selectedType) setSelectedType(first.code)
       })
