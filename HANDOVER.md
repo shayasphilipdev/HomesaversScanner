@@ -50,3 +50,51 @@ File changed: `functions/api/[[route]].js` (10 insertions, 2 deletions).
 
 ## Recommended next step for the user
 Wait ~2 minutes for the Cloudflare Pages build, then hard-refresh the Dashboard. The card should now populate. If it still errors, check the browser Network tab for the actual status code/body of `/api/reports/dept-check-week` — that would point to a different issue (e.g. an expired session token) rather than this crash.
+
+---
+
+## Dashboard date range default → last week
+
+Changed the Dashboard's default date-range preset from `last_7` (rolling 7 days) to `last_week` (last complete Mon–Sun calendar week) — the preset already existed in `client/src/lib/dateRange.js`, this just changed which one `Dashboard.jsx` opens with. File: `client/src/pages/Dashboard.jsx`. Pushed and merged to `main`.
+
+---
+
+## Task D form — duplicate "product name" box removed; HO Tasks page defaults
+
+**Task D (Wrong Description):** the form showed a read-only "Product Name (as on the product)" box (the system's on-file name) *and* "Actual Product Name" — the same info the scan-result banner above it already prints as "Product Description: `<name>`", so it read as two boxes asking the same question. Removed the read-only one for Task D only; "Actual Product Name *" (already mandatory) is now the sole product-name field there. Task I untouched. File: `client/src/components/forms/TaskDIForm.jsx`.
+
+**Non-Scans (Task B) both photos mandatory:** already true in the code (`required` prop + explicit validation before save, online and offline-queued) — no change needed, confirmed by reading `TaskBForm.jsx`.
+
+**HO Tasks page defaults:** store users already land on `/tasks` after login (pre-existing `App.jsx` redirect, no change). Changed the task-type picker's default from Department Check (J) to Non-Scans (B) — `client/src/pages/Tasks.jsx`. Selecting Department Check on this page no longer opens `TaskJForm`; it now shows a banner pointing at the dedicated `/dept-scan` page instead — `client/src/components/TaskForm.jsx`.
+
+All pushed and merged to `main`.
+
+---
+
+## Record assignment between back-office users (new feature)
+
+**What it does:** any back-office role (`area_manager`, `support_admin`, `buying_manager`, `buying_head`, `admin`) can assign any HO task record — Non-Scan, Wrong Price, every task type — to any *other* back-office role, and vice versa (bidirectional, flat grouping — no hierarchy). The assignee sees it pinned to the top of the Reports grid with an "Assigned to you" badge, plus a nav-bar count badge.
+
+### Database (applied live via Supabase MCP, tracked in `supabase-migration-record-assignment.sql`)
+- `task_records` gained: `assigned_to` (uuid → `users.id`, `ON DELETE SET NULL`), `assigned_to_name` (text), `assigned_by` (uuid), `assigned_by_name` (text), `assigned_at` (timestamptz).
+- Partial index `idx_task_records_assigned_to` on `assigned_to WHERE NOT NULL`.
+- `task_record_events_kind_chk` extended to allow a new `'assigned'` event_type, so assign/unassign show in a record's History panel like any other change.
+
+### Backend (`functions/api/[[route]].js`)
+- `GET /task-records` select list now includes the four assignment display columns, and accepts `?assignedTo=me|<user_id>` (`'me'` resolves server-side from the session — never trusts a client-supplied id).
+- New `POST /task-records/:id/assign` (`{ user_id }`) and `POST /task-records/:id/unassign`. Both gated `isBackOffice(session)`, store-scope checked the same way `messages/resolve` already does. Target user for assign must be an active user with a `BO_ROLES` role. Both write a `task_record_events` audit row.
+
+### Frontend
+- **`client/src/lib/api.js`:** `assignTaskRecord(id, userId)`, `unassignTaskRecord(id)`.
+- **`client/src/pages/Reports.jsx`** (the HO records grid): a native `<select>` per row (options from `getMessageRecipients()`, reused rather than a new endpoint) — pick a name to assign, blank option to unassign. Rows assigned to the signed-in user are pinned to the top of whatever page is currently loaded (client-side reorder, no extra fetch) and show "→ Assigned to you" / "→ Assigned to `<name>`" under the task-type cell. New "Assigned to me" toggle chip that **ignores every other filter** (task type/status/date range) — it's a flag to look at, not a report to filter your way into.
+- **`client/src/components/Nav.jsx`:** badge (reuses the Messages badge styling) showing a live count of records assigned to the signed-in back-office user; polls every 5 minutes while the tab is visible, refreshes instantly on a local `hs:assignment-changed` event. Clicking it opens `/reports` and auto-enables the "Assigned to me" toggle via `location.state`.
+- **`client/src/components/RecordDetailModal.jsx`:** added "Assigned to" / "Assigned by" / "Assigned on" rows (back-office only, hidden when the record isn't assigned).
+
+### Not done / scope notes
+- Assignment UI is on the Reports.jsx grid only — the simpler per-store grid on the HO Tasks page (`TaskRecordList.jsx`) doesn't have it. That's where back office actually reviews across all stores, so it covers the ask; say if you also want it on the Tasks page grid.
+- An `area_manager` assignee whose store scope doesn't cover a record's store still won't see it even once assigned — same store-scope rule as everywhere else in the app, not a new limitation this feature introduces.
+
+### Status
+All changes committed and pushed to `claude/kind-ride-q56k58`, merged into `main` (fast-forward), pushed — Cloudflare Pages will auto-deploy. The DB migration is already live (applied directly via the Supabase MCP tool, ahead of the code push, so it's safe even mid-deploy).
+
+**Could not verify with a real build** — `npm install` in this sandbox is blocked by network policy (the `xlsx` dependency pulls a tarball from `cdn.sheetjs.com`, which the sandbox's egress proxy denies), so no local `vite build` or dev server run was possible. Everything above was checked by careful manual review against the existing, working patterns in the same files (the messaging feature's assign-a-colleague picker, the existing reverse-status audit-event pattern, etc.) rather than a compiled/running app. Worth a real click-through in the live app once deployed, especially: assigning a record, confirming it appears for the assignee, and the nav badge count.

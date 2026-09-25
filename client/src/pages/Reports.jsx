@@ -7,8 +7,10 @@ import {
   adminListTemplates, getStoreTaskReportRows,
   clearToken, getProductMaster, getProductMasterFilters,
   getSpacePlanReport, getCompetitorReport, sendToPricing, getBmReductions,
-  reverseTaskRecordStatus, getDuplicateKeys
+  reverseTaskRecordStatus, getDuplicateKeys,
+  getMessageRecipients, assignTaskRecord, unassignTaskRecord
 } from '../lib/api.js'
+import { useLocation } from 'react-router-dom'
 import { COMPETITION_REPORT_COLS, COMPETITION_REPORT_HEADERS, COMPETITION_REPORT_MIN_WIDTHS } from '../lib/competitionOptions.js'
 import { TASK_FORMS, STORE_ARCHIVABLE } from '../lib/taskTypes.js'
 import { isAdminRole } from '../lib/roles.js'
@@ -526,6 +528,26 @@ function HQReports() {
     return next
   })
 
+  // Record assignment — any back-office colleague to any other. boUsers backs
+  // the per-row "Assign to" picker; assignedToMeOnly is a quick filter that
+  // bypasses the task-type/status/date filters above (an assignment is a
+  // "look at this" flag, not a report the reviewer should have to go hunting
+  // for under whatever filters happen to be selected).
+  const [boUsers, setBoUsers] = useState([])
+  const [assignedToMeOnly, setAssignedToMeOnly] = useState(false)
+  const location = useLocation()
+  useEffect(() => {
+    if (isBO) getMessageRecipients().then(setBoUsers).catch(() => setBoUsers([]))
+  }, [isBO])
+  // Arriving from the nav "Assigned to you" badge — switch the toggle on and
+  // run the report immediately instead of making the user find and click it.
+  useEffect(() => {
+    if (isBO && location.state?.assignedToMe) {
+      setAssignedToMeOnly(true)
+      runReport({ assignedToMeOnly: true })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     getTaskTypes().then(tt => {
@@ -544,7 +566,20 @@ function HQReports() {
     }).catch(e => { if (isBO) setError('Could not load stores: ' + e.message) })
   }, [isBO])
 
-  const fetchPage = async (offset) => {
+  // overrides lets a caller force "assigned to me" on for the very next fetch
+  // without waiting for the setAssignedToMeOnly state update to land first —
+  // needed when arriving via the nav badge, where the toggle and the fetch
+  // have to agree on the very first render.
+  const fetchPage = async (offset, overrides = {}) => {
+    const wantMine = overrides.assignedToMeOnly ?? assignedToMeOnly
+    // "Assigned to me" is a flag, not a report -- it deliberately ignores every
+    // other filter above (task type, status, date range, product/barcode
+    // status) so a record someone assigned you never goes missing just
+    // because it falls outside whatever this screen happened to be filtered
+    // to. Store scope still applies server-side either way.
+    if (wantMine) {
+      return await getTaskRecords({ limit: PAGE_SIZE, offset, filters: { assignedTo: 'me' } })
+    }
     return await getTaskRecords({
       storeId:  storeIds.length    ? storeIds.join(',')    : undefined,
       taskType: taskTypeIds.length ? taskTypeIds.join(',') : undefined,
@@ -562,10 +597,10 @@ function HQReports() {
     })
   }
 
-  const runReport = async () => {
+  const runReport = async (overrides = {}) => {
     setLoading(true); setError(''); setSelected(new Set())
     try {
-      const data = await fetchPage(0)
+      const data = await fetchPage(0, overrides)
       // Tolerate bare-array (legacy) and paginated ({records,total,has_more}).
       const rows  = Array.isArray(data) ? data           : (data?.records || [])
       const tot   = Array.isArray(data) ? rows.length    : (data?.total ?? rows.length)
@@ -762,12 +797,24 @@ function HQReports() {
   const allSelectableSelected = selectableIds.length > 0 && selectableIds.every(id => selected.has(id))
 
 
+  // Records assigned to the signed-in user float to the top of whatever page
+  // is currently loaded, ahead of everything else — that's the whole point of
+  // assigning something to a colleague, rather than it sitting wherever
+  // created_at happened to put it. Stable otherwise: each partition keeps the
+  // server's own order.
+  const displayRecords = useMemo(() => {
+    if (!session.userId) return records
+    const mine = [], rest = []
+    for (const r of records) (r.assigned_to === session.userId ? mine : rest).push(r)
+    return mine.length ? [...mine, ...rest] : records
+  }, [records, session.userId])
+
   // Prev/Next inside the Details popup slide through the currently-loaded
   // page of records — not a separate fetch. Naturally disables at either end
   // of what's loaded; a "Load more" fetch doesn't retroactively extend it
   // until the popup is reopened, which is fine — this is for browsing what's
   // already on screen, not paging through the full report from inside there.
-  const detailIndex = detailRecord ? records.findIndex(r => r.id === detailRecord.id) : -1
+  const detailIndex = detailRecord ? displayRecords.findIndex(r => r.id === detailRecord.id) : -1
 
   const confirmDelete = async () => {
     const ids = deleteTarget?.ids || []
@@ -939,6 +986,35 @@ function HQReports() {
     }
   }
 
+  // Assign/unassign a record to a colleague. userId '' from the <select>
+  // means "Unassign". Optimistic like the other row actions here; a failure
+  // snaps the row back to what it was.
+  const handleAssign = async (id, userId) => {
+    const prev = records.find(r => r.id === id)
+    try {
+      if (userId) {
+        const target = boUsers.find(u => u.id === userId)
+        setRecords(rs => rs.map(r => r.id === id
+          ? { ...r, assigned_to: userId, assigned_to_name: target?.display_name || '', assigned_by_name: session.displayName, assigned_at: new Date().toISOString() }
+          : r))
+        await assignTaskRecord(id, userId)
+        toast.success(`Assigned to ${target?.display_name || 'colleague'}.`)
+      } else {
+        setRecords(rs => rs.map(r => r.id === id
+          ? { ...r, assigned_to: null, assigned_to_name: null, assigned_by_name: null, assigned_at: null }
+          : r))
+        await unassignTaskRecord(id)
+      }
+      // Nav's "Assigned to you" badge polls every 5 minutes; this lets it
+      // catch up immediately when the change happened right here (assigning
+      // to/unassigning from yourself).
+      window.dispatchEvent(new Event('hs:assignment-changed'))
+    } catch (e) {
+      if (prev) setRecords(rs => rs.map(r => r.id === id ? prev : r))
+      toast.error(e.message || 'Could not update assignment.')
+    }
+  }
+
   // Copy the selected records to the Pricing page (back office only).
   // Snapshot copies — the originals stay exactly as they are here.
   const sendSelectedToPricing = async () => {
@@ -1081,8 +1157,22 @@ function HQReports() {
               />
             </div>
 
+            {isBO && (
+              <div className="filter-field filter-field--narrow"><label>Assignment</label>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${assignedToMeOnly ? 'btn-primary' : 'btn-outline'}`}
+                  onClick={() => setAssignedToMeOnly(v => !v)}
+                  style={{ whiteSpace: 'nowrap' }}
+                  title="Ignores every other filter above — shows every record assigned to you, whatever its task type, status or date"
+                >
+                  Assigned to me
+                </button>
+              </div>
+            )}
+
             <div className="filter-actions">
-              <button className="btn btn-sm btn-primary" onClick={runReport} disabled={loading}>
+              <button className="btn btn-sm btn-primary" onClick={() => runReport()} disabled={loading}>
                 {loading ? <><span className="spinner" /> Loading…</> : 'Run report'}
               </button>
               <button className="btn btn-sm btn-outline" onClick={downloadXLSX} disabled={downloading}>
@@ -1196,7 +1286,7 @@ function HQReports() {
                 </tr>
               </thead>
               <tbody>
-                {records.map(r => {
+                {displayRecords.map(r => {
                   const status   = STATUS_LABEL[r.status] || STATUS_LABEL.pending
                   const isPending = r.status === 'pending'
                   const isSelectable = selectableSet.has(r.id)
@@ -1225,7 +1315,14 @@ function HQReports() {
                             )}
                           </td>
                         )}
-                        <td><strong>{TASK_FORMS[r.task_type]?.name || r.task_type}</strong></td>
+                        <td>
+                          <strong>{TASK_FORMS[r.task_type]?.name || r.task_type}</strong>
+                          {r.assigned_to_name && (
+                            <div className="note" style={{ fontSize: 11, marginTop: 2, fontWeight: r.assigned_to === session.userId ? 700 : 400 }}>
+                              → {r.assigned_to === session.userId ? 'Assigned to you' : `Assigned to ${r.assigned_to_name}`}
+                            </div>
+                          )}
+                        </td>
                         <td>{storesById[r.store_id]?.store_name || <span className="td-muted">—</span>}</td>
                         <td className="td-code" style={{ whiteSpace: 'nowrap' }}>
                           {r.product_barcode || r.product_code || <span className="td-muted">—</span>}
@@ -1308,6 +1405,28 @@ function HQReports() {
                               title="All details for this record"
                               onClick={() => setDetailRecord(r)}
                             >🔍</button>
+                            {/* Assign — any back-office colleague to any other.
+                                A plain <select> rather than a popover: the
+                                assignee list is short and this needs no more
+                                than "pick a name", so a native control keeps
+                                one row action instead of a second piece of UI
+                                state to manage per row. */}
+                            {isBO && (
+                              <select
+                                className="btn btn-sm btn-outline"
+                                style={{ maxWidth: 130 }}
+                                value={r.assigned_to || ''}
+                                title={r.assigned_to_name ? `Assigned to ${r.assigned_to_name}` : 'Assign to a colleague'}
+                                onChange={e => handleAssign(r.id, e.target.value || null)}
+                              >
+                                <option value="">{r.assigned_to_name ? 'Unassign' : 'Assign…'}</option>
+                                {boUsers.map(u => (
+                                  <option key={u.id} value={u.id}>
+                                    {u.id === session.userId ? `${u.display_name} (you)` : u.display_name}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
                             {canArchive && (
                               <button className="btn btn-sm btn-primary" disabled={busy}
                                 onClick={() => setArchiveTarget({ ids: [r.id] })}
@@ -1366,8 +1485,8 @@ function HQReports() {
           setRecords(rs => rs.map(r => r.id === id ? { ...r, ...patch } : r))
           setDetailRecord(r => r && r.id === id ? { ...r, ...patch } : r)
         }}
-        onPrev={detailIndex > 0 ? () => setDetailRecord(records[detailIndex - 1]) : undefined}
-        onNext={detailIndex >= 0 && detailIndex < records.length - 1 ? () => setDetailRecord(records[detailIndex + 1]) : undefined}
+        onPrev={detailIndex > 0 ? () => setDetailRecord(displayRecords[detailIndex - 1]) : undefined}
+        onNext={detailIndex >= 0 && detailIndex < displayRecords.length - 1 ? () => setDetailRecord(displayRecords[detailIndex + 1]) : undefined}
       />
 
       <ConfirmDeleteModal

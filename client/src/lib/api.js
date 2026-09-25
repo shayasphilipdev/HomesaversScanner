@@ -460,6 +460,10 @@ export const getUnreadMessageCount  = () => request('/task-messages/unread-count
 export const getMessageThreads      = () => request('/task-messages/threads')
 export const markRecordMessagesRead = (id) => request(`/task-records/${id}/messages/mark-read`, { method: 'POST' })
 export const dismissMessageThread   = (id) => request(`/task-messages/threads/${id}/dismiss`, { method: 'POST' })
+// Hand a record to a colleague (any back-office role to any other). userId
+// null/omitted from the caller isn't valid here -- use unassignTaskRecord to clear it.
+export const assignTaskRecord       = (id, userId) => request(`/task-records/${id}/assign`, { method: 'POST', body: { user_id: userId } })
+export const unassignTaskRecord     = (id) => request(`/task-records/${id}/unassign`, { method: 'POST' })
 // Every unresolved thread across the user's scope, oldest last-message first,
 // each tagged with whose turn it is to reply. Powers the Awaiting Reply queue.
 export const getAwaitingReplyThreads = () => request('/task-messages/awaiting-reply')

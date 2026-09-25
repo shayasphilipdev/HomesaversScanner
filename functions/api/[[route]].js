@@ -3986,7 +3986,7 @@ export async function onRequest(context) {
       const scope = await scopedStoreIds(db, session)
       // null = unrestricted; otherwise filter to the scope's stores.
       const params = {
-        select: 'id,task_type,store_id,supplier_name_text,product_code,product_barcode,product_name_label,actual_product_name,description,uom,quantity,notes,photo_product_url,photo_barcode_url,details,status,review_notes,reviewed_at,marked_for_deletion,completed_at,store_completed_at,cleared_at,created_at,updated_at,barcode_no,item_name,supl_id,supplier_code,item_status,barcode_status,priced_at,pricing_removed_at,sent_to_pricing_at,messages_resolved_at,messages_resolved_by_name',
+        select: 'id,task_type,store_id,supplier_name_text,product_code,product_barcode,product_name_label,actual_product_name,description,uom,quantity,notes,photo_product_url,photo_barcode_url,details,status,review_notes,reviewed_at,marked_for_deletion,completed_at,store_completed_at,cleared_at,created_at,updated_at,barcode_no,item_name,supl_id,supplier_code,item_status,barcode_status,priced_at,pricing_removed_at,sent_to_pricing_at,messages_resolved_at,messages_resolved_by_name,assigned_to,assigned_to_name,assigned_by_name,assigned_at',
         order:  'created_at.desc',
         limit:  String(limit),
         offset: String(offset)
@@ -4037,6 +4037,14 @@ export async function onRequest(context) {
       // C7: hide store-confirmed records that are pending deletion from all
       // task list views. They remain in the DB until the retention cleanup runs.
       params['marked_for_deletion'] = 'neq.true'
+
+      // ?assignedTo=me | <user_id> — records handed to a colleague, so the
+      // grid's "Assigned to me" toggle and the nav badge's count can both ask
+      // the same question. 'me' resolves to the caller rather than trusting a
+      // client-supplied id, since that id would otherwise let one back-office
+      // login read another's assignment queue by guessing their user_id.
+      const assignedTo = p.get('assignedTo')
+      if (assignedTo) params['assigned_to'] = `eq.${assignedTo === 'me' ? session.user_id : assignedTo}`
 
       const range = []
       if (from) range.push(`gte.${new Date(from).toISOString()}`)
@@ -4576,6 +4584,68 @@ export async function onRequest(context) {
         note: resolve ? 'Message thread resolved' : 'Message thread reopened'
       })
       return json({ ok: true, resolved: resolve })
+    }
+
+    // POST /task-records/:id/assign   body: { user_id }
+    // Hands a record to a colleague — any back-office role to any other, same
+    // flat "back office" grouping /message-recipients already uses (this is a
+    // "look at this" between colleagues, not a role hierarchy). The assignee
+    // sees it pinned to the top of their grid via GET /task-records?assignedTo=me.
+    const recAssignMatch = path.match(/^\/task-records\/([a-f0-9-]+)\/assign$/)
+    if (recAssignMatch && method === 'POST') {
+      if (!isBackOffice(session)) return err('Forbidden', 403)
+      const recId = recAssignMatch[1]
+      const scope = await scopedStoreIds(db, session)
+      if (scope !== null) {
+        const [own] = await db.select('task_records', { select: 'store_id', id: `eq.${recId}`, limit: '1' })
+        if (!own || !scope.includes(own.store_id)) return err('Record not found or not allowed', 404)
+      }
+      const body   = await request.json().catch(() => ({}))
+      const userId = body.user_id
+      if (!userId) return err('user_id required', 400)
+      const [target] = await db.select('users', {
+        select: 'id,display_name,role', id: `eq.${userId}`, is_active: 'eq.true', limit: '1'
+      })
+      if (!target || !BO_ROLES.includes(target.role)) return err('Unknown or non-back-office user', 400)
+
+      const now = new Date().toISOString()
+      const by  = session.display_name || session.username || 'Unknown'
+      await db.update('task_records', { id: `eq.${recId}` }, {
+        assigned_to:      target.id,
+        assigned_to_name: target.display_name,
+        assigned_by:      session.user_id,
+        assigned_by_name: by,
+        assigned_at:      now
+      })
+      await writeActivityEvent(db, {
+        record_id: recId, event_type: 'assigned', session,
+        field: 'assigned_to', new_value: target.display_name,
+        note: `Assigned to ${target.display_name}`
+      })
+      return json({ ok: true, assigned_to: target.id, assigned_to_name: target.display_name, assigned_by_name: by, assigned_at: now })
+    }
+
+    // POST /task-records/:id/unassign
+    const recUnassignMatch = path.match(/^\/task-records\/([a-f0-9-]+)\/unassign$/)
+    if (recUnassignMatch && method === 'POST') {
+      if (!isBackOffice(session)) return err('Forbidden', 403)
+      const recId = recUnassignMatch[1]
+      const scope = await scopedStoreIds(db, session)
+      const [own] = await db.select('task_records', {
+        select: 'store_id,assigned_to_name', id: `eq.${recId}`, limit: '1'
+      })
+      if (!own) return err('Record not found', 404)
+      if (scope !== null && !scope.includes(own.store_id)) return err('Record not found or not allowed', 404)
+
+      await db.update('task_records', { id: `eq.${recId}` }, {
+        assigned_to: null, assigned_to_name: null, assigned_by: null, assigned_by_name: null, assigned_at: null
+      })
+      await writeActivityEvent(db, {
+        record_id: recId, event_type: 'assigned',
+        session, field: 'assigned_to', old_value: own.assigned_to_name, new_value: null,
+        note: 'Unassigned'
+      })
+      return json({ ok: true })
     }
 
     const recMsgMatch = path.match(/^\/task-records\/([a-f0-9-]+)\/messages$/)

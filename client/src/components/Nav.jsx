@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useStore } from '../App.jsx'
 import { resolvedTheme, setTheme } from '../lib/theme.js'
 import { canAccessAdmin, canDoHQTasks, canDoStoreTasks, STORE_ROLE_KEYS, roleLabel } from '../lib/roles.js'
-import { getMessageThreads, dismissMessageThread } from '../lib/api.js'
+import { getMessageThreads, dismissMessageThread, getTaskRecords } from '../lib/api.js'
 import { TASK_FORMS } from '../lib/taskTypes.js'
 import OfflineIndicator from './OfflineIndicator.jsx'
 import CapacityAlert from './CapacityAlert.jsx'
@@ -17,6 +17,7 @@ export default function Nav() {
   const [unread, setUnread]     = useState(0)
   const [msgOpen, setMsgOpen]   = useState(false)
   const msgRef = useRef(null)
+  const [assignedCount, setAssignedCount] = useState(0)
 
   useEffect(() => {
     if (!session) return
@@ -43,6 +44,32 @@ export default function Nav() {
       window.removeEventListener('hs:messages-read', refresh)
     }
   }, [session])
+
+  // "Assigned to you" count — back office only, since record assignment is a
+  // back-office feature. Same visible-tab-only 5-minute poll as Messages, for
+  // the same reason (this bar sits open all day on till/back-office machines).
+  useEffect(() => {
+    if (!session || session.mode !== 'backoffice') return
+    let timer = null
+    const refresh = () => getTaskRecords({ limit: 1, filters: { assignedTo: 'me' } })
+      .then(d => setAssignedCount(d?.total || 0))
+      .catch(() => {})
+
+    const start = () => { if (timer) return; refresh(); timer = setInterval(refresh, 300000) }
+    const stop  = () => { if (timer) { clearInterval(timer); timer = null } }
+    const onVisibility = () => { document.hidden ? stop() : start() }
+
+    if (!document.hidden) start()
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('hs:assignment-changed', refresh)
+    return () => {
+      stop()
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('hs:assignment-changed', refresh)
+    }
+  }, [session])
+
+  const openAssigned = () => navigate('/reports', { state: { assignedToMe: true } })
 
   // Close the dropdown on an outside click.
   useEffect(() => {
@@ -139,6 +166,22 @@ export default function Nav() {
           </div>
         )}
       </div>
+
+      {/* Assigned to you — reuses the Messages badge's look (has-unread/badge
+          classes) rather than a full dropdown: unlike messages there's no
+          per-item preview to show here, just "go look at your queue". */}
+      {session.mode === 'backoffice' && assignedCount > 0 && (
+        <button
+          type="button"
+          className="nav-msg-btn has-unread"
+          onClick={openAssigned}
+          title={`${assignedCount} record${assignedCount === 1 ? '' : 's'} assigned to you`}
+        >
+          <span className="nav-msg-ico" aria-hidden>👤</span>
+          <span className="nav-msg-label">Assigned to you</span>
+          <span className="nav-msg-badge">{assignedCount}</span>
+        </button>
+      )}
 
       <OfflineIndicator />
       <CapacityAlert />

@@ -575,6 +575,79 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-09-25 (later) — Record assignment between back-office users; task-form/dashboard fixes
+
+**1. Record assignment (new feature).** Any back-office role can now hand any
+HO task record (Non-Scan, Wrong Price, every task type — not a subset) to any
+*other* back-office role — bidirectional, the same flat grouping
+`/message-recipients` already uses rather than a hierarchy.
+
+- **DB** (`supabase-migration-record-assignment.sql`, applied live):
+  `task_records` gains `assigned_to`/`assigned_by` (uuid, FK `users(id)`
+  `ON DELETE SET NULL`) + `assigned_to_name`/`assigned_by_name` (text,
+  denormalized for display without a join) + `assigned_at`. Partial index on
+  `assigned_to WHERE NOT NULL`. `task_record_events_kind_chk` extended with a
+  new `'assigned'` event_type so assign/unassign show in a record's History
+  like any other non-status change.
+- **API:** `POST /task-records/:id/assign` (`{user_id}`) and
+  `/:id/unassign`, both `isBackOffice`-gated, store-scope checked like
+  `messages/resolve`. `GET /task-records` gained `?assignedTo=me|<id>` —
+  `'me'` resolves server-side from the session, never trusts a client-passed
+  id (that would let one BO login read another's queue by guessing their
+  user_id). Select list on the main list endpoint carries the four display
+  columns.
+- **Reports.jsx (HO records grid):** a plain `<select>` per row lists BO
+  colleagues (`getMessageRecipients()`, reused rather than a new endpoint) —
+  picking one assigns, the blank option unassigns. Rows assigned to the
+  signed-in user float to the top of whatever page is loaded (`displayRecords`
+  memo partitions `records`, doesn't refetch/resort server-side) and show
+  "→ Assigned to you" / "→ Assigned to `<name>`" under the task-type cell. A
+  new "Assigned to me" toggle chip **bypasses every other filter** (task
+  type/status/date/etc.) — an assignment is a flag to look at something, not a
+  report the assignee should have to go filter-hunting for.
+- **Nav bar:** a badge (reuses the Messages badge's CSS) shows a live count of
+  records assigned to the signed-in BO user, polled every 5 min while the tab
+  is visible (same pattern/interval as the unread-messages badge) plus an
+  instant refresh on a local `hs:assignment-changed` event fired after
+  assigning/unassigning. Click navigates to `/reports` with
+  `location.state.assignedToMe`, which Reports.jsx reads on mount to flip the
+  toggle and run the report automatically.
+- **RecordDetailModal:** "Assigned to" / "Assigned by" / "Assigned on" rows
+  added to the Record group (internal/BO-only, hidden when empty like every
+  other field there).
+- Not done: TaskRecordList.jsx (the per-store grid on the HO Tasks page) has
+  no assignment UI — this shipped on the Reports.jsx grid only, which is
+  where back office actually reviews across stores.
+
+**2. Dashboard "Department Check records by department" card — real fix.**
+Two separate bugs stacked on this card (see the two entries below it for the
+first pass): the spinner-forever symptom was patched first, which then
+exposed the real cause — `/reports/dept-check-week`'s non-secret branch read
+the shared `session` **before** its `const` declaration further down the same
+function (temporal dead zone), throwing on *every* real login and never
+reaching Supabase at all. Fixed by having that branch call `authenticate()`
+itself instead of touching the later `session`. Also: Dashboard's date range
+now defaults to **last (complete) calendar week** instead of a rolling 7 days.
+
+**3. Task D (Wrong Description) — one product-name box, not two.** Task D
+showed a read-only "Product Name (as on the product)" input (the system's
+on-file name) *and* "Actual Product Name" — duplicating the LookupBanner
+above, which already prints "Product Description: `<system name>`". Dropped
+the read-only box for Task D; "Actual Product Name *" (already mandatory) is
+now the only one. Task I unaffected (its one box was never duplicated).
+Non-Scans (Task B) already required both photos both in the UI and in
+validation — no change was needed there.
+
+**4. HO Tasks page — default to Non-Scans, point Department Check elsewhere.**
+Department Check (J) has its own faster dedicated page (Dept Scan). The HO
+Tasks task-type picker now defaults store users to Non-Scans instead of J,
+and selecting J there shows a banner ("Use Dept Scan — it's built for this
+and faster") linking to `/dept-scan` instead of rendering `TaskJForm` inline.
+Store users already landed on `/tasks` by default after login (`App.jsx`'s
+existing `home` redirect) — that part needed no change.
+
+---
+
 ### 2026-09-25 — Aging over the full 49 days; department charts replace department counts
 
 Four changes, all downstream of the 7-week retention switch.

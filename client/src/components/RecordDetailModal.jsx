@@ -51,6 +51,9 @@ const GROUPS = [
     fields: [
       ['status',              'Status'],
       ['notes',               'Notes'],
+      ['assigned_to_name',    'Assigned to',         true],
+      ['assigned_by_name',    'Assigned by',         true],
+      ['assigned_at',         'Assigned on',         true],
       ['source',              'Source',              true],
       ['marked_for_deletion', 'Marked for deletion', true],
     ],
@@ -228,6 +231,7 @@ const TIME_FIELDS = [
 const DATE_KEYS = new Set([
   'created_at', 'updated_at', 'reviewed_at', 'completed_at',
   'store_completed_at', 'cleared_at', 'priced_at', 'pricing_removed_at',
+  'assigned_at',
 ])
 
 function fmt(key, v) {
