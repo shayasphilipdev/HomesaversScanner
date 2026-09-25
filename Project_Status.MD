@@ -5,7 +5,7 @@ fresh Claude session opening this repo cold, **read this file first** — it has
 the architecture, data model, every module, recent changes, known issues, and
 the project memory all in one place.
 
-*Last updated: 2026-09-21.*
+*Last updated: 2026-09-25.*
 
 ---
 
@@ -574,6 +574,107 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 ---
 
 ## 11. Recent work
+
+### 2026-09-25 — Aging over the full 49 days; department charts replace department counts
+
+Four changes, all downstream of the 7-week retention switch.
+
+**1. `/reports/aging` reads both databases.**
+
+Before the 7-week change an unanswered A-F query was **purge-exempt**: it stayed
+in Postgres forever, so the Wednesday report could read one table and see the
+entire backlog. That exemption is gone. Postgres now holds
+`scan_record_retention_days` (14) and Cloudflare D1 holds the next
+`archive_retention_days` (35).
+
+Reading Postgres alone would have reported a backlog that silently **stops at 14
+days** — and the failure points the wrong way, because "oldest: 14 days" reads
+as good news exactly when the old queries have been moved out from under it.
+
+The endpoint now unions the two and **dedupes by id**. That is not defensive
+padding: the archiver copies a record to D1 at 01:30 and pg_cron deletes it from
+Postgres afterwards, so between those two jobs the same record is genuinely in
+both places. Postgres wins the tie — it is the row that can still be edited.
+
+The horizon is `scan_record_retention_days + archive_retention_days`, read from
+`app_settings` on every call, **never a literal 49**. Settings can change it, and
+an aging window that disagreed with the window the Archive button promises would
+be its own bug. The endpoint returns `horizon_days` and a `sources` split, and
+the email prints both. The D1 half is wrapped in a catch that falls back to
+Postgres-only: a report missing its older rows is recoverable, no report at all
+on a Wednesday morning is what people actually notice, and D1 is a copy — nothing
+lives only there.
+
+`aging_report_records()` gained `id` (same signature, so a true replacement, not
+a PostgREST overload) and `AND tr.source IS DISTINCT FROM 'test'`.
+
+> **The test filter is a deliberate behaviour change.** It was harmless while the
+> report read Postgres only — there are no test-app A-F pending rows there. D1 is
+> different: it already holds **272 rows carrying `source='test'`**, because one
+> archive serves both apps. Without the clause, test scans would have started
+> appearing in a report that goes to Homesavers management. Applied to both
+> halves so they tell the same story. Live rows affected today: **zero**.
+
+Buckets re-stepped in `aging-report.config.json` **and** the tracked
+`.example.json` — if only one moved, a fresh deploy would silently revert:
+
+| was | now |
+|---|---|
+| 0-1 · 2-3 · 4-7 · 8-14 · **15+** | 0-1 · 2-3 · 4-7 · 8-14 · **15-28** · **29+** |
+
+**2. Dashboard: department *records*, not department *counts*.**
+
+The "Department Check by store" card showed how **many** departments each store
+touched. A count cannot tell four real departments apart from four real ones plus
+three that caught a single stray scan, and it answers a question nobody asked.
+The business question is *"of this store's 4,047 records, how many were
+HOMEWARES"*.
+
+Replaced with one **stacked bar per store**, split by department, sized by
+records, busiest store first. Bar *length* is that store against the busiest; the
+*segments* are what its records were made of — two facts, one mark. The two
+biggest departments are named under each bar and every segment carries hover text.
+
+Palette **validated with the dataviz validator against both dashboard surfaces**,
+not chosen by eye:
+
+| | light `#EEF2F9` | dark `#161D2C` |
+|---|---|---|
+| lightness band | PASS | PASS |
+| chroma floor | PASS | PASS |
+| CVD separation | 11.4 deutan | 10.8 protan |
+| normal-vision floor | 23.3 | 17.8 |
+
+The dark steps are the **same hues re-stepped into the dark band [0.48, 0.67]**,
+not a mechanical lightening — at dark-mode lightness the light steps lose their
+deutan separation, and the pair that collapses first is crimson against green.
+Each set carries one sub-3:1 contrast warning, discharged the way the validator
+requires: a legend, a record count beside every bar, hover text on every segment.
+Identity is never colour alone. Colours follow the entity chain-wide, so a hue
+cannot mean HOMEWARES on one row and TOYS on the next.
+
+The card also now states when the selected range asked for **more history than
+Postgres holds** (`live_window.truncated`), rather than letting 14 days of rows
+pass under a 180-day heading. `dept_check_department_breakdown` reads
+`task_records`, so it can only ever see the live window — the Dashboard's
+180-day figures come from the `task_stats_daily` rollup and are unaffected.
+
+**3. Monday email: legend is identity only.** The chain-wide department roll-up
+is gone — the owner wants store-wise figures, not a chain total.
+
+**4. Wednesday email: the "Stores with no Department Check" box is removed.** The
+Monday report covers that question over a proper calendar week, with the previous
+week alongside for comparison. Two reports answering the same question over
+different windows is how they end up disagreeing in a meeting. The endpoint still
+returns `stores_no_dept_check`; it is simply no longer rendered.
+
+**Files:** `supabase-migration-aging-49-days.sql` (new, applied),
+`functions/api/[[route]].js`, `client/src/pages/Dashboard.jsx`,
+`scripts/aging-report.py`, `scripts/dept-check-weekly.py`,
+`scripts/aging-report.config{,.example}.json`.
+`API_REVISION` → `2026-09-25-aging-49d`.
+
+---
 
 ### 2026-09-24 — Weekly Department Check email, calendar weeks, coverage counts
 
