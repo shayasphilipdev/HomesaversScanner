@@ -26,9 +26,25 @@
 // J-only archiver would mean every other type is destroyed unarchived -- so the
 // two scopes have to move together, and Phase 3 is the commit that moves them.
 
-const BATCH          = 500       // PostgREST caps a page at 1000; 500 keeps each D1 batch modest
+const BATCH          = 1000      // PostgREST's own page cap
+const D1_CHUNK       = 500       // statements per D1 batch() call
 const TIME_BUDGET_MS = 180_000   // stop starting new pages after this; the next run picks up the rest
 const MAX_PAGES      = 400       // hard backstop against a paging bug looping forever
+
+// THE REAL CEILING IS SUBREQUESTS, NOT TIME.
+//
+// A Cloudflare Worker on the free plan may make 50 subrequests per invocation.
+// Every Supabase fetch and every env.ARCHIVE call is one. The 2026-09-25 01:30
+// run died on exactly that: 8 pages x (1 GET + 1 D1 batch) + 35 mark PATCHes =
+// 51, and it stopped having marked 3,500 of ~50,000 due records -- below the
+// 8,000-10,000 a day the chain produces, so it could never have caught up.
+// Nothing was ever at risk of deletion (the purge only removes what is marked),
+// which is precisely why this could have gone unnoticed for weeks.
+//
+// Now budgeted explicitly. Per page: 1 Supabase GET + 2 D1 batches = 3, and
+// marking is one RPC per FLUSH rather than one PATCH per 100 records.
+const SUBREQUEST_BUDGET = 44     // of 50, leaving headroom for retries
+const MARK_FLUSH_PAGES  = 4      // pages to accumulate before one mark call
 
 // The budget was 25s / 60 pages, which was right for a J-only archive in steady
 // state (~8,000 records a night, done in under 20 seconds). It is not enough for
@@ -84,27 +100,29 @@ const ms = (iso) => (iso ? Date.parse(iso) : null)
 // unless status or the photo columns change, so stamping this on a three-week-old
 // row does not rewrite that day's task_stats_daily counts.
 async function markArchived(env, ids, nowIso) {
-  const CHUNK = 100
-  let marked = 0
-  for (let i = 0; i < ids.length; i += CHUNK) {
-    const slice = ids.slice(i, i + CHUNK)
-    const res = await fetch(
-      `${env.SUPABASE_URL}/rest/v1/task_records?id=in.(${slice.join(',')})`, {
-        method: 'PATCH',
-        headers: {
-          apikey: env.SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${env.SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-          Prefer: 'return=minimal',
-        },
-        body: JSON.stringify({ d1_copied_at: nowIso }),
-      })
-    if (!res.ok) {
-      throw new Error(`Supabase PATCH ${res.status}: ${(await res.text()).slice(0, 300)}`)
-    }
-    marked += slice.length
+  if (!ids.length) return 0
+  // ONE subrequest regardless of how many ids. The previous version PATCHed
+  // PostgREST in chunks of 100 because a uuid is 36 characters and 500 of them
+  // is an 18 KB URL -- correct about the URL, but it made marking cost one
+  // subrequest per hundred records, which is what exhausted the Worker's
+  // 50-subrequest budget. An RPC takes the array in the BODY, so the URL length
+  // problem disappears along with the chunking.
+  const res = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/mark_archived_ids`, {
+    method: 'POST',
+    headers: {
+      apikey: env.SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${env.SUPABASE_ANON_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ p_ids: ids, p_at: nowIso }),
+  })
+  if (!res.ok) {
+    throw new Error(`Supabase mark_archived_ids ${res.status}: ${(await res.text()).slice(0, 300)}`)
   }
-  return marked
+  // The function only stamps rows still NULL, so a re-run reports 0 rather than
+  // double-counting. Claim what we asked to mark, not what it changed.
+  await res.json().catch(() => null)
+  return ids.length
 }
 
 // Stage 3: delete from D1 what has outlived the whole chain.
@@ -121,14 +139,19 @@ async function markArchived(env, ids, nowIso) {
 // ever off for a long stretch the catch-up could blow through D1's 100,000
 // rows/day write limit in a single statement -- and past that limit the free
 // plan FAILS queries rather than warning, which would take the archiver's
-// inserts down with it. Better to spread a backlog over several nights than to
-// break both halves for a day.
+// inserts down with it.
+//
+// Fewer, BIGGER chunks than the first version (was 20 x 1,000). Each chunk is a
+// SUBREQUEST, and reserving 20 of a 50-subrequest budget for a purge that
+// usually has nothing to do starved the archiving loop -- the half that cannot
+// afford to fall behind. 4 x 5,000 keeps the same 20,000-row ceiling for a
+// quarter of the budget.
 //
 // Row-value IN is used because the table is WITHOUT ROWID, so there is no rowid
 // to limit on; (created_at_ms, id) is the primary key and the physical order, so
 // each chunk is a contiguous read.
-const PURGE_CHUNK      = 1000
-const PURGE_MAX_CHUNKS = 20      // 20,000 rows/run ceiling = 40,000 D1 writes
+const PURGE_CHUNK      = 5000
+const PURGE_MAX_CHUNKS = 4       // 20,000 rows/run ceiling = 40,000 D1 writes
 
 async function purgeArchive(env, cutoffMs) {
   let purged = 0
@@ -296,8 +319,27 @@ export async function runArchive(env, triggerKind) {
     // which is exactly what the primary key is there for.
     let cursor = '1970-01-01T00:00:00Z'
 
+    // Subrequests already spent: 2 settings reads + 1 stores read.
+    let subreq = 3
+    // Ids archived but not yet stamped. Flushed every MARK_FLUSH_PAGES so one
+    // mark call covers several pages. Unflushed ids are simply re-archived next
+    // run (INSERT OR IGNORE), so losing them costs nothing but a repeat.
+    let pending = []
+    const flushMarks = async () => {
+      if (shadow || !pending.length) return
+      const ids = pending; pending = []
+      marked += await markArchived(env, ids, new Date().toISOString())
+      subreq += 1
+    }
+
     for (let page = 0; page < MAX_PAGES; page++) {
       if (Date.now() - startedAt > TIME_BUDGET_MS) break
+      // Stop BEFORE a page that cannot be paid for. One page costs 1 GET plus
+      // ceil(BATCH/D1_CHUNK) D1 calls, and we must still afford a final mark,
+      // the D1 purge and the run-log write. Running out mid-page is what killed
+      // the 2026-09-25 run.
+      const pageCost = 1 + Math.ceil(BATCH / D1_CHUNK)
+      if (subreq + pageCost + 1 + PURGE_MAX_CHUNKS + 1 > SUBREQUEST_BUDGET) break
 
       // No task_type filter: the archive now covers EVERY type. Scoping this to
       // 'J' while the purge deletes all types is precisely the failure this
@@ -309,29 +351,31 @@ export async function runArchive(env, triggerKind) {
         `&created_at=lt.${encodeURIComponent(cutoffIso)}` +
         `&order=created_at.asc,id.asc&limit=${BATCH}`)
 
+      subreq += 1
       if (!rows.length) break
       scanned += rows.length
 
       const archivedAtMs = Date.now()
-      const res = await env.ARCHIVE.batch(
-        rows.map(r => stmt.bind(...toArchiveRow(r, storeNames, archivedAtMs))))
-
-      // meta.changes is 1 for a row that landed and 0 for one the primary key
-      // already held, so these two counters separate "moved tonight" from
-      // "this run overlapped a previous one" without a second query.
-      for (const r of res) {
-        if (r.meta?.changes) inserted++
-        else                 alreadyHad++
+      const bound = rows.map(r => stmt.bind(...toArchiveRow(r, storeNames, archivedAtMs)))
+      for (let i = 0; i < bound.length; i += D1_CHUNK) {
+        const res = await env.ARCHIVE.batch(bound.slice(i, i + D1_CHUNK))
+        subreq += 1
+        // meta.changes is 1 for a row that landed and 0 for one the primary key
+        // already held, so these two counters separate "moved tonight" from
+        // "this run overlapped a previous one" without a second query.
+        for (const r of res) {
+          if (r.meta?.changes) inserted++
+          else                 alreadyHad++
+        }
       }
 
-      // Only after D1 has committed the batch. D1 batches are atomic, so a
-      // resolved batch() means every row in it is durably in the archive --
-      // which is the claim d1_copied_at is about to make to Postgres. In shadow
-      // mode nothing is marked, so the purge guard has nothing to act on and
-      // the old behaviour continues unchanged.
-      if (!shadow) {
-        marked += await markArchived(env, rows.map(r => r.id), new Date(archivedAtMs).toISOString())
-      }
+      // Queued only after D1 has committed. D1 batches are atomic, so a resolved
+      // batch() means every row in it is durably in the archive -- which is the
+      // claim d1_copied_at is about to make to Postgres. In shadow mode nothing
+      // is marked, so the purge guard has nothing to act on and the old
+      // behaviour continues unchanged.
+      pending.push(...rows.map(r => r.id))
+      if (pending.length >= MARK_FLUSH_PAGES * BATCH) await flushMarks()
 
       const last = rows[rows.length - 1].created_at
       // A whole page sharing one timestamp would otherwise re-read itself
@@ -342,6 +386,7 @@ export async function runArchive(env, triggerKind) {
 
       if (rows.length < BATCH) break
     }
+    await flushMarks()
 
     // Deletion from POSTGRES stays with pg_cron's purge_old_task_records(); the
     // archiver never deletes there. It only states, via d1_copied_at, what D1 is
