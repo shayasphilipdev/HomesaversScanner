@@ -37,7 +37,14 @@ workers_dev = true
 # at 02:00 UTC, so this deliberately lands 30 minutes ahead of it. Cloudflare
 # cron triggers are UTC too, so the two are directly comparable.
 [triggers]
-crons = ["30 1 * * *"]
+# TWO runs, not one. The binding constraint is Cloudflare's 50-subrequest cap per
+# invocation, not time -- the 2026-09-25 run spent 26s of a 180s budget and still
+# died on subrequests. Each invocation gets its own budget, so two passes roughly
+# double what a night can move (~11,000 records each).
+#
+# Both land before pg_cron's purge_old_task_records() at 02:00, and the second is
+# a no-op once the first has caught up: it simply finds nothing past the cutoff.
+crons = ["30 1 * * *", "45 1 * * *"]
 
 
 [vars]

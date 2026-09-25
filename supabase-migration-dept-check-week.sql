@@ -76,3 +76,31 @@ COMMENT ON FUNCTION public.dept_check_summary IS
 -- The report filters task_type='J' over a date range, which without this walks
 -- the whole table. idx_tr_type_created is (task_type, created_at DESC) and
 -- already serves it; store_id then groups from the heap. No new index.
+
+-- ── Added 2026-09-25, after the first all-types archiver run hit a hard limit ──
+--
+-- The archiver marked records by PATCHing PostgREST in chunks of 100 ids, one
+-- SUBREQUEST per chunk. A Cloudflare Worker on the free plan is capped at 50 per
+-- invocation, and the 2026-09-25 01:30 run hit it exactly -- 8 pages x (1 GET +
+-- 1 D1 batch) + 35 PATCHes = 51 -- stopping with 3,500 of ~50,000 due records
+-- marked. 3,500 a night is BELOW the 8,000-10,000 a day the chain produces, so
+-- the archiver could never have caught up and Postgres would have grown without
+-- bound. Nothing was ever at risk of deletion, because the purge only removes
+-- what is marked -- which is precisely why this could have gone unnoticed.
+--
+-- One RPC marks any number of ids for one subrequest.
+CREATE OR REPLACE FUNCTION public.mark_archived_ids(p_ids uuid[], p_at timestamptz)
+RETURNS integer
+LANGUAGE plpgsql
+SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE n integer;
+BEGIN
+  UPDATE task_records
+     SET d1_copied_at = p_at
+   WHERE id = ANY (p_ids)
+     AND d1_copied_at IS NULL;   -- idempotent: a re-run must not restamp
+  GET DIAGNOSTICS n = ROW_COUNT;
+  RETURN n;
+END;
+$function$;
