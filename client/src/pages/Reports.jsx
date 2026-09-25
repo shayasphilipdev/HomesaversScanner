@@ -14,7 +14,7 @@ import { useLocation } from 'react-router-dom'
 import { COMPETITION_REPORT_COLS, COMPETITION_REPORT_HEADERS, COMPETITION_REPORT_MIN_WIDTHS } from '../lib/competitionOptions.js'
 import { TASK_FORMS, STORE_ARCHIVABLE } from '../lib/taskTypes.js'
 import { isAdminRole } from '../lib/roles.js'
-import { PRICING_STATES, pricingState, dupKey } from '../lib/pricingState.js'
+import { pricingState, dupKey } from '../lib/pricingState.js'
 import ConfirmArchiveModal from '../components/ConfirmArchiveModal.jsx'
 import { downloadExcel } from '../lib/excel.js'
 import { useToast } from '../components/Toast.jsx'
@@ -504,8 +504,6 @@ function HQReports() {
   const [deleting, setDeleting]       = useState(false)
   // "Delete ALL matching J/K" (filter-based, batched) confirmation + progress.
   const isAdmin = isAdminRole(session)
-  // Pricing-state filter (the four states the bubble shows). Empty = no filter.
-  const [pricingStateIds, setPricingStateIds] = useState([])
   // "task_type|barcode_no" keys that occur more than once under the same task,
   // across all stores, within the current filter. Computed server-side because
   // the grid is paged -- a browser-side check would only see loaded rows.
@@ -591,8 +589,7 @@ function HQReports() {
       filters:  {
         from, to,
         ...(itemStatusIds.length    ? { item_status:    itemStatusIds.join(',') }    : {}),
-        ...(barcodeStatusIds.length ? { barcode_status: barcodeStatusIds.join(',') } : {}),
-        ...(pricingStateIds.length  ? { pricing_state:  pricingStateIds.join(',') }  : {})
+        ...(barcodeStatusIds.length ? { barcode_status: barcodeStatusIds.join(',') } : {})
       }
     })
   }
@@ -651,7 +648,6 @@ function HQReports() {
       status:         statusIds.join(','),
       item_status:    itemStatusIds.join(','),
       barcode_status: barcodeStatusIds.join(','),
-      pricing_state:  pricingStateIds.join(','),
       includeCleared: showingArchived ? '1' : '0',
     }).then(counts => { if (!cancelled) setDupKeys(new Map(Object.entries(counts))) })
     // getDuplicateKeys never rejects -- it resolves to [] on failure, so a dead
@@ -1127,24 +1123,6 @@ function HQReports() {
                 minPanelWidth={110}
               />
             </div>
-
-            {/* Pricing state. Back office only -- Pricing is a head-office
-                workflow and the states are its vocabulary. Options are listed in
-                the order the business reads them: what is still waiting, then
-                what is done, then what has left the Pricing page. Filtering is
-                server-side, so it applies across every page of the report and
-                not just the rows loaded. */}
-            {isBO && (
-              <div className="filter-field filter-field--wide"><label>Pricing</label>
-                <MultiSelectDropdown
-                  value={pricingStateIds}
-                  onChange={setPricingStateIds}
-                  options={PRICING_STATES.map(p => ({ id: p.id, label: p.label }))}
-                  placeholder="Any (incl. never sent)"
-                  searchable={false}
-                />
-              </div>
-            )}
 
             <div className="filter-field filter-field--narrow"><label>Barcode Status</label>
               <MultiSelectDropdown
