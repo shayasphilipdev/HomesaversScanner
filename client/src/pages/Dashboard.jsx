@@ -59,6 +59,13 @@ export default function Dashboard() {
   // Department Check record + distinct-department counts for the selected range.
   // Back office only, because the endpoint is.
   const [deptSummary, setDeptSummary] = useState(null)
+  // Own loading flag, separate from the main `loading` (which tracks
+  // getDashboardStats). Sharing one flag meant that once the stats call
+  // finished, the dept-check card's `loading || !summary` check could never
+  // tell "still fetching" from "fetch failed" -- both look like `!summary`
+  // after the stats loading flag drops, so a failed/slow dept-check request
+  // spun forever instead of surfacing an error.
+  const [deptLoading, setDeptLoading] = useState(true)
   const [loading, setLoading]       = useState(true)
   const [error, setError]           = useState('')
 
@@ -123,7 +130,10 @@ export default function Dashboard() {
     // getDeptCheckWeek resolves to null instead of throwing.
     if (isBO) {
       setDeptSummary(null)
-      getDeptCheckWeek({ from: params.from, to: params.to }).then(setDeptSummary)
+      setDeptLoading(true)
+      getDeptCheckWeek({ from: params.from, to: params.to })
+        .then(setDeptSummary)
+        .finally(() => setDeptLoading(false))
     }
   }, [params.from, params.to, bucket, scope, scopedStoreIds, isBO])
 
@@ -202,7 +212,7 @@ export default function Dashboard() {
         {isBO && <StoresMissingDeptCheck deptCheck={stats?.dept_check_range} allStores={scopeStores} scopeStoreIds={scopedStoreIds} statsFrom={stats?.stats_from} loading={loading} summary={deptSummary} />}
       </div>
 
-      {isBO && <DeptCheckByStore summary={deptSummary} loading={loading} />}
+      {isBO && <DeptCheckByStore summary={deptSummary} loading={deptLoading} />}
 
       {isBO && <StoreDonutGrid rows={stats?.by_store || []} loading={loading} allStores={scopeStores} dataDays={stats?.by_day || []} dataFrom={stats?.data_from} dataTo={stats?.data_to} />}
       {!isBO && <RecentList rows={stats?.recent || []} loading={loading} isBO={isBO} />}
@@ -827,8 +837,14 @@ function DeptCheckByStore({ summary, loading }) {
       )}
 
       <div className="card-body" style={{ maxHeight: 460, overflowY: 'auto', paddingTop: 8 }}>
-        {loading || !summary ? (
+        {loading ? (
           <div style={{ textAlign: 'center', padding: 24 }}><span className="spinner spinner-dark" /></div>
+        ) : !summary ? (
+          // getDeptCheckWeek() never throws -- a network/server failure resolves
+          // to null here instead. Without this branch a failed request looked
+          // identical to "still loading" (both are `!summary`) and the card
+          // spun forever instead of ever telling the viewer it failed.
+          <div className="empty-state" style={{ padding: 20 }}><p style={{ fontSize: 13 }}>Couldn't load this data. Try refreshing the page.</p></div>
         ) : !rows.length ? (
           <div className="empty-state" style={{ padding: 20 }}><p style={{ fontSize: 13 }}>No stores in scope.</p></div>
         ) : rows.map(r => {
