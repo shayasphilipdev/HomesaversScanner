@@ -35,7 +35,8 @@ export default function Pricing() {
   const isBO = session.mode === 'backoffice'
 
   // "task_type|barcode_no" keys duplicated across the chain (server-computed).
-  const [dupKeys, setDupKeys] = useState(() => new Set())
+  // key -> how many records share it (see Reports).
+  const [dupKeys, setDupKeys] = useState(() => new Map())
   const [items, setItems]       = useState([])
   const [edits, setEdits]       = useState({})     // id → {new_selling_price, vat_rate, pricing_notes}
   const [statusFilter, setStatusFilter] = useState('all')
@@ -79,9 +80,9 @@ export default function Pricing() {
         rows.map(it => it.record).filter(r => dupKey(r)).map(r => r.barcode_no))]
       if (barcodes.length) {
         getDuplicateKeys({ barcodes, includeCleared: '1' })
-          .then(keys => setDupKeys(new Set(keys)))
+          .then(counts => setDupKeys(new Map(Object.entries(counts))))
       } else {
-        setDupKeys(new Set())
+        setDupKeys(new Map())
       }
       // Seed row edits from stored values so re-opening shows what was saved.
       setEdits(Object.fromEntries(rows.map(it => [it.id, {
@@ -275,14 +276,20 @@ export default function Pricing() {
                   const vp = liveVat(it)
                   const mg = liveMargin(it)
                   const isPriced = it.pricing_status === 'priced'
-                  const isDup = dupKeys.has(dupKey({ task_type: r.task_type, barcode_no: r.barcode_no }))
+                  const dupCount = dupKeys.get(dupKey({ task_type: r.task_type, barcode_no: r.barcode_no })) || 0
+                  const isDup = dupCount > 1
                   const isSaving = savingIds.has(it.id)
                   const empty = <span className="td-muted">—</span>
                   return (
                     <tr key={it.id}
                         className={[isPriced && 'tr-priced', isDup && 'tr-duplicate'].filter(Boolean).join(' ') || undefined}
                         title={isDup ? 'Another record of this task type has the same barcode' : undefined}>
-                      <td className="td-code" style={{ whiteSpace: 'nowrap' }}>{r.barcode_no || r.product_code || empty}</td>
+                      <td className="td-code" style={{ whiteSpace: 'nowrap' }}>
+                        {r.barcode_no || r.product_code || empty}
+                        {isDup && (
+                          <span className="dup-chip" title={`${dupCount} records share this barcode`}>×{dupCount}</span>
+                        )}
+                      </td>
                       <td className="td-code" style={{ whiteSpace: 'nowrap' }}>{it.product_barcode || empty}</td>
                       <td>{r.item_name || r.description || r.product_name_label || empty}</td>
                       <td style={{ whiteSpace: 'nowrap', maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis' }}>{euro(it.cost) || empty}</td>

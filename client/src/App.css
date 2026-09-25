@@ -520,15 +520,29 @@ body {
    left border. Violet because nothing else in the app uses it -- green, amber,
    red, blue and gold are all taken by status, messages, delete, store-done and
    pricing. */
-.tr-duplicate { background: var(--dup-soft, #F5F1FE); }
-.tr-duplicate > td:first-child { box-shadow: inset 4px 0 0 0 var(--dup, #7C5CD6); }
+/* Was a 4px bar and a #F5F1FE wash -- technically a different colour, and in
+   practice invisible against a white grid. A duplicate is worth noticing, so it
+   now reads as a deliberately marked row: a stronger tint, a 6px solid bar down
+   the whole row, and a violet chip carrying the count. */
+.tr-duplicate > td { background: var(--dup-soft, #EDE6FD); }
+.tr-duplicate > td:first-child { box-shadow: inset 6px 0 0 0 var(--dup, #6D3BE4); }
+.tr-duplicate:hover > td { background: #E3D8FB; }
+
+/* The chip. Deliberately loud -- it is the thing the eye should land on. */
+.dup-chip {
+  display: inline-flex; align-items: center; gap: 3px;
+  margin-left: 6px; padding: 1px 7px; border-radius: 99px;
+  background: #6D3BE4; color: #fff;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .3px;
+  vertical-align: middle; white-space: nowrap; line-height: 1.5;
+}
 
 /* The duplicate tint must not swallow the selected-row highlight, which is set
    inline on the <tr>; keeping the tint on the cells lets both read at once. */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .tr-duplicate { background: rgba(124, 92, 214, .16); }
+  :root:not([data-theme="light"]) .tr-duplicate > td { background: rgba(124, 92, 214, .26); }
 }
-:root[data-theme="dark"] .tr-duplicate { background: rgba(124, 92, 214, .16); }
+:root[data-theme="dark"] .tr-duplicate > td { background: rgba(124, 92, 214, .26); }
 
 /* Pricing-state bubble on a report row. One shape, four states, so the eye
    learns one thing. Gold = money, hollow = gone from the Pricing page. */

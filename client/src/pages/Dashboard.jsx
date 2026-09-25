@@ -202,6 +202,8 @@ export default function Dashboard() {
         {isBO && <StoresMissingDeptCheck deptCheck={stats?.dept_check_range} allStores={scopeStores} scopeStoreIds={scopedStoreIds} statsFrom={stats?.stats_from} loading={loading} summary={deptSummary} />}
       </div>
 
+      {isBO && <DeptCheckByStore summary={deptSummary} loading={loading} />}
+
       {isBO && <StoreDonutGrid rows={stats?.by_store || []} loading={loading} allStores={scopeStores} dataDays={stats?.by_day || []} dataFrom={stats?.data_from} dataTo={stats?.data_to} />}
       {!isBO && <RecentList rows={stats?.recent || []} loading={loading} isBO={isBO} />}
 
@@ -683,6 +685,91 @@ function StoresMissingDeptCheck({ deptCheck, allStores, scopeStoreIds, statsFrom
               </div>
             ))}
           </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// Department Check per store: how many records, and how many DISTINCT
+// departments each one actually covered.
+//
+// The two numbers answer different questions and only together mean anything:
+// 400 records across 2 departments is a very different week from 400 across 12,
+// and only the second is a real check. A chain total cannot show that, which is
+// why this is a per-store table rather than a figure on the card above.
+//
+// Sorted fewest-departments-first so thin coverage surfaces without scrolling —
+// the same ordering the Monday email uses, and the same RPC behind both.
+function DeptCheckByStore({ summary, loading }) {
+  const stores = summary?.stores || []
+  const rows = [...stores].sort((a, b) =>
+    (a.departments - b.departments) || (a.records - b.records) ||
+    String(a.store_name).localeCompare(String(b.store_name)))
+
+  const maxDept = Math.max(1, ...rows.map(r => r.departments))
+  const t = summary?.totals
+
+  return (
+    <div className="card" style={{ marginTop: 16 }}>
+      <div className="card-header">
+        <span style={{ minWidth: 0 }}>
+          Department Check by store
+          {t && (
+            <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--text-muted)' }}>
+              {' '}({t.records.toLocaleString('en-IE')} records · {t.departments.toLocaleString('en-IE')} departments · {t.did} of {t.stores} stores)
+            </span>
+          )}
+        </span>
+      </div>
+      <div className="card-body" style={{ maxHeight: 420, overflowY: 'auto', paddingTop: 4 }}>
+        {loading || !summary ? (
+          <div style={{ textAlign: 'center', padding: 24 }}><span className="spinner spinner-dark" /></div>
+        ) : !rows.length ? (
+          <div className="empty-state" style={{ padding: 20 }}><p style={{ fontSize: 13 }}>No stores in scope.</p></div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr>
+                <th align="left"  style={{ padding: '6px 8px', fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Store</th>
+                <th align="right" style={{ padding: '6px 8px', fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Records</th>
+                <th align="right" style={{ padding: '6px 8px', fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Departments</th>
+                <th style={{ width: '32%' }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => {
+                const none = r.records === 0
+                return (
+                  <tr key={r.store_id} style={none ? { background: 'var(--red-soft, #FDECEA)' } : undefined}>
+                    <td style={{ padding: '5px 8px', borderBottom: '1px solid var(--border-soft)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 220 }}>
+                      {r.store_name}
+                      {none && <strong style={{ color: 'var(--red, #C0392B)' }}> · none</strong>}
+                    </td>
+                    <td align="right" style={{ padding: '5px 8px', borderBottom: '1px solid var(--border-soft)', fontVariantNumeric: 'tabular-nums' }}>
+                      {r.records.toLocaleString('en-IE')}
+                    </td>
+                    <td align="right" style={{ padding: '5px 8px', borderBottom: '1px solid var(--border-soft)', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>
+                      {r.departments}
+                    </td>
+                    {/* A bar, because 14 vs 3 departments should be visible at a
+                        glance rather than read off. Relative to the best store in
+                        scope, not an absolute target -- there is no canonical
+                        department list to measure against. */}
+                    <td style={{ padding: '5px 8px', borderBottom: '1px solid var(--border-soft)' }}>
+                      <div style={{ background: 'var(--bg-soft)', borderRadius: 99, height: 8, overflow: 'hidden' }}>
+                        <div style={{
+                          width: `${Math.round((r.departments / maxDept) * 100)}%`,
+                          height: '100%', borderRadius: 99,
+                          background: none ? 'var(--red, #C0392B)' : '#2E78D6'
+                        }} />
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         )}
       </div>
     </div>
