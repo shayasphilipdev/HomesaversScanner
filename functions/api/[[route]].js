@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-25-aging-49d'
+const API_REVISION   = '2026-09-25-aging-49d-b'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -1367,6 +1367,11 @@ export async function onRequest(context) {
           // marked_for_deletion is 0/1 here, not boolean, and is NULL on every
           // row archived before Phase 2 -- so NULL has to be treated as false
           // rather than filtered away.
+          //
+          // NO source filter, by owner decision (2026-09-25): test-app records
+          // count as real work. Postgres and D1 are filtered identically, which
+          // is what matters -- a rule applied to one half only would make the
+          // 14-day boundary visible as a step in the numbers.
           const aSql = `SELECT id, created_at_ms, store_id, store_name, task_type,
                                product_code, product_barcode, description,
                                product_name_label, item_name, quantity
@@ -1375,7 +1380,6 @@ export async function onRequest(context) {
                            AND task_type IN (${TYPES.map(() => '?').join(',')})
                            AND created_at_ms >= ?
                            AND (marked_for_deletion IS NULL OR marked_for_deletion = 0)
-                           AND (source IS NULL OR source <> 'test')
                          ORDER BY created_at_ms ASC
                          LIMIT 20000`
           const aRes = await env.ARCHIVE.prepare(aSql).bind(...TYPES, floorMs).all()

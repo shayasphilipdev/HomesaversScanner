@@ -20,16 +20,23 @@
 --    only key that is guaranteed unique. Without it a record would be counted
 --    twice every night for the length of that window.
 --
--- 2. `source <> 'test'`.
---    This is a BEHAVIOUR CHANGE and is deliberate. The old filter had no source
---    clause, which was harmless while the report read Postgres only -- there
---    are no test-app A-F pending rows there. D1 is a different matter: it
---    already holds 272 rows carrying source='test', because one archive serves
---    both apps. Leaving the clause off would have let test-app scans reach a
---    report that goes to Homesavers management. Applying it to BOTH halves
---    keeps the two sources telling the same story, and matches what
---    dept_check_summary() already does for the Monday email.
---    Rows affected today: zero (all 19 pending A-F rows are live-app).
+-- 2. NO source filter -- test-app records COUNT.
+--    An earlier revision of this file excluded source='test' on the reasoning
+--    that test scans should not reach a management report. The owner overruled
+--    that on 2026-09-25: "all the records even if it through test app is fine".
+--    Test-app scans are real work done by real staff on real stock.
+--
+--    So the exclusion was removed from aging_report_records AND from the D1
+--    half AND from dept_check_summary / dept_check_department_breakdown, which
+--    had carried it since the Monday email was built. Filtering one half only
+--    would make the 14-day Postgres/D1 boundary visible as a step in the
+--    numbers -- the two stores of the same record must be filtered identically.
+--
+--    MEASURED impact of including test, last complete week:
+--      records      60,626 -> 62,550   (+3.2%)
+--      stores that flip in or out of the "did not do a check" list:  0
+--    Pending A-F today: 19 rows, all live-app, so the aging report itself is
+--    unchanged either way.
 --
 -- SAFE TO RE-RUN. The signature (p_task_types text[]) is UNCHANGED, so this is
 -- a true replacement and not a new overload -- PostgREST refuses to dispatch to
@@ -59,7 +66,6 @@ AS $function$
   WHERE tr.status = 'pending'
     AND tr.task_type = ANY(p_task_types)
     AND tr.marked_for_deletion IS DISTINCT FROM true
-    AND tr.source IS DISTINCT FROM 'test'
 $function$;
 
 -- Verification: every row carries an id, and no overload was created.
