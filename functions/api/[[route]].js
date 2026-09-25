@@ -1176,7 +1176,15 @@ export async function onRequest(context) {
     if (path === '/reports/dept-check-week' && method === 'GET') {
       const secretOk = !!env.PRODUCT_SYNC_SECRET &&
         (request.headers.get('X-Sync-Secret') || '') === env.PRODUCT_SYNC_SECRET
-      if (!secretOk && !isBackOffice(session)) return err('Forbidden', 403)
+      // This route sits before the shared `session` gate further down (see
+      // that gate's comment) so the secret-authed email caller never needs a
+      // login. That means it can't read the later `const session` here --
+      // referencing it this early throws (temporal dead zone), which is
+      // exactly what silently broke every browser/session call to this
+      // endpoint: it never even reached Supabase. A caller without the
+      // secret authenticates for itself instead.
+      const callerSession = secretOk ? null : await authenticate(request, env)
+      if (!secretOk && !isBackOffice(callerSession)) return err('Forbidden', 403)
 
       const p = url.searchParams
 
@@ -1210,7 +1218,7 @@ export async function onRequest(context) {
       // Store scope only applies to a session caller; the email is chain-wide.
       let storeIds = null
       if (!secretOk) {
-        const scope = await scopedStoreIds(db, session)
+        const scope = await scopedStoreIds(db, callerSession)
         if (scope !== null) {
           if (!scope.length) return json({ stores: [], totals: { stores: 0, missed: 0, records: 0 } })
           storeIds = scope
