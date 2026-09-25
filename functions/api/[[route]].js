@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-25-dup-chip-deptstore'
+const API_REVISION   = '2026-09-25-dept-breakdown'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -1223,6 +1223,22 @@ export async function onRequest(context) {
         p_store_ids: storeIds,
       }) || []
 
+      // Records split BY DEPARTMENT, per store. The question is "of this store's
+      // 4,047 records, how many were HOMEWARES" -- not how many departments it
+      // touched. A count cannot distinguish four real departments from four real
+      // ones plus three of a single record; a breakdown can.
+      //
+      // Only fetched for the current week (?breakdown=1 or the default week), so
+      // the comparison week stays a cheap query.
+      let breakdown = []
+      if (p.get('breakdown') !== '0') {
+        breakdown = await db.rpc('dept_check_department_breakdown', {
+          p_from:      from.toISOString(),
+          p_to:        to.toISOString(),
+          p_store_ids: storeIds,
+        }) || []
+      }
+
       const stores = rows.map(r => ({
         store_id:    r.store_id,
         store_code:  r.store_code,
@@ -1239,7 +1255,24 @@ export async function onRequest(context) {
       const d2 = (n) => String(n).padStart(2, '0')
       const ddmmyy = (d) => `${d2(d.getUTCDate())}/${d2(d.getUTCMonth() + 1)}/${String(d.getUTCFullYear()).slice(2)}`
 
+      // Chain-wide department totals, biggest first -- this decides which
+      // departments get their own colour and which fold into "Other", and it has
+      // to be the SAME decision for every store or a colour would mean different
+      // things on different bars.
+      const deptTotals = {}
+      for (const b of breakdown) {
+        deptTotals[b.department] = (deptTotals[b.department] || 0) + Number(b.records || 0)
+      }
+      const byStoreDept = {}
+      for (const b of breakdown) {
+        (byStoreDept[b.store_id] ||= {})[b.department] = Number(b.records || 0)
+      }
+      for (const s of stores) s.departments_breakdown = byStoreDept[s.store_id] || {}
+
       return json({
+        department_totals: Object.entries(deptTotals)
+          .map(([department, records]) => ({ department, records }))
+          .sort((a, b) => b.records - a.records),
         week: {
           number: isoWeekNo(from),
           from:   from.toISOString(),
