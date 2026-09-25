@@ -43,11 +43,12 @@ export default function Dashboard() {
   const { session } = useStore()
   const isBO = session.mode === 'backoffice'
 
-  // Default is a rolling week — the quick "Today / This week / This month /
-  // Last 30 days" buttons that used to sit beside the picker are gone (they
-  // just duplicated whichever preset the dropdown already showed), so the
-  // dropdown's own default is now the only thing setting the opening view.
-  const { range, setRange, params, bucket } = useDateRange('last_7')
+  // Default is last (complete) calendar week — the quick "Today / This week /
+  // This month / Last 30 days" buttons that used to sit beside the picker are
+  // gone (they just duplicated whichever preset the dropdown already showed),
+  // so the dropdown's own default is now the only thing setting the opening
+  // view.
+  const { range, setRange, params, bucket } = useDateRange('last_week')
   // scope is encoded as a single string:
   //   'all'              → all stores in user scope
   //   'area:<area_id>'   → all stores in that area (intersected with user scope)
