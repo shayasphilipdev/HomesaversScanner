@@ -97,18 +97,25 @@ export default function TaskDIForm({ taskType, onSaved, storeId }) {
 
             <LookupBanner info={t.lookupInfo} />
 
-            <div className="form-group full">
-              {/* No asterisk on Task D — the field is a read-only system
-                  reference there and is no longer required to save. */}
-              <label>Product Name (as on the product){taskType === 'D' ? '' : ' *'}</label>
-              <input
-                type="text" value={t.form.product_name_label}
-                readOnly={taskType === 'D'}
-                onChange={taskType === 'D' ? undefined : t.update('product_name_label')}
-                placeholder="Exactly what is printed on the product"
-                style={taskType === 'D' ? { background: 'var(--input-disabled-bg, #f0f0f0)', color: 'var(--text-muted, #888)', cursor: 'default' } : undefined}
-              />
-            </div>
+            {/* Task D used to also show a read-only "Product Name (as on the
+                product)" box here, mirroring the system's on-file name. That
+                duplicated the LookupBanner above (which already prints
+                "Product Description: <system name>") and read, next to
+                "Actual Product Name", like two boxes asking the same
+                question. The system name is still captured on the record via
+                product_name_label from the lookup -- it's just not shown as
+                a second input. Task I has no such duplicate: its one box IS
+                the product name and stays required. */}
+            {taskType === 'I' && (
+              <div className="form-group full">
+                <label>Product Name (as on the product) *</label>
+                <input
+                  type="text" value={t.form.product_name_label}
+                  onChange={t.update('product_name_label')}
+                  placeholder="Exactly what is printed on the product"
+                />
+              </div>
+            )}
 
             {taskType === 'D' && (
               <div className="form-group full">
