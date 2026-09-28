@@ -575,7 +575,32 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
-### 2026-09-28 (latest) — Dept Scan also rejects scans with no digit at all
+### 2026-09-28 (latest) — Fourth rejection class: implausibly long scans — cap corrected from 15 to 16 after checking live data
+
+Asked for as "block anything over 15 digits" (the business's estimate of a
+max outer-box barcode length). Checked the actual master data before
+implementing, since a wrong cap here would silently start rejecting real
+products rather than only junk:
+
+```sql
+select length(barcode_no), count(*), count(*) filter (where item_status='Active' and barcode_status='Active')
+from alt_barcodes where barcode_no ~ '^[0-9]+$' and length(barcode_no) >= 15
+group by 1;
+-- 15 digits: 19 rows, 13 currently Active
+-- 16 digits:  5 rows,  3 currently Active (STACIE DOLL, COLOUR CHANGE MERMAID, B&D HAMMER DRILL 18V)
+-- nothing anywhere in alt_barcodes exceeds 16 digits
+```
+
+**15 would have been wrong** — three real, currently-sellable products use
+16-digit barcodes right now. Shipped the cap at 16 instead:
+`hasTooManyDigits()` in `DeptScan.jsx` counts digit CHARACTERS (not raw
+string length, so a dash-grouped `ean_barcode` or an `RB1` reduced-sticker
+code — both short on real digits despite dashes/letters — is never caught
+by it) and rejects anything with more than 16. Same treatment as the other
+three invalid-scan reasons (`url`, `sticker`, `no-digit`): red banner,
+distinct tone, nothing saved, logged as `scan-invalid-too-long`.
+
+### 2026-09-28 — Dept Scan also rejects scans with no digit at all
 
 Third rejection class alongside URLs and known sticker codes: 73 of the
 1,279-code "Inactive Products" audit were letters-only garbled reads

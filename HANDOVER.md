@@ -280,3 +280,13 @@ Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
 Third thing added to the "not a real barcode" rejection: any scan that's pure letters (no digits at all) now gets blocked with the same message as the URL and known sticker-code cases. This covers garbled reads like "MAENCHNA" or "CHARCOAL" that showed up in the earlier barcode audit — 73 of them. Every real code this business uses has at least some digits in it, so this one's safe to reject on sight, same confidence level as the other two.
 
 Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## Checked the 15-digit cap against real data first — good thing, it was wrong
+
+You asked to block anything over 15 digits (your estimate of a max outer-box barcode). Checked your actual product data before building it, since guessing wrong here means blocking real products, not just junk.
+
+Turned out 15 would have broken real scanning: three products you're currently selling right now use 16-digit barcodes — STACIE DOLL, COLOUR CHANGE MERMAID, and B&D HAMMER DRILL 18V. Nothing in your whole product file goes past 16, though. So the cap is set at 16 instead of 15 — catches the same junk (garbled 20+ digit reads), same message as the other blocks, but doesn't touch any real product you actually stock.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
