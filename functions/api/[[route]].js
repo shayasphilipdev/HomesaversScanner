@@ -4840,6 +4840,41 @@ export async function onRequest(context) {
 
       const now = new Date().toISOString()
 
+      // Department Check safety net: the client already resolves item_group
+      // via /scan/lookup before saving (DeptScan.jsx), but that lookup is
+      // bounded to 10s and shop wifi can time out on it independently of
+      // whether the save itself then succeeds -- baking in a null department
+      // permanently even though the product's real department was already
+      // correct and resolvable at that moment. Confirmed via a live audit
+      // (2026-09-28): records with a plain, direct alt_barcodes.barcode_no
+      // match and a valid prices.item_group already in place still arrived
+      // here with item_group null. The server's own Supabase connection
+      // doesn't share that failure mode, so it re-resolves here whenever the
+      // client didn't manage to -- this only runs for the minority of Task J
+      // saves that need it.
+      let details = body.details || {}
+      if (body.task_type === 'J' && (!details.item_group || !String(details.item_group).trim())) {
+        const code = String(body.barcode_no || body.product_code || '').trim()
+        if (code) {
+          const selectAlt = (col) => db.select('alt_barcodes', {
+            select: 'ean_barcode',
+            [col]: `eq.${code}`,
+            order: 'barcode_status.asc,item_status.asc',
+            limit: '1'
+          })
+          let [alt] = await selectAlt('barcode_no')
+          if (!alt) [alt] = await selectAlt('ean_barcode')
+          if (alt?.ean_barcode) {
+            const [p] = await db.select('prices', {
+              select: 'item_group',
+              ean_barcode: `eq.${String(alt.ean_barcode).trim()}`,
+              limit: '1'
+            })
+            if (p?.item_group) details = { ...details, item_group: String(p.item_group).trim() }
+          }
+        }
+      }
+
       // Determine which store this record belongs to.
       // - Admin / all_stores users: take body.store_id verbatim (or null).
       // - Single-store users: snap to their one store.
@@ -4873,7 +4908,7 @@ export async function onRequest(context) {
         notes:               body.notes || null,
         photo_product_url:   body.photo_product_url || null,
         photo_barcode_url:   body.photo_barcode_url || null,
-        details:             body.details || {},
+        details,
         // Phase 3 — Alternate Barcode snapshot captured at scan time so reports
         // show item/supplier/status without a second lookup.
         barcode_no:          body.barcode_no || null,

@@ -575,7 +575,65 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
-### 2026-09-28 (latest) — Deployment of the weekly-email fix hands off to the LOCAL Claude Code session
+### 2026-09-28 (latest) — "Other department" turned out to be a fresh batch of "No Department"; server-side safety net added
+
+User reported seeing an "Other" department in the Alt Barcode file and asked
+to backfill/fix it. Investigated directly in Supabase rather than guessing:
+
+- `alt_barcodes` has **no department column at all** — confirmed via schema
+  inspection. Department has only ever come from the separate `prices`
+  (Item Master) table, keyed by `ean_barcode`.
+- `prices.item_group` currently holds **30 distinct real department names**
+  (TOYS, HOMEWARES, GIFTWARES, FOOD, HEALTH & BEAUTY, ... down to GIFT
+  VOUCHERS) — **none of them is literally "Other"**. So there is no hidden
+  "Other" department being dropped or mis-synced anywhere in the pipeline.
+- **Conclusion:** the grey "Other" swatch in the Dashboard card and weekly
+  email is exactly what its own code comment says — a report-time visual
+  fold for departments outside the chain-wide top 8 (`DEPT_OTHER` in both
+  `Dashboard.jsx` and `dept-check-weekly.py`). Every record inside it
+  already has a correct, real, named department; it's just visually grouped
+  rather than bugged. Told the user this plainly rather than "fixing"
+  something that wasn't broken.
+
+**What WAS actually broken, found while checking:** a fresh batch of
+genuine "No Department" (`item_group` null) Task J records, distinct from
+the batch backfilled earlier the same day. 3,311 live records had none;
+1,499 of them resolved cleanly against CURRENT master data with a plain,
+direct `barcode_no` match — no ean-fallback needed, no stale price data
+(the matching `prices` rows were all last updated at 07:01–07:02 that
+morning, hours before the affected scans happened at 07:47–15:31). So this
+wasn't the ean_barcode-matching gap fixed earlier, and it wasn't stale
+data — the master data was already correct and available well before the
+scan.
+
+**Root cause:** `DeptScan.jsx`'s client-side department lookup
+(`scanLookup`, called before `createTaskRecord`) is bounded to a 10s
+timeout (`LOOKUP_TIMEOUT_MS`). A shop-wifi hiccup that delays just that one
+call — independent of whether the record itself then saves successfully —
+permanently bakes `item_group: null` into the record, because the lookup
+result and the save are computed once and never retried. The offline
+outbox has the identical exposure: a queued record's `details.item_group`
+is fixed at scan time and never re-resolved when it syncs later.
+
+**Fix shipped**, `functions/api/[[route]].js` `POST /task-records`: when a
+Task J record arrives with no `item_group`, the server now re-resolves it
+itself (`barcode_no` → `alt_barcodes`, falling back to `ean_barcode`, → 
+`prices.item_group`) before insert — the server's own Supabase connection
+doesn't share shop wifi's timeout failure mode. Applies uniformly to live
+saves and to outbox-replayed records, since both POST through this same
+endpoint. Only runs for the minority of Task J saves that arrive without a
+department already resolved client-side, so it adds no meaningful load to
+the common case.
+
+**Backfilled** 1,499 of the 3,311 live "No Department" Task J records using
+the same join, touching only previously-empty fields (`item_group`,
+`item_name`, `product_barcode`, `supl_id`, `supplier_code`, `item_status`,
+`barcode_status`) — mirrors the conservative approach of the earlier
+backfill. Live count dropped from 3,311 to 1,812; the remainder have no
+match anywhere in current master data (unlisted barcodes / junk scans) and
+are genuinely unresolvable, same as before.
+
+### 2026-09-28 — Deployment of the weekly-email fix hands off to the LOCAL Claude Code session
 
 Follow-up to the entry directly below. This cloud session merged the fix to
 `main` (`846e42a`), but a screenshot the user then sent back still showed

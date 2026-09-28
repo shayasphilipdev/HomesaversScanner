@@ -196,3 +196,24 @@ After the merge above, the user sent back a screenshot of the actual email/repor
 3. `cd C:\Homesavers\scripts` then `python dept-check-weekly.py --to <their email>` to test-send to just themselves
 
 **Worth remembering for next time:** this codebase gets worked on from two different Claude Code sessions — this cloud one (can edit/commit/push/merge to `main`, but can't touch anything under `C:\Homesavers\...`, run local Python against real SMTP creds, or reach Task Scheduler) and a local one on the user's own PC at `C:\Scraping\homesavers-scanner` (which can do all of that). Anything that needs to actually *execute* against local paths or real credentials has to be routed to the local session — don't offer to "just deploy it" from here again; explain the split up front instead.
+
+---
+
+## "Other department" wasn't a bug — but checking it surfaced a real one
+
+User said the Alt Barcode file seemed to have an "Other" department too, and asked to backfill/fix it, same as the earlier "No Department" issue. Checked properly instead of assuming:
+
+- `alt_barcodes` has no department column, period — department only ever comes from `prices` (Item Master), by `ean_barcode`.
+- `prices.item_group` has 30 real department names live right now, and "Other" isn't one of them.
+
+So there's no missing/hidden "Other" department anywhere in the data. The grey "Other" you see on the Dashboard card and in the weekly email is the report's own intentional grouping — anything outside the chain-wide top 8 departments folds into that one grey swatch so the legend doesn't need 20+ colours. Every record in it already has its own real, correct department; it's just visually bucketed. Told the user this rather than "fixing" something that wasn't actually broken.
+
+**What checking it turned up instead:** a NEW batch of genuine "No Department" records — different from the ones fixed earlier the same day. 1,499 of 3,311 live records resolved instantly against CURRENT master data with the simplest possible match (direct barcode_no lookup, no ean-fallback trickery needed), and the matching price data had been sitting there correctly since that morning's sync — hours before the affected scans happened. So this wasn't stale data and it wasn't the earlier ean-matching gap. Something else was losing the department.
+
+**Root cause:** `DeptScan.jsx` looks up the department with a 10-second timeout before saving. If that one lookup call is slow (shop wifi), it can time out and return nothing — independently of whether the actual save then goes through fine. The record saves successfully, just with no department baked in permanently, because nothing ever retries the lookup afterward. Same exposure exists for offline-queued scans syncing later.
+
+**Fix:** `POST /task-records` now has a safety net — if a Department Check record comes in with no department, the server looks it up itself (server-to-Supabase never has shop-wifi timeouts) before saving. Covers both live saves and offline scans syncing back later, since both go through this same endpoint. Only kicks in for the records that actually need it, so it costs nothing on the normal path.
+
+**Backfilled** 1,499 of the 3,311 affected records right now, using the same safe approach as before (only fills in fields that were empty, never overwrites anything already there). 1,812 remain genuinely unresolvable — barcodes with no match anywhere in the master data at all, same story as the earlier round.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
