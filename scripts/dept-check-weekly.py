@@ -279,7 +279,9 @@ def build_html(last, prev, cfg):
         # its records were made of. Two facts, one mark.
         width = max(6, int(round(recs * 100.0 / top)))
         bar = stacked_bar(bd, palette, recs, width)
-        lead = sorted(bd.items(), key=lambda kv: -kv[1])[:2]
+        # All departments, not just the top few -- a store with a long tail of
+        # small categories should not have them silently vanish from the report.
+        lead = sorted(bd.items(), key=lambda kv: -kv[1])
         lead_txt = " · ".join(f"{esc(d)} {n:,}" for d, n in lead)
         return (
             f'<tr>'
@@ -354,6 +356,10 @@ def build_html(last, prev, cfg):
              f'{esc(wk.get("label",""))}</div></td></tr>')
     H.append('<tr><td style="height:16px;line-height:16px;font-size:0;">&nbsp;</td></tr>')
 
+    # ---- greeting ---------------------------------------------------------
+    H.append(f'<tr><td style="padding:0 4px 14px;font-family:{FONT};font-size:14px;'
+             f'color:{ESPRESSO};">Hi All,</td></tr>')
+
     # ---- card 1: not done, two weeks ------------------------------------
     H.append(_card_open("Stores that did not do a Department Check",
                         "Last week, with the week before for comparison", RED, WHITE, "#F3D6CF"))
@@ -379,7 +385,7 @@ def build_html(last, prev, cfg):
     H.append(f'<tr><td style="padding:10px 14px 12px;font-family:{FONT};font-size:11.5px;'
              f'color:#8A7866;line-height:1.5;">'
              f'Bar length = that store against the busiest. The colours show what its '
-             f'records were made of; the two biggest departments are named under each bar.'
+             f'records were made of; every department is named under each bar.'
              f'</td></tr>')
     H.append(_card_close())
 
@@ -387,6 +393,10 @@ def build_html(last, prev, cfg):
     H.append(f'<tr><td style="padding:2px 6px 0;font-family:{FONT};font-size:11px;color:#9C8A76;'
              f'line-height:1.6;">Active stores only; test-app activity excluded. '
              f'Generated {dt.datetime.now():%d/%m/%Y %H:%M}.</td></tr>')
+
+    # ---- sign-off ----------------------------------------------------------
+    H.append(f'<tr><td style="padding:16px 4px 0;font-family:{FONT};font-size:14px;'
+             f'color:{ESPRESSO};line-height:1.5;">Regards,<br>Homesavers Scanner</td></tr>')
 
     H.append('</table></td></tr></table></body></html>')
     return "".join(H)
