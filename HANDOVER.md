@@ -244,3 +244,19 @@ The top two jumped out on their own: `80575540` scanned 101 times across 29 diff
 Didn't touch the ~1,816 already-saved records carrying these two codes — purely cosmetic at this point, no reason to spend a backfill on it. The fix is forward-looking: stop it from happening again, starting now.
 
 Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## URLs, "RB" reduced-barcode stickers, and the double/triple-scan question answered with data
+
+Three more asks in one go.
+
+**Don't scan URLs.** Same treatment as the sticker codes — 141 of the earlier CSV export were QR codes (recycling info, manufacturer websites), not barcodes. Now rejected the same way: red banner, "that's a website link, scan the product's own barcode," nothing saved.
+
+**"RB" codes are reduced/clearance stickers.** Confirmed: `RB101-09-188-00` means the real product code is `101-09-188-00` — the "RB" is just marking it as a reduced-price sticker. The app now strips "RB" automatically, looks the product up and saves the record using the real code (so it matches properly and doesn't create a new "unmatched barcode" problem), and keeps the full original code (with "RB") visible — both on the Reports side (shows as "Reduced Barcode: RB101-09-188-00" automatically) and right there on the scan screen as a small blue tag.
+
+**The double/triple-scan question — checked the actual data instead of guessing.** You asked whether this predates the new department scan page. It does, and here's the proof: looked at every case of the same barcode scanned again at the same store within 10 minutes, going back 3 weeks — 12,145 of them. Almost all were spaced MORE than 3 seconds apart (a real re-scan, not someone's finger slipping on the trigger). That's exactly the gap the OTHER Claude session's fix from earlier today (deployed around 3pm) was built to catch — walk the aisle, scan a product, scan a few more, come back and accidentally scan the first one again. Broken down by hour: it was running at roughly 150-300 an hour right up until that fix went out, then dropped to 54 the next hour, then 13 the hour after. So yes — this really was happening, and it's already fixed, not just theoretically.
+
+**Separately, "half scanned" (short/truncated barcodes)** — checked this too since it sounded related, but it isn't the same thing. Its rate stayed exactly the same both before and after today's fix (tracks total scan volume all day), so it wasn't touched by the duplicate-scan fix at all. This looks like a different, still-ongoing problem — most likely a scanner gun capturing a barcode too fast and only grabbing part of it. Can't trace which specific gun/store from historical data (the device-tracking system only started today), but worth watching going forward if it keeps coming up.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.

@@ -575,7 +575,60 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
-### 2026-09-28 (latest) — Dept Scan warns on known sticker codes (80575540 / 80025750)
+### 2026-09-28 (latest) — URLs rejected, "RB" reduced-barcode stickers resolved, and the double/triple-scan root cause confirmed
+
+Three follow-up asks after the sticker-code fix above.
+
+**1. Reject scanned URLs.** Same shape as the sticker-code fix: 141 of the
+1,279-code "Inactive Products" export were QR codes (manufacturer pages,
+recycling info) rather than the product's barcode. `DeptScan.jsx` now
+detects `^https?://` and rejects before `createTaskRecord`, same red-banner
+treatment as a known sticker code, logged as `scan-invalid-url`.
+
+**2. "RB" reduced-barcode stickers.** Confirmed by the business: a code
+like `RB101-09-188-00` is a reduced/clearance sticker printed separately
+from the product's normal barcode — the part after "RB" (`101-09-188-00`)
+is the product's real code, in the same dash-grouped format
+`prices`/`alt_barcodes.ean_barcode` already use for shelf-ticket-only
+items. `DeptScan.jsx` now strips the "RB" prefix before lookup, dedup
+(`lastCodeRef`/`seenRef`), and the saved `barcode_no` — so a reduced
+sticker scan resolves and counts as the same product its normal barcode
+would. The untouched original is kept in `details.reduced_barcode` (the
+backend's existing `fmtDetails()` renders it automatically as "Reduced
+Barcode: RB101-09-188-00" with no report changes needed) and shown
+on-screen as a blue "+RB" tag next to the resolved code.
+
+**3. "Double/triple scanned" — confirmed and already improving.** User
+asked whether some of what's being seen predates "the new department scan."
+Checked live data rather than guessing: grouped `task_records` by
+(`store_id`, `barcode_no`) and looked at repeat scans of the same barcode
+at the same store within a 10-minute window — 12,145 such repeat pairs over
+the live 3-week window, the overwhelming majority (>99%) spaced MORE than
+3 seconds apart (i.e. not a double trigger-pull, which the pre-existing
+`DUP_WINDOW_MS` guard already caught). That gap — walk the aisle, scan A,
+scan B, come back and scan A again — is exactly what the OTHER session's
+`753c78d` commit ("Dept Scan: fix Undo for store staff, and catch
+same-session duplicate scans", deployed ~15:05 UTC today) added
+session-wide duplicate detection for. Bucketing repeats by hour shows the
+effect immediately: 191 (14:00 UTC) → 200 (15:00, deploy lands mid-hour) →
+54 (16:00) → 13 (17:00). **Confirmed: this was a real, pre-existing gap,
+and it has already dropped ~90%+ since today's fix**, with the residual
+likely devices that haven't reloaded to pick up the new bundle yet.
+
+Checked "half scanned" (truncated/partial barcode reads) as a separate
+question, since it sounds similar but isn't the same mechanism: counted
+Task J barcodes that are purely numeric but the wrong length for a real
+barcode (not 8/12/13/14 digits) per hour, before and after the same deploy.
+**This one did NOT drop** — it tracks total scan volume both before and
+after (roughly 0.5–2% of scans throughout), so it is a separate, still-live
+issue — almost certainly a scanning/hardware phenomenon (a gun capturing
+only part of a barcode on a fast pass), not something today's dedup fix
+touches. No device-level breakdown is possible for it retroactively (the
+`device_log_events` "scan doctor" system only started collecting today);
+worth watching there going forward if it keeps recurring at a particular
+store.
+
+### 2026-09-28 — Dept Scan warns on known sticker codes (80575540 / 80025750)
 
 Follow-up to a barcode-frequency export requested off the "Inactive
 Products" bucket: 1,279 distinct codes with no match anywhere in
