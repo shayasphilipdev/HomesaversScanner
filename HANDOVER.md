@@ -260,3 +260,15 @@ Three more asks in one go.
 **Separately, "half scanned" (short/truncated barcodes)** — checked this too since it sounded related, but it isn't the same thing. Its rate stayed exactly the same both before and after today's fix (tracks total scan volume all day), so it wasn't touched by the duplicate-scan fix at all. This looks like a different, still-ongoing problem — most likely a scanner gun capturing a barcode too fast and only grabbing part of it. Can't trace which specific gun/store from historical data (the device-tracking system only started today), but worth watching going forward if it keeps coming up.
 
 Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## RB1, not RB — and why "only accept a full barcode" would do more harm than good
+
+Quick correction plus one thing checked before building it.
+
+**RB1, not RB.** Fixed the prefix — `RB101-09-188-00` now correctly strips to `01-09-188-00`, which is the real, valid product code. The earlier "RB" version was stripping one character too few and would never actually have matched a product.
+
+**Checked whether Dept Scan can reject anything that isn't a "full" barcode**, to stop truncated/partial scans before they save. Before writing that, pulled every barcode length that's currently resolving successfully to a real product — and found genuine, correctly-scanned products as short as 6 digits (a whole line of Pet Food products use 6-digit codes) and some legitimate 11-digit ones too (already-known, already-handled). So barcode length in this business's data runs anywhere from 6 to 14 digits — there's no length cutoff that would catch only the bad scans without also blocking hundreds of real, correct ones every day. Left it alone, as asked ("leave it if it is not possible") — a scan that doesn't match anything in the product data still ends up flagged as Inactive Products, which remains the only safe way to catch a truncated read.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.

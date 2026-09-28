@@ -575,7 +575,47 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
-### 2026-09-28 (latest) — URLs rejected, "RB" reduced-barcode stickers resolved, and the double/triple-scan root cause confirmed
+### 2026-09-28 (latest) — RB1 prefix correction, and why "scan the full barcode only" isn't safe to enforce
+
+Two quick follow-ups.
+
+**Prefix fix:** the business corrected the reduced-barcode prefix to "RB1"
+(3 chars), not "RB". `REDUCED_PREFIX` in `DeptScan.jsx` now strips `RB1`,
+so `RB101-09-188-00` resolves to `01-09-188-00` — the correct 2-2-3-2
+dash-grouped shape `prices`/`alt_barcodes.ean_barcode` actually use.
+Stripping only "RB" (the earlier version) left a 3-2-3-2 code
+(`101-09-188-00`) that would never have matched anything.
+
+**Asked: can Dept Scan reject anything that isn't a "full" barcode, to stop
+the truncated/partial-scan class of "Inactive Products" records?** Checked
+before building anything, since a wrong guess here would actively block
+real scans. Queried every Task J record that already resolved successfully
+against master data, grouped by the length of its (purely numeric)
+`barcode_no`:
+
+| Length | Live, correctly-matched records |
+|---|---|
+| 6 | 246 |
+| 7 | 2 |
+| 8 | 1,655 |
+| 11 | 22 |
+| 12 | 9,224 |
+| 13 | 212,817 |
+| 14 | 165 |
+
+The 6-digit group turned out to be real, named products (PET FOOD lines
+like "MINI MARBONE W BEEF 150G", "FAVOUR BEEF EARS" — genuine short
+internal SKU-style barcodes for that supplier), and the 11-digit group is
+the already-handled trimmed-UPC-A case. So valid barcode length in this
+business's actual data ranges from 6 to 14 digits — there is no length
+threshold that would catch only partial scans without also rejecting
+hundreds of already-working, correctly-categorised Pet Food scans a day.
+**Concluded this isn't safe to build and left it alone**, per the request
+("leave it if it is not possible") — the existing signal (a scan that
+doesn't resolve against master data lands in Inactive Products) remains
+the only reliable way to spot a truncated read, same as before.
+
+### 2026-09-28 — URLs rejected, "RB" reduced-barcode stickers resolved, and the double/triple-scan root cause confirmed
 
 Three follow-up asks after the sticker-code fix above.
 
