@@ -354,11 +354,16 @@ def build_html(last, prev, cfg):
              f'line-height:1.25;">Department Check &mdash; Weekly Report</div>'
              f'<div style="font-size:13px;color:#C9B79E;margin-top:5px;">'
              f'{esc(wk.get("label",""))}</div></td></tr>')
-    H.append('<tr><td style="height:16px;line-height:16px;font-size:0;">&nbsp;</td></tr>')
-
     # ---- greeting ---------------------------------------------------------
-    H.append(f'<tr><td style="padding:0 4px 14px;font-family:{FONT};font-size:14px;'
-             f'color:{ESPRESSO};">Hi All,</td></tr>')
+    # No spacer above it -- the greeting opens the message directly under the
+    # masthead, rather than floating in a gap that reads as "mid-page". One
+    # plain sentence says what the email is before any table.
+    H.append(f'<tr><td align="left" style="padding:14px 4px 16px;font-family:{FONT};'
+             f'font-size:14px;color:{ESPRESSO};line-height:1.55;">'
+             f'Hi All,<br>'
+             f'Here is last week&rsquo;s Department Check report &mdash; the stores that '
+             f'missed a check, and how many records each store logged by department.'
+             f'</td></tr>')
 
     # ---- card 1: not done, two weeks ------------------------------------
     H.append(_card_open("Stores that did not do a Department Check",
