@@ -161,3 +161,24 @@ User correctly called out that the weak-wifi theory above was never actually con
 **Honest status on "why only DIY/Confectionery":** still not confirmed. The weak-signal theory remains the leading candidate given what the data does show (other stores saved both departments fine that day; zero server-side insert failures chain-wide; Limerick's other 8 departments that day were normal) — but it was never verified against that specific device's own activity, because until today there was no way to see that remotely. The next time this happens anywhere, it's a `device_log_events` query away from a real answer instead of another round of inference from aggregate counts.
 
 Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## Weekly Department Check email: same department-cap fix, plus greeting/sign-off
+
+Turned out the department-count screenshot that started this whole thread was from the **weekly email attachment**, not the live dashboard — but since the dashboard fix landed and looks right anyway, no need to undo that. This entry is just the matching fix on the email side.
+
+**Shipped in `scripts/dept-check-weekly.py`:**
+- Removed the same `[:2]` truncation the dashboard had, in `count_row()` — every department a store scanned now lists under its bar instead of just the top two.
+- Added "Hi All," under the masthead and "Regards, Homesavers Scanner" before the closing tags, per the requested wording.
+- Small wording tweak in the card-2 footnote to match (says "every department" instead of "the two biggest").
+
+**I cannot send this myself, or even test-send it.** This script isn't part of the deployed app — it's a local Python script that runs on the user's own Windows machine via Task Scheduler (Mondays 09:00), and it needs two things this cloud session doesn't have: `scripts/dept-check-weekly.config.json` (SMTP login + recipients, git-ignored) and `C:\Homesavers\.sync-secret`. I've edited and pushed the code; someone needs to pull it down and redeploy (`scripts\deploy-scripts.ps1`, or copy manually to `C:\Homesavers\scripts`) before it can actually run.
+
+**Test-send to just yourself, once deployed, without touching the real recipient list:**
+```
+python dept-check-weekly.py --to youraddress@example.ie
+```
+This is an existing flag, not something new — `main()`'s recipient logic is `[args.to] if args.to else cfg.get("recipients", [])`, so `--to` fully replaces the recipient list *for that one run only* and never writes anything back to the config file. The real Monday send (and Jeff's presence on it, which is still pending a separate decision) is completely untouched by running this. Add `--dry-run` instead if you'd rather just get the HTML file on disk with nothing sent at all.
+
+Pushed to `claude/kind-ride-q56k58`; not yet merged to `main` (this file has no build/deploy step of its own — it only takes effect once the user redeploys it to their machine, so merging isn't blocking anything, but it will still be merged along with everything else per the usual workflow). Full write-up in `Project_Status.MD` §11.

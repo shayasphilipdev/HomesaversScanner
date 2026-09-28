@@ -575,6 +575,47 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-09-28 (latest) — Weekly Department Check email: same department-cap fix, greeting/sign-off
+
+The department-count screenshot that kicked off the dashboard fix earlier
+this session (see the entry below) turned out to be from the **weekly
+email attachment**, not the live dashboard — the dashboard fix landed
+anyway and the user confirmed it's fine as-is, but the email itself still
+had the original bug.
+
+**What shipped**, all in `scripts/dept-check-weekly.py` (`build_html()` /
+`count_row()`):
+- Removed the `[:2]` cap on the per-store department list (`lead = sorted(bd.items(), key=lambda kv: -kv[1])`,
+  no longer sliced) — every department a store scanned now appears under its
+  bar, not just the two biggest. Mirrors the `DeptCheckByStore` fix in
+  `client/src/pages/Dashboard.jsx`.
+- Added a "Hi All," opening line right under the masthead, and a
+  "Regards,<br>Homesavers Scanner" sign-off just before the closing tags.
+- Updated the card-2 explainer text ("...every department is named under
+  each bar" instead of "the two biggest").
+
+**Not done, and cannot be done from this session:** actually sending a test
+email. `dept-check-weekly.py` is a local script the user runs on their own
+Windows machine (Task Scheduler, Monday 09:00) — it needs
+`scripts/dept-check-weekly.config.json` (SMTP credentials + recipients,
+git-ignored, not present in this cloud checkout) and `C:\Homesavers\.sync-secret`,
+neither of which this session has. Once the user pulls this change and
+redeploys the script (`scripts\deploy-scripts.ps1` or a manual copy to
+`C:\Homesavers\scripts`), the existing `--to` flag sends a one-off test to
+just them **without touching the configured recipients list**:
+
+```
+python dept-check-weekly.py --to <their-email>
+```
+
+(add `--week 2026-09-21` to re-run a specific past week, or `--dry-run` to
+just write `dept-check-weekly-preview.html` to disk with no send at all).
+`main()`'s recipient logic is `[args.to] if args.to else cfg.get("recipients", [])`
+— passing `--to` fully overrides the list for that one run and never writes
+back to `dept-check-weekly.config.json`, so the real Monday send's
+recipients (Jeff included, pending the user's separate decision on that)
+are untouched.
+
 ### 2026-09-28 (later still) — Server-side device activity log ("scan doctor")
 
 Follow-up to the Limerick report below: the sound/vibration fix was shipped
