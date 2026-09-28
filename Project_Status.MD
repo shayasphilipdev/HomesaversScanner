@@ -575,7 +575,24 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
-### 2026-09-28 (latest) — RB1 prefix correction, and why "scan the full barcode only" isn't safe to enforce
+### 2026-09-28 (latest) — Dept Scan also rejects scans with no digit at all
+
+Third rejection class alongside URLs and known sticker codes: 73 of the
+1,279-code "Inactive Products" audit were letters-only garbled reads
+(`MAENCHNA`, `PLANBSUS`, `CHARCOAL`, ...). Every real code this business
+scans — `barcode_no`, `ean_barcode`, and the `RB1` reduced-sticker
+format — is at least partly numeric, so anything with zero digits can be
+rejected outright with the same confidence as a known sticker code.
+
+`hasNoDigit()` added to `DeptScan.jsx`'s existing invalid-scan check
+(alongside `isUrlCode()` and `KNOWN_STICKER_CODES`) — same red banner,
+distinct tone, nothing saved, logged as `scan-invalid-no-digit`. Pulled the
+banner text into a shared `invalidReasonText()` helper now that there are
+three reasons sharing identical on-screen behaviour, so the message copy
+lives in one place instead of being duplicated across the live banner and
+the history table.
+
+### 2026-09-28 — RB1 prefix correction, and why "scan the full barcode only" isn't safe to enforce
 
 Two quick follow-ups.
 

@@ -272,3 +272,11 @@ Quick correction plus one thing checked before building it.
 **Checked whether Dept Scan can reject anything that isn't a "full" barcode**, to stop truncated/partial scans before they save. Before writing that, pulled every barcode length that's currently resolving successfully to a real product — and found genuine, correctly-scanned products as short as 6 digits (a whole line of Pet Food products use 6-digit codes) and some legitimate 11-digit ones too (already-known, already-handled). So barcode length in this business's data runs anywhere from 6 to 14 digits — there's no length cutoff that would catch only the bad scans without also blocking hundreds of real, correct ones every day. Left it alone, as asked ("leave it if it is not possible") — a scan that doesn't match anything in the product data still ends up flagged as Inactive Products, which remains the only safe way to catch a truncated read.
 
 Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## Also blocking scans with no digit in them
+
+Third thing added to the "not a real barcode" rejection: any scan that's pure letters (no digits at all) now gets blocked with the same message as the URL and known sticker-code cases. This covers garbled reads like "MAENCHNA" or "CHARCOAL" that showed up in the earlier barcode audit — 73 of them. Every real code this business uses has at least some digits in it, so this one's safe to reject on sight, same confidence level as the other two.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
