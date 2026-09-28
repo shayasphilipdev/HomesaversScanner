@@ -181,4 +181,18 @@ python dept-check-weekly.py --to youraddress@example.ie
 ```
 This is an existing flag, not something new — `main()`'s recipient logic is `[args.to] if args.to else cfg.get("recipients", [])`, so `--to` fully replaces the recipient list *for that one run only* and never writes anything back to the config file. The real Monday send (and Jeff's presence on it, which is still pending a separate decision) is completely untouched by running this. Add `--dry-run` instead if you'd rather just get the HTML file on disk with nothing sent at all.
 
-Pushed to `claude/kind-ride-q56k58`; not yet merged to `main` (this file has no build/deploy step of its own — it only takes effect once the user redeploys it to their machine, so merging isn't blocking anything, but it will still be merged along with everything else per the usual workflow). Full write-up in `Project_Status.MD` §11.
+Pushed and merged to `main` (`846e42a`). Merging doesn't make it live, though — see the next entry.
+
+---
+
+## Deploying that fix hands off to the LOCAL Claude Code session, not this one
+
+After the merge above, the user sent back a screenshot of the actual email/report still showing the old 2-department-cap behaviour. Makes sense: merging to `main` only means the code is on GitHub. `dept-check-weekly.py` isn't part of the Cloudflare-deployed app — it only runs because Windows Task Scheduler on the user's own machine fires it, from wherever it's copied to on that machine (`C:\Homesavers\scripts`). This cloud session has no network path to that machine at all — not a permission I could grant myself, just genuinely nothing to connect to from here.
+
+**The fix:** the user has a SEPARATE, local Claude Code session running on that same Windows machine, working out of `C:\Scraping\homesavers-scanner` (matches the "Local" path already documented in `CLAUDE.md`). That session has real filesystem/git/PowerShell/Python access there. Gave the user this to hand to that local session:
+
+1. `git pull origin main` in `C:\Scraping\homesavers-scanner`
+2. `.\scripts\deploy-scripts.ps1` — copies the updated files into `C:\Homesavers\scripts`
+3. `cd C:\Homesavers\scripts` then `python dept-check-weekly.py --to <their email>` to test-send to just themselves
+
+**Worth remembering for next time:** this codebase gets worked on from two different Claude Code sessions — this cloud one (can edit/commit/push/merge to `main`, but can't touch anything under `C:\Homesavers\...`, run local Python against real SMTP creds, or reach Task Scheduler) and a local one on the user's own PC at `C:\Scraping\homesavers-scanner` (which can do all of that). Anything that needs to actually *execute* against local paths or real credentials has to be routed to the local session — don't offer to "just deploy it" from here again; explain the split up front instead.

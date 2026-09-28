@@ -575,6 +575,40 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-09-28 (latest) — Deployment of the weekly-email fix hands off to the LOCAL Claude Code session
+
+Follow-up to the entry directly below. This cloud session merged the fix to
+`main` (`846e42a`), but a screenshot the user then sent back still showed
+the old 2-department-cap behaviour — because deploying `dept-check-weekly.py`
+means getting it onto the Windows machine that actually runs the Monday
+Task Scheduler job, and this cloud sandbox has no network path to that
+machine (no VPN/RDP/SSH — it's not a permissions setting, there is
+genuinely no route from here to there).
+
+**Resolution:** the user runs a SEPARATE local Claude Code session on that
+same Windows machine, working out of `C:\Scraping\homesavers-scanner` (the
+path already documented at the top of this file under "Local"). That local
+session has the filesystem/git/PowerShell/Python access this cloud one
+lacks. Handoff instructions given to the user, to paste into that local
+session:
+
+1. `git pull origin main` in `C:\Scraping\homesavers-scanner`
+2. `.\scripts\deploy-scripts.ps1` — copies the updated files (including
+   `dept-check-weekly.py`) into `C:\Homesavers\scripts`
+3. `cd C:\Homesavers\scripts` then
+   `python dept-check-weekly.py --to <their email>` — a one-off test send
+   that does NOT touch the configured recipients list in
+   `dept-check-weekly.config.json` (see the flag's logic in the entry below)
+
+**Takeaway for future sessions:** this repo is worked from (at least) two
+Claude Code sessions — this cloud one (no access to `C:\Homesavers\...` or
+any local Windows path, cannot run anything that touches SMTP/Task
+Scheduler/local file paths) and a local one on the user's own machine at
+`C:\Scraping\homesavers-scanner` (which does). Anything that requires
+actually *running* `scripts/*.py` against real credentials, or touching
+`C:\Homesavers\...`, has to be hedged to the local session — this cloud
+session can only edit code, commit, push, and merge to `main`.
+
 ### 2026-09-28 (latest) — Weekly Department Check email: same department-cap fix, greeting/sign-off
 
 The department-count screenshot that kicked off the dashboard fix earlier
