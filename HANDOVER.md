@@ -144,3 +144,20 @@ My count came to 1,435 resolvable in the Week 39 file specifically (vs. the user
 **Fix shipped:** `client/src/pages/DeptScan.jsx` now plays a distinct tone/vibration for a queued-offline save vs a confirmed one, shows a "⚠ Queued — no signal" flag + amber banner (same treatment as the existing Duplicate alert), and a genuine save failure — previously totally silent — now also gets its own distinct buzz. Pushed and merged to `main`.
 
 **Told the user about an existing diagnostic they may not know about:** `Sync.jsx` already has an "Activity on this device" panel (`deviceLog.js`, `localStorage`-only) that logs every save attempt as `save-ok` / `save-queued-offline` / `save-failed`, built exactly for "we scanned it and it's gone" reports. Recommended checking it on the specific device used for DIY/Confectionery to confirm the theory directly and see if any queued scans are still recoverable.
+
+---
+
+## Pushback: "loose answer" + a live server-side scan doctor
+
+User correctly called out that the weak-wifi theory above was never actually confirmed — I recommended checking the local device log, but that requires physical access to the specific gun, and this store has no one on site who can do that. Fair challenge: a fix shipped on an unconfirmed theory is a guess dressed up as a diagnosis. I asked one clarifying question (single vs double vibration buzz — the one fact that would've pinned down "queued offline" vs "duplicate detection" definitively) but the user couldn't get it checked either, for the same reason (far-away store, no expert on site).
+
+**So I built the thing that removes the "need someone on site" dependency going forward**, rather than guessing further:
+
+- **New:** `client/src/lib/deviceId.js` — first device/gun identifier anywhere in this system (random, localStorage, stable per browser). `task_records` itself still has none.
+- **`client/src/lib/deviceLog.js`** now best-effort uploads every local log entry to a new `POST /device-log` endpoint, landing in a new `device_log_events` Supabase table (`supabase-migration-device-log.sql`, applied live). Save events carry store + department + task type, so "which gun, which department, saved vs queued vs duplicate" becomes a SQL query, not a phone call.
+- **`DeptScan.jsx`** now also logs `scan-duplicate` (previously invisible anywhere — that branch returns before `createTaskRecord` ever runs).
+- Coalesced (~1 request per 4s of scanning, not per scan), retried on reconnect, never blocks or gates the actual save — diagnostics riding alongside real scans on the same shop wifi.
+
+**Honest status on "why only DIY/Confectionery":** still not confirmed. The weak-signal theory remains the leading candidate given what the data does show (other stores saved both departments fine that day; zero server-side insert failures chain-wide; Limerick's other 8 departments that day were normal) — but it was never verified against that specific device's own activity, because until today there was no way to see that remotely. The next time this happens anywhere, it's a `device_log_events` query away from a real answer instead of another round of inference from aggregate counts.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.

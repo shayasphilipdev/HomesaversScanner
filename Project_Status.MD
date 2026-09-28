@@ -575,6 +575,46 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-09-28 (later still) — Server-side device activity log ("scan doctor")
+
+Follow-up to the Limerick report below: the sound/vibration fix was shipped
+on a plausible theory (weak signal over the DIY/Confectionery aisles), but
+there was no way to actually confirm it — the one diagnostic that could
+(`deviceLog.js`'s local activity log) requires physically opening the Sync
+page on the specific device involved, and this was a store with no one on
+site able to do that. Pushed back on correctly: a code fix shipped on an
+unconfirmed theory is a guess, not a diagnosis.
+
+**What shipped:** `client/src/lib/deviceLog.js` now best-effort uploads every
+event (`save-ok` / `save-queued-offline` / `save-failed`, plus a new
+`scan-duplicate` from `DeptScan.jsx` that previously left no trace anywhere)
+to `POST /api/device-log`, landing in a new `device_log_events` table
+(`supabase-migration-device-log.sql`). Each upload carries:
+- a stable per-browser `device_id` (new `lib/deviceId.js`, localStorage,
+  random) — this is also the first time ANY device/gun identifier exists
+  anywhere in this system; `task_records` itself still has none.
+- for save events: `store`, `dept`, `task`, `code` — enough to answer
+  "which gun, which department, saved vs queued vs duplicate" as a SQL query
+  against `device_log_events` instead of a phone call asking someone at a
+  till to read a screen.
+
+Coalesced into one request per ~4s of activity (not one per scan), retried
+on the browser's `online` event, never awaited on the actual save path — a
+failed upload costs a diagnostic data point, never a scan, which has
+already been saved/queued by the time this fires. `sentUntil` marker in
+localStorage means a failed attempt naturally retries the same backlog next
+time rather than needing its own retry logic.
+
+**Still open:** the Limerick "why only DIY/Confectionery" question doesn't
+have a confirmed answer yet — the weak-signal theory is the leading
+candidate (consistent with the evidence gathered so far: other stores saved
+both departments in the hundreds the same day; zero server-side insert
+failures chain-wide; Limerick's other 8 departments that day saved
+normally), but it was never verified against that specific device's own
+log, because there wasn't one to check. The next occurrence — at Limerick or
+anywhere — is now a `device_log_events` query away from a real answer
+instead of another round of guessing.
+
 ### 2026-09-28 (later) — Dept Scan: a queued-offline save felt identical to a real one
 
 **The report.** HS Limerick: DIY and Confectionery scans "not saving" while
