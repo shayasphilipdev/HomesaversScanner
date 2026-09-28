@@ -61,6 +61,21 @@ const KNOWN_STICKER_CODES = new Set(['80575540', '80025750'])
 // this shape. Never resolves to a product and is never worth saving as one.
 const isUrlCode = (s) => /^https?:\/\//i.test(s)
 
+// No digit anywhere -- every real barcode/ean/reduced-sticker code this
+// business uses is at least partly numeric (see REDUCED_PREFIX and the
+// length audit in Project_Status.MD), so letters-only text is a garbled
+// read, not a barcode. 73 of the "Inactive Products" backlog were exactly
+// this shape (e.g. "MAENCHNA", "PLANBSUS", "CHARCOAL").
+const hasNoDigit = (s) => !/[0-9]/.test(s)
+
+// Same on-screen treatment (red banner, distinct tone, nothing saved) for
+// every reason a scan is rejected outright -- only the explanation changes.
+const invalidReasonText = (reason, barcode) => {
+  if (reason === 'url')      return `${barcode} is a website link — scan the product's own barcode instead`
+  if (reason === 'no-digit') return `${barcode} isn't a barcode — scan the product's own barcode instead`
+  return `${barcode} is a sticker code — scan the product's own barcode instead`
+}
+
 // "RB1" + the product's real code is a reduced/clearance sticker printed
 // separately from the normal shelf barcode -- e.g. RB101-09-188-00 for the
 // product whose real code is 01-09-188-00 (the same 2-2-3-2 dash-grouped
@@ -300,15 +315,15 @@ export default function DeptScan() {
     const scanned = String(raw || '').trim()
     if (scanned.length < 4) return
 
-    // Checked before the duplicate guards, deliberately: a sticker code or a
-    // scanned QR/URL should still say "not a real barcode" every time it
-    // recurs, not "duplicate" from the second scan on. Returns before
-    // touching lastCodeRef/seenRef/createTaskRecord entirely -- there is no
-    // product behind either, so nothing is saved and neither occupies the
-    // session's duplicate-detection state.
-    if (isUrlCode(scanned) || KNOWN_STICKER_CODES.has(scanned)) {
+    // Checked before the duplicate guards, deliberately: a sticker code, a
+    // scanned QR/URL, or letters-only garbage should still say "not a real
+    // barcode" every time it recurs, not "duplicate" from the second scan
+    // on. Returns before touching lastCodeRef/seenRef/createTaskRecord
+    // entirely -- there is no product behind any of these, so nothing is
+    // saved and none of them occupy the session's duplicate-detection state.
+    if (isUrlCode(scanned) || KNOWN_STICKER_CODES.has(scanned) || hasNoDigit(scanned)) {
       const now = Date.now()
-      const reason = isUrlCode(scanned) ? 'url' : 'sticker'
+      const reason = isUrlCode(scanned) ? 'url' : KNOWN_STICKER_CODES.has(scanned) ? 'sticker' : 'no-digit'
       soundInvalid()
       setRows(prev => [{ key: `bad-${now}`, barcode: scanned, status: 'invalid', reason }, ...prev].slice(0, MAX_ROWS))
       setCode('')
@@ -622,9 +637,7 @@ export default function DeptScan() {
           <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--red)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             ⚠ Not a real barcode
             <span className="note" style={{ fontSize: 12, fontWeight: 400, marginLeft: 8 }}>
-              {latest.reason === 'url'
-                ? `${latest.barcode} is a website link — scan the product's own barcode instead`
-                : `${latest.barcode} is a sticker code — scan the product's own barcode instead`}
+              {invalidReasonText(latest.reason, latest.barcode)}
             </span>
           </span>
         ) : latest.status === 'dup' ? (
@@ -770,6 +783,8 @@ export default function DeptScan() {
                     <td colSpan={7} style={{ ...td, color: 'var(--red)', fontWeight: 700 }}>
                       {r.reason === 'url'
                         ? "Not a real barcode — that's a website link, scan the product's own barcode"
+                        : r.reason === 'no-digit'
+                        ? "Not a real barcode — no digits in it, scan the product's own barcode"
                         : "Not a real barcode — scan the product's own barcode instead"}
                     </td>
                     <td style={{ ...td, fontFamily: 'monospace' }}>{r.barcode}</td>
