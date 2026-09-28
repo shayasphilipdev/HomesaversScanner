@@ -44,6 +44,18 @@ const DUP_WINDOW_MS = 3000   // a repeat of the same barcode inside this is a do
 const LOOKUP_TIMEOUT_MS = 10000  // shop wifi can connect and then never answer
 const MAX_ROWS      = 50     // on-screen history; the full list lives in Reports
 
+// Generic sticker codes physically printed on many products' price/shelf
+// stickers -- not that product's actual barcode. Confirmed by the business
+// (2026-09-28) after they turned up as the two most-scanned "Inactive
+// Products" entries chain-wide (80575540: 101 scans across 29 stores;
+// 80025750: 15 scans across 13 stores) -- consistent enough across that many
+// stores to rule out a bad/garbled read, and neither will ever resolve
+// against alt_barcodes/prices because there is no real product behind either
+// code. Caught here rather than left to save as another unresolvable
+// "Inactive Products" record: the operator gets told immediately, on the
+// scan that's actually wrong, instead of it surfacing days later in a report.
+const KNOWN_STICKER_CODES = new Set(['80575540', '80025750'])
+
 // WebAudio rather than audio files: no asset to load on a slow shop
 // connection, and the tones can be told apart without looking at the screen.
 let audioCtx = null
@@ -93,6 +105,12 @@ const soundFailed = () => {
   setTimeout(() => tone(180, 160, 'sawtooth'), 130)
   try { navigator.vibrate?.([100, 60, 100, 60, 100]) } catch {}
 }
+// A known sticker code, not a product barcode -- distinct from every other
+// tone so it can't be mistaken for a normal save (soundSaved), a network
+// problem (soundQueued/soundFailed) or a re-scan (soundDup). One long, flat
+// buzz, deliberately not urgent-sounding like Failed: nothing is broken,
+// the operator just needs to find the product's own barcode instead.
+const soundInvalid = () => { tone(220, 260, 'square'); try { navigator.vibrate?.(200) } catch {} }
 
 export default function DeptScan() {
   const { session } = useStore()
@@ -264,6 +282,21 @@ export default function DeptScan() {
   const handleConfirm = useCallback(async (raw) => {
     const scanned = String(raw || '').trim()
     if (scanned.length < 4) return
+
+    // Checked before the duplicate guards, deliberately: a sticker code
+    // scanned twice in a row should still say "not a real barcode" both
+    // times, not "duplicate" the second time. Returns before touching
+    // lastCodeRef/seenRef/createTaskRecord entirely -- there is no product
+    // behind this code, so nothing is saved and it never occupies the
+    // session's duplicate-detection state.
+    if (KNOWN_STICKER_CODES.has(scanned)) {
+      const now = Date.now()
+      soundInvalid()
+      setRows(prev => [{ key: `bad-${now}`, barcode: scanned, status: 'invalid' }, ...prev].slice(0, MAX_ROWS))
+      setCode('')
+      logEvent('scan-invalid-sticker', { task: 'J', code: scanned, store: storeId })
+      return
+    }
 
     const now = Date.now()
     if (scanned === lastCodeRef.current && now - lastAtRef.current < DUP_WINDOW_MS) {
@@ -538,12 +571,24 @@ export default function DeptScan() {
         // Queued gets the same amber treatment as Duplicate -- both mean "this
         // did not just land on the server", and the colour is what carries
         // that when the operator glances up rather than reading the text.
-        background: (latest?.status === 'dup' || latest?.status === 'queued') ? 'var(--amber-soft)' : 'var(--surface-warm)',
+        // Invalid gets red -- stronger than "not on the server yet", because
+        // the action needed is different: find the product's real barcode,
+        // not just rescan the same one later.
+        background: latest?.status === 'invalid' ? 'var(--red-soft)'
+          : (latest?.status === 'dup' || latest?.status === 'queued') ? 'var(--amber-soft)'
+          : 'var(--surface-warm)',
         borderBottom: '1px solid var(--border)',
         whiteSpace: 'nowrap', overflow: 'hidden',
       }}>
         {!latest ? (
           <span className="note" style={{ fontSize: 14 }}>Pull the trigger to scan.</span>
+        ) : latest.status === 'invalid' ? (
+          <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--red)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            ⚠ Not a real barcode
+            <span className="note" style={{ fontSize: 12, fontWeight: 400, marginLeft: 8 }}>
+              {latest.barcode} is a sticker code — scan the product's own barcode instead
+            </span>
+          </span>
         ) : latest.status === 'dup' ? (
           <span style={{ fontSize: 18, fontWeight: 800, color: 'var(--amber)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             Already scanned
@@ -665,6 +710,21 @@ export default function DeptScan() {
                   <tr key={r.key}>
                     <td colSpan={7} style={{ ...td, color: 'var(--red)', fontWeight: 700 }}>
                       Not saved — scan this one again
+                    </td>
+                    <td style={{ ...td, fontFamily: 'monospace' }}>{r.barcode}</td>
+                    <td style={td} />
+                  </tr>
+                )
+              }
+              // A known sticker code, not a product barcode -- never saved,
+              // so it has no r.info and must be caught before the "not in the
+              // database yet" branch below, which would otherwise describe it
+              // as an ordinary unmatched scan and imply HO can fix it later.
+              if (r.status === 'invalid') {
+                return (
+                  <tr key={r.key}>
+                    <td colSpan={7} style={{ ...td, color: 'var(--red)', fontWeight: 700 }}>
+                      Not a real barcode — scan the product's own barcode instead
                     </td>
                     <td style={{ ...td, fontFamily: 'monospace' }}>{r.barcode}</td>
                     <td style={td} />
