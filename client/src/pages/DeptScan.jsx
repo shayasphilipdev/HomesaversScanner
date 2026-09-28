@@ -72,6 +72,26 @@ const soundDup = () => {
   setTimeout(() => tone(240, 160, 'square'), 190)
   try { navigator.vibrate?.([60, 70, 60]) } catch {}
 }
+// Queued on this device only — createTaskRecord() resolves the SAME way for a
+// confirmed server save and for "no signal, saved to the local outbox
+// instead": both are a normal return, neither throws. Playing soundSaved()
+// for both meant an operator scanning through a weak-signal aisle (metal
+// DIY racking is the classic case) felt every scan as a normal save and had
+// no way to notice, by feel alone, that nothing had actually reached HO yet
+// — the only visible sign was the "X waiting" pill, which this page is
+// explicitly designed not to require reading. A different, lower tone +
+// longer buzz here means "this hasn't reached the server" is something the
+// operator can feel, not just something the Sync page can explain afterwards.
+const soundQueued = () => { tone(520, 140, 'triangle'); try { navigator.vibrate?.([30, 40, 90]) } catch {} }
+// Genuine save failure (a real error, not just offline — see isOfflineError).
+// Previously silent: the row turned red but nothing was heard or felt, so an
+// operator not looking at the screen had zero indication the scan was lost.
+// A falling two-tone buzz, deliberately unlike both Saved and Duplicate.
+const soundFailed = () => {
+  tone(300, 120, 'sawtooth')
+  setTimeout(() => tone(180, 160, 'sawtooth'), 130)
+  try { navigator.vibrate?.([100, 60, 100, 60, 100]) } catch {}
+}
 
 export default function DeptScan() {
   const { session } = useStore()
@@ -315,10 +335,13 @@ export default function DeptScan() {
             dept, name, info, price, lookupFailed,
           }
         : r))
-      soundSaved()
+      // Queued and saved both resolve here without throwing -- see soundQueued
+      // above for why they must not sound/feel the same.
+      if (res?.queued) soundQueued(); else soundSaved()
     } catch (e) {
       setRows(prev => prev.map(r => r.key === rowKey ? { ...r, status: 'failed', dept, name, info, price, lookupFailed } : r))
       setError(e?.message || 'Could not save')
+      soundFailed()
       // The duplicate window was armed before the lookup, so without this an
       // immediate re-scan of the SAME barcode is refused as "Already scanned —
       // not saved again" when in fact nothing was saved. That is the opposite
@@ -472,7 +495,10 @@ export default function DeptScan() {
       <div style={{
         display: 'flex', alignItems: 'center', flexShrink: 0,
         height: 52, padding: '0 10px', gap: 8,
-        background: latest?.status === 'dup' ? 'var(--amber-soft)' : 'var(--surface-warm)',
+        // Queued gets the same amber treatment as Duplicate -- both mean "this
+        // did not just land on the server", and the colour is what carries
+        // that when the operator glances up rather than reading the text.
+        background: (latest?.status === 'dup' || latest?.status === 'queued') ? 'var(--amber-soft)' : 'var(--surface-warm)',
         borderBottom: '1px solid var(--border)',
         whiteSpace: 'nowrap', overflow: 'hidden',
       }}>
@@ -494,6 +520,11 @@ export default function DeptScan() {
             <span className="note" style={{ fontSize: 13, marginLeft: 8 }}>
               · {latest.name || latest.barcode}
             </span>
+            {latest.status === 'queued' && (
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', marginLeft: 8 }}>
+                ⚠ Queued — no signal
+              </span>
+            )}
           </span>
         )}
       </div>
