@@ -3845,6 +3845,25 @@ export async function onRequest(context) {
         if (recovered) { alt = recovered; recoveredFrom = scanned }
       }
 
+      // Some products have no real barcode and are keyed on the shelf ticket
+      // by their ean_barcode (the same value prices.ean_barcode uses for
+      // department/price) instead of alt_barcodes.barcode_no. Tried last, so
+      // a genuine barcode_no match always wins. Deliberately does NOT set
+      // recoveredFrom -- unlike the UPC-A fix above, the typed/scanned value
+      // IS correct and belongs in the saved record's barcode_no as-is; this
+      // fallback only exists to attach the product info a barcode_no-only
+      // lookup would otherwise miss entirely (no department, no item name).
+      // Found via a backfill of ~1,400 "No Department" Department Check
+      // records that all resolved cleanly against ean_barcode (2026-09-28).
+      if (!alt) {
+        [alt] = await db.select('alt_barcodes', {
+          select: 'barcode_no,ean_barcode,item_name,supl_id,supplier_code,item_status,barcode_status',
+          ean_barcode: `eq.${scanned}`,
+          order: 'barcode_status.asc,item_status.asc',
+          limit: '1'
+        })
+      }
+
       if (!alt) return json(null)
       let price = null
       if (alt.ean_barcode) {
@@ -3901,6 +3920,23 @@ export async function onRequest(context) {
         const recovered = await selectAlt(scanned + upcaCheckDigit(scanned))
         if (recovered[0]) return json({ ...recovered[0], recovered_from: scanned })
       }
+
+      // Some products have no real barcode and are keyed on the shelf ticket
+      // by their ean_barcode instead of alt_barcodes.barcode_no. Tried last,
+      // so a genuine barcode_no match always wins. No recovered_from here --
+      // the scanned/typed value is correct as-is and belongs in the saved
+      // record's barcode_no unchanged; this only attaches the product info a
+      // barcode_no-only lookup would otherwise miss entirely. Found via a
+      // backfill of ~1,400 "No Department" Department Check records that all
+      // resolved cleanly against ean_barcode (2026-09-28).
+      const byEan = await db.select('alt_barcodes', {
+        select: 'barcode_no,ean_barcode,item_name,supl_id,supplier_code,item_status,barcode_status',
+        ean_barcode: `eq.${scanned}`,
+        order: 'barcode_status.asc,item_status.asc',
+        limit: '1'
+      })
+      if (byEan[0]) return json(byEan[0])
+
       return json(null)
     }
 
