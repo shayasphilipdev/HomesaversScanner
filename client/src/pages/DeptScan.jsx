@@ -6,6 +6,7 @@ import ScannerInput from '../components/forms/ScannerInput.jsx'
 import { useStore } from '../App.jsx'
 import { useCurrentStore } from '../lib/currentStore.jsx'
 import { getAll as outboxGetAll, remove as outboxRemove } from '../lib/outbox.js'
+import { logEvent } from '../lib/deviceLog.js'
 
 // Department Scan — a dedicated, stripped-down loop for Task J, which is over
 // 90% of everything the estate records.
@@ -258,6 +259,12 @@ export default function DeptScan() {
       soundDup()
       setRows(prev => [{ key: `dup-${now}`, barcode: scanned, status: 'dup' }, ...prev].slice(0, MAX_ROWS))
       setCode('')
+      // This branch returns before createTaskRecord ever runs, so it's
+      // otherwise invisible to device_log_events entirely -- a store where
+      // EVERY scan reads as a duplicate of the last one (not the gun's fault,
+      // but its own guard doing exactly what it's for) would look identical
+      // to "nothing was scanned at all" from the server's side.
+      logEvent('scan-duplicate', { task: 'J', code: scanned, store: storeId })
       return
     }
     lastCodeRef.current = scanned

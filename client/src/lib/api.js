@@ -299,9 +299,13 @@ export const getDuplicateKeys = (body) =>
 // "Saved offline" instead of "Saved".
 export const createTaskRecord = async (record) => {
   const { logEvent } = await import('./deviceLog.js')
+  // store + department ride along on every log line -- without these, "which
+  // gun is queuing scans" can only ever be answered for the store a session
+  // is currently scoped to, and "is it just DIY" can't be answered at all.
+  const logCtx = { task: record.task_type, code: record.product_code, store: record.store_id || null, dept: record.details?.item_group || null }
   try {
     const res = await request('/task-records', { method: 'POST', body: record })
-    logEvent('save-ok', { task: record.task_type, code: record.product_code })
+    logEvent('save-ok', logCtx)
     return res
   } catch (e) {
     const { isOfflineError, add: outboxAdd } = await import('./outbox.js')
@@ -309,10 +313,10 @@ export const createTaskRecord = async (record) => {
       const id = await outboxAdd({ kind: 'simple', body: record })
       // The distinction that matters when a store says "I saved it and it's
       // gone": queued locally is NOT the same as reached the server.
-      logEvent('save-queued-offline', { task: record.task_type, code: record.product_code })
+      logEvent('save-queued-offline', logCtx)
       return { queued: true, id }
     }
-    logEvent('save-failed', { task: record.task_type, code: record.product_code, err: e?.message })
+    logEvent('save-failed', { ...logCtx, err: e?.message })
     throw e
   }
 }

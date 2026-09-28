@@ -4909,6 +4909,53 @@ export async function onRequest(context) {
       return json(created ?? inserted, 201)
     }
 
+    // POST /device-log   body: { device_id, events: [{t, type, d}, ...] }
+    //
+    // Server-side mirror of client/src/lib/deviceLog.js — see
+    // supabase-migration-device-log.sql for the why. Best-effort by design:
+    // a store's actual save/queue/duplicate activity has already happened by
+    // the time this fires (deviceLog.js writes to localStorage first, this is
+    // a follow-up upload), so a failure here costs a diagnostic data point,
+    // never a scan. Never gate this behind anything stricter than "logged
+    // in" — the whole point is to see what a device did even when something
+    // else about that session is going wrong.
+    if (path === '/device-log' && method === 'POST') {
+      const body   = await request.json().catch(() => ({}))
+      const events = Array.isArray(body.events) ? body.events.slice(0, 200) : []
+      const deviceId = String(body.device_id || '').trim()
+      if (!deviceId || !events.length) return json({ ok: true, inserted: 0 })
+
+      const scope = await scopedStoreIds(db, session)
+      // Single-store sessions always mean that store; a multi-store/admin
+      // session doesn't name one here (device-log events aren't scoped to a
+      // page that picked a current store), so store_id is left null rather
+      // than guessed.
+      const storeId = scope && scope.length === 1 ? scope[0] : null
+
+      const rows = events
+        .filter(e => e && typeof e.type === 'string' && e.t)
+        .map(e => ({
+          device_id:  deviceId,
+          user_id:    session.user_id || null,
+          store_id:   storeId,
+          event_type: String(e.type).slice(0, 40),
+          detail:     e.d ?? null,
+          client_at:  new Date(Number(e.t) || Date.now()).toISOString(),
+        }))
+      if (!rows.length) return json({ ok: true, inserted: 0 })
+
+      try {
+        await db.insert('device_log_events', rows)
+      } catch (e) {
+        // Diagnostics must never fail louder than the thing they're
+        // diagnosing — swallow and report 0 rather than surface a 500 that
+        // would show up as its own "something's broken" signal.
+        console.warn('[device-log] insert failed:', e?.message || e)
+        return json({ ok: false, inserted: 0 })
+      }
+      return json({ ok: true, inserted: rows.length })
+    }
+
     const recMatch = path.match(/^\/task-records\/([a-f0-9-]+)$/)
     if (recMatch && method === 'PATCH') {
       if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled for this account', 403)
