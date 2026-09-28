@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-28-assign-devicelog'
+const API_REVISION   = '2026-09-28-undo-scan-delete'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -5053,30 +5053,53 @@ export async function onRequest(context) {
       return json(updated[0])
     }
 
-    // PERMANENT delete. Admin only, as of the 7-week retention change.
+    // PERMANENT delete.
     //
-    // Everyone else now gets Archive instead, which is reversible and keeps the
-    // record readable for the rest of its retention window. Deleting was
-    // previously available to store users for their own floor records (J/K/H)
-    // and for anything store-confirmed -- the one action in the app that
-    // destroyed data with no way back, offered to its least-trained users, on
-    // the screens they use most. Archive covers every reason they had to press
-    // it.
+    // Admin may delete ANY record in scope. Everyone else now gets Archive
+    // instead (reversible, keeps the record readable for its retention window)
+    // -- EXCEPT for the one case a store still needs a hard delete: "Undo Last
+    // Scan" on the floor-scan pages, which removes a just-made mis-scan.
     //
-    // Admin may delete ANY task type: the old J/K/H restriction existed to stop
-    // stores destroying query records awaiting an HO answer, which is moot once
-    // only admin can reach it.
+    // The 7-week retention change made this endpoint admin-only and told stores
+    // to Archive instead. That was right for every delete EXCEPT Undo: an
+    // archived mis-scan is a junk record that still counts in the store's totals
+    // and still shows in reports, which is the exact opposite of what Undo
+    // means. So a non-admin may delete a record only when it is (a) in their own
+    // store scope, (b) still 'pending' (untouched by any HO review), and (c) a
+    // floor-scan type J/K/H (Department Check / Price Check / Stock Count) --
+    // precisely the records their own scan pages create and undo. This restores
+    // the pre-retention rule for those types; every query record awaiting an HO
+    // answer, and every completed/reviewed record, still needs an admin.
+    //
+    // The Undo button on DeptScan is the ONLY non-admin UI that reaches here --
+    // TaskRecordList and Reports gate their Delete buttons behind isAdmin -- so
+    // this does not hand stores a new way to bulk-delete anything.
     if (recMatch && method === 'DELETE') {
       if (!userCanAccessHQTasks(session)) return err('HQ tasks disabled for this account', 403)
-      if (!isAdminRole(session)) {
-        return err('Only an administrator can permanently delete a record. Use Archive instead.', 403)
-      }
       const id     = recMatch[1]
       const filter = { id: `eq.${id}` }
       const scope = await scopedStoreIds(db, session)
       if (scope !== null) {
         if (!scope.length) return err('Record not found or not allowed', 404)
         filter['store_id'] = `in.(${scope.join(',')})`
+      }
+      if (!isAdminRole(session)) {
+        // Read the record within the caller's own scope so the allow-list check
+        // never leaks another store's data, and so the store gets an accurate
+        // message rather than a bare 404 for a record it may not delete.
+        const preFilter = { select: 'id,status,task_type', id: `eq.${id}`, limit: '1' }
+        if (filter['store_id']) preFilter['store_id'] = filter['store_id']
+        const [pre] = await db.select('task_records', preFilter)
+        if (!pre) return err('Record not found or not allowed', 404)
+        const isUndoableScan = pre.status === 'pending' && ['J', 'K', 'H'].includes(pre.task_type)
+        if (!isUndoableScan) {
+          return err('Only an administrator can permanently delete a record. Use Archive instead.', 403)
+        }
+        // Belt and braces: the same constraints go into the delete FILTER, so
+        // PostgREST itself refuses anything outside the allow-list even if a
+        // record changed status between the check above and the delete below.
+        filter['status']    = 'eq.pending'
+        filter['task_type'] = 'in.(J,K,H)'
       }
       // Fetch the record first so we can delete any attached photos from storage.
       const [rec] = await db.select('task_records', {

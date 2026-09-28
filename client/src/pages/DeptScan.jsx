@@ -154,6 +154,17 @@ export default function DeptScan() {
   const genRef     = useRef(0)
   const lastCodeRef = useRef('')
   const lastAtRef   = useRef(0)
+  // Every barcode that actually recorded this session (saved OR queued). The
+  // lastCodeRef/lastAtRef guard above only catches an immediate double
+  // trigger-pull of the SAME code within DUP_WINDOW_MS -- it is blind to the
+  // real-world case a store hits walking the aisle: scan A, scan B, come back
+  // and scan A again. That second A is a genuine duplicate the operator wants
+  // flagged, and until now it saved silently. This Set makes "have I already
+  // scanned this product in this check" answerable for the whole session.
+  // Session-scoped on purpose: it resets on reload and does not reach across
+  // devices, matching the deliberate choice to keep Department Check out of
+  // cross-record duplicate detection everywhere else.
+  const seenRef    = useRef(new Set())
 
   const savedCount  = rows.filter(r => ['saved', 'queued', 'synced'].includes(r.status)).length
   // Shown in the header rather than as an eighth table column: the operator
@@ -267,6 +278,21 @@ export default function DeptScan() {
       logEvent('scan-duplicate', { task: 'J', code: scanned, store: storeId })
       return
     }
+
+    // Already recorded earlier in this session -- a genuine repeat, not a
+    // trigger echo, so it is flagged however long ago (or however many scans
+    // ago) the first one was. Same treatment as the echo guard: show the amber
+    // Duplicate row, sound the duplicate tone, and do NOT save it again. The
+    // operator can still deliberately re-record it after an Undo, which clears
+    // the barcode from seenRef.
+    if (seenRef.current.has(scanned)) {
+      soundDup()
+      setRows(prev => [{ key: `dup-${now}`, barcode: scanned, status: 'dup' }, ...prev].slice(0, MAX_ROWS))
+      setCode('')
+      logEvent('scan-duplicate', { task: 'J', code: scanned, store: storeId })
+      return
+    }
+
     lastCodeRef.current = scanned
     lastAtRef.current   = now
 
@@ -342,6 +368,10 @@ export default function DeptScan() {
             dept, name, info, price, lookupFailed,
           }
         : r))
+      // Recorded (saved OR queued): from here a re-scan of this barcode is a
+      // duplicate. A queued scan counts too -- it will reach the server on
+      // reconnect, so scanning it again would double it just the same.
+      seenRef.current.add(scanned)
       // Queued and saved both resolve here without throwing -- see soundQueued
       // above for why they must not sound/feel the same.
       if (res?.queued) soundQueued(); else soundSaved()
@@ -417,6 +447,9 @@ export default function DeptScan() {
       setCode('')
       lastCodeRef.current = ''
       lastAtRef.current   = 0
+      // Forget the undone barcode from the session dedup set, or the intended
+      // re-scan would be refused as a duplicate of the scan just removed.
+      if (target.barcode) seenRef.current.delete(target.barcode)
       setResetSignal(n => n + 1)
       tone(520, 70)
     } catch (e) {
