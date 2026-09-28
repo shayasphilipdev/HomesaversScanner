@@ -884,10 +884,17 @@ function DeptCheckByStore({ summary, loading }) {
                   />
                 ))}
               </div>
+              {/* Every department this store recorded, not just the top two --
+                  a hardcoded cap here hid real data the bar above was already
+                  showing in colour. Wraps onto as many lines as it needs
+                  rather than truncating, so a wider card (or a wider window)
+                  genuinely shows more per line instead of a fixed count. */}
               {parts.length > 0 && (
-                <div style={{ marginTop: 3, fontSize: 11, color: 'var(--text-muted)' }}>
-                  {parts.slice(0, 2).map(([d, n]) => `${d} ${nf(n)}`).join(' \u00b7 ')}
-                  {parts.length > 2 && ` \u00b7 +${parts.length - 2} more`}
+                <div style={{
+                  marginTop: 3, fontSize: 11, color: 'var(--text-muted)',
+                  display: 'flex', flexWrap: 'wrap', columnGap: 10, rowGap: 2
+                }}>
+                  {parts.map(([d, n]) => <span key={d} style={{ whiteSpace: 'nowrap' }}>{d} {nf(n)}</span>)}
                 </div>
               )}
             </div>
