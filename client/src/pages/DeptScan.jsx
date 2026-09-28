@@ -61,15 +61,17 @@ const KNOWN_STICKER_CODES = new Set(['80575540', '80025750'])
 // this shape. Never resolves to a product and is never worth saving as one.
 const isUrlCode = (s) => /^https?:\/\//i.test(s)
 
-// "RB" + the product's real code is a reduced/clearance sticker printed
+// "RB1" + the product's real code is a reduced/clearance sticker printed
 // separately from the normal shelf barcode -- e.g. RB101-09-188-00 for the
-// product whose real code is 101-09-188-00 (the same dash-grouped format
-// prices/alt_barcodes.ean_barcode already uses for shelf-ticket-only items,
-// see the ean_barcode fallback in /scan/lookup). Stripping the prefix before
-// lookup/dedup means a reduced-sticker scan resolves and counts as the same
-// product as its normal barcode would; the untouched original is kept so the
-// record and the operator can both still see it came from a reduced sticker.
-const REDUCED_PREFIX = /^RB(.+)$/i
+// product whose real code is 01-09-188-00 (the same 2-2-3-2 dash-grouped
+// format prices/alt_barcodes.ean_barcode already uses for shelf-ticket-only
+// items, see the ean_barcode fallback in /scan/lookup -- "RB" alone would
+// leave a 3-2-3-2 code that doesn't match that shape at all). Stripping the
+// prefix before lookup/dedup means a reduced-sticker scan resolves and
+// counts as the same product as its normal barcode would; the untouched
+// original is kept so the record and the operator can both still see it
+// came from a reduced sticker.
+const REDUCED_PREFIX = /^RB1(.+)$/i
 
 // WebAudio rather than audio files: no asset to load on a slow shop
 // connection, and the tones can be told apart without looking at the screen.
@@ -314,7 +316,7 @@ export default function DeptScan() {
       return
     }
 
-    // A reduced/clearance sticker: strip "RB" so lookup, dedup and the saved
+    // A reduced/clearance sticker: strip "RB1" so lookup, dedup and the saved
     // barcode_no all resolve against the product's REAL code, exactly as if
     // its normal barcode had been scanned. The untouched original (with the
     // prefix) is kept in `reducedFrom` for the record's details and for the
@@ -411,7 +413,7 @@ export default function DeptScan() {
         // record identifies the right product.
         product_code: scanned,
         ...altFields(info, info?.recovered_from ? info.barcode_no : resolveCode),
-        // reduced_barcode is only present when this scan came off an "RB"
+        // reduced_barcode is only present when this scan came off an "RB1"
         // sticker -- fmtDetails() on the backend renders unknown keys as a
         // titled "Label: value" line automatically, so this needs no report
         // changes to show up as "Reduced Barcode: RB101-09-188-00" wherever a
