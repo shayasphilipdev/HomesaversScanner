@@ -68,11 +68,25 @@ const isUrlCode = (s) => /^https?:\/\//i.test(s)
 // this shape (e.g. "MAENCHNA", "PLANBSUS", "CHARCOAL").
 const hasNoDigit = (s) => !/[0-9]/.test(s)
 
+// Requested as "more than 15 digits", checked against the live master data
+// first because a wrong cap here would start rejecting real products, not
+// just junk. alt_barcodes.barcode_no tops out at 16 digits chain-wide --
+// three of those five 16-digit codes are for currently ACTIVE, sellable
+// products (STACIE DOLL, COLOUR CHANGE MERMAID, B&D HAMMER DRILL 18V; the
+// other two are inactive), and 13 more products are active at 15 digits.
+// Nothing anywhere in the master data is longer than 16. So the cap is 16,
+// not 15 -- 15 would have started rejecting three real, currently-sold
+// products the moment this shipped. Counts digits rather than raw string
+// length so a dash-grouped ean_barcode or an RB1 reduced-sticker code (both
+// short on real digits) is never caught by this.
+const hasTooManyDigits = (s) => (s.match(/[0-9]/g) || []).length > 16
+
 // Same on-screen treatment (red banner, distinct tone, nothing saved) for
 // every reason a scan is rejected outright -- only the explanation changes.
 const invalidReasonText = (reason, barcode) => {
   if (reason === 'url')      return `${barcode} is a website link — scan the product's own barcode instead`
   if (reason === 'no-digit') return `${barcode} isn't a barcode — scan the product's own barcode instead`
+  if (reason === 'too-long') return `${barcode} is too long for a barcode — scan the product's own barcode instead`
   return `${barcode} is a sticker code — scan the product's own barcode instead`
 }
 
@@ -316,14 +330,18 @@ export default function DeptScan() {
     if (scanned.length < 4) return
 
     // Checked before the duplicate guards, deliberately: a sticker code, a
-    // scanned QR/URL, or letters-only garbage should still say "not a real
-    // barcode" every time it recurs, not "duplicate" from the second scan
-    // on. Returns before touching lastCodeRef/seenRef/createTaskRecord
-    // entirely -- there is no product behind any of these, so nothing is
-    // saved and none of them occupy the session's duplicate-detection state.
-    if (isUrlCode(scanned) || KNOWN_STICKER_CODES.has(scanned) || hasNoDigit(scanned)) {
+    // scanned QR/URL, letters-only garbage, or an implausibly long read
+    // should still say "not a real barcode" every time it recurs, not
+    // "duplicate" from the second scan on. Returns before touching
+    // lastCodeRef/seenRef/createTaskRecord entirely -- there is no product
+    // behind any of these, so nothing is saved and none of them occupy the
+    // session's duplicate-detection state.
+    if (isUrlCode(scanned) || KNOWN_STICKER_CODES.has(scanned) || hasNoDigit(scanned) || hasTooManyDigits(scanned)) {
       const now = Date.now()
-      const reason = isUrlCode(scanned) ? 'url' : KNOWN_STICKER_CODES.has(scanned) ? 'sticker' : 'no-digit'
+      const reason = isUrlCode(scanned) ? 'url'
+        : KNOWN_STICKER_CODES.has(scanned) ? 'sticker'
+        : hasNoDigit(scanned) ? 'no-digit'
+        : 'too-long'
       soundInvalid()
       setRows(prev => [{ key: `bad-${now}`, barcode: scanned, status: 'invalid', reason }, ...prev].slice(0, MAX_ROWS))
       setCode('')
@@ -785,6 +803,8 @@ export default function DeptScan() {
                         ? "Not a real barcode — that's a website link, scan the product's own barcode"
                         : r.reason === 'no-digit'
                         ? "Not a real barcode — no digits in it, scan the product's own barcode"
+                        : r.reason === 'too-long'
+                        ? "Not a real barcode — too long, scan the product's own barcode"
                         : "Not a real barcode — scan the product's own barcode instead"}
                     </td>
                     <td style={{ ...td, fontFamily: 'monospace' }}>{r.barcode}</td>
