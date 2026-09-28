@@ -575,7 +575,38 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
-### 2026-09-28 (latest) — "Other department" turned out to be a fresh batch of "No Department"; server-side safety net added
+### 2026-09-28 (latest) — "No department" + "Other" renamed to "Inactive Products" (Dashboard + email)
+
+Follow-up to the entry directly below: after the "Other department"
+investigation confirmed both buckets are legitimate (no missing/hidden
+department, just a report-time visual grouping), the user asked to rename
+both to "Inactive Products" in the Dashboard and the weekly email.
+
+Implemented as a genuine MERGE, not two separate relabels: keeping "No
+department" and "Other" as two swatches with different colours but the
+identical new caption would read as a UI bug, not a design choice. So both
+now share one colour and one legend line in each place:
+
+- `client/src/pages/Dashboard.jsx` (`DeptCheckByStore`): removed
+  `DEPT_NONE`; `colorOf()` now maps both `'(none)'` and anything outside the
+  top-8 ranked departments to the single `DEPT_OTHER` colour (renamed
+  `INACTIVE` locally). Legend collapsed to one "Inactive Products" entry
+  (`inactiveTotal` replaces the old separate `otherTotal`/`noneTotal`). New
+  `deptLabel()` helper also relabels the literal `'(none)'` string to
+  "Inactive Products" in the per-store department-breakdown text and bar
+  tooltips — real department names (the ones just outside the top 8) still
+  show their own name there, only the true "unattributed" ones change.
+- `scripts/dept-check-weekly.py`: same shape — removed `DEPT_NONE`, added a
+  `dept_label()` helper, `dept_palette()` now maps `"(none)"` to
+  `DEPT_OTHER`, and `legend()` sums both into one "Inactive Products" row.
+
+**Display-only change, confirmed again for the record:** this does not
+reclassify any data. The former "Other" bucket still contains real,
+correctly-categorised departments (PET FOOD, STATIONERY, GARDENING, etc. —
+whatever falls outside the chain-wide top 8 that week) sitting under a new
+label; nothing in the underlying `task_records`/`prices` data changed.
+
+### 2026-09-28 — "Other department" turned out to be a fresh batch of "No Department"; server-side safety net added
 
 User reported seeing an "Other" department in the Alt Barcode file and asked
 to backfill/fix it. Investigated directly in Supabase rather than guessing:

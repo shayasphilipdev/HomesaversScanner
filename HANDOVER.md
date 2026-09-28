@@ -217,3 +217,16 @@ So there's no missing/hidden "Other" department anywhere in the data. The grey "
 **Backfilled** 1,499 of the 3,311 affected records right now, using the same safe approach as before (only fills in fields that were empty, never overwrites anything already there). 1,812 remain genuinely unresolvable — barcodes with no match anywhere in the master data at all, same story as the earlier round.
 
 Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## "No department" + "Other" renamed to "Inactive Products"
+
+User asked to rename both labels to "Inactive Products", in both the Dashboard card and the weekly email. Worth noting for the record: this is a display-only rename, not a data fix — checked in the previous entry that neither bucket is actually wrong data (no hidden/missing department anywhere), so nothing about the underlying records changed.
+
+Did this as a real merge rather than two separate find-and-replace label swaps: "No department" and "Other" used to be two different-coloured swatches in the legend. If I'd just changed each swatch's text to "Inactive Products" and left the colours as they were, you'd have ended up with two legend entries reading the same thing in two different colours right next to each other — that looks like a bug, not an intentional design. So both are now one colour and one legend line, in both places:
+
+- **Dashboard** (`DeptCheckByStore` in `Dashboard.jsx`): one merged "Inactive Products" swatch/total. The per-store breakdown text and bar tooltips still show a real department's own name when it's one of the ones folded in for being outside the top 8 (e.g. "STATIONERY 30" still says STATIONERY) — only the literal unattributed `(none)` case now reads "Inactive Products" there too.
+- **Weekly email** (`dept-check-weekly.py`): identical shape — one merged legend row, same per-store breakdown behaviour.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
