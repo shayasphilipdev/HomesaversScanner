@@ -575,6 +575,42 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-09-28 — "No Department" root cause found: scans never matched by ean_barcode; ~3,900 records backfilled
+
+**The bug.** `GET /scan/lookup` and `GET /alt-barcodes/lookup` only ever matched
+a scanned/typed code against `alt_barcodes.barcode_no`. Some products have no
+real retail barcode and are keyed on the shelf ticket by their `ean_barcode`
+instead — the same value `prices.ean_barcode` uses for department/price. That
+value was never tried as a second lookup key, so the scan came back empty:
+no item name, no supplier, no department — even though the exact code
+resolves to a real, active product today. Affects every scan-based task
+form, not just Department Check (Task J), since they all go through one of
+these two endpoints.
+
+**The fix.** Both endpoints now fall back to an `ean_barcode` match when
+`barcode_no` (and the existing trimmed-UPC-A recovery) both miss.
+Deliberately does **not** set `recovered_from` the way the UPC-A fix does —
+the scanned/typed value is correct as entered and stays in the record's
+`barcode_no` unchanged; the fallback only attaches the product info the old
+barcode_no-only lookup was missing.
+
+**The backfill.** Verified against the full live `task_records` table
+(`task_type='J'`, `source<>'test'`, `details->>'item_group'` empty):
+6,824 "No Department" rows total, of which **3,911 resolved cleanly** against
+`ean_barcode` with a real, active product (spot-checked 20+ by hand — all
+legitimate matches, not coincidental). Backfilled `details.item_group`,
+`item_name`, `product_barcode`, `supl_id`, `supplier_code`, `item_status` and
+`barcode_status` for those rows — only where each field was previously
+empty, nothing already populated was touched. The remaining 2,913 are
+genuinely unresolvable: garbled reads, QR codes, URLs, and other scans that
+never matched any master record by either key — those stay as "No
+Department", correctly.
+
+No audit-log entries were written for the backfill itself (`task_record_events`
+has no generic "backfill" event kind, and this was a one-off maintenance
+correction, not a user action) — the `updated_at` bump on each touched row is
+the only trace.
+
 ### 2026-09-25 (later) — Record assignment between back-office users; task-form/dashboard fixes
 
 **1. Record assignment (new feature).** Any back-office role can now hand any

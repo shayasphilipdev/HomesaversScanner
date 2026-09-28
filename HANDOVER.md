@@ -98,3 +98,35 @@ All pushed and merged to `main`.
 All changes committed and pushed to `claude/kind-ride-q56k58`, merged into `main` (fast-forward), pushed — Cloudflare Pages will auto-deploy. The DB migration is already live (applied directly via the Supabase MCP tool, ahead of the code push, so it's safe even mid-deploy).
 
 **Could not verify with a real build** — `npm install` in this sandbox is blocked by network policy (the `xlsx` dependency pulls a tarball from `cdn.sheetjs.com`, which the sandbox's egress proxy denies), so no local `vite build` or dev server run was possible. Everything above was checked by careful manual review against the existing, working patterns in the same files (the messaging feature's assign-a-colleague picker, the existing reverse-status audit-event pattern, etc.) rather than a compiled/running app. Worth a real click-through in the live app once deployed, especially: assigning a record, confirming it appears for the assignee, and the nav badge count.
+
+---
+
+## Dashboard department-list card + product-list export
+
+Removed the hardcoded "show only top 2 departments" cap on the Dashboard's per-store department summary line — it now lists every department the store recorded (the coloured bar segments already showed them all; the text line was the only thing hiding data). File: `client/src/pages/Dashboard.jsx`. Pushed and merged to `main`.
+
+Also generated and sent an Excel file (`dept_check_week39_no_department_and_other.xlsx`) with the full "No Department" (1,961 products) and "Other" (9,696 products) lists for Week 39, since that was ~11,700 rows — far too large for a chat table. Built by pulling the data via the Supabase MCP tool (using `string_agg` to get each bucket back as one big delimited string rather than one JSON object per row, which is what let ~10K-row pulls fit through the tool at all) and assembling it with `openpyxl` (had to `pip install openpyxl` — not preinstalled in this sandbox, unlike what the xlsx skill assumes; PyPI itself was reachable even though the npm-side `cdn.sheetjs.com` isn't).
+
+---
+
+## Root cause found + fixed: "No Department" records, and a ~3,900-record backfill
+
+**The ask:** the user identified that 1,103 of the "No Department" records actually have matching product data in the item master, and asked (a) to fill in the missing details and (b) find out why they weren't populated in the first place.
+
+### Investigation
+Traced the data model: a Department Check record's `barcode_no` is whatever was scanned/typed; `item_name`/`product_barcode` (EAN)/department come from a live lookup at scan time (`GET /scan/lookup` → `alt_barcodes` by `barcode_no`, then `prices` by the resulting `ean_barcode`, for `item_group`). Checked the live Supabase data directly:
+
+- Querying `alt_barcodes.barcode_no = task_records.barcode_no` (the endpoint's actual lookup path) only resolved a small fraction.
+- Querying `prices.ean_barcode = task_records.barcode_no` **directly** — i.e. treating the recorded `barcode_no` as if it were an `ean_barcode` — resolved the overwhelming majority, all to real, active, sensible products (spot-checked 20+, e.g. `14-27-409-00` → "HIPSTER GREY L.BASKET", HOMEWARES).
+
+**Root cause:** some products have no real retail barcode and are keyed on the shelf ticket by their `ean_barcode` (an internal code, often dash-formatted) rather than a normal `alt_barcodes.barcode_no`. `/scan/lookup` and `/alt-barcodes/lookup` never tried that second key — so a scan/entry of that code came back with nothing at all: no name, no supplier, no department. This affects every scan-based task form (they all share these two endpoints), not just Department Check.
+
+My count came to 1,435 resolvable in the Week 39 file specifically (vs. the user's 1,103 — flagged as a discrepancy, not chased down further since the underlying finding and fix were the same either way), and **6,824 "No Department" records across the whole live table**, of which **3,911 resolved**.
+
+### Actions taken (confirmed with the user first via AskUserQuestion: backfill all live records, and fix the lookup)
+1. **Backfilled** `details.item_group`, `item_name`, `product_barcode`, `supl_id`, `supplier_code`, `item_status`, `barcode_status` on all 3,911 resolvable rows — via a single `UPDATE ... FROM` in Supabase, only filling fields that were previously empty (nothing already populated was touched). Verified: "No Department" count dropped from 6,824 to 2,913 (the remainder are genuinely unresolvable junk scans — URLs, QR codes, garbled reads — correctly still "No Department").
+2. **Fixed the lookup** in `functions/api/[[route]].js`: both `/scan/lookup` and `/alt-barcodes/lookup` now fall back to matching `ean_barcode` when `barcode_no` (and the existing trimmed-UPC-A recovery) both miss. Deliberately does **not** set `recovered_from` — unlike the UPC-A case, the scanned/typed value is correct and stays in `barcode_no` unchanged; the fallback only attaches the product info that was previously missed entirely. Pushed and merged to `main`.
+
+### Notes
+- No `task_record_events` audit rows were written for the backfill (it's a one-off maintenance correction, not a user action, and there's no generic "backfill" event kind in that table's CHECK constraint) — each touched row's `updated_at` is the only trace.
+- Full write-up in `Project_Status.MD` §11 (2026-09-28 entry).
