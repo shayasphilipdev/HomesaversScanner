@@ -575,6 +575,46 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-09-28 (later) — Dept Scan: a queued-offline save felt identical to a real one
+
+**The report.** HS Limerick: DIY and Confectionery scans "not saving" while
+every other department that day saved normally on the same store, same
+devices. They could scan on other guns and it saved. Operators felt a
+vibration when scanning the affected items.
+
+**Investigation.** Ruled out a department-specific or store-specific backend
+bug: other stores saved both DIY and Confectionery in the hundreds that same
+day, and `edge_logs` showed zero rejected `task_records` inserts chain-wide.
+Limerick's *other* 8 departments that day all saved fine, hundreds of records
+each — so the app and that store's connection were clearly working most of
+the time.
+
+**Root cause.** `createTaskRecord()` (`client/src/lib/api.js`) resolves the
+same way — no throw — whether the POST reached the server or the browser was
+offline and it only got queued to the local IndexedDB outbox
+(`isOfflineError()` catches `!navigator.onLine` and common
+network-failure messages). `DeptScan.jsx`'s save handler played the exact
+same `soundSaved()` beep + vibration for both outcomes, and the on-screen
+row looked the same too — the only visible difference was the "X waiting"
+pill, which this page is deliberately designed so the operator never has to
+read. A weak-signal pocket over the DIY/Confectionery aisles (large metal
+racking is the classic culprit) would queue scans locally while still
+"feeling" saved, and if the device never reconnects before the tab closes,
+those scans never reach the server at all.
+
+**Fix.** Queued-offline now gets a distinct tone + vibration pattern
+(`soundQueued`), a "⚠ Queued — no signal" flag on the result banner, and the
+banner takes the amber background Duplicate already uses. A genuine save
+failure — previously completely silent, just a red row nobody was
+expected to look at — now gets its own falling two-tone buzz (`soundFailed`).
+
+**Existing diagnostic, pointed out to the user.** `Sync.jsx`'s "Activity on
+this device" panel already logs every `createTaskRecord()` outcome
+(`save-ok` / `save-queued-offline` / `save-failed`) to `localStorage` via
+`deviceLog.js`, specifically for "we did the checks and now they're gone"
+reports — this was the fastest way to confirm the theory on the actual
+device, no code change needed to check it.
+
 ### 2026-09-28 — "No Department" root cause found: scans never matched by ean_barcode; ~3,900 records backfilled
 
 **The bug.** `GET /scan/lookup` and `GET /alt-barcodes/lookup` only ever matched

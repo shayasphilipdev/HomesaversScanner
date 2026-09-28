@@ -130,3 +130,17 @@ My count came to 1,435 resolvable in the Week 39 file specifically (vs. the user
 ### Notes
 - No `task_record_events` audit rows were written for the backfill (it's a one-off maintenance correction, not a user action, and there's no generic "backfill" event kind in that table's CHECK constraint) — each touched row's `updated_at` is the only trace.
 - Full write-up in `Project_Status.MD` §11 (2026-09-28 entry).
+
+---
+
+## Limerick "DIY/Confectionery not saving" — root cause + fix
+
+**The report:** Limerick could scan other departments fine on other guns; DIY and Confectionery specifically weren't saving, and staff felt a vibration when scanning them.
+
+**Ruled out first:** a department- or store-specific backend bug. Checked Supabase directly — other stores saved DIY/Confectionery in the hundreds that same day, and zero `task_records` inserts were rejected server-side chain-wide. Limerick's other 8 departments that day all saved normally, hundreds of records each.
+
+**Root cause:** `createTaskRecord()` in `client/src/lib/api.js` returns successfully (no throw) both when a scan reaches the server AND when the browser is offline and it only gets queued to the local IndexedDB outbox. `DeptScan.jsx` played the identical "saved" beep + vibration for both cases — so a weak-wifi pocket over the DIY/Confectionery aisles (large metal racking is the classic cause) would queue scans locally while still *feeling* like a normal save, with only the easy-to-miss "X waiting" pill as any visible sign. If that device never reconnects before the tab closes, those scans never reach the server at all — matching "vibration happens, but it's not saving."
+
+**Fix shipped:** `client/src/pages/DeptScan.jsx` now plays a distinct tone/vibration for a queued-offline save vs a confirmed one, shows a "⚠ Queued — no signal" flag + amber banner (same treatment as the existing Duplicate alert), and a genuine save failure — previously totally silent — now also gets its own distinct buzz. Pushed and merged to `main`.
+
+**Told the user about an existing diagnostic they may not know about:** `Sync.jsx` already has an "Activity on this device" panel (`deviceLog.js`, `localStorage`-only) that logs every save attempt as `save-ok` / `save-queued-offline` / `save-failed`, built exactly for "we scanned it and it's gone" reports. Recommended checking it on the specific device used for DIY/Confectionery to confirm the theory directly and see if any queued scans are still recoverable.
