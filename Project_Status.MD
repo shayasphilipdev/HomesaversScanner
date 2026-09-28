@@ -575,7 +575,40 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
-### 2026-09-28 (latest) — "No department" + "Other" renamed to "Inactive Products" (Dashboard + email)
+### 2026-09-28 (latest) — Dept Scan warns on known sticker codes (80575540 / 80025750)
+
+Follow-up to a barcode-frequency export requested off the "Inactive
+Products" bucket: 1,279 distinct codes with no match anywhere in
+`alt_barcodes`/`prices`, classified by shape (URL/QR, wrong-length numeric,
+letters-only, valid-length numeric) and exported as a CSV sorted by scan
+frequency. The top two entries stood out — `80575540` (101 scans across 29
+stores) and `80025750` (15 scans across 13 stores) — consistent enough
+across that many stores to rule out a bad read. The business confirmed:
+these are generic sticker codes physically printed on many products'
+price/shelf tickets, not that product's own barcode, so neither will ever
+resolve against master data — there is no single real product to attach
+either code to.
+
+**Shipped in `DeptScan.jsx`:** a `KNOWN_STICKER_CODES` set (currently just
+these two) checked in `handleConfirm` before the duplicate guards and
+before `createTaskRecord` is ever called — nothing is saved for either
+code. The operator gets:
+- a distinct red banner + table row: "Not a real barcode — scan the
+  product's own barcode instead"
+- a tone/vibration pattern unlike Saved/Queued/Duplicate/Failed
+  (`soundInvalid`)
+- a new `device_log_events` event type, `scan-invalid-sticker`, so future
+  frequency of this is a query away instead of only surfacing after the
+  fact in a report
+
+Checked ahead of the dup-window and session-seen guards specifically so a
+repeat scan of either sticker code keeps saying "not a real barcode" rather
+than degrading to "duplicate" on the second scan. Stops these two codes
+from adding any more noise to the Inactive Products bucket going forward;
+does not touch the 1,816 already-live records carrying them (a cosmetic
+label issue with no downstream harm, not worth a backfill).
+
+### 2026-09-28 — "No department" + "Other" renamed to "Inactive Products" (Dashboard + email)
 
 Follow-up to the entry directly below: after the "Other department"
 investigation confirmed both buckets are legitimate (no missing/hidden

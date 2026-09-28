@@ -230,3 +230,17 @@ Did this as a real merge rather than two separate find-and-replace label swaps: 
 - **Weekly email** (`dept-check-weekly.py`): identical shape — one merged legend row, same per-store breakdown behaviour.
 
 Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## Dept Scan now warns on two known sticker codes instead of silently saving them
+
+User asked for the actual list of barcodes with no match anywhere in the master data — pulled all 1,279 distinct ones (1,818 scan records), classified each as a URL/QR code, wrong-length number, letters-only, or valid-length number, and sent it over as a CSV sorted by how often each was scanned.
+
+The top two jumped out on their own: `80575540` scanned 101 times across 29 different stores, `80025750` scanned 15 times across 13 stores. User confirmed what that pattern already suggested — these aren't barcodes at all, they're generic sticker codes printed on the price/shelf ticket of many different products. Scanning the sticker instead of the real barcode was never going to match anything, because there's no single product behind either code.
+
+**Fix:** `DeptScan.jsx` now catches both codes the instant they're scanned, before anything gets saved — red banner, distinct buzz, and a clear message: "Not a real barcode — scan the product's own barcode instead." Logged as a new diagnostic event type too, so if this becomes a pattern with other codes, it's visible going forward rather than something that only turns up months later in another CSV export.
+
+Didn't touch the ~1,816 already-saved records carrying these two codes — purely cosmetic at this point, no reason to spend a backfill on it. The fix is forward-looking: stop it from happening again, starting now.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
