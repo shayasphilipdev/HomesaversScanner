@@ -56,6 +56,21 @@ const MAX_ROWS      = 50     // on-screen history; the full list lives in Report
 // scan that's actually wrong, instead of it surfacing days later in a report.
 const KNOWN_STICKER_CODES = new Set(['80575540', '80025750'])
 
+// A scanned QR code (recycling info, manufacturer pages, etc.) rather than the
+// product's barcode -- 141 of the "Inactive Products" backlog were exactly
+// this shape. Never resolves to a product and is never worth saving as one.
+const isUrlCode = (s) => /^https?:\/\//i.test(s)
+
+// "RB" + the product's real code is a reduced/clearance sticker printed
+// separately from the normal shelf barcode -- e.g. RB101-09-188-00 for the
+// product whose real code is 101-09-188-00 (the same dash-grouped format
+// prices/alt_barcodes.ean_barcode already uses for shelf-ticket-only items,
+// see the ean_barcode fallback in /scan/lookup). Stripping the prefix before
+// lookup/dedup means a reduced-sticker scan resolves and counts as the same
+// product as its normal barcode would; the untouched original is kept so the
+// record and the operator can both still see it came from a reduced sticker.
+const REDUCED_PREFIX = /^RB(.+)$/i
+
 // WebAudio rather than audio files: no asset to load on a slow shop
 // connection, and the tones can be told apart without looking at the screen.
 let audioCtx = null
@@ -283,23 +298,35 @@ export default function DeptScan() {
     const scanned = String(raw || '').trim()
     if (scanned.length < 4) return
 
-    // Checked before the duplicate guards, deliberately: a sticker code
-    // scanned twice in a row should still say "not a real barcode" both
-    // times, not "duplicate" the second time. Returns before touching
-    // lastCodeRef/seenRef/createTaskRecord entirely -- there is no product
-    // behind this code, so nothing is saved and it never occupies the
+    // Checked before the duplicate guards, deliberately: a sticker code or a
+    // scanned QR/URL should still say "not a real barcode" every time it
+    // recurs, not "duplicate" from the second scan on. Returns before
+    // touching lastCodeRef/seenRef/createTaskRecord entirely -- there is no
+    // product behind either, so nothing is saved and neither occupies the
     // session's duplicate-detection state.
-    if (KNOWN_STICKER_CODES.has(scanned)) {
+    if (isUrlCode(scanned) || KNOWN_STICKER_CODES.has(scanned)) {
       const now = Date.now()
+      const reason = isUrlCode(scanned) ? 'url' : 'sticker'
       soundInvalid()
-      setRows(prev => [{ key: `bad-${now}`, barcode: scanned, status: 'invalid' }, ...prev].slice(0, MAX_ROWS))
+      setRows(prev => [{ key: `bad-${now}`, barcode: scanned, status: 'invalid', reason }, ...prev].slice(0, MAX_ROWS))
       setCode('')
-      logEvent('scan-invalid-sticker', { task: 'J', code: scanned, store: storeId })
+      logEvent(`scan-invalid-${reason}`, { task: 'J', code: scanned, store: storeId })
       return
     }
 
+    // A reduced/clearance sticker: strip "RB" so lookup, dedup and the saved
+    // barcode_no all resolve against the product's REAL code, exactly as if
+    // its normal barcode had been scanned. The untouched original (with the
+    // prefix) is kept in `reducedFrom` for the record's details and for the
+    // on-screen tag -- never silently discarded, since that is the one clue
+    // that this particular scan came off a reduced sticker rather than the
+    // shelf barcode.
+    const reducedMatch = REDUCED_PREFIX.exec(scanned)
+    const resolveCode  = reducedMatch ? reducedMatch[1] : scanned
+    const reducedFrom  = reducedMatch ? scanned : null
+
     const now = Date.now()
-    if (scanned === lastCodeRef.current && now - lastAtRef.current < DUP_WINDOW_MS) {
+    if (resolveCode === lastCodeRef.current && now - lastAtRef.current < DUP_WINDOW_MS) {
       soundDup()
       setRows(prev => [{ key: `dup-${now}`, barcode: scanned, status: 'dup' }, ...prev].slice(0, MAX_ROWS))
       setCode('')
@@ -318,7 +345,7 @@ export default function DeptScan() {
     // Duplicate row, sound the duplicate tone, and do NOT save it again. The
     // operator can still deliberately re-record it after an Undo, which clears
     // the barcode from seenRef.
-    if (seenRef.current.has(scanned)) {
+    if (seenRef.current.has(resolveCode)) {
       soundDup()
       setRows(prev => [{ key: `dup-${now}`, barcode: scanned, status: 'dup' }, ...prev].slice(0, MAX_ROWS))
       setCode('')
@@ -326,7 +353,7 @@ export default function DeptScan() {
       return
     }
 
-    lastCodeRef.current = scanned
+    lastCodeRef.current = resolveCode
     lastAtRef.current   = now
 
     const gen    = ++genRef.current
@@ -353,7 +380,7 @@ export default function DeptScan() {
     let info = null, price = null, lookupFailed = false
     try {
       info = await Promise.race([
-        scanLookup(scanned),
+        scanLookup(resolveCode),
         new Promise((_, reject) => setTimeout(() => reject(new Error('lookup timed out')), LOOKUP_TIMEOUT_MS)),
       ])
       price = info?.price || null
@@ -383,8 +410,13 @@ export default function DeptScan() {
         // detectable later. barcode_no gets the real, full barcode so the
         // record identifies the right product.
         product_code: scanned,
-        ...altFields(info, info?.recovered_from ? info.barcode_no : scanned),
-        details:      { item_group: dept },
+        ...altFields(info, info?.recovered_from ? info.barcode_no : resolveCode),
+        // reduced_barcode is only present when this scan came off an "RB"
+        // sticker -- fmtDetails() on the backend renders unknown keys as a
+        // titled "Label: value" line automatically, so this needs no report
+        // changes to show up as "Reduced Barcode: RB101-09-188-00" wherever a
+        // record's details are displayed.
+        details:      { item_group: dept, ...(reducedFrom ? { reduced_barcode: reducedFrom } : {}) },
         // Stamped when the trigger was pulled, not when the row reaches the
         // server. Without this an offline batch lands with every record
         // timestamped at reconnect, which misreports when the shelf was walked.
@@ -398,13 +430,15 @@ export default function DeptScan() {
             // The outbox id, so Undo can pull a not-yet-synced scan back out
             // of the queue instead of reaching past it to an older record.
             queuedId: res?.queued ? res.id : null,
-            dept, name, info, price, lookupFailed,
+            dept, name, info, price, lookupFailed, reducedFrom,
           }
         : r))
       // Recorded (saved OR queued): from here a re-scan of this barcode is a
       // duplicate. A queued scan counts too -- it will reach the server on
       // reconnect, so scanning it again would double it just the same.
-      seenRef.current.add(scanned)
+      // Tracked by resolveCode so a reduced-sticker scan and a normal-barcode
+      // scan of the SAME product are recognised as the same product.
+      seenRef.current.add(resolveCode)
       // Queued and saved both resolve here without throwing -- see soundQueued
       // above for why they must not sound/feel the same.
       if (res?.queued) soundQueued(); else soundSaved()
@@ -586,7 +620,9 @@ export default function DeptScan() {
           <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--red)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             ⚠ Not a real barcode
             <span className="note" style={{ fontSize: 12, fontWeight: 400, marginLeft: 8 }}>
-              {latest.barcode} is a sticker code — scan the product's own barcode instead
+              {latest.reason === 'url'
+                ? `${latest.barcode} is a website link — scan the product's own barcode instead`
+                : `${latest.barcode} is a sticker code — scan the product's own barcode instead`}
             </span>
           </span>
         ) : latest.status === 'dup' ? (
@@ -608,6 +644,11 @@ export default function DeptScan() {
             {latest.status === 'queued' && (
               <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', marginLeft: 8 }}>
                 ⚠ Queued — no signal
+              </span>
+            )}
+            {latest.reducedFrom && (
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--blue)', marginLeft: 8 }}>
+                Reduced barcode ({latest.reducedFrom})
               </span>
             )}
           </span>
@@ -716,15 +757,18 @@ export default function DeptScan() {
                   </tr>
                 )
               }
-              // A known sticker code, not a product barcode -- never saved,
-              // so it has no r.info and must be caught before the "not in the
-              // database yet" branch below, which would otherwise describe it
-              // as an ordinary unmatched scan and imply HO can fix it later.
+              // A known sticker code or a scanned URL, not a product barcode
+              // -- never saved, so it has no r.info and must be caught before
+              // the "not in the database yet" branch below, which would
+              // otherwise describe it as an ordinary unmatched scan and imply
+              // HO can fix it later.
               if (r.status === 'invalid') {
                 return (
                   <tr key={r.key}>
                     <td colSpan={7} style={{ ...td, color: 'var(--red)', fontWeight: 700 }}>
-                      Not a real barcode — scan the product's own barcode instead
+                      {r.reason === 'url'
+                        ? "Not a real barcode — that's a website link, scan the product's own barcode"
+                        : "Not a real barcode — scan the product's own barcode instead"}
                     </td>
                     <td style={{ ...td, fontFamily: 'monospace' }}>{r.barcode}</td>
                     <td style={td} />
@@ -770,12 +814,19 @@ export default function DeptScan() {
                   <td style={td}>{activeYesNo(r.info.barcode_status)}</td>
                   {/* Show the corrected barcode, and flag that it was
                       corrected — a silent fix would hide a device that needs
-                      its check-digit setting turned back on. */}
+                      its check-digit setting turned back on. Same idea for a
+                      reduced sticker: the code actually used for the lookup,
+                      flagged so it's clear it came off a reduced sticker
+                      rather than the shelf barcode. */}
                   <td style={{ ...td, fontFamily: 'monospace' }}>
                     {r.info.recovered_from ? r.info.barcode_no : r.barcode}
                     {r.info.recovered_from && (
                       <span title={`Gun sent ${r.info.recovered_from} — check digit restored`}
                             style={{ marginLeft: 6, color: 'var(--amber)', fontWeight: 700 }}>+chk</span>
+                    )}
+                    {r.reducedFrom && (
+                      <span title={`Scanned as ${r.reducedFrom} — a reduced/clearance sticker`}
+                            style={{ marginLeft: 6, color: 'var(--blue)', fontWeight: 700 }}>+RB</span>
                     )}
                   </td>
                   <td style={td} title={supplierOf(r.info)}>{supplierOf(r.info) || '—'}</td>
