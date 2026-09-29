@@ -2628,9 +2628,36 @@ export async function onRequest(context) {
       const stats = await rpcRes.json()
       const settings = await db.select('app_settings', {
         select: 'key,value',
-        key: 'in.(capacity_db_limit_bytes,capacity_storage_limit_bytes)'
+        key: 'in.(capacity_db_limit_bytes,capacity_storage_limit_bytes,capacity_d1_limit_bytes)'
       })
       const byKey = Object.fromEntries(settings.map(r => [r.key, Number(r.value) || 0]))
+
+      // D1 (the Department Check archive) is a second database this app
+      // depends on, and it has its own, separate 5 GB free-tier ceiling that
+      // Supabase's numbers say nothing about. A D1 binding only grants query
+      // access, not its own size -- reading usage back means asking the
+      // Cloudflare API for this specific database by id, same credentials
+      // already used for the Cloudflare-requests chart below. Best-effort:
+      // a missing token/id or an API hiccup drops this one field, never the
+      // Supabase numbers the rest of this endpoint exists to serve.
+      let d1 = null
+      if (env.CLOUDFLARE_API_TOKEN && env.CLOUDFLARE_ACCOUNT_ID && env.D1_ARCHIVE_DATABASE_ID) {
+        try {
+          const d1Res = await fetch(
+            `https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/d1/database/${env.D1_ARCHIVE_DATABASE_ID}`,
+            { headers: { 'Authorization': `Bearer ${env.CLOUDFLARE_API_TOKEN}` } }
+          )
+          const d1Json = await d1Res.json().catch(() => null)
+          if (d1Res.ok && d1Json?.success && d1Json.result) {
+            d1 = {
+              used_bytes:  Number(d1Json.result.file_size) || 0,
+              limit_bytes: byKey.capacity_d1_limit_bytes || 5368709120,
+              num_tables:  Number(d1Json.result.num_tables) || 0
+            }
+          }
+        } catch { /* best-effort -- see comment above */ }
+      }
+
       return json({
         db: {
           used_bytes:  Number(stats.db_size_bytes) || 0,
@@ -2641,6 +2668,7 @@ export async function onRequest(context) {
           limit_bytes:   byKey.capacity_storage_limit_bytes || 1073741824,
           object_count:  Number(stats.storage_object_count) || 0
         },
+        d1,
         computed_at: stats.computed_at
       })
     }
