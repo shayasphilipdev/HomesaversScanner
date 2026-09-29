@@ -2638,10 +2638,15 @@ export async function onRequest(context) {
       // access, not its own size -- reading usage back means asking the
       // Cloudflare API for this specific database by id, same credentials
       // already used for the Cloudflare-requests chart below. Best-effort:
-      // a missing token/id or an API hiccup drops this one field, never the
-      // Supabase numbers the rest of this endpoint exists to serve.
-      let d1 = null
-      if (env.CLOUDFLARE_API_TOKEN && env.CLOUDFLARE_ACCOUNT_ID && env.D1_ARCHIVE_DATABASE_ID) {
+      // a missing var or an API error drops only this field, never the
+      // Supabase numbers the rest of this endpoint exists to serve -- but
+      // WHY it dropped is reported back rather than swallowed, because
+      // "not configured" and "token lacks D1 permission" need two different
+      // fixes and the Settings page has no other way to tell them apart.
+      let d1 = null, d1Error = null
+      if (!env.CLOUDFLARE_API_TOKEN || !env.CLOUDFLARE_ACCOUNT_ID || !env.D1_ARCHIVE_DATABASE_ID) {
+        d1Error = 'CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID / D1_ARCHIVE_DATABASE_ID not configured'
+      } else {
         try {
           const d1Res = await fetch(
             `https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/d1/database/${env.D1_ARCHIVE_DATABASE_ID}`,
@@ -2654,8 +2659,20 @@ export async function onRequest(context) {
               limit_bytes: byKey.capacity_d1_limit_bytes || 5368709120,
               num_tables:  Number(d1Json.result.num_tables) || 0
             }
+          } else {
+            // Cloudflare's error responses carry a code+message per entry
+            // (e.g. 10000 "Authentication error" when the token lacks scope,
+            // 7003 when the account/database id itself is wrong) -- surface
+            // it verbatim rather than a generic "failed", since the wording
+            // is the difference between "fix the token" and "fix the id".
+            const detail = d1Json?.errors?.[0]
+              ? `${d1Json.errors[0].code}: ${d1Json.errors[0].message}`
+              : `HTTP ${d1Res.status}`
+            d1Error = `Cloudflare API rejected the request (${detail})`
           }
-        } catch { /* best-effort -- see comment above */ }
+        } catch (e) {
+          d1Error = `Network error calling Cloudflare API: ${e?.message || e}`
+        }
       }
 
       return json({
@@ -2669,6 +2686,7 @@ export async function onRequest(context) {
           object_count:  Number(stats.storage_object_count) || 0
         },
         d1,
+        d1_error: d1Error,
         computed_at: stats.computed_at
       })
     }

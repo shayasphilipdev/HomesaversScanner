@@ -384,8 +384,8 @@ export default function AdminSettings() {
                 limit={capacity.d1.limit_bytes}
               />
             ) : (
-              <p className="note" style={{ fontSize: 12 }}>
-                D1 archive usage unavailable — needs CLOUDFLARE_API_TOKEN with D1 read access and D1_ARCHIVE_DATABASE_ID configured.
+              <p className="note" style={{ fontSize: 12, color: '#D14B3D' }}>
+                D1 archive usage unavailable{capacity.d1_error ? ` — ${capacity.d1_error}` : ''}.
               </p>
             )}
             <Meter
