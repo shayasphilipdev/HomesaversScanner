@@ -575,7 +575,51 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
-### 2026-09-28 (latest) — Fourth rejection class: implausibly long scans — cap corrected from 15 to 16 after checking live data
+### 2026-09-29 — D1 archive capacity meter added below the Supabase database bar
+
+The Department Check archive (Cloudflare D1, `homesavers-archive`,
+`database_id: 6c728765-d614-4282-a648-4b3fc3bf78fe`, bound as `env.ARCHIVE`)
+has always had its own free-tier ceiling (5 GB/database) that Admin →
+Settings never surfaced — the existing Capacity card only ever queried
+Supabase's own RPC.
+
+**Root fact that shapes the implementation:** a D1 binding gives the
+Worker query access (`.prepare()`/`.batch()`/`.exec()`) only — it has no
+method that reports its own id or size. Reading usage back means calling
+Cloudflare's own management API (`GET /accounts/{account}/d1/database/{id}`,
+which returns `file_size` in bytes and `num_tables` — confirmed against
+Cloudflare's current API docs, not assumed) for this specific database by
+id, using the same `CLOUDFLARE_API_TOKEN` already configured for the
+Cloudflare-requests chart on the same page. The id itself is duplicated
+into a new `D1_ARCHIVE_DATABASE_ID` var in `wrangler.toml` (same UUID as
+the `[[d1_databases]]` binding — not a secret, already public in that same
+file) since there's no way to read it off the binding at runtime.
+
+**Shipped:**
+- `GET /admin/capacity` now also returns a `d1: { used_bytes, limit_bytes,
+  num_tables }` block, fetched best-effort — a missing token/id or an API
+  error drops only this field (`d1: null`), never breaks the Supabase
+  numbers the endpoint already serves.
+- New `capacity_d1_limit_bytes` app_setting (Capacity section, MB input
+  like the two existing ones), default 5 GB — Cloudflare D1's free-tier
+  per-database cap, verified via web search since guessing this number
+  wrong would misreport the meter's percentage.
+- Settings page: card renamed "Supabase capacity" → "Database capacity"
+  (it now covers two systems, not one), its two meters renamed "Supabase
+  database"/"Supabase storage" for clarity, and the new "D1 archive
+  (Department Check)" meter placed directly below the Supabase database
+  bar — exactly where asked. Shows an explicit "D1 archive usage
+  unavailable" note rather than a misleading 0% when the token/id aren't
+  configured or the token lacks D1 read scope.
+
+**Not verified live:** whether the existing `CLOUDFLARE_API_TOKEN` secret
+actually carries D1 read permission — that scope may not have been granted
+when the token was first created for the Analytics GraphQL API, which is a
+different permission. If the Settings page shows "D1 archive usage
+unavailable" after this deploys, the fix is adding **Account → D1 → Read**
+to that token's permissions in the Cloudflare dashboard, not code.
+
+### 2026-09-28 — Fourth rejection class: implausibly long scans — cap corrected from 15 to 16 after checking live data
 
 Asked for as "block anything over 15 digits" (the business's estimate of a
 max outer-box barcode length). Checked the actual master data before

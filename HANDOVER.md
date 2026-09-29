@@ -290,3 +290,15 @@ You asked to block anything over 15 digits (your estimate of a max outer-box bar
 Turned out 15 would have broken real scanning: three products you're currently selling right now use 16-digit barcodes — STACIE DOLL, COLOUR CHANGE MERMAID, and B&D HAMMER DRILL 18V. Nothing in your whole product file goes past 16, though. So the cap is set at 16 instead of 15 — catches the same junk (garbled 20+ digit reads), same message as the other blocks, but doesn't touch any real product you actually stock.
 
 Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## D1 archive size now shows under the Supabase database bar in Settings
+
+The Department Check archive (a separate Cloudflare database, D1, that older records move into) has its own storage limit that Settings never showed — only the Supabase numbers were ever on that page.
+
+Added a new meter right under the Supabase database bar, showing how much of D1's space is used and how much is left, same style as the existing bars. Renamed the card "Database capacity" since it's no longer just Supabase.
+
+**One thing to check after this deploys:** getting D1's size requires the site's existing Cloudflare API key to have "D1 read" permission, which it might not have been given originally (it was set up for a different purpose — daily request counts). If the new D1 bar shows "unavailable" instead of a number, that's the fix needed — in the Cloudflare dashboard, edit that API token and add D1 read access. Nothing else on the page is affected either way; the Supabase bars keep working regardless.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
