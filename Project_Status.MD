@@ -575,6 +575,33 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-09-30 — Department breakdown bars added to the store Dashboard
+
+Requested: show the same "Department Check records by department" bars on a
+store login's own Dashboard as the back-office one, minus the store name
+(there's only one), positioned before Recent activity.
+
+**Backend gap found first:** `GET /reports/dept-check-week` was gated
+`isBackOffice(callerSession)` only — a store session got a flat 403. Relaxed
+to any authenticated session (`!callerSession` instead), which is safe
+without further changes: `scopedStoreIds()` inside the same handler already
+restricts a non-admin/non-all_stores session to its own `store_ids` — the
+identical mechanism every other store-scoped endpoint in this API already
+relies on. A store login now gets back exactly one row (its own store);
+back-office callers and the Monday email's secret-authed chain-wide call are
+unaffected.
+
+**Frontend:** `Dashboard.jsx`'s `getDeptCheckWeek` fetch was gated `if
+(isBO)` — removed the gate so it fires for both roles (still one shared
+`deptSummary`/`deptLoading` state). New `MyDeptBreakdown` component (right
+after `DeptCheckByStore`, sharing its `DEPT_HUES_LIGHT/DARK`/`DEPT_OTHER`
+palette constants and the same "Inactive Products" merge logic) renders
+`summary.stores[0]` — exactly one row, so no store-name label and no
+"busiest store" bar-length comparison (that comparison only means something
+across multiple stores); the bar is always full width, showing the
+department split within that store's own records. Rendered
+`{!isBO && <MyDeptBreakdown .../>}` directly above `RecentList`, as asked.
+
 ### 2026-09-30 — Charleville duplicate-scan report: confirmed real, root-caused, fixed
 
 Charleville reported: scan product 1, product 2, product 3, then re-scan

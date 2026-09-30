@@ -336,3 +336,13 @@ Checked properly instead of assuming the earlier fix (from two days ago) already
 **One thing this does NOT cover, on purpose, worth knowing about:** this "have I seen this before" memory only exists on one device, for one continuous session. If the page reloads (or someone switches to a second scanning gun at the same store), that memory resets — there's no way for one gun to know what another gun scanned, or for the app to remember past a reload. That's true today and true after this fix. If duplicates keep happening because of *that* specific pattern rather than the timing issue just fixed, it would need a bigger change (having the server itself check for very recent duplicates, rather than relying on the device to remember) — let me know if that's worth doing.
 
 Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## Store Dashboard now shows its own department breakdown bars
+
+Added the same "Department Check records by department" bars store staff's own Dashboard now shows too — same colours and legend as the back-office one, just without a store name label (since it's only ever their one store) and sitting right above Recent activity, as asked.
+
+Found one thing that needed fixing along the way: the data behind this was previously locked to back-office logins only at the server level — a store login asking for it got refused outright. Opened that up; a store login now only ever gets back its own store's numbers, the same protection every other part of the app already relies on, so nothing about who can see what changed except that store staff can now see their own department split.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
