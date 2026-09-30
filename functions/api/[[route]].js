@@ -2682,9 +2682,53 @@ export async function onRequest(context) {
       const stats = await rpcRes.json()
       const settings = await db.select('app_settings', {
         select: 'key,value',
-        key: 'in.(capacity_db_limit_bytes,capacity_storage_limit_bytes)'
+        key: 'in.(capacity_db_limit_bytes,capacity_storage_limit_bytes,capacity_d1_limit_bytes)'
       })
       const byKey = Object.fromEntries(settings.map(r => [r.key, Number(r.value) || 0]))
+
+      // D1 (the Department Check archive) is a second database this app
+      // depends on, and it has its own, separate 5 GB free-tier ceiling that
+      // Supabase's numbers say nothing about. A D1 binding only grants query
+      // access, not its own size -- reading usage back means asking the
+      // Cloudflare API for this specific database by id, same credentials
+      // already used for the Cloudflare-requests chart below. Best-effort:
+      // a missing var or an API error drops only this field, never the
+      // Supabase numbers the rest of this endpoint exists to serve -- but
+      // WHY it dropped is reported back rather than swallowed, because
+      // "not configured" and "token lacks D1 permission" need two different
+      // fixes and the Settings page has no other way to tell them apart.
+      let d1 = null, d1Error = null
+      if (!env.CLOUDFLARE_API_TOKEN || !env.CLOUDFLARE_ACCOUNT_ID || !env.D1_ARCHIVE_DATABASE_ID) {
+        d1Error = 'CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID / D1_ARCHIVE_DATABASE_ID not configured'
+      } else {
+        try {
+          const d1Res = await fetch(
+            `https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/d1/database/${env.D1_ARCHIVE_DATABASE_ID}`,
+            { headers: { 'Authorization': `Bearer ${env.CLOUDFLARE_API_TOKEN}` } }
+          )
+          const d1Json = await d1Res.json().catch(() => null)
+          if (d1Res.ok && d1Json?.success && d1Json.result) {
+            d1 = {
+              used_bytes:  Number(d1Json.result.file_size) || 0,
+              limit_bytes: byKey.capacity_d1_limit_bytes || 5368709120,
+              num_tables:  Number(d1Json.result.num_tables) || 0
+            }
+          } else {
+            // Cloudflare's error responses carry a code+message per entry
+            // (e.g. 10000 "Authentication error" when the token lacks scope,
+            // 7003 when the account/database id itself is wrong) -- surface
+            // it verbatim rather than a generic "failed", since the wording
+            // is the difference between "fix the token" and "fix the id".
+            const detail = d1Json?.errors?.[0]
+              ? `${d1Json.errors[0].code}: ${d1Json.errors[0].message}`
+              : `HTTP ${d1Res.status}`
+            d1Error = `Cloudflare API rejected the request (${detail})`
+          }
+        } catch (e) {
+          d1Error = `Network error calling Cloudflare API: ${e?.message || e}`
+        }
+      }
+
       return json({
         db: {
           used_bytes:  Number(stats.db_size_bytes) || 0,
@@ -2695,6 +2739,8 @@ export async function onRequest(context) {
           limit_bytes:   byKey.capacity_storage_limit_bytes || 1073741824,
           object_count:  Number(stats.storage_object_count) || 0
         },
+        d1,
+        d1_error: d1Error,
         computed_at: stats.computed_at
       })
     }
@@ -4847,6 +4893,46 @@ export async function onRequest(context) {
 
       const now = new Date().toISOString()
 
+      // Department Check safety net: the client already resolves item_group
+      // via /scan/lookup before saving (DeptScan.jsx), but that lookup is
+      // bounded to 10s and shop wifi can time out on it independently of
+      // whether the save itself then succeeds -- baking in a null department
+      // permanently even though the product's real department was already
+      // correct and resolvable at that moment. Confirmed via a live audit
+      // (2026-09-28): records with a plain, direct alt_barcodes.barcode_no
+      // match and a valid prices.item_group already in place still arrived
+      // here with item_group null. The server's own Supabase connection
+      // doesn't share that failure mode, so it re-resolves here whenever the
+      // client didn't manage to -- this only runs for the minority of Task J
+      // saves that need it.
+      let details = body.details || {}
+      // Skipped for resolve_barcode saves (Department Scan): the enrichment
+      // block below re-resolves item_group in full via resolveScan(), so running
+      // this net too would repeat the same Supabase lookup. It still covers the
+      // manual TaskJForm, whose own client lookup can time out.
+      if (body.task_type === 'J' && body.resolve_barcode !== true &&
+          (!details.item_group || !String(details.item_group).trim())) {
+        const code = String(body.barcode_no || body.product_code || '').trim()
+        if (code) {
+          const selectAlt = (col) => db.select('alt_barcodes', {
+            select: 'ean_barcode',
+            [col]: `eq.${code}`,
+            order: 'barcode_status.asc,item_status.asc',
+            limit: '1'
+          })
+          let [alt] = await selectAlt('barcode_no')
+          if (!alt) [alt] = await selectAlt('ean_barcode')
+          if (alt?.ean_barcode) {
+            const [p] = await db.select('prices', {
+              select: 'item_group',
+              ean_barcode: `eq.${String(alt.ean_barcode).trim()}`,
+              limit: '1'
+            })
+            if (p?.item_group) details = { ...details, item_group: String(p.item_group).trim() }
+          }
+        }
+      }
+
       // Determine which store this record belongs to.
       // - Admin / all_stores users: take body.store_id verbatim (or null).
       // - Single-store users: snap to their one store.
@@ -4893,7 +4979,11 @@ export async function onRequest(context) {
       let lookup = null
       let enrich = null
       if (body.resolve_barcode === true) {
-        const scanned = String(body.product_code || '').trim()
+        // Resolve (and store as barcode_no) the NORMALIZED code: resolve_code
+        // when the client sent one -- a reduced "RB1" sticker strips its prefix
+        // there while product_code keeps the raw sticker scan -- otherwise the
+        // raw product_code, which is the same value for an ordinary scan.
+        const scanned = String(body.resolve_code || body.product_code || '').trim()
         lookup = scanned ? await resolveScan(db, scanned) : null
         const recovered = lookup?.recovered_from && lookup.barcode_no ? lookup.barcode_no : null
         enrich = {
@@ -4907,11 +4997,10 @@ export async function onRequest(context) {
           item_group:      lookup?.price?.item_group ?? null,
         }
       }
-      // details: when enriching, keep any client-sent keys and set item_group
-      // from the lookup (matching DeptScan's `details: { item_group: dept }`).
-      const baseDetails = (body.details && typeof body.details === 'object' && !Array.isArray(body.details))
-        ? body.details : {}
-      const finalDetails = enrich ? { ...baseDetails, item_group: enrich.item_group } : (body.details || {})
+      // details: on a resolve_barcode save, overlay the looked-up item_group
+      // onto whatever the client sent; otherwise use `details` as computed above
+      // (which already carries the Task J safety-net item_group when needed).
+      const finalDetails = enrich ? { ...details, item_group: enrich.item_group } : details
 
       const inserted = await db.insert('task_records', {
         task_type:           body.task_type,

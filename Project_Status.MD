@@ -575,7 +575,308 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
-### 2026-09-28 (latest) — Deployment of the weekly-email fix hands off to the LOCAL Claude Code session
+### 2026-09-29 — D1 archive capacity meter added below the Supabase database bar
+
+The Department Check archive (Cloudflare D1, `homesavers-archive`,
+`database_id: 6c728765-d614-4282-a648-4b3fc3bf78fe`, bound as `env.ARCHIVE`)
+has always had its own free-tier ceiling (5 GB/database) that Admin →
+Settings never surfaced — the existing Capacity card only ever queried
+Supabase's own RPC.
+
+**Root fact that shapes the implementation:** a D1 binding gives the
+Worker query access (`.prepare()`/`.batch()`/`.exec()`) only — it has no
+method that reports its own id or size. Reading usage back means calling
+Cloudflare's own management API (`GET /accounts/{account}/d1/database/{id}`,
+which returns `file_size` in bytes and `num_tables` — confirmed against
+Cloudflare's current API docs, not assumed) for this specific database by
+id, using the same `CLOUDFLARE_API_TOKEN` already configured for the
+Cloudflare-requests chart on the same page. The id itself is duplicated
+into a new `D1_ARCHIVE_DATABASE_ID` var in `wrangler.toml` (same UUID as
+the `[[d1_databases]]` binding — not a secret, already public in that same
+file) since there's no way to read it off the binding at runtime.
+
+**Shipped:**
+- `GET /admin/capacity` now also returns a `d1: { used_bytes, limit_bytes,
+  num_tables }` block, fetched best-effort — a missing token/id or an API
+  error drops only this field (`d1: null`), never breaks the Supabase
+  numbers the endpoint already serves.
+- New `capacity_d1_limit_bytes` app_setting (Capacity section, MB input
+  like the two existing ones), default 5 GB — Cloudflare D1's free-tier
+  per-database cap, verified via web search since guessing this number
+  wrong would misreport the meter's percentage.
+- Settings page: card renamed "Supabase capacity" → "Database capacity"
+  (it now covers two systems, not one), its two meters renamed "Supabase
+  database"/"Supabase storage" for clarity, and the new "D1 archive
+  (Department Check)" meter placed directly below the Supabase database
+  bar — exactly where asked. Shows an explicit "D1 archive usage
+  unavailable" note rather than a misleading 0% when the token/id aren't
+  configured or the token lacks D1 read scope.
+
+**Not verified live:** whether the existing `CLOUDFLARE_API_TOKEN` secret
+actually carries D1 read permission — that scope may not have been granted
+when the token was first created for the Analytics GraphQL API, which is a
+different permission. If the Settings page shows "D1 archive usage
+unavailable" after this deploys, the fix is adding **Account → D1 → Read**
+to that token's permissions in the Cloudflare dashboard, not code.
+
+### 2026-09-28 — Fourth rejection class: implausibly long scans — cap corrected from 15 to 16 after checking live data
+
+Asked for as "block anything over 15 digits" (the business's estimate of a
+max outer-box barcode length). Checked the actual master data before
+implementing, since a wrong cap here would silently start rejecting real
+products rather than only junk:
+
+```sql
+select length(barcode_no), count(*), count(*) filter (where item_status='Active' and barcode_status='Active')
+from alt_barcodes where barcode_no ~ '^[0-9]+$' and length(barcode_no) >= 15
+group by 1;
+-- 15 digits: 19 rows, 13 currently Active
+-- 16 digits:  5 rows,  3 currently Active (STACIE DOLL, COLOUR CHANGE MERMAID, B&D HAMMER DRILL 18V)
+-- nothing anywhere in alt_barcodes exceeds 16 digits
+```
+
+**15 would have been wrong** — three real, currently-sellable products use
+16-digit barcodes right now. Shipped the cap at 16 instead:
+`hasTooManyDigits()` in `DeptScan.jsx` counts digit CHARACTERS (not raw
+string length, so a dash-grouped `ean_barcode` or an `RB1` reduced-sticker
+code — both short on real digits despite dashes/letters — is never caught
+by it) and rejects anything with more than 16. Same treatment as the other
+three invalid-scan reasons (`url`, `sticker`, `no-digit`): red banner,
+distinct tone, nothing saved, logged as `scan-invalid-too-long`.
+
+### 2026-09-28 — Dept Scan also rejects scans with no digit at all
+
+Third rejection class alongside URLs and known sticker codes: 73 of the
+1,279-code "Inactive Products" audit were letters-only garbled reads
+(`MAENCHNA`, `PLANBSUS`, `CHARCOAL`, ...). Every real code this business
+scans — `barcode_no`, `ean_barcode`, and the `RB1` reduced-sticker
+format — is at least partly numeric, so anything with zero digits can be
+rejected outright with the same confidence as a known sticker code.
+
+`hasNoDigit()` added to `DeptScan.jsx`'s existing invalid-scan check
+(alongside `isUrlCode()` and `KNOWN_STICKER_CODES`) — same red banner,
+distinct tone, nothing saved, logged as `scan-invalid-no-digit`. Pulled the
+banner text into a shared `invalidReasonText()` helper now that there are
+three reasons sharing identical on-screen behaviour, so the message copy
+lives in one place instead of being duplicated across the live banner and
+the history table.
+
+### 2026-09-28 — RB1 prefix correction, and why "scan the full barcode only" isn't safe to enforce
+
+Two quick follow-ups.
+
+**Prefix fix:** the business corrected the reduced-barcode prefix to "RB1"
+(3 chars), not "RB". `REDUCED_PREFIX` in `DeptScan.jsx` now strips `RB1`,
+so `RB101-09-188-00` resolves to `01-09-188-00` — the correct 2-2-3-2
+dash-grouped shape `prices`/`alt_barcodes.ean_barcode` actually use.
+Stripping only "RB" (the earlier version) left a 3-2-3-2 code
+(`101-09-188-00`) that would never have matched anything.
+
+**Asked: can Dept Scan reject anything that isn't a "full" barcode, to stop
+the truncated/partial-scan class of "Inactive Products" records?** Checked
+before building anything, since a wrong guess here would actively block
+real scans. Queried every Task J record that already resolved successfully
+against master data, grouped by the length of its (purely numeric)
+`barcode_no`:
+
+| Length | Live, correctly-matched records |
+|---|---|
+| 6 | 246 |
+| 7 | 2 |
+| 8 | 1,655 |
+| 11 | 22 |
+| 12 | 9,224 |
+| 13 | 212,817 |
+| 14 | 165 |
+
+The 6-digit group turned out to be real, named products (PET FOOD lines
+like "MINI MARBONE W BEEF 150G", "FAVOUR BEEF EARS" — genuine short
+internal SKU-style barcodes for that supplier), and the 11-digit group is
+the already-handled trimmed-UPC-A case. So valid barcode length in this
+business's actual data ranges from 6 to 14 digits — there is no length
+threshold that would catch only partial scans without also rejecting
+hundreds of already-working, correctly-categorised Pet Food scans a day.
+**Concluded this isn't safe to build and left it alone**, per the request
+("leave it if it is not possible") — the existing signal (a scan that
+doesn't resolve against master data lands in Inactive Products) remains
+the only reliable way to spot a truncated read, same as before.
+
+### 2026-09-28 — URLs rejected, "RB" reduced-barcode stickers resolved, and the double/triple-scan root cause confirmed
+
+Three follow-up asks after the sticker-code fix above.
+
+**1. Reject scanned URLs.** Same shape as the sticker-code fix: 141 of the
+1,279-code "Inactive Products" export were QR codes (manufacturer pages,
+recycling info) rather than the product's barcode. `DeptScan.jsx` now
+detects `^https?://` and rejects before `createTaskRecord`, same red-banner
+treatment as a known sticker code, logged as `scan-invalid-url`.
+
+**2. "RB" reduced-barcode stickers.** Confirmed by the business: a code
+like `RB101-09-188-00` is a reduced/clearance sticker printed separately
+from the product's normal barcode — the part after "RB" (`101-09-188-00`)
+is the product's real code, in the same dash-grouped format
+`prices`/`alt_barcodes.ean_barcode` already use for shelf-ticket-only
+items. `DeptScan.jsx` now strips the "RB" prefix before lookup, dedup
+(`lastCodeRef`/`seenRef`), and the saved `barcode_no` — so a reduced
+sticker scan resolves and counts as the same product its normal barcode
+would. The untouched original is kept in `details.reduced_barcode` (the
+backend's existing `fmtDetails()` renders it automatically as "Reduced
+Barcode: RB101-09-188-00" with no report changes needed) and shown
+on-screen as a blue "+RB" tag next to the resolved code.
+
+**3. "Double/triple scanned" — confirmed and already improving.** User
+asked whether some of what's being seen predates "the new department scan."
+Checked live data rather than guessing: grouped `task_records` by
+(`store_id`, `barcode_no`) and looked at repeat scans of the same barcode
+at the same store within a 10-minute window — 12,145 such repeat pairs over
+the live 3-week window, the overwhelming majority (>99%) spaced MORE than
+3 seconds apart (i.e. not a double trigger-pull, which the pre-existing
+`DUP_WINDOW_MS` guard already caught). That gap — walk the aisle, scan A,
+scan B, come back and scan A again — is exactly what the OTHER session's
+`753c78d` commit ("Dept Scan: fix Undo for store staff, and catch
+same-session duplicate scans", deployed ~15:05 UTC today) added
+session-wide duplicate detection for. Bucketing repeats by hour shows the
+effect immediately: 191 (14:00 UTC) → 200 (15:00, deploy lands mid-hour) →
+54 (16:00) → 13 (17:00). **Confirmed: this was a real, pre-existing gap,
+and it has already dropped ~90%+ since today's fix**, with the residual
+likely devices that haven't reloaded to pick up the new bundle yet.
+
+Checked "half scanned" (truncated/partial barcode reads) as a separate
+question, since it sounds similar but isn't the same mechanism: counted
+Task J barcodes that are purely numeric but the wrong length for a real
+barcode (not 8/12/13/14 digits) per hour, before and after the same deploy.
+**This one did NOT drop** — it tracks total scan volume both before and
+after (roughly 0.5–2% of scans throughout), so it is a separate, still-live
+issue — almost certainly a scanning/hardware phenomenon (a gun capturing
+only part of a barcode on a fast pass), not something today's dedup fix
+touches. No device-level breakdown is possible for it retroactively (the
+`device_log_events` "scan doctor" system only started collecting today);
+worth watching there going forward if it keeps recurring at a particular
+store.
+
+### 2026-09-28 — Dept Scan warns on known sticker codes (80575540 / 80025750)
+
+Follow-up to a barcode-frequency export requested off the "Inactive
+Products" bucket: 1,279 distinct codes with no match anywhere in
+`alt_barcodes`/`prices`, classified by shape (URL/QR, wrong-length numeric,
+letters-only, valid-length numeric) and exported as a CSV sorted by scan
+frequency. The top two entries stood out — `80575540` (101 scans across 29
+stores) and `80025750` (15 scans across 13 stores) — consistent enough
+across that many stores to rule out a bad read. The business confirmed:
+these are generic sticker codes physically printed on many products'
+price/shelf tickets, not that product's own barcode, so neither will ever
+resolve against master data — there is no single real product to attach
+either code to.
+
+**Shipped in `DeptScan.jsx`:** a `KNOWN_STICKER_CODES` set (currently just
+these two) checked in `handleConfirm` before the duplicate guards and
+before `createTaskRecord` is ever called — nothing is saved for either
+code. The operator gets:
+- a distinct red banner + table row: "Not a real barcode — scan the
+  product's own barcode instead"
+- a tone/vibration pattern unlike Saved/Queued/Duplicate/Failed
+  (`soundInvalid`)
+- a new `device_log_events` event type, `scan-invalid-sticker`, so future
+  frequency of this is a query away instead of only surfacing after the
+  fact in a report
+
+Checked ahead of the dup-window and session-seen guards specifically so a
+repeat scan of either sticker code keeps saying "not a real barcode" rather
+than degrading to "duplicate" on the second scan. Stops these two codes
+from adding any more noise to the Inactive Products bucket going forward;
+does not touch the 1,816 already-live records carrying them (a cosmetic
+label issue with no downstream harm, not worth a backfill).
+
+### 2026-09-28 — "No department" + "Other" renamed to "Inactive Products" (Dashboard + email)
+
+Follow-up to the entry directly below: after the "Other department"
+investigation confirmed both buckets are legitimate (no missing/hidden
+department, just a report-time visual grouping), the user asked to rename
+both to "Inactive Products" in the Dashboard and the weekly email.
+
+Implemented as a genuine MERGE, not two separate relabels: keeping "No
+department" and "Other" as two swatches with different colours but the
+identical new caption would read as a UI bug, not a design choice. So both
+now share one colour and one legend line in each place:
+
+- `client/src/pages/Dashboard.jsx` (`DeptCheckByStore`): removed
+  `DEPT_NONE`; `colorOf()` now maps both `'(none)'` and anything outside the
+  top-8 ranked departments to the single `DEPT_OTHER` colour (renamed
+  `INACTIVE` locally). Legend collapsed to one "Inactive Products" entry
+  (`inactiveTotal` replaces the old separate `otherTotal`/`noneTotal`). New
+  `deptLabel()` helper also relabels the literal `'(none)'` string to
+  "Inactive Products" in the per-store department-breakdown text and bar
+  tooltips — real department names (the ones just outside the top 8) still
+  show their own name there, only the true "unattributed" ones change.
+- `scripts/dept-check-weekly.py`: same shape — removed `DEPT_NONE`, added a
+  `dept_label()` helper, `dept_palette()` now maps `"(none)"` to
+  `DEPT_OTHER`, and `legend()` sums both into one "Inactive Products" row.
+
+**Display-only change, confirmed again for the record:** this does not
+reclassify any data. The former "Other" bucket still contains real,
+correctly-categorised departments (PET FOOD, STATIONERY, GARDENING, etc. —
+whatever falls outside the chain-wide top 8 that week) sitting under a new
+label; nothing in the underlying `task_records`/`prices` data changed.
+
+### 2026-09-28 — "Other department" turned out to be a fresh batch of "No Department"; server-side safety net added
+
+User reported seeing an "Other" department in the Alt Barcode file and asked
+to backfill/fix it. Investigated directly in Supabase rather than guessing:
+
+- `alt_barcodes` has **no department column at all** — confirmed via schema
+  inspection. Department has only ever come from the separate `prices`
+  (Item Master) table, keyed by `ean_barcode`.
+- `prices.item_group` currently holds **30 distinct real department names**
+  (TOYS, HOMEWARES, GIFTWARES, FOOD, HEALTH & BEAUTY, ... down to GIFT
+  VOUCHERS) — **none of them is literally "Other"**. So there is no hidden
+  "Other" department being dropped or mis-synced anywhere in the pipeline.
+- **Conclusion:** the grey "Other" swatch in the Dashboard card and weekly
+  email is exactly what its own code comment says — a report-time visual
+  fold for departments outside the chain-wide top 8 (`DEPT_OTHER` in both
+  `Dashboard.jsx` and `dept-check-weekly.py`). Every record inside it
+  already has a correct, real, named department; it's just visually grouped
+  rather than bugged. Told the user this plainly rather than "fixing"
+  something that wasn't broken.
+
+**What WAS actually broken, found while checking:** a fresh batch of
+genuine "No Department" (`item_group` null) Task J records, distinct from
+the batch backfilled earlier the same day. 3,311 live records had none;
+1,499 of them resolved cleanly against CURRENT master data with a plain,
+direct `barcode_no` match — no ean-fallback needed, no stale price data
+(the matching `prices` rows were all last updated at 07:01–07:02 that
+morning, hours before the affected scans happened at 07:47–15:31). So this
+wasn't the ean_barcode-matching gap fixed earlier, and it wasn't stale
+data — the master data was already correct and available well before the
+scan.
+
+**Root cause:** `DeptScan.jsx`'s client-side department lookup
+(`scanLookup`, called before `createTaskRecord`) is bounded to a 10s
+timeout (`LOOKUP_TIMEOUT_MS`). A shop-wifi hiccup that delays just that one
+call — independent of whether the record itself then saves successfully —
+permanently bakes `item_group: null` into the record, because the lookup
+result and the save are computed once and never retried. The offline
+outbox has the identical exposure: a queued record's `details.item_group`
+is fixed at scan time and never re-resolved when it syncs later.
+
+**Fix shipped**, `functions/api/[[route]].js` `POST /task-records`: when a
+Task J record arrives with no `item_group`, the server now re-resolves it
+itself (`barcode_no` → `alt_barcodes`, falling back to `ean_barcode`, → 
+`prices.item_group`) before insert — the server's own Supabase connection
+doesn't share shop wifi's timeout failure mode. Applies uniformly to live
+saves and to outbox-replayed records, since both POST through this same
+endpoint. Only runs for the minority of Task J saves that arrive without a
+department already resolved client-side, so it adds no meaningful load to
+the common case.
+
+**Backfilled** 1,499 of the 3,311 live "No Department" Task J records using
+the same join, touching only previously-empty fields (`item_group`,
+`item_name`, `product_barcode`, `supl_id`, `supplier_code`, `item_status`,
+`barcode_status`) — mirrors the conservative approach of the earlier
+backfill. Live count dropped from 3,311 to 1,812; the remainder have no
+match anywhere in current master data (unlisted barcodes / junk scans) and
+are genuinely unresolvable, same as before.
+
+### 2026-09-28 — Deployment of the weekly-email fix hands off to the LOCAL Claude Code session
 
 Follow-up to the entry directly below. This cloud session merged the fix to
 `main` (`846e42a`), but a screenshot the user then sent back still showed

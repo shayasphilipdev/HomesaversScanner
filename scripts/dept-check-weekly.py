@@ -219,9 +219,18 @@ DEPT_COLORS = [
     "#2E6FD4",  # 7
     "#C4457E",  # 8
 ]
-DEPT_OTHER = "#B9A894"   # everything past the top 8
-DEPT_NONE  = "#9C9186"   # unattributed -- a data-quality state, not a category,
-                         # so it deliberately does not consume a categorical hue
+# "Inactive Products" -- the single merged bucket for both records with no
+# department resolved AND departments outside the chain-wide top 8, per the
+# business's own preferred wording. One colour: two differently-coloured
+# swatches captioned the same thing would read as a bug in the legend.
+DEPT_OTHER = "#B9A894"
+
+
+def dept_label(d):
+    """'(none)' is the backend's raw no-department marker -- shown to a reader
+    as "Inactive Products" like every other unattributed/folded record, never
+    as the literal internal string."""
+    return "Inactive Products" if d == "(none)" else d
 
 
 def dept_palette(department_totals):
@@ -231,7 +240,7 @@ def dept_palette(department_totals):
     ranked = [d["department"] for d in (department_totals or [])
               if d["department"] != "(none)"][:8]
     m = {d: DEPT_COLORS[i] for i, d in enumerate(ranked)}
-    m["(none)"] = DEPT_NONE
+    m["(none)"] = DEPT_OTHER
     return m, ranked
 
 
@@ -252,7 +261,7 @@ def stacked_bar(bd, palette, total, width_pct):
             continue                        # or gets dropped; folded into the rest
         col = palette.get(dept, DEPT_OTHER)
         cells.append(
-            f'<td width="{pct:.4f}%" bgcolor="{col}" title="{esc(dept)}: {n:,}" '
+            f'<td width="{pct:.4f}%" bgcolor="{col}" title="{esc(dept_label(dept))}: {n:,}" '
             f'style="width:{pct:.4f}%;background-color:{col};height:14px;'
             f'font-size:0;line-height:0;">&nbsp;</td>')
     if not cells:
@@ -282,7 +291,7 @@ def build_html(last, prev, cfg):
         # All departments, not just the top few -- a store with a long tail of
         # small categories should not have them silently vanish from the report.
         lead = sorted(bd.items(), key=lambda kv: -kv[1])
-        lead_txt = " · ".join(f"{esc(d)} {n:,}" for d, n in lead)
+        lead_txt = " · ".join(f"{esc(dept_label(d))} {n:,}" for d, n in lead)
         return (
             f'<tr>'
             f'<td style="padding:9px 10px 9px 14px;border-top:1px solid {TAN};font-family:{FONT};'
@@ -314,19 +323,16 @@ def build_html(last, prev, cfg):
                 f'color:{ESPRESSO};white-space:nowrap;">'
                 f'<span style="display:inline-block;width:10px;height:10px;border-radius:2px;'
                 f'background-color:{palette[d]};">&nbsp;</span>&nbsp;{esc(d)}</td>')
-        if "(none)" in dept_totals:
+        # "Inactive Products" = no department resolved OR outside the top 8,
+        # merged into one legend line so it isn't two entries with the same
+        # caption in different colours.
+        inactive = sum(v for k, v in dept_totals.items() if k not in ranked)
+        if inactive:
             items.append(
                 f'<td style="padding:3px 10px 3px 0;font-family:{FONT};font-size:11.5px;'
                 f'color:{ESPRESSO};white-space:nowrap;">'
                 f'<span style="display:inline-block;width:10px;height:10px;border-radius:2px;'
-                f'background-color:{DEPT_NONE};">&nbsp;</span>&nbsp;No department</td>')
-        other = sum(v for k, v in dept_totals.items() if k not in ranked and k != "(none)")
-        if other:
-            items.append(
-                f'<td style="padding:3px 10px 3px 0;font-family:{FONT};font-size:11.5px;'
-                f'color:{ESPRESSO};white-space:nowrap;">'
-                f'<span style="display:inline-block;width:10px;height:10px;border-radius:2px;'
-                f'background-color:{DEPT_OTHER};">&nbsp;</span>&nbsp;Other</td>')
+                f'background-color:{DEPT_OTHER};">&nbsp;</span>&nbsp;Inactive Products</td>')
         # Two per row: a single row of 10 legend items would scroll off a phone.
         rows = ""
         for i in range(0, len(items), 2):

@@ -196,3 +196,109 @@ After the merge above, the user sent back a screenshot of the actual email/repor
 3. `cd C:\Homesavers\scripts` then `python dept-check-weekly.py --to <their email>` to test-send to just themselves
 
 **Worth remembering for next time:** this codebase gets worked on from two different Claude Code sessions — this cloud one (can edit/commit/push/merge to `main`, but can't touch anything under `C:\Homesavers\...`, run local Python against real SMTP creds, or reach Task Scheduler) and a local one on the user's own PC at `C:\Scraping\homesavers-scanner` (which can do all of that). Anything that needs to actually *execute* against local paths or real credentials has to be routed to the local session — don't offer to "just deploy it" from here again; explain the split up front instead.
+
+---
+
+## "Other department" wasn't a bug — but checking it surfaced a real one
+
+User said the Alt Barcode file seemed to have an "Other" department too, and asked to backfill/fix it, same as the earlier "No Department" issue. Checked properly instead of assuming:
+
+- `alt_barcodes` has no department column, period — department only ever comes from `prices` (Item Master), by `ean_barcode`.
+- `prices.item_group` has 30 real department names live right now, and "Other" isn't one of them.
+
+So there's no missing/hidden "Other" department anywhere in the data. The grey "Other" you see on the Dashboard card and in the weekly email is the report's own intentional grouping — anything outside the chain-wide top 8 departments folds into that one grey swatch so the legend doesn't need 20+ colours. Every record in it already has its own real, correct department; it's just visually bucketed. Told the user this rather than "fixing" something that wasn't actually broken.
+
+**What checking it turned up instead:** a NEW batch of genuine "No Department" records — different from the ones fixed earlier the same day. 1,499 of 3,311 live records resolved instantly against CURRENT master data with the simplest possible match (direct barcode_no lookup, no ean-fallback trickery needed), and the matching price data had been sitting there correctly since that morning's sync — hours before the affected scans happened. So this wasn't stale data and it wasn't the earlier ean-matching gap. Something else was losing the department.
+
+**Root cause:** `DeptScan.jsx` looks up the department with a 10-second timeout before saving. If that one lookup call is slow (shop wifi), it can time out and return nothing — independently of whether the actual save then goes through fine. The record saves successfully, just with no department baked in permanently, because nothing ever retries the lookup afterward. Same exposure exists for offline-queued scans syncing later.
+
+**Fix:** `POST /task-records` now has a safety net — if a Department Check record comes in with no department, the server looks it up itself (server-to-Supabase never has shop-wifi timeouts) before saving. Covers both live saves and offline scans syncing back later, since both go through this same endpoint. Only kicks in for the records that actually need it, so it costs nothing on the normal path.
+
+**Backfilled** 1,499 of the 3,311 affected records right now, using the same safe approach as before (only fills in fields that were empty, never overwrites anything already there). 1,812 remain genuinely unresolvable — barcodes with no match anywhere in the master data at all, same story as the earlier round.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## "No department" + "Other" renamed to "Inactive Products"
+
+User asked to rename both labels to "Inactive Products", in both the Dashboard card and the weekly email. Worth noting for the record: this is a display-only rename, not a data fix — checked in the previous entry that neither bucket is actually wrong data (no hidden/missing department anywhere), so nothing about the underlying records changed.
+
+Did this as a real merge rather than two separate find-and-replace label swaps: "No department" and "Other" used to be two different-coloured swatches in the legend. If I'd just changed each swatch's text to "Inactive Products" and left the colours as they were, you'd have ended up with two legend entries reading the same thing in two different colours right next to each other — that looks like a bug, not an intentional design. So both are now one colour and one legend line, in both places:
+
+- **Dashboard** (`DeptCheckByStore` in `Dashboard.jsx`): one merged "Inactive Products" swatch/total. The per-store breakdown text and bar tooltips still show a real department's own name when it's one of the ones folded in for being outside the top 8 (e.g. "STATIONERY 30" still says STATIONERY) — only the literal unattributed `(none)` case now reads "Inactive Products" there too.
+- **Weekly email** (`dept-check-weekly.py`): identical shape — one merged legend row, same per-store breakdown behaviour.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## Dept Scan now warns on two known sticker codes instead of silently saving them
+
+User asked for the actual list of barcodes with no match anywhere in the master data — pulled all 1,279 distinct ones (1,818 scan records), classified each as a URL/QR code, wrong-length number, letters-only, or valid-length number, and sent it over as a CSV sorted by how often each was scanned.
+
+The top two jumped out on their own: `80575540` scanned 101 times across 29 different stores, `80025750` scanned 15 times across 13 stores. User confirmed what that pattern already suggested — these aren't barcodes at all, they're generic sticker codes printed on the price/shelf ticket of many different products. Scanning the sticker instead of the real barcode was never going to match anything, because there's no single product behind either code.
+
+**Fix:** `DeptScan.jsx` now catches both codes the instant they're scanned, before anything gets saved — red banner, distinct buzz, and a clear message: "Not a real barcode — scan the product's own barcode instead." Logged as a new diagnostic event type too, so if this becomes a pattern with other codes, it's visible going forward rather than something that only turns up months later in another CSV export.
+
+Didn't touch the ~1,816 already-saved records carrying these two codes — purely cosmetic at this point, no reason to spend a backfill on it. The fix is forward-looking: stop it from happening again, starting now.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## URLs, "RB" reduced-barcode stickers, and the double/triple-scan question answered with data
+
+Three more asks in one go.
+
+**Don't scan URLs.** Same treatment as the sticker codes — 141 of the earlier CSV export were QR codes (recycling info, manufacturer websites), not barcodes. Now rejected the same way: red banner, "that's a website link, scan the product's own barcode," nothing saved.
+
+**"RB" codes are reduced/clearance stickers.** Confirmed: `RB101-09-188-00` means the real product code is `101-09-188-00` — the "RB" is just marking it as a reduced-price sticker. The app now strips "RB" automatically, looks the product up and saves the record using the real code (so it matches properly and doesn't create a new "unmatched barcode" problem), and keeps the full original code (with "RB") visible — both on the Reports side (shows as "Reduced Barcode: RB101-09-188-00" automatically) and right there on the scan screen as a small blue tag.
+
+**The double/triple-scan question — checked the actual data instead of guessing.** You asked whether this predates the new department scan page. It does, and here's the proof: looked at every case of the same barcode scanned again at the same store within 10 minutes, going back 3 weeks — 12,145 of them. Almost all were spaced MORE than 3 seconds apart (a real re-scan, not someone's finger slipping on the trigger). That's exactly the gap the OTHER Claude session's fix from earlier today (deployed around 3pm) was built to catch — walk the aisle, scan a product, scan a few more, come back and accidentally scan the first one again. Broken down by hour: it was running at roughly 150-300 an hour right up until that fix went out, then dropped to 54 the next hour, then 13 the hour after. So yes — this really was happening, and it's already fixed, not just theoretically.
+
+**Separately, "half scanned" (short/truncated barcodes)** — checked this too since it sounded related, but it isn't the same thing. Its rate stayed exactly the same both before and after today's fix (tracks total scan volume all day), so it wasn't touched by the duplicate-scan fix at all. This looks like a different, still-ongoing problem — most likely a scanner gun capturing a barcode too fast and only grabbing part of it. Can't trace which specific gun/store from historical data (the device-tracking system only started today), but worth watching going forward if it keeps coming up.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## RB1, not RB — and why "only accept a full barcode" would do more harm than good
+
+Quick correction plus one thing checked before building it.
+
+**RB1, not RB.** Fixed the prefix — `RB101-09-188-00` now correctly strips to `01-09-188-00`, which is the real, valid product code. The earlier "RB" version was stripping one character too few and would never actually have matched a product.
+
+**Checked whether Dept Scan can reject anything that isn't a "full" barcode**, to stop truncated/partial scans before they save. Before writing that, pulled every barcode length that's currently resolving successfully to a real product — and found genuine, correctly-scanned products as short as 6 digits (a whole line of Pet Food products use 6-digit codes) and some legitimate 11-digit ones too (already-known, already-handled). So barcode length in this business's data runs anywhere from 6 to 14 digits — there's no length cutoff that would catch only the bad scans without also blocking hundreds of real, correct ones every day. Left it alone, as asked ("leave it if it is not possible") — a scan that doesn't match anything in the product data still ends up flagged as Inactive Products, which remains the only safe way to catch a truncated read.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## Also blocking scans with no digit in them
+
+Third thing added to the "not a real barcode" rejection: any scan that's pure letters (no digits at all) now gets blocked with the same message as the URL and known sticker-code cases. This covers garbled reads like "MAENCHNA" or "CHARCOAL" that showed up in the earlier barcode audit — 73 of them. Every real code this business uses has at least some digits in it, so this one's safe to reject on sight, same confidence level as the other two.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## Checked the 15-digit cap against real data first — good thing, it was wrong
+
+You asked to block anything over 15 digits (your estimate of a max outer-box barcode). Checked your actual product data before building it, since guessing wrong here means blocking real products, not just junk.
+
+Turned out 15 would have broken real scanning: three products you're currently selling right now use 16-digit barcodes — STACIE DOLL, COLOUR CHANGE MERMAID, and B&D HAMMER DRILL 18V. Nothing in your whole product file goes past 16, though. So the cap is set at 16 instead of 15 — catches the same junk (garbled 20+ digit reads), same message as the other blocks, but doesn't touch any real product you actually stock.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## D1 archive size now shows under the Supabase database bar in Settings
+
+The Department Check archive (a separate Cloudflare database, D1, that older records move into) has its own storage limit that Settings never showed — only the Supabase numbers were ever on that page.
+
+Added a new meter right under the Supabase database bar, showing how much of D1's space is used and how much is left, same style as the existing bars. Renamed the card "Database capacity" since it's no longer just Supabase.
+
+**One thing to check after this deploys:** getting D1's size requires the site's existing Cloudflare API key to have "D1 read" permission, which it might not have been given originally (it was set up for a different purpose — daily request counts). If the new D1 bar shows "unavailable" instead of a number, that's the fix needed — in the Cloudflare dashboard, edit that API token and add D1 read access. Nothing else on the page is affected either way; the Supabase bars keep working regardless.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.

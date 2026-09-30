@@ -184,6 +184,12 @@ const KEY_META = {
     mb:    true,
     hint:  'Used by the Capacity meter at the top of this page. Free Supabase tier = 1024 MB (1 GB).'
   },
+  capacity_d1_limit_bytes: {
+    section: 'Capacity',
+    label: 'D1 archive size limit (MB)',
+    mb:    true,
+    hint:  'Used by the Capacity meter at the top of this page. Free D1 plan = 5120 MB (5 GB) per database. Update if you upgrade plan.'
+  },
   // ── System (read-only) ──────────────────────────────────────────────────
   last_auto_cleanup_at: {
     section: 'System',
@@ -351,7 +357,10 @@ export default function AdminSettings() {
       {isOnlyAdmin && capacity && (
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>Supabase capacity</span>
+            {/* Covers both databases this app depends on, not Supabase alone,
+                now that D1 (the Department Check archive) has its own meter
+                below the Supabase one. */}
+            <span>Database capacity</span>
             <span className="note" style={{ fontSize: 12, marginLeft: 'auto' }}>
               {capacity.computed_at ? new Date(capacity.computed_at).toLocaleString('en-IE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}
             </span>
@@ -359,17 +368,33 @@ export default function AdminSettings() {
           </div>
           <div className="card-body">
             <Meter
-              label="Database"
+              label="Supabase database"
               used={capacity.db.used_bytes}
               limit={capacity.db.limit_bytes}
             />
+            {/* D1 usage is best-effort (Cloudflare API call, separate from the
+                Supabase RPC above) -- absent rather than shown as zero when
+                CLOUDFLARE_API_TOKEN/D1_ARCHIVE_DATABASE_ID aren't configured
+                or the account's token lacks D1 read access, so a real 0-byte
+                archive is never confused with "couldn't check". */}
+            {capacity.d1 ? (
+              <Meter
+                label={`D1 archive (Department Check) · ${capacity.d1.num_tables.toLocaleString('en-IE')} table${capacity.d1.num_tables === 1 ? '' : 's'}`}
+                used={capacity.d1.used_bytes}
+                limit={capacity.d1.limit_bytes}
+              />
+            ) : (
+              <p className="note" style={{ fontSize: 12, color: '#D14B3D' }}>
+                D1 archive usage unavailable{capacity.d1_error ? ` — ${capacity.d1_error}` : ''}.
+              </p>
+            )}
             <Meter
-              label={`Storage · ${capacity.storage.object_count.toLocaleString('en-IE')} object${capacity.storage.object_count === 1 ? '' : 's'}`}
+              label={`Supabase storage · ${capacity.storage.object_count.toLocaleString('en-IE')} object${capacity.storage.object_count === 1 ? '' : 's'}`}
               used={capacity.storage.used_bytes}
               limit={capacity.storage.limit_bytes}
             />
             <p className="note" style={{ fontSize: 12, marginTop: 10, marginBottom: 0 }}>
-              When usage gets high, lower <code>scan_record_retention_days</code> or <code>photo_retention_days</code> below and run the cleanups in the Maintenance card. Limits are editable below if you upgrade Supabase plan.
+              When usage gets high, lower <code>scan_record_retention_days</code> or <code>photo_retention_days</code> below and run the cleanups in the Maintenance card. Limits are editable below if you upgrade plan.
             </p>
           </div>
         </div>

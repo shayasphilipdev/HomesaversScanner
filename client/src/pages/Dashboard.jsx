@@ -734,10 +734,11 @@ const DEPT_HUES_LIGHT = ['#B85C1A', '#0E9B90', '#E0A92E', '#7A4FA8',
                          '#6F9B2E', '#B8324F', '#2E6FD4', '#C4457E']
 const DEPT_HUES_DARK  = ['#BE5900', '#07978C', '#9C7205', '#A31EFF',
                          '#496D04', '#E10653', '#0270FC', '#DA047F']
+// "Inactive Products" — the single merged bucket for both records with no
+// department resolved AND departments outside the chain-wide top 8, per the
+// business's own preferred wording. One colour, one legend line: two
+// differently-coloured swatches sharing the same caption read as a bug.
 const DEPT_OTHER = { light: '#B9A894', dark: '#8A7A66' }
-// Unattributed is a DATA-QUALITY state, not a department, so it deliberately
-// does not consume one of the eight categorical hues.
-const DEPT_NONE  = { light: '#9C9186', dark: '#6E6559' }
 
 function DeptCheckByStore({ summary, loading }) {
   const [theme, setTheme] = useState(
@@ -752,9 +753,12 @@ function DeptCheckByStore({ summary, loading }) {
     ob.observe(el, { attributes: true, attributeFilter: ['data-theme'] })
     return () => ob.disconnect()
   }, [])
-  const HUES  = theme === 'dark' ? DEPT_HUES_DARK : DEPT_HUES_LIGHT
-  const OTHER = DEPT_OTHER[theme]
-  const NONE  = DEPT_NONE[theme]
+  const HUES     = theme === 'dark' ? DEPT_HUES_DARK : DEPT_HUES_LIGHT
+  // Merged bucket: '(none)' (no department resolved) and every department
+  // outside the top 8 both read as "Inactive Products" now, in the SAME
+  // colour -- two swatches with identical text but different colours would
+  // look like a bug, not a design choice.
+  const INACTIVE = DEPT_OTHER[theme]
 
   const stores = summary?.stores || []
   const totals = summary?.department_totals || []
@@ -768,9 +772,13 @@ function DeptCheckByStore({ summary, loading }) {
     const m = new Map(r.map((d, i) => [d, HUES[i]]))
     return {
       ranked: r,
-      colorOf: (d) => d === '(none)' ? NONE : (m.get(d) || OTHER),
+      colorOf: (d) => m.get(d) || INACTIVE,
     }
   }, [totals, theme])
+  // '(none)' is the backend's raw no-department marker -- shown to a viewer
+  // as "Inactive Products" like every other unattributed/folded record,
+  // never as the literal internal string.
+  const deptLabel = (d) => d === '(none)' ? 'Inactive Products' : d
 
   // Busiest first: the question this card answers is who is doing the work.
   const rows = useMemo(() => [...stores].sort((a, b) =>
@@ -780,10 +788,12 @@ function DeptCheckByStore({ summary, loading }) {
   const nf  = (n) => Number(n || 0).toLocaleString('en-IE')
   const t   = summary?.totals
 
-  const otherTotal = totals
-    .filter(d => d.department !== '(none)' && !ranked.includes(d.department))
+  // "Inactive Products" = no department resolved OR outside the top 8 —
+  // merged into one total so the legend has one line, not two that read the
+  // same but carry different counts under it.
+  const inactiveTotal = totals
+    .filter(d => !ranked.includes(d.department))
     .reduce((a, d) => a + d.records, 0)
-  const noneTotal = (totals.find(d => d.department === '(none)') || {}).records || 0
 
   return (
     <div className="card" style={{ marginTop: 16 }}>
@@ -822,16 +832,10 @@ function DeptCheckByStore({ summary, loading }) {
               {d}
             </span>
           ))}
-          {otherTotal > 0 && (
+          {inactiveTotal > 0 && (
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ width: 10, height: 10, borderRadius: 2, background: OTHER, flex: 'none' }} />
-              Other
-            </span>
-          )}
-          {noneTotal > 0 && (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ width: 10, height: 10, borderRadius: 2, background: NONE, flex: 'none' }} />
-              No department
+              <span style={{ width: 10, height: 10, borderRadius: 2, background: INACTIVE, flex: 'none' }} />
+              Inactive Products
             </span>
           )}
         </div>
@@ -873,7 +877,7 @@ function DeptCheckByStore({ summary, loading }) {
                 {parts.map(([dept, n]) => (
                   <div
                     key={dept}
-                    title={`${dept}: ${nf(n)} (${((n / Math.max(1, r.records)) * 100).toFixed(1)}%)`}
+                    title={`${deptLabel(dept)}: ${nf(n)} (${((n / Math.max(1, r.records)) * 100).toFixed(1)}%)`}
                     style={{
                       width: `${(n / Math.max(1, r.records)) * 100}%`,
                       background: colorOf(dept),
@@ -894,7 +898,7 @@ function DeptCheckByStore({ summary, loading }) {
                   marginTop: 3, fontSize: 11, color: 'var(--text-muted)',
                   display: 'flex', flexWrap: 'wrap', columnGap: 10, rowGap: 2
                 }}>
-                  {parts.map(([d, n]) => <span key={d} style={{ whiteSpace: 'nowrap' }}>{d} {nf(n)}</span>)}
+                  {parts.map(([d, n]) => <span key={d} style={{ whiteSpace: 'nowrap' }}>{deptLabel(d)} {nf(n)}</span>)}
                 </div>
               )}
             </div>
