@@ -1218,11 +1218,17 @@ export async function onRequest(context) {
     // week: which active stores did one, how many records, and how many DISTINCT
     // departments each covered.
     //
-    // TWO CALLERS, two ways in:
+    // THREE CALLERS, two ways in:
     //   * the Monday 09:00 email script, with X-Sync-Secret, chain-wide;
-    //   * the Dashboard, with a back-office session, scoped to their stores.
-    // One endpoint rather than two so the email and the screen can never drift
-    // apart about what "did a Department Check" means.
+    //   * the back-office Dashboard, scoped to whichever stores are in scope;
+    //   * a single-store session's own Dashboard, scoped to just that store.
+    // One endpoint rather than separate ones so the email, the back-office
+    // screen and the store screen can never drift apart about what "did a
+    // Department Check" means. Safe to open past back-office: scopedStoreIds()
+    // below already restricts any non-admin/non-all_stores session to its own
+    // store_ids, the exact same mechanism a store login relies on everywhere
+    // else in this API -- there is no separate "is this store allowed to see
+    // this" check to add.
     //
     // Defaults to the LAST COMPLETE calendar week (Mon 00:00 - Sun 23:59:59),
     // computed server-side so the caller never has to get week arithmetic right.
@@ -1238,7 +1244,7 @@ export async function onRequest(context) {
       // endpoint: it never even reached Supabase. A caller without the
       // secret authenticates for itself instead.
       const callerSession = secretOk ? null : await authenticate(request, env)
-      if (!secretOk && !isBackOffice(callerSession)) return err('Forbidden', 403)
+      if (!secretOk && !callerSession) return err('Forbidden', 403)
 
       const p = url.searchParams
 
