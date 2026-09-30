@@ -206,14 +206,25 @@ async function settingInt(env, key, fallback) {
 async function retentionSettings(env) {
   const retentionDays = await settingInt(env, 'scan_record_retention_days', 21)
   const archiveDays   = await settingInt(env, 'archive_retention_days', 35)
+  // Department Check (task_type 'J') moves to D1 on its OWN, shorter window.
+  // Absent/invalid falls back to the shared window, matching purge_old_task_records()
+  // exactly -- the archiver and the Postgres purge must never disagree about
+  // which records are due, or the purge would delete something the archiver has
+  // not yet copied (guarded against by d1_copied_at either way, but they should
+  // agree on principle).
+  const deptDays = await settingInt(env, 'dept_check_retention_days', retentionDays)
   return {
     retentionDays,
     archiveDays,
-    // Records older than this move from Postgres to D1.
-    cutoffIso:  new Date(Date.now() - retentionDays * 86_400_000).toISOString(),
-    // Records older than this leave D1 for good. Measured from created_at across
-    // BOTH stages, so total life is exactly what the Archive button promises.
-    purgeMs:    Date.now() - (retentionDays + archiveDays) * 86_400_000,
+    deptDays,
+    // Non-J records older than this move from Postgres to D1.
+    cutoffIso:     new Date(Date.now() - retentionDays * 86_400_000).toISOString(),
+    // Department Check records older than this move -- typically sooner.
+    deptCutoffIso: new Date(Date.now() - deptDays * 86_400_000).toISOString(),
+    // Records older than this leave D1 for good. created_at-based and the SAME
+    // for every type (retention+archive), so total life stays 49 days across the
+    // board -- only the Postgres->D1 split day differs by type.
+    purgeMs:       Date.now() - (retentionDays + archiveDays) * 86_400_000,
   }
 }
 
@@ -308,7 +319,8 @@ export async function runArchive(env, triggerKind) {
     retentionDays = cfg.retentionDays
     archiveDays   = cfg.archiveDays
     cutoffSeen    = cfg.cutoffIso
-    const cutoffIso = cfg.cutoffIso
+    const cutoffIso     = cfg.cutoffIso      // non-J move cutoff (e.g. 14 days)
+    const deptCutoffIso = cfg.deptCutoffIso  // Department Check move cutoff (e.g. 7 days)
     const storeNames = await storeNameMap(env)
     const stmt       = env.ARCHIVE.prepare(INSERT_SQL)
 
@@ -319,8 +331,8 @@ export async function runArchive(env, triggerKind) {
     // which is exactly what the primary key is there for.
     let cursor = '1970-01-01T00:00:00Z'
 
-    // Subrequests already spent: 2 settings reads + 1 stores read.
-    let subreq = 3
+    // Subrequests already spent: 3 settings reads (scan/archive/dept) + 1 stores read.
+    let subreq = 4
     // Ids archived but not yet stamped. Flushed every MARK_FLUSH_PAGES so one
     // mark call covers several pages. Unflushed ids are simply re-archived next
     // run (INSERT OR IGNORE), so losing them costs nothing but a repeat.
@@ -341,14 +353,26 @@ export async function runArchive(env, triggerKind) {
       const pageCost = 1 + Math.ceil(BATCH / D1_CHUNK)
       if (subreq + pageCost + 1 + PURGE_MAX_CHUNKS + 1 > SUBREQUEST_BUDGET) break
 
-      // No task_type filter: the archive now covers EVERY type. Scoping this to
-      // 'J' while the purge deletes all types is precisely the failure this
-      // phase exists to prevent -- a non-J record would be destroyed having
-      // never been archived.
+      // EVERY type is archived, but Department Check (J) moves on a shorter
+      // window than the rest -- so "due to move" is per-type and must match
+      // purge_old_task_records() exactly: J older than deptCutoffIso, or any
+      // other type older than cutoffIso. Scoping this to one type while the
+      // purge deletes another is precisely the failure the archive guard exists
+      // to prevent -- a record would be destroyed having never been archived.
+      // store_id must be present. D1's task_record_archive.store_id is NOT NULL,
+      // so a row whose store_id is NULL (only possible if a store is hard-DELETEd
+      // in Postgres -- ON DELETE SET NULL; no app route does this) is silently
+      // skipped by INSERT OR IGNORE with meta.changes=0. Because ids are queued
+      // for marking per page rather than per confirmed insert, such a row would
+      // be marked d1_copied_at and then purged -- deleted from Postgres having
+      // never reached D1. Excluding it here keeps it in Postgres (unarchived,
+      // unmarked, never purged): visible and recoverable, the safe direction.
       const rows = await sb(env,
         `task_records?select=${SELECT_COLS}` +
         `&created_at=gte.${encodeURIComponent(cursor)}` +
-        `&created_at=lt.${encodeURIComponent(cutoffIso)}` +
+        `&store_id=not.is.null` +
+        `&or=(and(task_type.eq.J,created_at.lt.${encodeURIComponent(deptCutoffIso)}),` +
+        `and(task_type.neq.J,created_at.lt.${encodeURIComponent(cutoffIso)}))` +
         `&order=created_at.asc,id.asc&limit=${BATCH}`)
 
       subreq += 1

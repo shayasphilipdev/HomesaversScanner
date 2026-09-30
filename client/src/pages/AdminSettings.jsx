@@ -145,7 +145,18 @@ const KEY_META = {
     section: 'Retention',
     label: 'Live record retention (days)',
     num:   { min: 10, max: 365 },
-    hint:  'Stage 1 — how long a task record stays in the live database and in the store\'s day-to-day lists. When it passes this age it moves to the archive; it is not lost. Minimum 10 (below that the nightly statistics job cannot recompute a full week).'
+    hint:  'Stage 1 — how long a task record stays in the live database and in the store\'s day-to-day lists. When it passes this age it moves to the archive; it is not lost. Minimum 10 (below that the nightly statistics job cannot recompute a full week). Department Check has its own, shorter window below.'
+  },
+  // Department Check (task_type J) is ~99% of scan volume and the fastest-growing
+  // table, so it gets its own, shorter live window. Everything else uses the
+  // field above. Total life is still the same (this + Archive retention); only
+  // the day it moves to the archive is earlier. Floor of 7 matches the stats
+  // recompute window — see that field's hint.
+  dept_check_retention_days: {
+    section: 'Retention',
+    label: 'Department Check live retention (days)',
+    num:   { min: 7, max: 365 },
+    hint:  'Live-database window for Department Check scans only — every other task type uses "Live record retention" above. Default 7. Department Check is the highest-volume, fastest-growing data, so it moves to the archive sooner to keep the live database small; it is not lost (still in the archive for the same total life). Minimum 7 (below that the nightly statistics job would undercount recently-purged days).'
   },
   archive_retention_days: {
     section: 'Retention',

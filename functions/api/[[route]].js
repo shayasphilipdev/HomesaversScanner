@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-30-merged-scan-save'
+const API_REVISION   = '2026-09-30-deptcheck-retention'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -1280,19 +1280,26 @@ export async function onRequest(context) {
       }
 
       // dept_check_summary and dept_check_department_breakdown both read
-      // task_records, which after the 7-week change holds only
-      // scan_record_retention_days. The Dashboard's range selector goes to 180
-      // days, so a caller can ask for a window this query CANNOT answer -- and
-      // it would answer anyway, with 14 days of rows under a 180-day heading.
-      // Reporting the live floor lets the card say so instead of quietly
-      // under-counting. The Monday email always asks for last week, which is
-      // inside the floor, so it never sees this.
+      // task_records (task_type 'J'), which is now purged on its OWN window,
+      // dept_check_retention_days (default 7 days) -- shorter than every other
+      // type. The Dashboard's range selector goes to 180 days, so a caller can
+      // ask for a window this query CANNOT answer, and it would answer anyway
+      // with a few days of rows under a 180-day heading. Reporting the live floor
+      // -- using J's OWN retention, not the generic one -- lets the card say so
+      // instead of quietly under-counting. The Monday email always asks for last
+      // week; if J retention is set below 7 days that would fall outside the
+      // floor, but the setting floors at 7 precisely so last week stays covered.
       let liveFloorIso = null
       try {
-        const [rs] = await db.select('app_settings', {
-          select: 'value', key: 'eq.scan_record_retention_days', limit: '1'
+        const rs = await db.select('app_settings', {
+          select: 'key,value',
+          key: 'in.(dept_check_retention_days,scan_record_retention_days)'
         })
-        const days = Number(rs?.value)
+        const sv = Object.fromEntries((rs || []).map(r => [r.key, Number(r.value)]))
+        // J's own window; fall back to the generic one, then to 14.
+        const days = Number.isFinite(sv.dept_check_retention_days) ? sv.dept_check_retention_days
+                   : Number.isFinite(sv.scan_record_retention_days) ? sv.scan_record_retention_days
+                   : 14
         if (Number.isFinite(days) && days > 0) {
           liveFloorIso = new Date(Date.now() - days * 86400000).toISOString()
         }
@@ -2841,6 +2848,12 @@ export async function onRequest(context) {
       // the 180-day dashboard quietly starts losing late status changes.
       const NUM_LIMITS = {
         scan_record_retention_days:  { min: 10, max: 365 },
+        // Department Check's own live window. Floor of 7 is load-bearing: the
+        // stats rollup re-reads a 7-day window (stats_rollup_window_days), and
+        // it runs before the purge, so 7 days still captures J's full life --
+        // but below 7 the rollup would recompute J days already purged and
+        // undercount them. Lowering J past 7 means lowering the rollup window too.
+        dept_check_retention_days:   { min: 7,  max: 365 },
         archive_retention_days:      { min: 1,  max: 365 },
         photo_retention_days:        { min: 1,  max: 365 },
         product_query_retention_days:{ min: 1,  max: 365 },
