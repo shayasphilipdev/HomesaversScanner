@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { createTaskRecord, deleteTaskRecord, scanLookup, scanLookupOrNull } from '../lib/api.js'
-import { altFields } from '../components/forms/useTaskForm.jsx'
+import { createTaskRecord, deleteTaskRecord, scanLookupOrNull } from '../lib/api.js'
 import ScannerInput from '../components/forms/ScannerInput.jsx'
 import { useStore } from '../App.jsx'
 import { useCurrentStore } from '../lib/currentStore.jsx'
@@ -41,7 +40,6 @@ const activeYesNo = (v) => {
 }
 
 const DUP_WINDOW_MS = 3000   // a repeat of the same barcode inside this is a double trigger-pull
-const LOOKUP_TIMEOUT_MS = 10000  // shop wifi can connect and then never answer
 const MAX_ROWS      = 50     // on-screen history; the full list lives in Reports
 
 // WebAudio rather than audio files: no asset to load on a slow shop
@@ -305,58 +303,48 @@ export default function DeptScan() {
     setBusy(true)
     setError('')
 
-    // One request, not two sequential ones — the barcode→EAN→price chain is
-    // resolved inside the Worker so this slow link is crossed once.
+    // ONE request per scan, not two. The Worker resolves the barcode
+    // (barcode→EAN→price) server-side, inline with the insert, and returns the
+    // lookup alongside the saved row -- so the slow shop-wifi link is crossed
+    // once. The old flow called /scan/lookup first and /task-records second; on
+    // the free plan's 100k/day ceiling that second call was pure overhead on the
+    // dominant Department Check load (~99% of it, every scan costing 2 requests).
     //
-    // A THROW and a null are different things and must not be shown the same
-    // way: a null means the barcode really is not in the database, a throw
-    // usually means there is no signal in that aisle. Telling an operator
-    // "HO will update it soon" about a product HO already has, purely because
-    // the wifi dropped, would send them chasing nothing.
-    // Bounded: shop wifi can accept a connection and then never answer. Left
-    // unbounded the row would sit on "Looking up…" indefinitely. On timeout we
-    // treat it as a failed lookup — the scan still saves, and the details are
-    // filled in server-side when the record syncs.
-    let info = null, price = null, lookupFailed = false
-    try {
-      info = await Promise.race([
-        scanLookup(scanned),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('lookup timed out')), LOOKUP_TIMEOUT_MS)),
-      ])
-      price = info?.price || null
-    } catch { lookupFailed = true }
-    // NOTE: deliberately no `if (gen !== genRef.current) return` here.
-    //
-    // A newer scan supersedes this one's claim on the SPINNER, never its claim
-    // to be saved. The operator pulled the trigger on a real product; bailing
-    // out here skipped createTaskRecord entirely, so the scan was silently lost
-    // — no beep, no queue entry, and its row stuck on "Looking up…" forever.
-    // Reachable whenever a second scan arrives during a slow lookup, which on
-    // shop wifi can be up to LOOKUP_TIMEOUT_MS: the input is never disabled
-    // while a lookup runs (ScannerInput shows a spinner but stays live).
-    //
-    // Everything below is safe to run out of order: the row updates are keyed
-    // by the unique rowKey, and the only genuinely shared piece of state — the
-    // busy spinner — is still gated on the generation in the finally block.
-    const dept = price?.item_group || null
-    const name = info?.item_name || null
-
+    // Declared before the try so the catch can render a clean failed row.
+    // Everything below is safe to run out of order: row updates are keyed by the
+    // unique rowKey, and the busy spinner is gated on the generation in finally.
+    let info = null, price = null, dept = null, name = null, lookupFailed = false
     try {
       const res = await createTaskRecord({
-        task_type:    'J',
-        store_id:     storeId,
-        // product_code keeps what the gun actually sent, even when the check
-        // digit was recovered — that is what makes a misconfigured handheld
-        // detectable later. barcode_no gets the real, full barcode so the
-        // record identifies the right product.
-        product_code: scanned,
-        ...altFields(info, info?.recovered_from ? info.barcode_no : scanned),
-        details:      { item_group: dept },
+        task_type:       'J',
+        store_id:        storeId,
+        // Only the raw scan goes up; the Worker fills barcode_no / item_name /
+        // department / status server-side. product_code keeps exactly what the
+        // gun sent, even when a UPC-A check digit is recovered — that is what
+        // makes a misconfigured handheld detectable later.
+        product_code:    scanned,
+        resolve_barcode: true,
         // Stamped when the trigger was pulled, not when the row reaches the
         // server. Without this an offline batch lands with every record
         // timestamped at reconnect, which misreports when the shelf was walked.
-        scanned_at:   new Date(now).toISOString(),
+        scanned_at:      new Date(now).toISOString(),
       })
+      if (res?.queued) {
+        // Offline: no signal, so nothing was resolved. The queued record carries
+        // resolve_barcode, so the Worker enriches it when the outbox drains, and
+        // onOutboxChanged fills this row's details on reconnect. lookupFailed
+        // drives the "details will fill in when back online" line.
+        lookupFailed = true
+      } else {
+        // Online: the create response carries the lookup in the SAME shape
+        // /scan/lookup returned (alt row + nested price + recovered_from), so the
+        // detail table renders exactly as before. null means the barcode is
+        // genuinely not in the master — the scan still saved.
+        info  = res?.lookup || null
+        price = info?.price || null
+        dept  = info?.price?.item_group || null
+        name  = info?.item_name || null
+      }
       setRows(prev => prev.map(r => r.key === rowKey
         ? {
             ...r,
@@ -376,7 +364,7 @@ export default function DeptScan() {
       // above for why they must not sound/feel the same.
       if (res?.queued) soundQueued(); else soundSaved()
     } catch (e) {
-      setRows(prev => prev.map(r => r.key === rowKey ? { ...r, status: 'failed', dept, name, info, price, lookupFailed } : r))
+      setRows(prev => prev.map(r => r.key === rowKey ? { ...r, status: 'failed', dept: null, name: null, info: null, price: null, lookupFailed: false } : r))
       setError(e?.message || 'Could not save')
       soundFailed()
       // The duplicate window was armed before the lookup, so without this an

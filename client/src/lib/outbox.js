@@ -197,8 +197,15 @@ export async function drain() {
           // If the record was saved offline (lookup failed), the product details
           // will be null. Now that we're online, attempt to fill them in before
           // posting so the server record has complete data.
+          //
+          // EXCEPT when the record carries resolve_barcode: those (Department
+          // Scan) are enriched by the Worker at insert time, so a client lookup
+          // here would be re-done and thrown away server-side — a wasted GET per
+          // queued record on reconnect. Post the body unchanged and let the
+          // Worker resolve it, keeping the offline reconnect at one request per
+          // record too.
           let body = item.body
-          if (!body.product_barcode && body.product_code) {
+          if (!body.resolve_barcode && !body.product_barcode && body.product_code) {
             try {
               // ONE request per queued record, not two. This runs once per
               // record in the queue, so an offline aisle sweep used to cost

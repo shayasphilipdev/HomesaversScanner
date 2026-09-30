@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-28-undo-scan-delete'
+const API_REVISION   = '2026-09-30-merged-scan-save'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -219,6 +219,60 @@ function upcaCheckDigit(eleven) {
     else             even += n
   }
   return String((10 - ((odd * 3 + even) % 10)) % 10)
+}
+
+// Resolve a scanned code to its alt_barcodes row + nested price, exactly as the
+// GET /scan/lookup endpoint does. Extracted so /scan/lookup AND the merged
+// POST /task-records enrichment share ONE implementation -- a store scan's
+// lookup and its save must resolve a barcode identically, and two copies of
+// this three-step fallback (barcode_no -> UPC-A recovery -> ean_barcode) would
+// drift. Returns the alt row with `price` nested and `recovered_from` set when
+// a dropped UPC-A check digit was restored, or null when nothing matches.
+async function resolveScan(db, rawBarcode) {
+  const scanned = String(rawBarcode || '').trim()
+  if (!scanned) return null
+  const ALT_COLS = 'barcode_no,ean_barcode,item_name,supl_id,supplier_code,item_status,barcode_status'
+  const selectAlt = (code) => db.select('alt_barcodes', {
+    select: ALT_COLS,
+    barcode_no: `eq.${code}`,
+    order: 'barcode_status.asc,item_status.asc',
+    limit: '1'
+  })
+
+  let [alt] = await selectAlt(scanned)
+  let recoveredFrom = null
+
+  // Handhelds that drop the 12th UPC-A check digit: an 11-digit code is never a
+  // valid retail barcode, and the missing digit is arithmetically determined,
+  // so there is exactly one candidate. Accepted only if it actually exists.
+  if (!alt && /^[0-9]{11}$/.test(scanned)) {
+    const [recovered] = await selectAlt(scanned + upcaCheckDigit(scanned))
+    if (recovered) { alt = recovered; recoveredFrom = scanned }
+  }
+
+  // Products with no real barcode, keyed on the shelf ticket by ean_barcode.
+  // Tried last so a genuine barcode_no match always wins; no recovered_from --
+  // the scanned value is correct and stays in barcode_no as-is.
+  if (!alt) {
+    [alt] = await db.select('alt_barcodes', {
+      select: ALT_COLS,
+      ean_barcode: `eq.${scanned}`,
+      order: 'barcode_status.asc,item_status.asc',
+      limit: '1'
+    })
+  }
+
+  if (!alt) return null
+  let price = null
+  if (alt.ean_barcode) {
+    const [p] = await db.select('prices', {
+      select: 'ean_barcode,item_group,item_subgrp_id,product_type,sale_rate',
+      ean_barcode: `eq.${String(alt.ean_barcode).trim()}`,
+      limit: '1'
+    })
+    price = p || null
+  }
+  return { ...alt, price, recovered_from: recoveredFrom }
 }
 
 // When a record was actually scanned, as reported by the device.
@@ -3825,56 +3879,9 @@ export async function onRequest(context) {
     if (path === '/scan/lookup' && method === 'GET') {
       const barcode = url.searchParams.get('barcode')
       if (!barcode) return json(null)
-      const scanned = String(barcode).trim()
-      const selectAlt = (code) => db.select('alt_barcodes', {
-        select: 'barcode_no,ean_barcode,item_name,supl_id,supplier_code,item_status,barcode_status',
-        barcode_no: `eq.${code}`,
-        order: 'barcode_status.asc,item_status.asc',
-        limit: '1'
-      })
-
-      let [alt] = await selectAlt(scanned)
-      let recoveredFrom = null
-
-      // Same trimmed-UPC-A recovery as /alt-barcodes/lookup, and the same
-      // guard: the candidate is only accepted if it actually exists in
-      // alt_barcodes, so a wrong guess resolves to nothing rather than to the
-      // wrong product. See that handler for the full reasoning.
-      if (!alt && /^[0-9]{11}$/.test(scanned)) {
-        const [recovered] = await selectAlt(scanned + upcaCheckDigit(scanned))
-        if (recovered) { alt = recovered; recoveredFrom = scanned }
-      }
-
-      // Some products have no real barcode and are keyed on the shelf ticket
-      // by their ean_barcode (the same value prices.ean_barcode uses for
-      // department/price) instead of alt_barcodes.barcode_no. Tried last, so
-      // a genuine barcode_no match always wins. Deliberately does NOT set
-      // recoveredFrom -- unlike the UPC-A fix above, the typed/scanned value
-      // IS correct and belongs in the saved record's barcode_no as-is; this
-      // fallback only exists to attach the product info a barcode_no-only
-      // lookup would otherwise miss entirely (no department, no item name).
-      // Found via a backfill of ~1,400 "No Department" Department Check
-      // records that all resolved cleanly against ean_barcode (2026-09-28).
-      if (!alt) {
-        [alt] = await db.select('alt_barcodes', {
-          select: 'barcode_no,ean_barcode,item_name,supl_id,supplier_code,item_status,barcode_status',
-          ean_barcode: `eq.${scanned}`,
-          order: 'barcode_status.asc,item_status.asc',
-          limit: '1'
-        })
-      }
-
-      if (!alt) return json(null)
-      let price = null
-      if (alt.ean_barcode) {
-        const [p] = await db.select('prices', {
-          select: 'ean_barcode,item_group,item_subgrp_id,product_type,sale_rate',
-          ean_barcode: `eq.${String(alt.ean_barcode).trim()}`,
-          limit: '1'
-        })
-        price = p || null
-      }
-      return json({ ...alt, price, recovered_from: recoveredFrom })
+      // The three-step resolution lives in resolveScan() so this endpoint and
+      // the merged POST /task-records enrichment cannot drift apart.
+      return json(await resolveScan(db, barcode))
     }
 
     if (path === '/alt-barcodes/lookup' && method === 'GET') {
@@ -4858,13 +4865,61 @@ export async function onRequest(context) {
         store_id = body.store_id
       }
 
+      // Server-side barcode enrichment, opt-in via body.resolve_barcode.
+      //
+      // Without it a scan is TWO Worker requests: the client calls /scan/lookup,
+      // waits for the answer to cross shop wifi, then calls this endpoint with
+      // the resolved fields in the body. With it, the client sends only the raw
+      // scanned code in product_code and the Worker does the lookup here, inline
+      // with the insert -- one request instead of two. On the free plan's
+      // 100k/day ceiling that halves the dominant load (Department Check is
+      // ~99% of it, and each scan was costing two requests).
+      //
+      // This replicates altFields() + DeptScan's mapping EXACTLY so a record
+      // saved this way is byte-for-byte what the two-call path produced:
+      //   - product_code keeps the RAW scan (set from body below), even when a
+      //     UPC-A check digit was recovered -- that is what makes a mis-set gun
+      //     detectable later.
+      //   - barcode_no gets the CORRECTED code on a UPC-A recovery, otherwise
+      //     the scanned value as-is (incl. the ean_barcode-keyed fallback).
+      //   - a miss (not in the master) still saves, with barcode_no = the raw
+      //     scan and no item/department -- identical to a null /scan/lookup.
+      // Only the Department Scan page (DeptScan.jsx, task_type J) sets this flag
+      // today -- it is the high-volume scan loop. Every other task form (A-M,
+      // including the manual TaskJForm/TaskKForm/TaskHForm) still does its own
+      // /scan/lookup and sends the resolved fields in the body, so this block is
+      // skipped and their behaviour is untouched. `lookup` is returned to the
+      // caller for display (below).
+      let lookup = null
+      let enrich = null
+      if (body.resolve_barcode === true) {
+        const scanned = String(body.product_code || '').trim()
+        lookup = scanned ? await resolveScan(db, scanned) : null
+        const recovered = lookup?.recovered_from && lookup.barcode_no ? lookup.barcode_no : null
+        enrich = {
+          barcode_no:      recovered || scanned || null,
+          product_barcode: lookup?.ean_barcode   || null,
+          item_name:       lookup?.item_name     || null,
+          supl_id:         lookup?.supl_id       || null,
+          supplier_code:   lookup?.supplier_code || null,
+          item_status:     lookup?.item_status   || null,
+          barcode_status:  lookup?.barcode_status || null,
+          item_group:      lookup?.price?.item_group ?? null,
+        }
+      }
+      // details: when enriching, keep any client-sent keys and set item_group
+      // from the lookup (matching DeptScan's `details: { item_group: dept }`).
+      const baseDetails = (body.details && typeof body.details === 'object' && !Array.isArray(body.details))
+        ? body.details : {}
+      const finalDetails = enrich ? { ...baseDetails, item_group: enrich.item_group } : (body.details || {})
+
       const inserted = await db.insert('task_records', {
         task_type:           body.task_type,
         store_id,
         supplier_id:         body.supplier_id || null,
         supplier_name_text:  body.supplier_name_text || null,
         product_code:        body.product_code || null,
-        product_barcode:     body.product_barcode || null,
+        product_barcode:     enrich ? enrich.product_barcode : (body.product_barcode || null),
         product_name_label:  body.product_name_label || null,
         actual_product_name: body.actual_product_name || null,
         description:         body.description || null,
@@ -4873,15 +4928,15 @@ export async function onRequest(context) {
         notes:               body.notes || null,
         photo_product_url:   body.photo_product_url || null,
         photo_barcode_url:   body.photo_barcode_url || null,
-        details:             body.details || {},
+        details:             finalDetails,
         // Phase 3 — Alternate Barcode snapshot captured at scan time so reports
         // show item/supplier/status without a second lookup.
-        barcode_no:          body.barcode_no || null,
-        item_name:           body.item_name || null,
-        supl_id:             body.supl_id || null,
-        supplier_code:       body.supplier_code || null,
-        item_status:         body.item_status || null,
-        barcode_status:      body.barcode_status || null,
+        barcode_no:          enrich ? enrich.barcode_no     : (body.barcode_no || null),
+        item_name:           enrich ? enrich.item_name      : (body.item_name || null),
+        supl_id:             enrich ? enrich.supl_id        : (body.supl_id || null),
+        supplier_code:       enrich ? enrich.supplier_code  : (body.supplier_code || null),
+        item_status:         enrich ? enrich.item_status    : (body.item_status || null),
+        barcode_status:      enrich ? enrich.barcode_status : (body.barcode_status || null),
         // Always 'pending' on creation, regardless of anything the client
         // sends — every task form already only ever creates pending records;
         // this just stops a direct API call from creating one pre-completed/
@@ -4906,7 +4961,16 @@ export async function onRequest(context) {
           note:        'Created'
         })
       }
-      return json(created ?? inserted, 201)
+      // When we enriched, hand the caller the same lookup shape /scan/lookup
+      // returns (alt row + nested price + recovered_from), so DeptScan renders
+      // its full detail table -- price, product type, +chk flag, status pills --
+      // from this single response instead of a second lookup call. `lookup` is
+      // null on a miss or when enrichment was not requested.
+      const payload = created ?? inserted
+      if (body.resolve_barcode === true && payload && typeof payload === 'object') {
+        return json({ ...payload, lookup }, 201)
+      }
+      return json(payload, 201)
     }
 
     // POST /device-log   body: { device_id, events: [{t, type, d}, ...] }
