@@ -575,6 +575,58 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-09-30 — Charleville duplicate-scan report: confirmed real, root-caused, fixed
+
+Charleville reported: scan product 1, product 2, product 3, then re-scan
+product 1 — not flagged as a duplicate, despite the session-wide "catch
+same-session duplicate scans" guard (`753c78d`) shipping two days earlier.
+
+Checked whether this was still actually happening, chain-wide, rather than
+trusting the earlier fix was sufficient: grouped `task_records` by
+`(store_id, barcode_no)` and looked for genuine repeat SAVES (not just
+repeat scans — actual second rows in the table) seconds to minutes apart.
+Found real pairs on both 2026-09-29 and 2026-09-30 (chain-wide, not
+Charleville-specific) — confirming the guard still has a live gap, not
+just a stale-bundle artifact from deploy day. (Charleville's own specific
+incident traced to 2026-09-28, right around when `753c78d` deployed — most
+likely their gun's browser tab was already open and hadn't picked up the
+new bundle yet, consistent with zero further Charleville duplicates found
+on 9-29 or 9-30.)
+
+**Root cause of the still-live gap:** `seenRef.current.add(resolveCode)`
+only ran AFTER a scan's save request resolved successfully — not when the
+scan was taken. On real-world shop wifi (or simply a fast operator), a
+repeat scan of the same barcode could land before the first scan's request
+had round-tripped, so `seenRef` didn't have it yet and the repeat saved as
+a genuine second record. The existing 3-second `lastCodeRef` echo guard
+didn't help: it's a value+time window that expires on its own clock,
+unrelated to whether the underlying request is still in flight past 3s.
+
+**Fix**, `DeptScan.jsx`: `seenRef.current.add(resolveCode)` now fires
+BEFORE the request goes out, not after it resolves — a repeat is caught
+the instant it's scanned, independent of how long the first save takes.
+Reversed only on a genuine failure (never on success) via a new
+`seenRef.current.delete(resolveCode)`, gated by the same generation guard
+already used for `lastCodeRef`/`lastAtRef`, so a real network failure
+doesn't permanently block a legitimate retry of that barcode for the rest
+of the session.
+
+**Also fixed while touching this:** `undoLast()` cleared `seenRef` using
+`target.barcode` (the raw scan), but `seenRef` is keyed by `resolveCode`
+(the RB1-prefix-stripped code) — undoing a reduced-sticker scan silently
+failed to free its `seenRef` entry. Rows now carry `resolveCode` so undo
+references the same key that was actually set.
+
+**Explicitly NOT fixed, and flagged rather than silently left:** `seenRef`
+is a per-browser-tab, per-session `Set`, by original design (documented in
+its own code comment) — it resets on page reload and never reaches across
+two different devices/guns at the same store. If a specific incident
+involved a reload mid-check, or two guns scanning the same product, no
+amount of client-side session tracking catches that; it would need either
+a persisted seen-set (its own staleness questions) or a server-side check.
+Told the user this is a real, separate, larger design question rather than
+folding a guess about it into this fix.
+
 ### 2026-09-30 — Why the DB doubled, root cause on the "no status is being excluded" report, and device_log_events moved to D1
 
 Follow-up to the D1 capacity meter (below): once it started reporting, the

@@ -389,11 +389,23 @@ export default function DeptScan() {
     lastCodeRef.current = resolveCode
     lastAtRef.current   = now
 
+    // Armed BEFORE the request fires, not after it resolves. The old version
+    // added to seenRef only on a successful response, which left a real gap on
+    // slow shop wifi: scan A (request in flight), scan B, scan C, scan A again
+    // -- if A's first save had not yet round-tripped, seenRef did not have A
+    // yet and the repeat sailed through as a second real record. Confirmed
+    // live: genuine duplicate task_records pairs (same store, same barcode,
+    // seconds to minutes apart) chain-wide on 2026-09-29/30, well after the
+    // session-wide duplicate guard shipped -- this in-flight race is why.
+    // Reversed on a genuine failure below (never on success, since the
+    // barcode should stay marked exactly as if the save had already landed).
+    seenRef.current.add(resolveCode)
+
     const gen    = ++genRef.current
     const rowKey = `r-${now}-${gen}`
     // The row goes up before the network is touched, so the operator sees the
     // scan register immediately rather than after a round trip.
-    setRows(prev => [{ key: rowKey, barcode: scanned, status: 'saving' }, ...prev].slice(0, MAX_ROWS))
+    setRows(prev => [{ key: rowKey, barcode: scanned, status: 'saving', resolveCode }, ...prev].slice(0, MAX_ROWS))
     setCode('')
     setBusy(true)
     setError('')
@@ -462,12 +474,10 @@ export default function DeptScan() {
             dept, name, info, price, lookupFailed, reducedFrom,
           }
         : r))
-      // Recorded (saved OR queued): from here a re-scan of this barcode is a
-      // duplicate. A queued scan counts too -- it will reach the server on
+      // seenRef already has resolveCode -- armed before the request fired, see
+      // above. Queued counts as recorded too: it will reach the server on
       // reconnect, so scanning it again would double it just the same.
-      // Tracked by resolveCode so a reduced-sticker scan and a normal-barcode
-      // scan of the SAME product are recognised as the same product.
-      seenRef.current.add(resolveCode)
+      //
       // Queued and saved both resolve here without throwing -- see soundQueued
       // above for why they must not sound/feel the same.
       if (res?.queued) soundQueued(); else soundSaved()
@@ -475,13 +485,14 @@ export default function DeptScan() {
       setRows(prev => prev.map(r => r.key === rowKey ? { ...r, status: 'failed', dept: null, name: null, info: null, price: null, lookupFailed: false } : r))
       setError(e?.message || 'Could not save')
       soundFailed()
-      // The duplicate window was armed before the lookup, so without this an
-      // immediate re-scan of the SAME barcode is refused as "Already scanned —
-      // not saved again" when in fact nothing was saved. That is the opposite
-      // of the truth, and it locks the operator out of retrying for 3s.
-      // undoLast clears these two for exactly the same reason.
+      // The duplicate window was armed before the request went out, so without
+      // this a genuine failure permanently blocks a retry: seenRef would still
+      // claim the barcode was recorded, and a re-scan would be refused as
+      // "Already scanned — not saved again" when in fact nothing was saved.
+      // undoLast clears the same two (plus seenRef) for exactly the same
+      // reason -- a row that never saved must leave no trace in any guard.
       //
-      // Only the newest scan may disarm the window. Saves can complete out of
+      // Only the newest scan may disarm the guards. Saves can complete out of
       // order, so an older failure must not strip the duplicate protection a
       // newer scan has since armed — that would let a stray second
       // trigger-pull through. Comparing the generation rather than the barcode
@@ -490,6 +501,7 @@ export default function DeptScan() {
       if (gen === genRef.current) {
         lastCodeRef.current = ''
         lastAtRef.current   = 0
+        seenRef.current.delete(resolveCode)
       }
     } finally {
       // Only the newest scan owns the spinner. Clearing it unconditionally
@@ -545,7 +557,14 @@ export default function DeptScan() {
       lastAtRef.current   = 0
       // Forget the undone barcode from the session dedup set, or the intended
       // re-scan would be refused as a duplicate of the scan just removed.
-      if (target.barcode) seenRef.current.delete(target.barcode)
+      // seenRef is keyed by resolveCode (the RB1-stripped code), not the raw
+      // scan -- target.barcode alone would silently fail to clear a reduced-
+      // sticker scan's entry, since its raw code carries the "RB1" prefix and
+      // was never itself the key. Falls back to target.barcode for a row from
+      // before resolveCode was stored on it, where the two are identical
+      // anyway except for the reduced-sticker case.
+      const seenKey = target.resolveCode || target.barcode
+      if (seenKey) seenRef.current.delete(seenKey)
       setResetSignal(n => n + 1)
       tone(520, 70)
     } catch (e) {
