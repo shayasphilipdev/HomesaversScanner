@@ -1,0 +1,59 @@
+-- device_log_events, moved from Supabase Postgres to Cloudflare D1.
+--
+-- Database: homesavers-archive (same D1 database the Department Check archive
+-- already lives in -- one D1 database serves both, exactly as one Supabase
+-- project serves every table). database_id: 6c728765-d614-4282-a648-4b3fc3bf78fe
+--
+-- Apply with:
+--   cd workers/archiver   (or wherever the ARCHIVE binding is configured)
+--   npx wrangler d1 execute homesavers-archive --remote --file=../../d1-migration-device-log.sql
+--
+-- WHY THIS MOVED
+-- device_log_events is the "scan doctor" diagnostic log (client/src/lib/
+-- deviceLog.js) -- a device best-effort uploads its save/queue/duplicate
+-- activity here so an issue can be investigated without physical access to the
+-- gun. It is write-only from the app's side: nothing in functions/api/
+-- [[route]].js ever reads it back (the Sync page's own "Activity on this
+-- device" panel reads localStorage directly, not this table) -- the only
+-- reader is a human running a query by hand when investigating a report.
+--
+-- That shape -- high write volume, essentially never read, never joined
+-- against anything else -- is exactly what made it the safe thing to move,
+-- unlike alt_barcodes/prices (read on every single scan) or task_records
+-- itself (read and written constantly by both stores and back office).
+-- Moving it costs the store's device ZERO extra requests: the browser still
+-- makes the exact same single POST /api/device-log either way, only the
+-- backend of that one route now writes to D1 instead of Postgres.
+--
+-- Measured 2026-09-30: 40,575 rows / ~19 MB in Supabase after only 2 days
+-- live, growing ~18,000 rows/day -- comfortably inside D1's 100,000
+-- rows/day free-tier write limit even alongside the archiver's own
+-- ~16,000-20,000/day (task_record_archive table + index).
+--
+-- The OLD Supabase table (supabase-migration-device-log.sql) is left in place
+-- untouched by this migration -- dropping/truncating it is a separate,
+-- explicit decision since it holds two days of real diagnostic history.
+
+CREATE TABLE IF NOT EXISTS device_log_events (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  device_id      TEXT    NOT NULL,
+  user_id        TEXT,
+  store_id       TEXT,
+  event_type     TEXT    NOT NULL,
+  -- JSON text, same convention as task_record_archive.details_json -- SQLite
+  -- has no native JSON/JSONB type.
+  detail_json    TEXT,
+  -- Epoch milliseconds, not ISO text -- same reasoning as task_record_archive:
+  -- D1 bills rows SCANNED, and integer comparison over these is how every
+  -- query here is shaped ("this device, in order" / "this event type,
+  -- recently" / "this store, recently").
+  client_at_ms   INTEGER NOT NULL,
+  received_at_ms INTEGER NOT NULL
+);
+
+-- Same three query shapes the original Supabase indexes existed for: "every
+-- event from this device, in order", "every event of this kind recently,
+-- chain-wide", and "every event from this store, recently".
+CREATE INDEX IF NOT EXISTS idx_dle_device_time ON device_log_events (device_id, client_at_ms DESC);
+CREATE INDEX IF NOT EXISTS idx_dle_type_time   ON device_log_events (event_type, client_at_ms DESC);
+CREATE INDEX IF NOT EXISTS idx_dle_store_time  ON device_log_events (store_id, client_at_ms DESC);
