@@ -414,7 +414,7 @@ export default function AdminSettings() {
       {isOnlyAdmin && (
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>Cloudflare requests · last 7 days</span>
+            <span>Daily usage · last 7 days</span>
             <button className="btn btn-sm btn-outline" style={{ marginLeft: 'auto' }} onClick={loadCfUsage} disabled={cfUsageLoading}>
               {cfUsageLoading ? <span className="spinner spinner-dark" /> : '↻ Refresh'}
             </button>
@@ -423,7 +423,23 @@ export default function AdminSettings() {
             {cfUsageError ? (
               <p className="note" style={{ color: '#D14B3D' }}>{cfUsageError}</p>
             ) : (
-              <CloudflareUsageChart data={cfUsage} loading={cfUsageLoading} />
+              // Two compact charts side by side (they stack on a narrow screen).
+              // Both share the same on-demand fetch, so one Refresh updates both.
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20, alignItems: 'start' }}>
+                <UsageChart
+                  title="Cloudflare requests"
+                  days={cfUsage?.days} valueKey="requests"
+                  limit={cfUsage?.daily_limit || 100000}
+                  color="#2E78D6" gradId="cfFill" loading={cfUsageLoading}
+                />
+                <UsageChart
+                  title="D1 rows written"
+                  days={cfUsage?.d1?.days} valueKey="rows_written"
+                  limit={cfUsage?.d1?.write_limit || 100000}
+                  color="#7C5CBF" gradId="d1Fill" loading={cfUsageLoading}
+                  note={cfUsage?.d1_error}
+                />
+              </div>
             )}
           </div>
         </div>
@@ -902,33 +918,47 @@ function Meter({ label, used, limit }) {
 // daily cap, with a reference line at the limit so it's obvious at a glance
 // how close a given day came. Same WARN/CRIT thresholds as the Supabase
 // capacity meter above, applied per-bar.
-function CloudflareUsageChart({ data, loading }) {
-  if (loading && !data) {
-    return <div style={{ textAlign: 'center', padding: 24 }}><span className="spinner spinner-dark" /></div>
+// One 7-day usage line chart against a daily-limit line. Generic over the value
+// field so it renders both Cloudflare Pages requests and D1 rows written; sized
+// compact (narrow viewBox, two-line date labels) so two sit side by side.
+function UsageChart({ title, days, valueKey, limit, color, gradId, loading, note }) {
+  const fmt = (n) => Number(n || 0).toLocaleString('en-IE')
+  const heading = (
+    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text)' }}>{title}</div>
+  )
+
+  if (loading && !days) {
+    return <div>{heading}<div style={{ textAlign: 'center', padding: 24 }}><span className="spinner spinner-dark" /></div></div>
   }
-  if (!data?.days?.length) {
-    return <p className="note">No data yet — click Refresh.</p>
+  // note = an upstream reason this series is unavailable (e.g. D1 analytics off).
+  if (note) {
+    return <div>{heading}<p className="note" style={{ color: 'var(--text-muted)' }}>{note}</p></div>
+  }
+  if (!days?.length) {
+    return <div>{heading}<p className="note">No data yet — click Refresh.</p></div>
   }
 
-  const { days, daily_limit: limit } = data
-  const fmt = (n) => n.toLocaleString('en-IE')
-  const maxVal = Math.max(limit, ...days.map(d => d.requests), 1)
+  const val = (d) => Number(d[valueKey] || 0)
+  const maxVal = Math.max(limit, ...days.map(val), 1)
 
-  const VW = 700, VH = 210, PAD_L = 10, PAD_R = 10, TOP = 26, BOT = 168
+  // Narrow viewBox so each chart barely downscales in its ~half-width column and
+  // the labels stay legible. Extra bottom room holds a two-line date label.
+  const VW = 380, VH = 220, PAD_L = 12, PAD_R = 12, TOP = 30, BOT = 158
   const n = days.length
   const xAt = (i) => n <= 1 ? VW / 2 : PAD_L + (VW - PAD_L - PAD_R) * (i / (n - 1))
   const yAt = (v) => BOT - (v / maxVal) * (BOT - TOP)
   const limitY = yAt(limit)
 
   const colourFor = (pct) => pct >= CRIT_PCT ? '#D14B3D' : pct >= WARN_PCT ? '#E0A03A' : '#3E9F4B'
-  const labelDate = (s) => new Date(s + 'T00:00:00').toLocaleDateString('en-IE', { weekday: 'short', day: '2-digit', month: 'short' })
+  const wkDay  = (s) => new Date(s + 'T00:00:00').toLocaleDateString('en-IE', { weekday: 'short' })
+  const dayMon = (s) => new Date(s + 'T00:00:00').toLocaleDateString('en-IE', { day: '2-digit', month: 'short' })
 
-  const total = days.reduce((s, d) => s + d.requests, 0)
-  const worst = days.reduce((m, d) => Math.max(m, d.requests), 0)
+  const total = days.reduce((s, d) => s + val(d), 0)
+  const worst = days.reduce((m, d) => Math.max(m, val(d)), 0)
 
   // Smooth (Catmull-Rom → cubic bézier) line through the daily points, plus a
   // matching area path closed down to the baseline for the gradient fill.
-  const pts = days.map((d, i) => [xAt(i), yAt(d.requests)])
+  const pts = days.map((d, i) => [xAt(i), yAt(val(d))])
   const linePath = pts.reduce((acc, p, i) => {
     if (i === 0) return `M${p[0]},${p[1]}`
     const p0 = pts[i - 2 >= 0 ? i - 2 : 0]
@@ -943,37 +973,41 @@ function CloudflareUsageChart({ data, loading }) {
 
   return (
     <div>
-      <div className="flex-row" style={{ marginBottom: 10, fontSize: 13, flexWrap: 'wrap', gap: 10 }}>
-        <span><strong>{fmt(total)}</strong> total this week</span>
+      {heading}
+      <div className="flex-row" style={{ marginBottom: 8, fontSize: 12.5, flexWrap: 'wrap', gap: 8 }}>
+        <span><strong>{fmt(total)}</strong> total</span>
         <span style={{ marginLeft: 'auto', color: 'var(--text-muted)' }}>
-          Peak day: <strong style={{ color: colourFor((worst / limit) * 100) }}>{fmt(worst)}</strong> of {fmt(limit)}/day
+          Peak: <strong style={{ color: colourFor((worst / limit) * 100) }}>{fmt(worst)}</strong> / {fmt(limit)}/day
         </span>
       </div>
       <svg viewBox={`0 0 ${VW} ${VH}`} style={{ width: '100%', height: 'auto', display: 'block' }}
-        role="img" aria-label={`Area chart of daily Cloudflare requests over the last 7 days against a ${fmt(limit)} per day limit. Total ${fmt(total)}.`}>
+        role="img" aria-label={`Area chart of daily ${title} over the last 7 days against a ${fmt(limit)} per day limit. Total ${fmt(total)}.`}>
         <defs>
-          <linearGradient id="cfAreaFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#2E78D6" stopOpacity="0.28" />
-            <stop offset="100%" stopColor="#2E78D6" stopOpacity="0.02" />
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.28" />
+            <stop offset="100%" stopColor={color} stopOpacity="0.02" />
           </linearGradient>
         </defs>
         <line x1={PAD_L} y1={limitY} x2={VW - PAD_R} y2={limitY} stroke="#D14B3D" strokeWidth="1.5" strokeDasharray="6,4" opacity="0.85" />
-        <text x={VW - PAD_R} y={limitY - 6} textAnchor="end" fontSize="11" fill="#D14B3D">{fmt(limit)}/day limit</text>
-        {areaPath && <path d={areaPath} fill="url(#cfAreaFill)" />}
-        {linePath && <path d={linePath} fill="none" stroke="#2E78D6" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />}
+        <text x={VW - PAD_R} y={limitY - 5} textAnchor="end" fontSize="11" fill="#D14B3D">{fmt(limit)}/day limit</text>
+        {areaPath && <path d={areaPath} fill={`url(#${gradId})`} />}
+        {linePath && <path d={linePath} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />}
         {days.map((d, i) => {
-          const pct = (d.requests / limit) * 100
+          const pct = (val(d) / limit) * 100
           const cx = pts[i][0], cy = pts[i][1]
           const anchor = i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'
-          const valY = cy < TOP + 24 ? cy + 16 : cy - 11
+          const valY = cy < TOP + 24 ? cy + 15 : cy - 10
           return (
             <g key={d.date}>
               <circle cx={cx} cy={cy} r="4.5" fill={colourFor(pct)} stroke="var(--surface)" strokeWidth="2.5" />
-              <text x={cx} y={valY} textAnchor={anchor} fontSize="11" fill="var(--text-muted)">
-                {fmt(d.requests)}
+              <text x={cx} y={valY} textAnchor={anchor} fontSize="11" fontWeight="600" fill="var(--text)">
+                {fmt(val(d))}
               </text>
-              <text x={cx} y={VH - 6} textAnchor={anchor} fontSize="11" fill="var(--text-muted)">
-                {labelDate(d.date)}
+              <text x={cx} y={VH - 20} textAnchor={anchor} fontSize="10.5" fill="var(--text-muted)">
+                {wkDay(d.date)}
+              </text>
+              <text x={cx} y={VH - 6} textAnchor={anchor} fontSize="10.5" fill="var(--text-muted)">
+                {dayMon(d.date)}
               </text>
             </g>
           )

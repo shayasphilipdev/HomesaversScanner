@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-30-deptcheck-retention'
+const API_REVISION   = '2026-09-30-d1-usage-chart'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -2819,7 +2819,74 @@ export async function onRequest(context) {
         const d = new Date(today.getTime() - i * 86400000).toISOString().slice(0, 10)
         days.push({ date: d, requests: byDate[d] || 0 })
       }
-      return json({ days, daily_limit: 100000 })
+
+      // D1 daily rows written/read for the same 7 days, from the D1 analytics
+      // dataset. Best-effort and isolated: a failure here (missing db id, field
+      // drift, no data yet) degrades to d1:null + d1_error and must never break
+      // the Pages requests chart above. Rows WRITTEN is the binding free-tier
+      // limit (100k/day) -- the one the nightly archiver runs against -- so it is
+      // the D1 chart's headline metric, mirroring the requests chart.
+      let d1 = null, d1_error = null
+      if (!env.D1_ARCHIVE_DATABASE_ID) {
+        d1_error = 'D1_ARCHIVE_DATABASE_ID not configured'
+      } else {
+        try {
+          const d1Query = `
+            query GetD1($accountTag: string, $dbId: string, $since: string, $until: string) {
+              viewer {
+                accounts(filter: { accountTag: $accountTag }) {
+                  d1AnalyticsAdaptiveGroups(
+                    limit: 1000
+                    filter: { databaseId: $dbId, datetime_geq: $since, datetime_leq: $until }
+                  ) {
+                    dimensions { date }
+                    sum { rowsWritten rowsRead }
+                  }
+                }
+              }
+            }
+          `
+          const d1Res = await fetch('https://api.cloudflare.com/client/v4/graphql', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${env.CLOUDFLARE_API_TOKEN}`,
+              'Content-Type':  'application/json',
+              'Accept':        'application/json'
+            },
+            body: JSON.stringify({
+              query: d1Query,
+              variables: {
+                accountTag: env.CLOUDFLARE_ACCOUNT_ID,
+                dbId:       env.D1_ARCHIVE_DATABASE_ID,
+                since:      since.toISOString(),
+                until:      until.toISOString()
+              }
+            })
+          })
+          const d1Json = await d1Res.json().catch(() => null)
+          if (!d1Res.ok || !d1Json || d1Json.errors) {
+            d1_error = `D1 analytics failed: ${JSON.stringify(d1Json?.errors || d1Json || '').slice(0, 300)}`
+          } else {
+            const d1Rows = d1Json?.data?.viewer?.accounts?.[0]?.d1AnalyticsAdaptiveGroups || []
+            const wByDate = {}, rByDate = {}
+            for (const r of d1Rows) {
+              const d = String(r.dimensions.date).slice(0, 10)
+              wByDate[d] = (wByDate[d] || 0) + (r.sum?.rowsWritten || 0)
+              rByDate[d] = (rByDate[d] || 0) + (r.sum?.rowsRead || 0)
+            }
+            const d1days = []
+            for (let i = 6; i >= 0; i--) {
+              const d = new Date(today.getTime() - i * 86400000).toISOString().slice(0, 10)
+              d1days.push({ date: d, rows_written: wByDate[d] || 0, rows_read: rByDate[d] || 0 })
+            }
+            d1 = { days: d1days, write_limit: 100000, read_limit: 5000000 }
+          }
+        } catch (e) {
+          d1_error = `D1 analytics error: ${String(e?.message || e).slice(0, 200)}`
+        }
+      }
+
+      return json({ days, daily_limit: 100000, d1, d1_error })
     }
 
     if (path === '/admin/settings' && method === 'GET') {
