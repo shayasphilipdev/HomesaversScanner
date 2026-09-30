@@ -129,13 +129,16 @@ export default function Dashboard() {
     // Fetched separately so a slow aggregate never delays the whole dashboard,
     // and a failure costs two figures on one card rather than the page.
     // getDeptCheckWeek resolves to null instead of throwing.
-    if (isBO) {
-      setDeptSummary(null)
-      setDeptLoading(true)
-      getDeptCheckWeek({ from: params.from, to: params.to })
-        .then(setDeptSummary)
-        .finally(() => setDeptLoading(false))
-    }
+    //
+    // Not gated on isBO: a single-store session gets exactly one row back
+    // (the backend's own scopedStoreIds() restricts it to that store, the
+    // same mechanism every other store-scoped endpoint relies on), which is
+    // what MyDeptBreakdown below renders.
+    setDeptSummary(null)
+    setDeptLoading(true)
+    getDeptCheckWeek({ from: params.from, to: params.to })
+      .then(setDeptSummary)
+      .finally(() => setDeptLoading(false))
   }, [params.from, params.to, bucket, scope, scopedStoreIds, isBO])
 
   const totals = stats?.totals   || { all: 0, pending: 0, completed: 0, no_change_needed: 0, store_completed: 0 }
@@ -216,6 +219,7 @@ export default function Dashboard() {
       {isBO && <DeptCheckByStore summary={deptSummary} loading={deptLoading} />}
 
       {isBO && <StoreDonutGrid rows={stats?.by_store || []} loading={loading} allStores={scopeStores} dataDays={stats?.by_day || []} dataFrom={stats?.data_from} dataTo={stats?.data_to} />}
+      {!isBO && <MyDeptBreakdown summary={deptSummary} loading={deptLoading} />}
       {!isBO && <RecentList rows={stats?.recent || []} loading={loading} isBO={isBO} />}
 
       {/* Activity — moved below the store graph and made compact (secondary info). */}
@@ -904,6 +908,134 @@ function DeptCheckByStore({ summary, loading }) {
             </div>
           )
         })}
+      </div>
+    </div>
+  )
+}
+
+// Single-store version of DeptCheckByStore above, for a store login's own
+// Dashboard. Same data (getDeptCheckWeek now serves any authenticated
+// session, scoped server-side to just this store), same colours/legend/
+// "Inactive Products" merge -- but one store means one bar, so there is no
+// store name to show and no "busiest store" length comparison to make: the
+// bar is always full width, and what matters is the department SPLIT within
+// it, not how this store compares to any other.
+function MyDeptBreakdown({ summary, loading }) {
+  const [theme, setTheme] = useState(
+    () => document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light')
+  useEffect(() => {
+    const el = document.documentElement
+    const ob = new MutationObserver(() =>
+      setTheme(el.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'))
+    ob.observe(el, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => ob.disconnect()
+  }, [])
+  const HUES     = theme === 'dark' ? DEPT_HUES_DARK : DEPT_HUES_LIGHT
+  const INACTIVE = DEPT_OTHER[theme]
+
+  // Exactly one row: the backend already scoped this store's own session to
+  // just its own store, the same way it scopes an area manager to their area.
+  const store  = summary?.stores?.[0] || null
+  const totals = summary?.department_totals || []
+
+  const { colorOf, ranked } = useMemo(() => {
+    const r = totals.filter(d => d.department !== '(none)').slice(0, 8)
+                    .map(d => d.department)
+    const m = new Map(r.map((d, i) => [d, HUES[i]]))
+    return {
+      ranked: r,
+      colorOf: (d) => m.get(d) || INACTIVE,
+    }
+  }, [totals, theme])
+  const deptLabel = (d) => d === '(none)' ? 'Inactive Products' : d
+
+  const nf = (n) => Number(n || 0).toLocaleString('en-IE')
+  const t  = summary?.totals
+
+  const inactiveTotal = totals
+    .filter(d => !ranked.includes(d.department))
+    .reduce((a, d) => a + d.records, 0)
+
+  const bd    = store?.departments_breakdown || {}
+  const parts = Object.entries(bd).sort((a, b) => b[1] - a[1])
+  const recs  = store?.records || 0
+
+  return (
+    <div className="card" style={{ marginTop: 16 }}>
+      <div className="card-header">
+        <span style={{ minWidth: 0 }}>
+          Department Check records by department
+          {t && (
+            <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--text-muted)' }}>
+              {' '}({nf(t.records)} records)
+            </span>
+          )}
+        </span>
+      </div>
+
+      {!loading && summary?.live_window?.truncated && (
+        <div style={{ padding: '8px 16px 0', fontSize: 11.5, color: 'var(--text-muted)' }}>
+          Live records only reach back to{' '}
+          {new Date(summary.live_window.from).toLocaleDateString('en-IE')} &mdash;
+          older Department Checks have moved to the archive and are not counted here.
+        </div>
+      )}
+
+      {!loading && summary && ranked.length > 0 && (
+        <div style={{
+          display: 'flex', flexWrap: 'wrap', gap: '6px 14px',
+          padding: '10px 16px 2px', fontSize: 11.5, color: 'var(--text-muted)'
+        }}>
+          {ranked.map(d => (
+            <span key={d} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 10, height: 10, borderRadius: 2, background: colorOf(d), flex: 'none' }} />
+              {d}
+            </span>
+          ))}
+          {inactiveTotal > 0 && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 10, height: 10, borderRadius: 2, background: INACTIVE, flex: 'none' }} />
+              Inactive Products
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className="card-body" style={{ paddingTop: 8 }}>
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: 24 }}><span className="spinner spinner-dark" /></div>
+        ) : !summary ? (
+          <div className="empty-state" style={{ padding: 20 }}><p style={{ fontSize: 13 }}>Couldn't load this data. Try refreshing the page.</p></div>
+        ) : !recs ? (
+          <div className="empty-state" style={{ padding: 20 }}><p style={{ fontSize: 13 }}>No Department Check records in this range yet.</p></div>
+        ) : (
+          <div style={{ padding: '4px 4px 2px' }}>
+            <div style={{
+              height: 14, borderRadius: 3, overflow: 'hidden',
+              background: 'var(--bg-soft)', display: 'flex', width: '100%'
+            }}>
+              {parts.map(([dept, n]) => (
+                <div
+                  key={dept}
+                  title={`${deptLabel(dept)}: ${nf(n)} (${((n / Math.max(1, recs)) * 100).toFixed(1)}%)`}
+                  style={{
+                    width: `${(n / Math.max(1, recs)) * 100}%`,
+                    background: colorOf(dept),
+                    boxShadow: 'inset -1px 0 0 0 var(--surface)'
+                  }}
+                />
+              ))}
+            </div>
+            {parts.length > 0 && (
+              <div style={{
+                marginTop: 6, fontSize: 11.5, color: 'var(--text-muted)',
+                display: 'flex', flexWrap: 'wrap', columnGap: 12, rowGap: 4
+              }}>
+                {parts.map(([d, n]) => <span key={d} style={{ whiteSpace: 'nowrap' }}>{deptLabel(d)} {nf(n)}</span>)}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
