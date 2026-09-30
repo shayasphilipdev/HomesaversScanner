@@ -575,6 +575,94 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-09-30 — Why the DB doubled, root cause on the "no status is being excluded" report, and device_log_events moved to D1
+
+Follow-up to the D1 capacity meter (below): once it started reporting, the
+user asked why Supabase was at 64% (335 MB) despite the app only holding
+"a few weeks" of live data. Investigated directly rather than guessing.
+
+**Per-table breakdown** (`pg_stat_user_tables`): `task_records` 123 MB
+(232,675 rows), `alt_barcodes` 74 MB (master catalog), `task_record_events`
+50 MB (audit trail, ~1.06 events/record), `device_log_events` 19 MB
+(40,575 rows — the scan-doctor log, only 2 days old), `prices` 17 MB
+(master data), `store_task_instances` 15 MB (unbounded since May, no
+purge).
+
+**Real driver of the doubling:** daily Task J volume from `task_stats_daily`
+went from ~5,000–9,000/day in late August to ~15,000–33,600/day by late
+September — roughly 2–3x. `scan_record_retention_days` (14) is a fixed
+*number of days*, not a fixed *row count*, so the same window now holds
+2–3x more rows purely from higher store usage, not from anything
+misconfigured.
+
+**Second question: why do ~25,000+ Department Check records past 14 days
+stay `pending` instead of moving to D1 regardless of status?** Checked the
+live `purge_old_task_records()` function directly
+(`pg_get_functiondef`) — it already has **no status filter at all**:
+`DELETE FROM task_records WHERE created_at < v_cutoff AND d1_copied_at IS
+NOT NULL`. The rule the user wants (any status, 14 days) is exactly what's
+deployed. The actual blocker: `SELECT count(*) FROM task_records WHERE
+d1_copied_at IS NOT NULL` returns **0** — across the table's entire
+history, not one row has ever been confirmed archived. The separate
+`homesavers-archiver` Cloudflare Worker (`workers/archiver/`, its own
+`wrangler deploy` + secrets, cron `30 1 * * *` / `45 1 * * *`) that's
+supposed to copy aging records into D1 and stamp `d1_copied_at` appears to
+have never completed a successful run. This cloud session cannot check or
+deploy a separate Worker (no access to its Cloudflare secrets or deploy
+target) — told the user to check `SELECT * FROM archive_runs ORDER BY
+started_at_ms DESC LIMIT 20;` in the D1 Console (Cloudflare dashboard →
+Workers & Pages → D1 → homesavers-archive → Console) to see whether it's
+never run (no rows) or failing with a specific error (rows with `error`
+populated), and to check whether `homesavers-archiver` is even listed
+under Workers & Pages at all.
+
+**Shipped:** moved `device_log_events` to D1 (see the entry below this one)
+— the one table in the breakdown that's write-only from the app's side and
+therefore the safe one to move without touching store-facing speed or
+Cloudflare request counts. `alt_barcodes`/`prices` (read on every scan) and
+`store_task_instances`/`task_record_events` (read live by store/back-office
+staff) were explicitly NOT recommended for the same move.
+
+### 2026-09-30 — device_log_events moved from Supabase to D1
+
+Confirmed before moving: `device_log_events` is write-only from the app's
+side — grepped `functions/api/[[route]].js` for every reference and found
+exactly one, the `POST /device-log` insert; nothing ever reads it back (the
+Sync page's "Activity on this device" panel reads `localStorage` directly,
+never this table). That shape — high write volume, essentially never read,
+never joined against anything else — is what made it safe to move, unlike
+`alt_barcodes`/`prices` (read on every single scan) or `task_records`
+itself (read and written constantly by both stores and back office).
+
+`POST /device-log` now writes to D1 (`env.ARCHIVE`, the same database the
+Department Check archive already lives in) via a `prepare()`/`batch()`
+insert, instead of `db.insert('device_log_events', ...)` against Supabase.
+Costs the store's device **zero** extra requests — the browser makes the
+exact same single POST either way; only which backend that route writes to
+changed. New `d1-migration-device-log.sql` creates the table in D1,
+mirroring the original Supabase schema's three indexes (device+time,
+type+time, store+time) but epoch-ms integers for the time columns, matching
+`task_record_archive`'s existing convention (D1 bills rows scanned, so an
+integer range comparison over a physically-ordered column is what protects
+the free-tier read limit).
+
+**Not done, needs a manual step:** applying the new D1 schema. This session
+has no `wrangler` CLI access to the live D1 database. Whoever has that
+access needs to run, from the repo root (or wherever the `ARCHIVE` binding
+is configured):
+```
+npx wrangler d1 execute homesavers-archive --remote --file=d1-migration-device-log.sql
+```
+before this code path will actually succeed — until then, `POST
+/device-log` will fail closed (best-effort, so it logs a warning and
+returns `{ok:false, inserted:0}` rather than erroring the whole request,
+exactly as the old Supabase path did on any insert failure).
+
+**Also not done:** dropping/truncating the ~40,000 rows (~19 MB) already
+sitting in Supabase's `device_log_events` table from before this moved.
+Left in place since it's a separate, explicit decision (real 2-day
+diagnostic history) — this change only stops it from growing further.
+
 ### 2026-09-29 — D1 archive capacity meter added below the Supabase database bar
 
 The Department Check archive (Cloudflare D1, `homesavers-archive`,

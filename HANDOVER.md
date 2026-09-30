@@ -302,3 +302,23 @@ Added a new meter right under the Supabase database bar, showing how much of D1'
 **One thing to check after this deploys:** getting D1's size requires the site's existing Cloudflare API key to have "D1 read" permission, which it might not have been given originally (it was set up for a different purpose — daily request counts). If the new D1 bar shows "unavailable" instead of a number, that's the fix needed — in the Cloudflare dashboard, edit that API token and add D1 read access. Nothing else on the page is affected either way; the Supabase bars keep working regardless.
 
 Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## Why the database doubled, and why old records aren't moving to D1
+
+Two questions after the D1 meter started working. Investigated both with real queries, no guessing.
+
+**Why the DB grew.** Broke it down table by table. The two biggest are `task_records` (live scans) and `alt_barcodes` (your product catalog file) — expected. The real reason it doubled isn't a leak: your daily scan volume itself roughly doubled to tripled over the past month (5,000-9,000/day in late August → 15,000-33,000+/day by late September). Since the app keeps a fixed *number of days*, not a fixed *number of records*, more scanning per day means more data sitting in that same window. That's not a bug, it's just more usage than there was before.
+
+**Why "any status" isn't reaching D1 after 14 days.** Checked the actual rule running in the database right now — it's already exactly what you want, no status is excluded, any status moves after 14 days. The real problem: a separate piece (the "archiver") is supposed to copy aging records to D1 every night and confirm it, and only then are they allowed to leave. That confirmation has **never once happened** — not for a single record, ever, since this was built. So everything just sits there waiting for a green light that's never come.
+
+I can't fix this myself — it's a completely separate deployment with its own login credentials I don't have access to. Two things to check when you get a chance:
+1. In the Cloudflare dashboard, under Workers & Pages, is there a Worker called `homesavers-archiver` listed at all?
+2. Cloudflare dashboard → Workers & Pages → D1 → `homesavers-archive` → Console tab → run: `SELECT * FROM archive_runs ORDER BY started_at_ms DESC LIMIT 20;` — this tells us whether it's never run, or running and failing (and why).
+
+Let me know what either shows and I'll walk you through the fix from there.
+
+**Also done: moved the new device-activity log to D1.** This was the one table safe to move without any risk to speed — nothing in the app ever reads it back, it's purely a write for diagnostics. Same idea as the archiver: it now writes into the same D1 database instead of Supabase, at zero extra cost to the store (still exactly one request from the device either way). This needs one manual step to actually take effect — running a database-setup command against D1, which I've documented but can't run myself from here (see `d1-migration-device-log.sql`'s header for the exact command).
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
