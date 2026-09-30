@@ -322,3 +322,17 @@ Let me know what either shows and I'll walk you through the fix from there.
 **Also done: moved the new device-activity log to D1.** This was the one table safe to move without any risk to speed — nothing in the app ever reads it back, it's purely a write for diagnostics. Same idea as the archiver: it now writes into the same D1 database instead of Supabase, at zero extra cost to the store (still exactly one request from the device either way). This needs one manual step to actually take effect — running a database-setup command against D1, which I've documented but can't run myself from here (see `d1-migration-device-log.sql`'s header for the exact command).
 
 Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## Charleville's duplicate-scan report — confirmed real, not just a one-off
+
+Checked properly instead of assuming the earlier fix (from two days ago) already covered this. It didn't, fully — found genuine duplicate records still happening chain-wide as recently as today, not just at Charleville.
+
+**What was actually happening:** the app only remembered "I've already scanned this today" AFTER the save for that scan finished talking to the server. If someone scanned fast, or the wifi was a bit slow, a repeat scan of the same product could sneak in before the first one had finished saving — so the app didn't yet know to say "you already scanned that."
+
+**Fixed:** it now remembers a scan the instant it's taken, not after it's saved. A genuine save failure still lets you re-scan normally (that part hasn't changed) — only a real duplicate now gets caught, and it gets caught immediately regardless of how slow the connection is.
+
+**One thing this does NOT cover, on purpose, worth knowing about:** this "have I seen this before" memory only exists on one device, for one continuous session. If the page reloads (or someone switches to a second scanning gun at the same store), that memory resets — there's no way for one gun to know what another gun scanned, or for the app to remember past a reload. That's true today and true after this fix. If duplicates keep happening because of *that* specific pattern rather than the timing issue just fixed, it would need a bigger change (having the server itself check for very recent duplicates, rather than relying on the device to remember) — let me know if that's worth doing.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
