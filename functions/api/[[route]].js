@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-10-05-devicelog-retention'
+const API_REVISION   = '2026-10-05-deptcheck-week-d1union'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -1287,81 +1287,131 @@ export async function onRequest(context) {
 
       // dept_check_summary and dept_check_department_breakdown both read
       // task_records (task_type 'J'), which is now purged on its OWN window,
-      // dept_check_retention_days (default 7 days) -- shorter than every other
-      // type. The Dashboard's range selector goes to 180 days, so a caller can
-      // ask for a window this query CANNOT answer, and it would answer anyway
-      // with a few days of rows under a 180-day heading. Reporting the live floor
-      // -- using J's OWN retention, not the generic one -- lets the card say so
-      // instead of quietly under-counting. The Monday email always asks for last
-      // week; if J retention is set below 7 days that would fall outside the
-      // floor, but the setting floors at 7 precisely so last week stays covered.
+      // dept_check_retention_days (default 7 days) in Postgres, then
+      // archive_retention_days (default 35) in D1. Because this endpoint now
+      // UNIONS the D1 archive (below), a week is answered in full right up to the
+      // END of the D1 window -- dept_check_retention_days + archive_retention_days
+      // (~42 days). Only a week older than THAT is genuinely beyond reach (D1 has
+      // purged it too), so the "truncated" floor is the archive horizon, not the
+      // 7-day live window -- otherwise the card would warn that the previous week
+      // is incomplete when the union has in fact made it whole.
       let liveFloorIso = null
       try {
         const rs = await db.select('app_settings', {
           select: 'key,value',
-          key: 'in.(dept_check_retention_days,scan_record_retention_days)'
+          key: 'in.(dept_check_retention_days,scan_record_retention_days,archive_retention_days)'
         })
         const sv = Object.fromEntries((rs || []).map(r => [r.key, Number(r.value)]))
-        // J's own window; fall back to the generic one, then to 14.
-        const days = Number.isFinite(sv.dept_check_retention_days) ? sv.dept_check_retention_days
-                   : Number.isFinite(sv.scan_record_retention_days) ? sv.scan_record_retention_days
-                   : 14
+        const liveDays = Number.isFinite(sv.dept_check_retention_days) ? sv.dept_check_retention_days
+                       : Number.isFinite(sv.scan_record_retention_days) ? sv.scan_record_retention_days
+                       : 14
+        const archDays = Number.isFinite(sv.archive_retention_days) ? sv.archive_retention_days : 35
+        const days = liveDays + archDays
         if (Number.isFinite(days) && days > 0) {
           liveFloorIso = new Date(Date.now() - days * 86400000).toISOString()
         }
       } catch { liveFloorIso = null }
 
+      // dept_check_summary LEFT JOINs from stores, so it gives the full list of
+      // active stores in scope (code/name), including the ones with zero records
+      // -- which is how "who MISSED the check" is answered. Its own record and
+      // department counts are Postgres-only, so they are NOT used directly; the
+      // real per-store figures come from the merged breakdown below.
       const rows = await db.rpc('dept_check_summary', {
         p_from:      from.toISOString(),
         p_to:        to.toISOString(),
         p_store_ids: storeIds,
       }) || []
 
-      // Records split BY DEPARTMENT, per store. The question is "of this store's
-      // 4,047 records, how many were HOMEWARES" -- not how many departments it
-      // touched. A count cannot distinguish four real departments from four real
-      // ones plus three of a single record; a breakdown can.
-      //
-      // Only fetched for the current week (?breakdown=1 or the default week), so
-      // the comparison week stays a cheap query.
-      let breakdown = []
-      if (p.get('breakdown') !== '0') {
-        breakdown = await db.rpc('dept_check_department_breakdown', {
-          p_from:      from.toISOString(),
-          p_to:        to.toISOString(),
-          p_store_ids: storeIds,
-        }) || []
-      }
+      // Records split BY DEPARTMENT, per store, from Postgres (the live window).
+      const pgBreakdown = await db.rpc('dept_check_department_breakdown', {
+        p_from:      from.toISOString(),
+        p_to:        to.toISOString(),
+        p_store_ids: storeIds,
+      }) || []
 
-      const stores = rows.map(r => ({
-        store_id:    r.store_id,
-        store_code:  r.store_code,
-        store_name:  r.store_name,
-        records:     Number(r.records) || 0,
-        departments: Number(r.departments) || 0,
-        did_check:   Number(r.records) > 0,
-        first_at:    r.first_at,
-        last_at:     r.last_at,
-      }))
+      // ── Union the ARCHIVE (D1) for the same week ──────────────────────────
+      // Department Check (J) lives in Postgres only for dept_check_retention_days
+      // (7) and in the D1 archive after that. So a week older than ~7 days -- the
+      // "previous week" the Monday email shows for comparison -- has MOSTLY moved
+      // to D1, and a Postgres-only summary reports stores as "missed" that in
+      // fact did the check (observed 2026-10-05: Week 39 showed 30 missed / 29 of
+      // 59 when only 2 missed, because 70,663 of its ~100k records were already
+      // in D1). The current week is still entirely in Postgres, so D1 returns
+      // nothing for it and the union is a no-op there.
+      //
+      // The two sources are DISJOINT at report time: an unarchived record is in
+      // Postgres, an archived one is in D1 and already purged from Postgres, and
+      // the brief overlap between the 01:30 archive and the 01:40/02:00 purge is
+      // long gone by the 09:00 email. So a straight per (store, department) sum
+      // is correct -- no per-id dedup needed.
+      let d1Breakdown = []
+      try {
+        if (env.ARCHIVE) {
+          const where = ["task_type = 'J'", "(source IS NULL OR source <> 'test')",
+                         'created_at_ms >= ?', 'created_at_ms <= ?']
+          const args  = [from.getTime(), to.getTime()]
+          if (storeIds) {
+            where.push(`store_id IN (${storeIds.map(() => '?').join(',')})`)
+            args.push(...storeIds)
+          }
+          const sql = `SELECT store_id,
+                              COALESCE(NULLIF(department, ''), '(none)') AS department,
+                              COUNT(*) AS records
+                         FROM task_record_archive
+                        WHERE ${where.join(' AND ')}
+                        GROUP BY store_id, department`
+          const res = await env.ARCHIVE.prepare(sql).bind(...args).all()
+          d1Breakdown = (res?.results || []).map(r => ({
+            store_id: r.store_id, department: r.department, records: Number(r.records) || 0
+          }))
+        }
+      } catch { d1Breakdown = [] }   // archive unreachable -> fall back to Postgres only
+
+      // Merge both sources into one per (store, department) record count.
+      const byStoreDept = {}
+      const addB = (b) => {
+        const dept = b.department || '(none)'
+        const m = (byStoreDept[b.store_id] ||= {})
+        m[dept] = (m[dept] || 0) + (Number(b.records) || 0)
+      }
+      for (const b of pgBreakdown) addB(b)
+      for (const b of d1Breakdown) addB(b)
+
+      // Every store's real figures come from the merged breakdown: records is the
+      // sum, departments is the distinct count EXCLUDING the "(none)" bucket (to
+      // match dept_check_summary's COUNT(DISTINCT NULLIF(item_group,''))), and
+      // did_check is simply "has any record this week, anywhere".
+      const stores = rows.map(r => {
+        const depts = byStoreDept[r.store_id] || {}
+        const records = Object.values(depts).reduce((a, n) => a + n, 0)
+        return {
+          store_id:    r.store_id,
+          store_code:  r.store_code,
+          store_name:  r.store_name,
+          records,
+          departments: Object.keys(depts).filter(d => d !== '(none)').length,
+          did_check:   records > 0,
+          first_at:    r.first_at,   // Postgres-only, informational
+          last_at:     r.last_at,
+          departments_breakdown: depts,
+        }
+      })
       const did    = stores.filter(s => s.did_check)
       const missed = stores.filter(s => !s.did_check)
 
       const d2 = (n) => String(n).padStart(2, '0')
       const ddmmyy = (d) => `${d2(d.getUTCDate())}/${d2(d.getUTCMonth() + 1)}/${String(d.getUTCFullYear()).slice(2)}`
 
-      // Chain-wide department totals, biggest first -- this decides which
-      // departments get their own colour and which fold into "Other", and it has
-      // to be the SAME decision for every store or a colour would mean different
-      // things on different bars.
+      // Chain-wide department totals, biggest first -- decides which departments
+      // get their own colour and which fold into "Other". From the merged data so
+      // an archived week's bars are complete too.
       const deptTotals = {}
-      for (const b of breakdown) {
-        deptTotals[b.department] = (deptTotals[b.department] || 0) + Number(b.records || 0)
+      for (const [, depts] of Object.entries(byStoreDept)) {
+        for (const [dept, n] of Object.entries(depts)) {
+          deptTotals[dept] = (deptTotals[dept] || 0) + n
+        }
       }
-      const byStoreDept = {}
-      for (const b of breakdown) {
-        (byStoreDept[b.store_id] ||= {})[b.department] = Number(b.records || 0)
-      }
-      for (const s of stores) s.departments_breakdown = byStoreDept[s.store_id] || {}
 
       return json({
         // Present only when the caller asked for more history than Postgres
