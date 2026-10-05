@@ -51,9 +51,20 @@ CREATE TABLE IF NOT EXISTS device_log_events (
   received_at_ms INTEGER NOT NULL
 );
 
--- Same three query shapes the original Supabase indexes existed for: "every
--- event from this device, in order", "every event of this kind recently,
--- chain-wide", and "every event from this store, recently".
-CREATE INDEX IF NOT EXISTS idx_dle_device_time ON device_log_events (device_id, client_at_ms DESC);
-CREATE INDEX IF NOT EXISTS idx_dle_type_time   ON device_log_events (event_type, client_at_ms DESC);
-CREATE INDEX IF NOT EXISTS idx_dle_store_time  ON device_log_events (store_id, client_at_ms DESC);
+-- NO SECONDARY INDEXES, deliberately (2026-10-05).
+--
+-- Three indexes used to live here, one per query shape ("this device, in
+-- order", "this event type recently", "this store recently"). They were
+-- DROPPED in production and removed here because this table is write-heavy and
+-- read almost never: the log takes ~18k inserts/day, and with three indexes
+-- plus the AUTOINCREMENT sequence each insert cost ~3.8 D1 row-writes --
+-- ~66,000/day, which on its own pushed D1 past its 100,000 rows-written/day
+-- free limit and starved the Department Check archiver (the far more important
+-- writer) of budget. See the 2026-10-05 D1 write-limit investigation.
+--
+-- D1 bills rows SCANNED for reads, not time, and a manual investigation query
+-- is the only reader here. A full scan of the whole table (tens of thousands of
+-- rows) is a few milliseconds and a rounding error against the 5,000,000
+-- reads/day limit, so the indexes bought almost nothing and cost a great deal.
+-- If a specific access path is ever needed often enough to index, add it back
+-- knowing each index adds a write to every insert.
