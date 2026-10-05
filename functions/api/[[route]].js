@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-10-05-deptcheck-week-d1union'
+const API_REVISION   = '2026-10-05-deptcheck-week-rollup'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -1285,43 +1285,52 @@ export async function onRequest(context) {
         }
       }
 
-      // dept_check_summary and dept_check_department_breakdown both read
-      // task_records (task_type 'J'), which is now purged on its OWN window,
-      // dept_check_retention_days (default 7 days) in Postgres, then
-      // archive_retention_days (default 35) in D1. Because this endpoint now
-      // UNIONS the D1 archive (below), a week is answered in full right up to the
-      // END of the D1 window -- dept_check_retention_days + archive_retention_days
-      // (~42 days). Only a week older than THAT is genuinely beyond reach (D1 has
-      // purged it too), so the "truncated" floor is the archive horizon, not the
-      // 7-day live window -- otherwise the card would warn that the previous week
-      // is incomplete when the union has in fact made it whole.
+      // Coverage (who did / missed the check) now comes from task_stats_daily
+      // -- the same nightly rollup the Dashboard uses. It survives record
+      // purges for stats_rollup_retention_days (180 days), so deleting or
+      // archiving task_records never changes what this report shows.
+      // The live_window floor reflects that extended horizon.
       let liveFloorIso = null
       try {
         const rs = await db.select('app_settings', {
           select: 'key,value',
-          key: 'in.(dept_check_retention_days,scan_record_retention_days,archive_retention_days)'
+          key: 'in.(stats_rollup_retention_days)'
         })
         const sv = Object.fromEntries((rs || []).map(r => [r.key, Number(r.value)]))
-        const liveDays = Number.isFinite(sv.dept_check_retention_days) ? sv.dept_check_retention_days
-                       : Number.isFinite(sv.scan_record_retention_days) ? sv.scan_record_retention_days
-                       : 14
-        const archDays = Number.isFinite(sv.archive_retention_days) ? sv.archive_retention_days : 35
-        const days = liveDays + archDays
-        if (Number.isFinite(days) && days > 0) {
-          liveFloorIso = new Date(Date.now() - days * 86400000).toISOString()
+        const rollupDays = Number.isFinite(sv.stats_rollup_retention_days) ? sv.stats_rollup_retention_days : 180
+        if (rollupDays > 0) {
+          liveFloorIso = new Date(Date.now() - rollupDays * 86400000).toISOString()
         }
       } catch { liveFloorIso = null }
 
-      // dept_check_summary LEFT JOINs from stores, so it gives the full list of
-      // active stores in scope (code/name), including the ones with zero records
-      // -- which is how "who MISSED the check" is answered. Its own record and
-      // department counts are Postgres-only, so they are NOT used directly; the
-      // real per-store figures come from the merged breakdown below.
+      // dept_check_summary LEFT JOINs from stores — gives the full list of
+      // active stores (code/name) including zero-record stores, which is how
+      // "who MISSED the check" is answered. Its own counts are Postgres-only
+      // so they are NOT used; coverage + record totals come from the rollup.
       const rows = await db.rpc('dept_check_summary', {
         p_from:      from.toISOString(),
         p_to:        to.toISOString(),
         p_store_ids: storeIds,
       }) || []
+
+      // ── Coverage from task_stats_daily (purge-proof, 180 days) ───────────
+      // This is the authoritative source for "did a store do any dept check
+      // this week" and for the record count. Records deleted from task_records
+      // won't affect these numbers because the nightly rollup already captured
+      // them before any purge ran.
+      const fromDay = from.toISOString().slice(0, 10)
+      const toDay   = to.toISOString().slice(0, 10)
+      const rollupParams = {
+        select:    'store_id,records',
+        task_type: 'eq.J',
+        day:       ['gte.' + fromDay, 'lte.' + toDay],
+      }
+      if (storeIds) rollupParams.store_id = 'in.(' + storeIds.join(',') + ')'
+      const statsRows = await db.select('task_stats_daily', rollupParams) || []
+      const rollupByStore = {}
+      for (const r of statsRows) {
+        rollupByStore[r.store_id] = (rollupByStore[r.store_id] || 0) + (Number(r.records) || 0)
+      }
 
       // Records split BY DEPARTMENT, per store, from Postgres (the live window).
       const pgBreakdown = await db.rpc('dept_check_department_breakdown', {
@@ -1378,13 +1387,13 @@ export async function onRequest(context) {
       for (const b of pgBreakdown) addB(b)
       for (const b of d1Breakdown) addB(b)
 
-      // Every store's real figures come from the merged breakdown: records is the
-      // sum, departments is the distinct count EXCLUDING the "(none)" bucket (to
-      // match dept_check_summary's COUNT(DISTINCT NULLIF(item_group,''))), and
-      // did_check is simply "has any record this week, anywhere".
+      // Coverage (records, did_check) comes from the rollup so it is immune to
+      // purges. Department breakdown is still from the merged records, used only
+      // for the bar chart (it may become empty for older weeks once records
+      // archive beyond 42 days, but the coverage numbers will still be correct).
       const stores = rows.map(r => {
-        const depts = byStoreDept[r.store_id] || {}
-        const records = Object.values(depts).reduce((a, n) => a + n, 0)
+        const records = rollupByStore[r.store_id] || 0
+        const depts   = byStoreDept[r.store_id] || {}
         return {
           store_id:    r.store_id,
           store_code:  r.store_code,
