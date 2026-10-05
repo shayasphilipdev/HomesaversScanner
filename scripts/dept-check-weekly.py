@@ -271,7 +271,7 @@ def stacked_bar(bd, palette, total, width_pct):
             f'table-layout:fixed;"><tr>{"".join(cells)}</tr></table>')
 
 
-def build_html(last, prev, cfg):
+def build_html(last, prev, cfg, revise_note=None):
     wk = last.get("week", {}) or {}
     stores = [s for s in (last.get("stores") or []) if s.get("records", 0) > 0]
     # Highest count first, as asked.
@@ -360,6 +360,20 @@ def build_html(last, prev, cfg):
              f'line-height:1.25;">Department Check &mdash; Weekly Report</div>'
              f'<div style="font-size:13px;color:#C9B79E;margin-top:5px;">'
              f'{esc(wk.get("label",""))}</div></td></tr>')
+
+    # ---- revision banner (only when re-sending a correction) ------------
+    # bgcolor attribute AND inline background-color, table-based, red left rule:
+    # renders in every mail client, Outlook's Word engine included.
+    if revise_note:
+        H.append(f'<tr><td style="padding:12px 4px 0;">'
+                 f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+                 f'border="0" bgcolor="{GOLD_LT}" '
+                 f'style="background-color:{GOLD_LT};border-radius:10px;">'
+                 f'<tr><td style="padding:11px 14px;border-left:4px solid {RED};'
+                 f'border-radius:10px;font-family:{FONT};font-size:13px;color:{ESPRESSO};'
+                 f'line-height:1.5;"><strong>Revised report.</strong> '
+                 f'{esc(revise_note)}</td></tr></table></td></tr>')
+
     # ---- greeting ---------------------------------------------------------
     # No spacer above it -- the greeting opens the message directly under the
     # masthead, rather than floating in a gap that reads as "mid-page". One
@@ -451,6 +465,8 @@ def main():
     ap.add_argument("--to", help="Send only to this address (overrides recipients) - for testing.")
     ap.add_argument("--week", help="Monday of the week to report on, YYYY-MM-DD. "
                                    "Default: the last complete week.")
+    ap.add_argument("--note", help="Short correction note. Adds a 'Revised report' "
+                                   "banner at the top and '[Revised]' to the subject.")
     args = ap.parse_args()
 
     log("=== Department Check weekly report starting ===")
@@ -469,8 +485,10 @@ def main():
         f"stores missed; {totals.get('records',0)} records, "
         f"{totals.get('departments',0)} departments.")
 
-    html    = build_html(data, prev, cfg)
+    html    = build_html(data, prev, cfg, revise_note=args.note)
     subject = f'{cfg.get("subject_prefix", "Homesavers Department Check")} - {week.get("label", "")}'
+    if args.note:
+        subject = f'[Revised] {subject}'
 
     if args.dry_run:
         out = os.path.join(HERE, "dept-check-weekly-preview.html")
