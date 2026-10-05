@@ -170,6 +170,34 @@ async function purgeArchive(env, cutoffMs) {
   return purged
 }
 
+// Device-log retention. The diagnostic log (device_log_events) has no business
+// value past a few weeks and, unlike the archive, nothing else ever deletes from
+// it -- so without this it grows forever. Delete rows older than the cutoff,
+// chunked, same shape as purgeArchive but keyed on id (this table has a rowid).
+//
+// No ORDER BY: the oldest rows have the lowest rowids (AUTOINCREMENT, inserted
+// first), so `received_at_ms < ? LIMIT n` finds them at the front of the table
+// and stops -- it reads ~CHUNK rows per pass, not the whole table, even without
+// an index on received_at_ms (there are deliberately no indexes here anymore).
+const DEVICE_LOG_PURGE_CHUNK      = 5000
+const DEVICE_LOG_PURGE_MAX_CHUNKS = 4   // 20,000 rows/run ceiling
+
+async function purgeDeviceLog(env, cutoffMs) {
+  let purged = 0
+  for (let i = 0; i < DEVICE_LOG_PURGE_MAX_CHUNKS; i++) {
+    const res = await env.ARCHIVE.prepare(
+      `DELETE FROM device_log_events
+        WHERE id IN (
+          SELECT id FROM device_log_events
+           WHERE received_at_ms < ?
+           LIMIT ?)`).bind(cutoffMs, DEVICE_LOG_PURGE_CHUNK).run()
+    const n = res?.meta?.changes ?? 0
+    purged += n
+    if (n < DEVICE_LOG_PURGE_CHUNK) break
+  }
+  return purged
+}
+
 async function sb(env, path) {
   const res = await fetch(`${env.SUPABASE_URL}/rest/v1/${path}`, {
     headers: {
@@ -213,10 +241,14 @@ async function retentionSettings(env) {
   // not yet copied (guarded against by d1_copied_at either way, but they should
   // agree on principle).
   const deptDays = await settingInt(env, 'dept_check_retention_days', retentionDays)
+  // Device-log retention is independent of the record-archive windows -- it is a
+  // diagnostic log, not business data. Default 21 days.
+  const deviceLogDays = await settingInt(env, 'device_log_retention_days', 21)
   return {
     retentionDays,
     archiveDays,
     deptDays,
+    deviceLogDays,
     // Non-J records older than this move from Postgres to D1.
     cutoffIso:     new Date(Date.now() - retentionDays * 86_400_000).toISOString(),
     // Department Check records older than this move -- typically sooner.
@@ -225,6 +257,8 @@ async function retentionSettings(env) {
     // for every type (retention+archive), so total life stays 49 days across the
     // board -- only the Postgres->D1 split day differs by type.
     purgeMs:       Date.now() - (retentionDays + archiveDays) * 86_400_000,
+    // device_log_events received before this are deleted from D1.
+    deviceLogPurgeMs: Date.now() - deviceLogDays * 86_400_000,
   }
 }
 
@@ -311,7 +345,7 @@ export async function runArchive(env, triggerKind) {
   const startedAt = Date.now()
   const shadow    = env.SHADOW_MODE === '1'
   let scanned = 0, inserted = 0, alreadyHad = 0, deleted = 0, marked = 0, error = null
-  let purged = 0
+  let purged = 0, deviceLogPurged = 0
   let archiveDays = null, retentionDays = null, cutoffSeen = null
 
   try {
@@ -351,7 +385,7 @@ export async function runArchive(env, triggerKind) {
       // the D1 purge and the run-log write. Running out mid-page is what killed
       // the 2026-09-25 run.
       const pageCost = 1 + Math.ceil(BATCH / D1_CHUNK)
-      if (subreq + pageCost + 1 + PURGE_MAX_CHUNKS + 1 > SUBREQUEST_BUDGET) break
+      if (subreq + pageCost + 1 + PURGE_MAX_CHUNKS + DEVICE_LOG_PURGE_MAX_CHUNKS + 1 > SUBREQUEST_BUDGET) break
 
       // EVERY type is archived, but Department Check (J) moves on a shorter
       // window than the rest -- so "due to move" is per-type and must match
@@ -427,6 +461,10 @@ export async function runArchive(env, triggerKind) {
     // destroying things, not to carry on.
     if (!shadow) {
       purged = await purgeArchive(env, cfg.purgeMs)
+      // Device-log retention. Independent of the archive window and cheap (the
+      // oldest rows sit at the front of the table), but still inside !shadow:
+      // shadow mode means "destroy nothing", and this destroys diagnostic rows.
+      deviceLogPurged = await purgeDeviceLog(env, cfg.deviceLogPurgeMs)
     }
   } catch (e) {
     error = String(e?.message || e).slice(0, 500)
@@ -453,6 +491,7 @@ export async function runArchive(env, triggerKind) {
   // not delete there. `purged` is rows removed from D1, which it does.
   return {
     startedAt, shadow, scanned, inserted, alreadyHad, deleted, marked, purged,
+    deviceLogPurged,
     durationMs, error,
     cutoffIso:    cutoffSeen,
     retentionDays,

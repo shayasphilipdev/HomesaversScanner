@@ -182,6 +182,12 @@ const KEY_META = {
     num:   { min: 1, max: 60 },
     hint:  'How many past days the nightly statistics job recalculates, so late status changes are picked up. Must stay below Live record retention — it is clamped automatically to (retention − 3), because recomputing a day whose records have already moved to the archive would zero that day.'
   },
+  device_log_retention_days: {
+    section: 'Retention',
+    label: 'Device log retention (days)',
+    num:   { min: 1, max: 365 },
+    hint:  'How long the internal "scan doctor" device activity log is kept in the archive database. Diagnostic data only — nothing business-facing. Default 21. The nightly archiver deletes older entries.'
+  },
   // ── Capacity ───────────────────────────────────────────────────────────
   capacity_db_limit_bytes: {
     section: 'Capacity',

@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-09-30-d1-usage-chart'
+const API_REVISION   = '2026-10-05-devicelog-retention'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -2932,6 +2932,7 @@ export async function onRequest(context) {
         product_query_retention_days:{ min: 1,  max: 365 },
         stats_rollup_retention_days: { min: 1,  max: 1095 },
         stats_rollup_window_days:    { min: 1,  max: 60 },
+        device_log_retention_days:   { min: 1,  max: 365 },
       }
       for (const [k, v] of Object.entries(updates)) {
         const lim = NUM_LIMITS[k]
