@@ -91,6 +91,7 @@ function ReviewButtons({ record, showInternal, allowReview, onUpdated }) {
       // completed/no_change_needed (see PATCH /task-records/:id) — mirror
       // that locally so "Reviewed" shows immediately without a re-fetch.
       onUpdated?.(record.id, { ...patch, reviewed_at: now })
+      window.dispatchEvent(new Event('hs:assignment-changed'))
       toast.success(status === 'completed' ? 'Marked complete.' : 'Marked “no change needed”.')
     } catch (e) {
       toast.error(e.message || 'Could not update this record')
@@ -146,6 +147,7 @@ function ReverseStatusButton({ record, events, onUpdated }) {
         status: 'pending', reviewed_at: null, completed_at: null,
         store_completed_at: null, cleared_at: null, marked_for_deletion: false
       })
+      window.dispatchEvent(new Event('hs:assignment-changed'))
       toast.success('Reversed to Pending.')
     } catch (e) {
       toast.error(e.message || 'Could not reverse this status')
