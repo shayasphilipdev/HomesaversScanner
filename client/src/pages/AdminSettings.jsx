@@ -124,9 +124,9 @@ const KEY_META = {
   },
   // ── Competition ────────────────────────────────────────────────────────
   competition_enabled: {
-    section: 'Competition',
-    label: 'Competition capture',
-    hint:  'When on, the Competition screen (record competitors around each store) is available to all users, plus its Reports tab. Off hides it everywhere.',
+    section: 'Local Competitors',
+    label: 'Local Competitors capture',
+    hint:  'When on, the Local Competitors screen (record competitors around each store) is available to all users, plus its Reports tab. Off hides it everywhere.',
     bool:  true
   },
   // ── Retention ──────────────────────────────────────────────────────────

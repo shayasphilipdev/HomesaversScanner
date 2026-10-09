@@ -139,7 +139,7 @@ export default function Competition() {
     <div>
       <div className="page-header">
         <div>
-          <div className="page-title">Competition</div>
+          <div className="page-title">Local Competitors</div>
           <div className="page-subtitle">Record competitors around your store</div>
         </div>
         {currentStoreId && rows.length > 0 && (

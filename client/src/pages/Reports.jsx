@@ -64,7 +64,7 @@ const SUBTITLES = {
   product:    'Product Master — look up any product',
   master:     'Master reports — back-office data tables',
   spaceplan:  'Space Plan — equipment counts by store and department',
-  competition:'Competition — competitors recorded around each store'
+  competition:'Local Competitors — competitors recorded around each store'
 }
 
 export default function Reports() {
@@ -93,7 +93,7 @@ export default function Reports() {
           <button className={`btn btn-sm ${tab === 'product' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('product')}>Product Master</button>
           <button className={`btn btn-sm ${tab === 'spaceplan' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('spaceplan')}>Space Plan</button>
           {showCompetition && (
-            <button className={`btn btn-sm ${tab === 'competition' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('competition')}>Competition</button>
+            <button className={`btn btn-sm ${tab === 'competition' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('competition')}>Local Competitors</button>
           )}
           {showMaster && (
             <button className={`btn btn-sm ${tab === 'master' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setTab('master')}>Master Reports</button>

@@ -20,8 +20,8 @@ export default function Sidebar() {
   if (canDoStoreTasks(session)) items.push({ to: '/store-tasks', icon: '☑', label: 'Store Tasks' })
   items.push({ to: '/space-plan', icon: '▦', label: 'Space Plan' })
   // Competition module — hidden only when an admin has explicitly disabled it.
-  if (appConfig?.competition_enabled !== false) items.push({ to: '/competition', icon: '⚑', label: 'Competition' })
-  items.push({ to: '/product-query', icon: '💬', label: 'Product Query' })
+  if (appConfig?.competition_enabled !== false) items.push({ to: '/competition', icon: '⚑', label: 'Local Competitors' })
+  items.push({ to: '/product-query', icon: '💬', label: 'Check with Other Stores' })
   items.push({ to: '/reports', icon: '▤', label: 'Reports' })
   // Pricing — back-office logins only.
   if (session.mode === 'backoffice') items.push({ to: '/pricing', icon: '€', label: 'Pricing' })
