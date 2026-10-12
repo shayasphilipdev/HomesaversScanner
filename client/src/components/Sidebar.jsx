@@ -21,7 +21,7 @@ export default function Sidebar() {
   items.push({ to: '/space-plan', icon: '▦', label: 'Space Plan' })
   // Competition module — hidden only when an admin has explicitly disabled it.
   if (appConfig?.competition_enabled !== false) items.push({ to: '/competition', icon: '⚑', label: 'Local Competitors' })
-  items.push({ to: '/product-query', icon: '💬', label: 'Check with Other Stores' })
+  items.push({ to: '/product-query', icon: '💬', label: 'Ask Other Stores' })
   items.push({ to: '/reports', icon: '▤', label: 'Reports' })
   // Pricing — back-office logins only.
   if (session.mode === 'backoffice') items.push({ to: '/pricing', icon: '€', label: 'Pricing' })

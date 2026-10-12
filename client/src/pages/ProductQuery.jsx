@@ -36,7 +36,7 @@ export default function ProductQuery() {
     <div>
       <div className="page-header">
         <div>
-          <div className="page-title">Check with Other Stores</div>
+          <div className="page-title">Ask Other Stores</div>
           <div className="page-subtitle">
             {questions.length} open thread{questions.length === 1 ? '' : 's'} · ask other stores about an unknown product
           </div>
