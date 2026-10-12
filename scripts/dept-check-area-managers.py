@@ -131,13 +131,11 @@ def fetch_area_stores(cfg, area_code):
     return [s["id"] for s in r2.json()]
 
 
-def fetch_report(cfg, secret, store_ids, frm, to):
+def fetch_report(cfg, secret, frm, to, store_ids=None):
     url = f"{cfg['base_url']}/api/reports/dept-check-week"
-    params = {
-        "from":      frm.isoformat(),
-        "to":        to.isoformat(),
-        "store_ids": ",".join(store_ids),
-    }
+    params = {"from": frm.isoformat(), "to": to.isoformat()}
+    if store_ids:
+        params["store_ids"] = ",".join(store_ids)
     resp = requests.get(url, headers={"X-Sync-Secret": secret}, params=params, timeout=120)
     resp.raise_for_status()
     return resp.json()
@@ -477,7 +475,7 @@ def main():
 
         log(f"  {name}: {len(store_ids)} stores. Fetching report…")
         try:
-            data = fetch_report(cfg, secret, store_ids, frm, to)
+            data = fetch_report(cfg, secret, frm, to, store_ids)
         except Exception as e:
             log(f"  {name}: report fetch failed: {e}", "ERROR")
             errors += 1
@@ -502,6 +500,22 @@ def main():
             log(f"  {name}: sent to {email}{bcc_note}")
         except Exception as e:
             log(f"  {name}: send failed: {e}", "ERROR")
+            errors += 1
+
+    # Summary email to shayas (or whoever is in summary_to): chain-wide, all
+    # stores, same format as the per-area emails but addressed "Hi All".
+    summary_to = cfg.get("summary_to") or []
+    if isinstance(summary_to, str):
+        summary_to = [summary_to]
+    if summary_to and not args.dry_run:
+        log(f"Sending chain-wide summary to {', '.join(summary_to)}…")
+        try:
+            all_data = fetch_report(cfg, secret, frm, to)
+            all_html = build_html(all_data, cfg, "All", "All Areas", period_label, is_mid_week)
+            send_email(cfg, all_html, subject, summary_to)
+            log(f"  Summary sent to {', '.join(summary_to)}")
+        except Exception as e:
+            log(f"  Summary send failed: {e}", "ERROR")
             errors += 1
 
     if errors:
