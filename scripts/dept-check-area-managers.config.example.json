@@ -4,7 +4,6 @@
   "supabase_url": "https://eggspkdengnxktwkdwpw.supabase.co",
   "supabase_anon_key": "PUT-YOUR-SUPABASE-ANON-KEY-HERE",
   "bcc": ["shayas.philip@supplychain1.ie"],
-  "summary_to": ["shayas.philip@supplychain1.ie"],
   "subject_prefix": "Homesavers Department Check",
   "area_managers": [
     { "area_code": "101", "area_label": "Armandas Area", "name": "Armandas", "email": "armandas@homesavers.ie" },

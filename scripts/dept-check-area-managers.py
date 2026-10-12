@@ -502,22 +502,6 @@ def main():
             log(f"  {name}: send failed: {e}", "ERROR")
             errors += 1
 
-    # Summary email to shayas (or whoever is in summary_to): chain-wide, all
-    # stores, same format as the per-area emails but addressed "Hi All".
-    summary_to = cfg.get("summary_to") or []
-    if isinstance(summary_to, str):
-        summary_to = [summary_to]
-    if summary_to and not args.dry_run:
-        log(f"Sending chain-wide summary to {', '.join(summary_to)}…")
-        try:
-            all_data = fetch_report(cfg, secret, frm, to)
-            all_html = build_html(all_data, cfg, "All", "All Areas", period_label, is_mid_week)
-            send_email(cfg, all_html, subject, summary_to)
-            log(f"  Summary sent to {', '.join(summary_to)}")
-        except Exception as e:
-            log(f"  Summary send failed: {e}", "ERROR")
-            errors += 1
-
     if errors:
         log(f"Finished with {errors} error(s).", "WARN")
         sys.exit(1)
