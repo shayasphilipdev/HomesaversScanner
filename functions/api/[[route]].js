@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-10-05-deptcheck-week-rollup'
+const API_REVISION   = '2026-10-12-area-manager-email'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -1275,7 +1275,9 @@ export async function onRequest(context) {
       const to   = p.get('to')   ? new Date(p.get('to'))   : wk.to
       if (isNaN(from) || isNaN(to)) return err('Invalid date range', 400)
 
-      // Store scope only applies to a session caller; the email is chain-wide.
+      // Store scope: session callers use their own scope; secret callers (email
+      // scripts) may optionally pass ?store_ids=uuid1,uuid2,... to get a
+      // per-area-manager view rather than the chain-wide report.
       let storeIds = null
       if (!secretOk) {
         const scope = await scopedStoreIds(db, callerSession)
@@ -1283,6 +1285,9 @@ export async function onRequest(context) {
           if (!scope.length) return json({ stores: [], totals: { stores: 0, missed: 0, records: 0 } })
           storeIds = scope
         }
+      } else {
+        const raw = p.get('store_ids')
+        if (raw) storeIds = raw.split(',').map(s => s.trim()).filter(Boolean)
       }
 
       // Coverage (who did / missed the check) now comes from task_stats_daily

@@ -33,11 +33,13 @@ $files = @(
   'manifest-generator.py',
   'run-manifest.vbs',
   'aging-report.py',
-  'dept-check-weekly.py'     # Monday 09:00 "who missed Department Check" email
+  'dept-check-weekly.py',              # Monday 09:00 "who missed Department Check" email
+  'dept-check-area-managers.py'        # Thursday 09:00 + Monday 09:00 per-area-manager email
 )
 
 # Git-ignored, so it only exists locally — copy it if present, never fail on it.
-$optional = @('aging-report.config.json', 'dept-check-weekly.config.json')
+$optional = @('aging-report.config.json', 'dept-check-weekly.config.json',
+              'dept-check-area-managers.config.json')
 
 $copied = 0; $skipped = 0; $missing = @()
 

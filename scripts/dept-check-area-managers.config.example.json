@@ -1,0 +1,25 @@
+{
+  "_comment": "Copy to dept-check-area-managers.config.json and fill in emails and SMTP key. Do NOT commit the real file.",
+  "base_url": "https://homesaversscanner.pages.dev",
+  "supabase_url": "https://eggspkdengnxktwkdwpw.supabase.co",
+  "supabase_anon_key": "PUT-YOUR-SUPABASE-ANON-KEY-HERE",
+  "bcc": ["shayas.philip@supplychain1.ie"],
+  "subject_prefix": "Homesavers Department Check",
+  "area_managers": [
+    { "area_code": "101", "area_label": "Armandas Area", "name": "Armandas", "email": "armandas@homesavers.ie" },
+    { "area_code": "102", "area_label": "Edward Area",   "name": "Edward",   "email": "edward@homesavers.ie" },
+    { "area_code": "103", "area_label": "Gary Area",     "name": "Gary",     "email": "gary@homesavers.ie" },
+    { "area_code": "104", "area_label": "Hugh Area",     "name": "Hugh",     "email": "hugh@homesavers.ie" },
+    { "area_code": "105", "area_label": "Joe Area",      "name": "Joe",      "email": "joe@homesavers.ie" },
+    { "area_code": "106", "area_label": "Sean Area",     "name": "Sean",     "email": "sean@homesavers.ie" },
+    { "area_code": "107", "area_label": "Wendy Area",    "name": "Wendy",    "email": "wendy@homesavers.ie" }
+  ],
+  "smtp": {
+    "host": "smtp-relay.brevo.com",
+    "port": 587,
+    "security": "starttls",
+    "username": "PUT-YOUR-BREVO-LOGIN-EMAIL-HERE",
+    "password": "PUT-YOUR-BREVO-SMTP-KEY-HERE",
+    "from": "Homesavers Scanner <orders.homesavers@outlook.com>"
+  }
+}
