@@ -147,7 +147,6 @@ export default function TaskForm({ taskType, storeId, onSaved }) {
           <div style={{ fontSize: 14, lineHeight: 1.5, opacity: 0.93 }}>
             Department Checks should be recorded using the <strong>Department Scan</strong> option
             in the main menu — it is faster and captures the full department information correctly.
-            Submitting here is missing important details.
           </div>
           <a
             href="/dept-scan"
