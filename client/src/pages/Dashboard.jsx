@@ -6,7 +6,7 @@ import { TASK_FORMS } from '../lib/taskTypes.js'
 import { downloadExcel } from '../lib/excel.js'
 import Skeleton from '../components/Skeleton.jsx'
 import DateRangePicker from '../components/DateRangePicker.jsx'
-import { useDateRange, addDays, weekRangeLabel, weekShortLabel } from '../lib/dateRange.js'
+import { useDateRange, addDays, weekRangeLabel, weekShortLabel, rangeLabel } from '../lib/dateRange.js'
 
 const STATUS_LABEL = {
   pending:          'Pending',
@@ -218,10 +218,10 @@ export default function Dashboard() {
         {isBO && <StoresMissingDeptCheck deptCheck={stats?.dept_check_range} allStores={scopeStores} scopeStoreIds={scopedStoreIds} statsFrom={stats?.stats_from} loading={loading} summary={deptSummary} />}
       </div>
 
-      {isBO && <DeptCheckByStore summary={deptSummary} loading={deptLoading} />}
+      {isBO && <DeptCheckByStore summary={deptSummary} loading={deptLoading} periodLabel={rangeLabel(range)} />}
 
       {isBO && <StoreDonutGrid rows={stats?.by_store || []} loading={loading} allStores={scopeStores} dataDays={stats?.by_day || []} dataFrom={stats?.data_from} dataTo={stats?.data_to} />}
-      {!isBO && <MyDeptBreakdown summary={deptSummary} loading={deptLoading} />}
+      {!isBO && <MyDeptBreakdown summary={deptSummary} loading={deptLoading} periodLabel={rangeLabel(range)} />}
       {!isBO && <RecentList rows={stats?.recent || []} loading={loading} isBO={isBO} />}
 
       {/* Activity — moved below the store graph and made compact (secondary info). */}
@@ -746,7 +746,7 @@ const DEPT_HUES_DARK  = ['#BE5900', '#07978C', '#9C7205', '#A31EFF',
 // differently-coloured swatches sharing the same caption read as a bug.
 const DEPT_OTHER = { light: '#B9A894', dark: '#8A7A66' }
 
-function DeptCheckByStore({ summary, loading }) {
+function DeptCheckByStore({ summary, loading, periodLabel }) {
   const [theme, setTheme] = useState(
     () => document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light')
   useEffect(() => {
@@ -806,9 +806,10 @@ function DeptCheckByStore({ summary, loading }) {
       <div className="card-header">
         <span style={{ minWidth: 0 }}>
           Department Check records by department
+          {periodLabel && <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--text-muted)' }}> ({periodLabel})</span>}
           {t && (
             <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--text-muted)' }}>
-              {' '}({nf(t.records)} records &middot; {t.did} of {t.stores} stores)
+              {' · '}{nf(t.records)} records &middot; {t.did} of {t.stores} stores
             </span>
           )}
         </span>
@@ -922,7 +923,7 @@ function DeptCheckByStore({ summary, loading }) {
 // store name to show and no "busiest store" length comparison to make: the
 // bar is always full width, and what matters is the department SPLIT within
 // it, not how this store compares to any other.
-function MyDeptBreakdown({ summary, loading }) {
+function MyDeptBreakdown({ summary, loading, periodLabel }) {
   const [theme, setTheme] = useState(
     () => document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light')
   useEffect(() => {
@@ -967,9 +968,10 @@ function MyDeptBreakdown({ summary, loading }) {
       <div className="card-header">
         <span style={{ minWidth: 0 }}>
           Department Check records by department
+          {periodLabel && <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--text-muted)' }}> ({periodLabel})</span>}
           {t && (
             <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--text-muted)' }}>
-              {' '}({nf(t.records)} records)
+              {' · '}{nf(t.records)} records
             </span>
           )}
         </span>
