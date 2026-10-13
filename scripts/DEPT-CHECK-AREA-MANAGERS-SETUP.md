@@ -7,8 +7,8 @@ Two sends per week:
 
 | Day | Time | Period covered |
 |---|---|---|
-| **Thursday** | 09:00 | Monday to Wednesday (mid-week snapshot) |
-| **Monday** | 09:00 | Previous Monday to Sunday (full week) |
+| **Thursday** | 08:00 | Monday to Wednesday (mid-week snapshot) |
+| **Monday** | 08:00 | Previous Monday to Sunday (full week) |
 
 ---
 
@@ -56,14 +56,14 @@ Windows Task Scheduler (Mon 09:00 or Thu 09:00)
 3. **Scheduled tasks** — already registered:
 
    ```
-   schtasks /Create /TN "Homesavers Dept Check Area Mon" /SC WEEKLY /D MON /ST 09:00 ^
+   schtasks /Create /TN "Homesavers Dept Check Area Mon" /SC WEEKLY /D MON /ST 08:00 ^
      /TR "\"C:\Users\shayas\AppData\Local\Programs\Python\Python313\python.exe\" \"C:\Homesavers\scripts\dept-check-area-managers.py\" --period full-week" /F
 
-   schtasks /Create /TN "Homesavers Dept Check Area Thu" /SC WEEKLY /D THU /ST 09:00 ^
+   schtasks /Create /TN "Homesavers Dept Check Area Thu" /SC WEEKLY /D THU /ST 08:00 ^
      /TR "\"C:\Users\shayas\AppData\Local\Programs\Python\Python313\python.exe\" \"C:\Homesavers\scripts\dept-check-area-managers.py\" --period mid-week" /F
    ```
 
-   Next runs: **Thu 15/10/2026 09:00** (mid-week) · **Mon 19/10/2026 09:00** (full week).
+   Next runs: **Thu 15/10/2026 08:00** (mid-week) · **Mon 19/10/2026 08:00** (full week).
 
 ---
 
