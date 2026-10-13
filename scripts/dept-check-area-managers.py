@@ -98,37 +98,74 @@ def _iso_week(d):
     return d.isocalendar()[1]
 
 
-def fetch_area_stores(cfg, area_code):
-    """Return list of store UUIDs for the given area_code via Supabase REST."""
-    supabase_url = cfg.get("supabase_url", "").rstrip("/")
-    anon_key     = cfg.get("supabase_anon_key", "")
-    if not supabase_url or not anon_key:
-        log("supabase_url / supabase_anon_key not in config — cannot resolve stores.", "ERROR")
-        return []
+def _supabase_headers(cfg):
+    anon_key = cfg.get("supabase_anon_key", "")
+    return {"apikey": anon_key, "Authorization": f"Bearer {anon_key}"}
 
-    headers = {"apikey": anon_key, "Authorization": f"Bearer {anon_key}"}
-    # 1. area uuid
+
+def fetch_area_managers_from_db(cfg):
+    """Return area manager list from the users table.
+
+    Each entry: {name, email, area_label, store_ids}.
+    Managers with no email set are included but flagged — the caller skips them.
+    """
+    supabase_url = cfg.get("supabase_url", "").rstrip("/")
+    if not supabase_url or not cfg.get("supabase_anon_key"):
+        log("supabase_url / supabase_anon_key not in config.", "ERROR")
+        sys.exit(1)
+
+    hdrs = _supabase_headers(cfg)
+
+    # Active area managers
     r = requests.get(
-        f"{supabase_url}/rest/v1/areas",
-        headers=headers,
-        params={"area_code": f"eq.{area_code}", "select": "id"},
+        f"{supabase_url}/rest/v1/users",
+        headers=hdrs,
+        params={"role": "eq.area_manager", "is_active": "eq.true",
+                "select": "display_name,email,area_ids"},
         timeout=30,
     )
     r.raise_for_status()
-    rows = r.json()
-    if not rows:
-        return []
-    area_id = rows[0]["id"]
+    users = r.json()
 
-    # 2. stores in that area
+    # All active areas for id→name lookup
     r2 = requests.get(
-        f"{supabase_url}/rest/v1/stores",
-        headers=headers,
-        params={"area_id": f"eq.{area_id}", "is_active": "eq.true", "select": "id"},
+        f"{supabase_url}/rest/v1/areas",
+        headers=hdrs,
+        params={"is_active": "eq.true", "select": "id,area_code,area_name"},
         timeout=30,
     )
     r2.raise_for_status()
-    return [s["id"] for s in r2.json()]
+    areas_by_id = {a["id"]: a for a in r2.json()}
+
+    result = []
+    for u in users:
+        area_ids = u.get("area_ids") or []
+        if not area_ids:
+            log(f"  {u['display_name']}: no area_ids — skipping.", "WARN")
+            continue
+
+        store_ids   = []
+        area_labels = []
+        for area_id in area_ids:
+            area = areas_by_id.get(area_id, {})
+            area_labels.append(area.get("area_name") or area.get("area_code", "?"))
+            r3 = requests.get(
+                f"{supabase_url}/rest/v1/stores",
+                headers=hdrs,
+                params={"area_id": f"eq.{area_id}", "is_active": "eq.true", "select": "id"},
+                timeout=30,
+            )
+            r3.raise_for_status()
+            store_ids.extend(s["id"] for s in r3.json())
+
+        result.append({
+            "name":        u["display_name"],
+            "email":       (u.get("email") or "").strip(),
+            "area_label":  (", ".join(area_labels)) + " Area",
+            "store_ids":   store_ids,
+        })
+
+    return result
 
 
 def fetch_report(cfg, secret, frm, to, store_ids=None):
@@ -434,10 +471,17 @@ def main():
     is_mid_week = (args.period == "mid-week")
     log(f"Period: {frm.date()} to {to.date()} — {period_label}")
 
-    managers = cfg.get("area_managers", [])
-    if not managers:
-        log("No area_managers configured.", "ERROR")
+    log("Fetching area managers from database…")
+    try:
+        managers = fetch_area_managers_from_db(cfg)
+    except Exception as e:
+        log(f"Failed to fetch area managers: {e}", "ERROR")
         sys.exit(1)
+
+    if not managers:
+        log("No active area managers with area_ids found in the database.", "ERROR")
+        sys.exit(1)
+    log(f"Found {len(managers)} area manager(s).")
 
     bcc = cfg.get("bcc") or []
     if isinstance(bcc, str):
@@ -448,29 +492,20 @@ def main():
 
     errors = 0
     for mgr in managers:
-        name       = mgr.get("name", "")
-        email      = args.to or mgr.get("email", "")
-        area_code  = mgr.get("area_code", "")
-        area_label = mgr.get("area_label") or f"Area {area_code}"
+        name       = mgr["name"]
+        email      = args.to or mgr["email"]
+        area_label = mgr["area_label"]
+        store_ids  = mgr["store_ids"]
         first_name = name.split()[0] if name else "Manager"
+        slug       = name.lower().replace(" ", "-")
 
         if not email:
-            log(f"  {name} ({area_code}): no email configured — skipping.", "WARN")
-            continue
-        if not area_code:
-            log(f"  {name}: no area_code configured — skipping.", "WARN")
-            continue
-
-        log(f"  {name} ({area_code}): fetching stores…")
-        try:
-            store_ids = fetch_area_stores(cfg, area_code)
-        except Exception as e:
-            log(f"  {name}: store lookup failed: {e}", "ERROR")
-            errors += 1
+            log(f"  {name}: no email in database — skipping. "
+                f"Set it in Admin → Employees.", "WARN")
             continue
 
         if not store_ids:
-            log(f"  {name} ({area_code}): no active stores found — skipping.", "WARN")
+            log(f"  {name}: no active stores found for their areas — skipping.", "WARN")
             continue
 
         log(f"  {name}: {len(store_ids)} stores. Fetching report…")
@@ -488,7 +523,7 @@ def main():
         html = build_html(data, cfg, first_name, area_label, period_label, is_mid_week)
 
         if args.dry_run:
-            out = os.path.join(HERE, f"dept-check-area-preview-{area_code}.html")
+            out = os.path.join(HERE, f"dept-check-area-preview-{slug}.html")
             with open(out, "w", encoding="utf-8") as f:
                 f.write(html)
             log(f"  {name}: dry run — wrote {out}")

@@ -1,8 +1,7 @@
 # Department Check — Area Manager Emails
 
 Sends each Area Manager a scoped Department Check report showing **only their stores**.
-Shayas is BCC'd on every email. Joe's area is sent directly to shayas until Joe's
-email is added.
+Shayas is BCC'd on every email.
 
 Two sends per week:
 
@@ -13,20 +12,17 @@ Two sends per week:
 
 ---
 
-## Area managers
+## Area manager emails (set in the app)
 
-| Area | Code | Name | Email |
-|---|---|---|---|
-| 101 | Armandas | armandas.homesavers@outlook.com |
-| 102 | Edward | ed.homesavers@outlook.com |
-| 103 | Gary | gary.homesavers@outlook.com |
-| 104 | Hugh | hugh.homesavers@outlook.com |
-| 105 | Joe | *(no email — sent to shayas)* |
-| 106 | Sean | sean.homesavers@outlook.com |
-| 107 | Wendy | wendy.homesavers@outlook.com |
+Emails are read from the **users table** — not hardcoded in the config.
 
-To add Joe's email: edit `C:\Homesavers\scripts\dept-check-area-managers.config.json`
-and set `"email": "joe@..."` for the area_code 105 entry. No redeploy needed.
+To add or change an area manager's email:
+1. Open the app → Admin → Employees
+2. Find the area manager, click Edit
+3. Set the **Email** field and save
+
+If an area manager has no email set, their send is skipped and logged as a warning.
+To check who is missing an email, run a dry-run (see Testing below).
 
 ---
 
@@ -36,8 +32,9 @@ and set `"email": "joe@..."` for the area_code 105 entry. No redeploy needed.
 Windows Task Scheduler (Mon 09:00 or Thu 09:00)
   └─> C:\Homesavers\scripts\dept-check-area-managers.py
         ├─ reads C:\Homesavers\.sync-secret
-        ├─ reads dept-check-area-managers.config.json  (SMTP + area manager emails)
-        ├─ GET /rest/v1/areas + /rest/v1/stores  (Supabase REST — resolves area → store IDs)
+        ├─ reads dept-check-area-managers.config.json  (SMTP credentials only)
+        ├─ GET /rest/v1/users?role=eq.area_manager      (Supabase REST — reads emails)
+        ├─ GET /rest/v1/areas + /rest/v1/stores         (resolves area → store IDs)
         └─ per area manager:
              GET /api/reports/dept-check-week?store_ids=...  (X-Sync-Secret, scoped)
              build_html  →  send_email (To: manager, BCC: shayas)
@@ -48,7 +45,7 @@ Windows Task Scheduler (Mon 09:00 or Thu 09:00)
 ## One-time setup (already done)
 
 1. **Config** — created at `C:\Homesavers\scripts\dept-check-area-managers.config.json`.
-   Git-ignored. Contains SMTP credentials and area manager emails.
+   Git-ignored. Contains SMTP credentials only; area manager emails come from the DB.
 
 2. **Deployed** via `deploy-scripts.ps1`. Run again after any script change:
 
@@ -83,7 +80,7 @@ python dept-check-area-managers.py --period full-week --to shayas.philip@supplyc
 python dept-check-area-managers.py --period mid-week --dry-run
 ```
 
-Dry-run files: `dept-check-area-preview-101.html` … `dept-check-area-preview-107.html`
+Dry-run files: `dept-check-area-preview-<name>.html` (one per area manager).
 
 Log: `C:\Homesavers\logs\dept-check-area-managers.log`
 
