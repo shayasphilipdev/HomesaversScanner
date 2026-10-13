@@ -275,10 +275,11 @@ export const getTaskRecords = ({ storeId, taskType, status, limit, offset, filte
 // uses, so the screen and the email can never disagree about what counts as
 // having done a Department Check. Never throws -- these are supplementary
 // figures on a card that must still render without them.
-export const getDeptCheckWeek = ({ from, to } = {}) => {
+export const getDeptCheckWeek = ({ from, to, storeIds } = {}) => {
   const q = new URLSearchParams()
   if (from) q.set('from', from)
   if (to)   q.set('to',   to)
+  if (storeIds?.length) q.set('store_ids', storeIds.join(','))
   return request('/reports/dept-check-week' + (q.toString() ? `?${q}` : ''))
     .catch(() => null)
 }

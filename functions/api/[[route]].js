@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-10-12-area-manager-email'
+const API_REVISION   = '2026-10-13-dept-check-scope'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -1275,19 +1275,27 @@ export async function onRequest(context) {
       const to   = p.get('to')   ? new Date(p.get('to'))   : wk.to
       if (isNaN(from) || isNaN(to)) return err('Invalid date range', 400)
 
-      // Store scope: session callers use their own scope; secret callers (email
-      // scripts) may optionally pass ?store_ids=uuid1,uuid2,... to get a
-      // per-area-manager view rather than the chain-wide report.
+      // Store scope: secret callers may pass ?store_ids= directly; session
+      // callers derive their base scope from the session and may further narrow
+      // it with ?store_ids= (e.g. the Dashboard scope picker selecting one area
+      // or one store). The passed IDs are intersected with the session scope so
+      // a session caller can never exceed their own access.
       let storeIds = null
+      const rawIds = p.get('store_ids')
+      const passedIds = rawIds ? rawIds.split(',').map(s => s.trim()).filter(Boolean) : null
       if (!secretOk) {
         const scope = await scopedStoreIds(db, callerSession)
         if (scope !== null) {
-          if (!scope.length) return json({ stores: [], totals: { stores: 0, missed: 0, records: 0 } })
-          storeIds = scope
+          const sessionSet = new Set(scope)
+          const effective  = passedIds ? passedIds.filter(id => sessionSet.has(id)) : scope
+          if (!effective.length) return json({ stores: [], totals: { stores: 0, missed: 0, records: 0 } })
+          storeIds = effective
+        } else if (passedIds) {
+          // Unrestricted session + explicit list: honour the list as-is.
+          storeIds = passedIds
         }
       } else {
-        const raw = p.get('store_ids')
-        if (raw) storeIds = raw.split(',').map(s => s.trim()).filter(Boolean)
+        if (passedIds) storeIds = passedIds
       }
 
       // Coverage (who did / missed the check) now comes from task_stats_daily

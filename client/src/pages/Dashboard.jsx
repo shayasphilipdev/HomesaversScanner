@@ -136,7 +136,9 @@ export default function Dashboard() {
     // what MyDeptBreakdown below renders.
     setDeptSummary(null)
     setDeptLoading(true)
-    getDeptCheckWeek({ from: params.from, to: params.to })
+    const deptArgs = { from: params.from, to: params.to }
+    if (isBO && Array.isArray(scopedStoreIds) && scopedStoreIds.length) deptArgs.storeIds = scopedStoreIds
+    getDeptCheckWeek(deptArgs)
       .then(setDeptSummary)
       .finally(() => setDeptLoading(false))
   }, [params.from, params.to, bucket, scope, scopedStoreIds, isBO])
