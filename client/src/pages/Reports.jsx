@@ -1452,7 +1452,7 @@ function HQReports() {
       <RecordDetailModal
         open={!!detailRecord}
         record={detailRecord}
-        storeName={detailRecord ? (storesById[detailRecord.store_id]?.store_name || '') : ''}
+        storeName={detailRecord ? (() => { const s = storesById[detailRecord.store_id]; return s ? `${s.store_code} - ${s.store_name}` : '' })() : ''}
         showInternal={isBO}
         onClose={() => setDetailRecord(null)}
         // Backoffice Comments is saved from inside the popup — merge the new
