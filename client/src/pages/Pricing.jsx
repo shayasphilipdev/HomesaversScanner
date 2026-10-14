@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Navigate } from 'react-router-dom'
 import { useStore } from '../App.jsx'
 import { useToast } from '../components/Toast.jsx'
 import { downloadExcel } from '../lib/excel.js'
@@ -170,14 +171,7 @@ export default function Pricing() {
     } catch (e) { setError(e.message) } finally { setDownloading(false) }
   }
 
-  if (!isBO) {
-    return (
-      <div className="card"><div className="empty-state">
-        <p><strong>Back office only.</strong></p>
-        <p className="note">The Pricing page is available to back-office logins.</p>
-      </div></div>
-    )
-  }
+  if (!isBO) return <Navigate to="/dashboard" replace />
 
   const toPrice = items.filter(i => i.pricing_status !== 'priced').length
   const priced  = items.filter(i => i.pricing_status === 'priced').length
