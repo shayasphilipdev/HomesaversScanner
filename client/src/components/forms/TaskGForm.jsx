@@ -68,7 +68,7 @@ export default function TaskGForm({ onSaved, storeId }) {
               <input
                 type="text" value={t.form.promotion_description}
                 onChange={t.update('promotion_description')}
-                placeholder="e.g. 2 for €5, Buy 1 Get 1, etc."
+                placeholder="e.g. Offer 2 for €5, Any 2 for €25, etc."
               />
             </div>
 
