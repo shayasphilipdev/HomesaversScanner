@@ -266,7 +266,7 @@ async function resolveScan(db, rawBarcode) {
   let price = null
   if (alt.ean_barcode) {
     const [p] = await db.select('prices', {
-      select: 'ean_barcode,item_group,item_subgrp_id,product_type,sale_rate',
+      select: 'ean_barcode,item_group,item_subgrp_id,product_type,sale_rate,was_sale_rate',
       ean_barcode: `eq.${String(alt.ean_barcode).trim()}`,
       limit: '1'
     })
@@ -985,14 +985,16 @@ export async function onRequest(context) {
       for (const r of rows) {
         const ean = r?.ean_barcode == null ? '' : String(r.ean_barcode).trim()
         if (!ean || ean === '0') { skipped++; continue }
-        const saleRate = r.sale_rate != null ? Number(String(r.sale_rate).replace(/[^0-9.-]/g, '')) : null
-        const cost     = r.cost      != null ? Number(String(r.cost).replace(/[^0-9.-]/g, ''))      : null
+        const saleRate    = r.sale_rate     != null ? Number(String(r.sale_rate).replace(/[^0-9.-]/g, ''))     : null
+        const wasSaleRate = r.was_sale_rate != null ? Number(String(r.was_sale_rate).replace(/[^0-9.-]/g, '')) : null
+        const cost        = r.cost          != null ? Number(String(r.cost).replace(/[^0-9.-]/g, ''))          : null
         byKey.set(ean, {
           ean_barcode:    ean,
           item_group:     r.item_group     ? String(r.item_group).trim()     : null,
           item_subgrp_id: r.item_subgrp_id ? String(r.item_subgrp_id).trim() : null,
           product_type:   r.product_type   ? String(r.product_type).trim()   : null,
-          sale_rate:      isNaN(saleRate) ? null : saleRate,
+          sale_rate:      isNaN(saleRate)    ? null : saleRate,
+          was_sale_rate:  wasSaleRate != null && !isNaN(wasSaleRate) ? wasSaleRate : null,
           tax_id:         r.tax_id ? String(r.tax_id).trim() : null,
           cost:           cost != null && !isNaN(cost) ? cost : null,
           updated_at:     now
@@ -1673,14 +1675,16 @@ export async function onRequest(context) {
       for (const r of rows) {
         const ean = r?.ean_barcode == null ? '' : String(r.ean_barcode).trim()
         if (!ean || ean === '0') { skipped++; continue }
-        const saleRate = r.sale_rate != null ? Number(String(r.sale_rate).replace(/[^0-9.-]/g, '')) : null
-        const cost     = r.cost      != null ? Number(String(r.cost).replace(/[^0-9.-]/g, ''))      : null
+        const saleRate    = r.sale_rate     != null ? Number(String(r.sale_rate).replace(/[^0-9.-]/g, ''))     : null
+        const wasSaleRate = r.was_sale_rate != null ? Number(String(r.was_sale_rate).replace(/[^0-9.-]/g, '')) : null
+        const cost        = r.cost          != null ? Number(String(r.cost).replace(/[^0-9.-]/g, ''))          : null
         byKey.set(ean, {
           ean_barcode:    ean,
           item_group:     r.item_group     ? String(r.item_group).trim()     : null,
           item_subgrp_id: r.item_subgrp_id ? String(r.item_subgrp_id).trim() : null,
           product_type:   r.product_type   ? String(r.product_type).trim()   : null,
-          sale_rate:      isNaN(saleRate) ? null : saleRate,
+          sale_rate:      isNaN(saleRate)    ? null : saleRate,
+          was_sale_rate:  wasSaleRate != null && !isNaN(wasSaleRate) ? wasSaleRate : null,
           tax_id:         r.tax_id ? String(r.tax_id).trim() : null,
           cost:           cost != null && !isNaN(cost) ? cost : null,
           updated_at:     now
@@ -1719,6 +1723,7 @@ export async function onRequest(context) {
         item_subgrp_id: ['ItemSubGrp_Id','item_subgrp_id','ItemSubGrpId'],
         product_type:   ['ProductType','product_type','Product_Type'],
         sale_rate:      ['SaleRate','sale_rate','Sale_Rate'],
+        was_sale_rate:  ['WasSalerate','was_sale_rate','WasSaleRate'],
         tax_id:         ['Tax_Id','TaxId','tax_id'],
         cost:           ['LandedCost','landed_cost','Cost','cost'],
       }
@@ -1736,16 +1741,19 @@ export async function onRequest(context) {
       for (const row of parsed.rows) {
         const ean = (row[fieldMap.ean_barcode] || '').trim()
         if (!ean || ean === '0') { skipped++; continue }
-        const saleRaw = fieldMap.sale_rate ? row[fieldMap.sale_rate] : ''
-        const saleRate = saleRaw ? Number(saleRaw.replace(/[^0-9.-]/g, '')) : null
-        const costRaw  = fieldMap.cost ? row[fieldMap.cost] : ''
-        const costNum  = costRaw ? Number(costRaw.replace(/[^0-9.-]/g, '')) : null
+        const saleRaw    = fieldMap.sale_rate     ? row[fieldMap.sale_rate]     : ''
+        const wasRaw     = fieldMap.was_sale_rate ? row[fieldMap.was_sale_rate] : ''
+        const saleRate   = saleRaw ? Number(saleRaw.replace(/[^0-9.-]/g, '')) : null
+        const wasSaleRate = wasRaw ? Number(wasRaw.replace(/[^0-9.-]/g, '')) : null
+        const costRaw    = fieldMap.cost ? row[fieldMap.cost] : ''
+        const costNum    = costRaw ? Number(costRaw.replace(/[^0-9.-]/g, '')) : null
         byKey.set(ean, {
           ean_barcode:    ean,
           item_group:     fieldMap.item_group     ? (row[fieldMap.item_group]     || null) : null,
           item_subgrp_id: fieldMap.item_subgrp_id ? (row[fieldMap.item_subgrp_id] || null) : null,
           product_type:   fieldMap.product_type   ? (row[fieldMap.product_type]   || null) : null,
           sale_rate:      saleRate && !isNaN(saleRate) ? saleRate : null,
+          was_sale_rate:  wasSaleRate != null && !isNaN(wasSaleRate) ? wasSaleRate : null,
           tax_id:         fieldMap.tax_id ? (row[fieldMap.tax_id] || null) : null,
           cost:           costNum != null && !isNaN(costNum) ? costNum : null,
           updated_at:     now

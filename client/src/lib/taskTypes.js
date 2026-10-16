@@ -12,6 +12,7 @@ export const TASK_FORMS = {
   M: { name: 'Routine Expiry Sweep', implemented: true,  warning: null },
   B: { name: 'Non-Scans',            implemented: true,  warning: null },
   C: { name: 'Wrong Prices',         implemented: true,  warning: null },
+  N: { name: 'Wrong Was/Now Price',  implemented: true,  warning: null },
   D: { name: 'Wrong Description',    implemented: true,  warning: null },
   A: { name: 'UOM Errors',           implemented: true,  warning: null },
   E: { name: 'Price Marked Products', implemented: true,  warning: null },
