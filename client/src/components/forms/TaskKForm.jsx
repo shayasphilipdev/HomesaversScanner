@@ -101,7 +101,7 @@ export default function TaskKForm({ onSaved, storeId }) {
           />
 
           {/* Product info + Selling Price (red for Price Check) all in one box. */}
-          <LookupBanner info={t.lookupInfo} price={t.form.sale_rate} priceRed productStatus={priceInfo?.product_type} />
+          <LookupBanner info={t.lookupInfo} price={t.form.sale_rate} priceRed wasPrice={priceInfo?.was_sale_rate} productStatus={priceInfo?.product_type} />
 
           {priceMiss && (
             <div className="note" style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 2 }}>
