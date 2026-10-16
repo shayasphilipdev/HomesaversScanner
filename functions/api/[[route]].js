@@ -688,26 +688,21 @@ async function runAutoCleanup(db, env) {
     })
 
     const storageBase = `${env.SUPABASE_URL}/storage/v1/object/public/task-photos/`
-    const deleteStorageFile = async (objectPath) => {
-      await fetch(`${env.SUPABASE_URL}/storage/v1/object/task-photos/${objectPath}`, {
-        method:  'DELETE',
-        headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}` }
-      }).catch(() => {})
-    }
+    // Collect all photo paths during this run and issue ONE bulk-delete at the
+    // end. Deleting files one-by-one inside a loop counts as one subrequest per
+    // file; Cloudflare Workers caps at 50 subrequests per invocation, so a busy
+    // day with 30+ photo records would throw. The Supabase bulk-delete endpoint
+    // accepts any number of paths in a single request.
+    const photoPathsToDelete = []
+    const extractPath = (url) => url?.startsWith(storageBase) ? url.slice(storageBase.length) : null
 
     // 1 — Determine which records are due for deletion.
     const [recSetting] = await db.select('app_settings', { select: 'value', key: 'eq.scan_record_retention_days' })
     const recDays   = Math.max(1, Number(recSetting?.value || 21))
     const recCutoff = new Date(Date.now() - recDays * 86400000).toISOString()
 
-    // M19: delete the photos attached to those records BEFORE removing the rows
-    // so we never orphan storage files (photos can't be found once the record is gone).
-    // d1_copied_at=not.is.null is the SAME guard purge_old_task_records() applies,
-    // and it has to be repeated here because this path does not go through that
-    // function -- it issues its own DELETE. Without it, a back-office login was
-    // enough to permanently destroy a record the archiver had not yet copied to
-    // D1, which is precisely the loss the nightly guard exists to prevent.
-    // There are two deleters; there must not be two rules.
+    // M19: collect photos from doomed records BEFORE removing the rows so we
+    // never orphan storage files (photos can't be found once the record is gone).
     const doomed = await db.select('task_records', {
       select:      'photo_product_url,photo_barcode_url',
       status:      'in.(cleared,store_completed)',
@@ -715,9 +710,8 @@ async function runAutoCleanup(db, env) {
       d1_copied_at: 'not.is.null'
     })
     for (const r of doomed) {
-      for (const photoUrl of [r.photo_product_url, r.photo_barcode_url].filter(Boolean)) {
-        if (!photoUrl.startsWith(storageBase)) continue
-        await deleteStorageFile(photoUrl.slice(storageBase.length))
+      for (const u of [r.photo_product_url, r.photo_barcode_url]) {
+        const p = extractPath(u); if (p) photoPathsToDelete.push(p)
       }
     }
 
@@ -729,42 +723,43 @@ async function runAutoCleanup(db, env) {
     })
 
     // 2a — Purge task_record_events whose parent records have been deleted.
-    // Events share the same lifecycle as their record: once the record is gone
-    // there is nothing to link the event back to. Keyed on `at` (the event
-    // timestamp) using the same cutoff so events from within the live window
-    // are never touched.
     await db.remove('task_record_events', { at: `lt.${recCutoff}` })
 
-    // 3 — Delete any remaining old photos by age (catch-all — covers photos
-    // whose records were already deleted in a previous run, plus M18: includes
-    // store_task_instances.photo_url via the updated list_old_photos RPC).
+    // 3 — Collect remaining old photos by age (catch-all for orphans).
     const [photoSetting] = await db.select('app_settings', { select: 'value', key: 'eq.photo_retention_days' })
     const photoDays = Math.max(1, Number(photoSetting?.value || 21))
     const oldPhotos = await db.rpc('list_old_photos', { days: photoDays })
     for (const o of (oldPhotos || [])) {
-      await deleteStorageFile(o.name)
+      if (o.name) photoPathsToDelete.push(o.name)
     }
 
-    // 4 — Product Query board: remove questions (+ their answers + photos) older
-    // than the retention window (default 21 days). The board is a transient
-    // "what is this product?" queue, not a long-term record.
+    // 4 — Product Query board cleanup; collect photos before rows are deleted.
     const [pqSetting] = await db.select('app_settings', { select: 'value', key: 'eq.product_query_retention_days' })
     const pqDays   = Math.max(1, Number(pqSetting?.value || 21))
     const pqCutoff = new Date(Date.now() - pqDays * 86400000).toISOString()
     const doomedQ  = await db.select('product_questions', { select: 'id,photo_url', created_at: `lt.${pqCutoff}` })
     if (doomedQ.length) {
       const inList = `in.(${doomedQ.map(q => q.id).join(',')})`
-      // Collect answer photos before the rows go.
       const answers = await db.select('product_question_answers', { select: 'photo_url', question_id: inList })
-      // Delete child answers first (FK-safe), then the questions.
       await db.remove('product_question_answers', { question_id: inList })
       await db.remove('product_questions',        { id: inList })
-      // Best-effort storage cleanup for both question and answer photos.
-      const pqUrls = [...doomedQ.map(q => q.photo_url), ...answers.map(a => a.photo_url)].filter(Boolean)
-      for (const u of pqUrls) {
-        if (!u.startsWith(storageBase)) continue
-        await deleteStorageFile(u.slice(storageBase.length))
+      for (const u of [...doomedQ.map(q => q.photo_url), ...answers.map(a => a.photo_url)]) {
+        const p = extractPath(u); if (p) photoPathsToDelete.push(p)
       }
+    }
+
+    // Delete all collected photos in ONE bulk request — no matter how many files.
+    const uniquePaths = [...new Set(photoPathsToDelete)]
+    if (uniquePaths.length) {
+      await fetch(`${env.SUPABASE_URL}/storage/v1/object/task-photos`, {
+        method:  'DELETE',
+        headers: {
+          'apikey':        env.SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`,
+          'Content-Type':  'application/json'
+        },
+        body: JSON.stringify({ prefixes: uniquePaths })
+      }).catch(() => {})
     }
     // 5 — Store task instances: mark overdue pending as missed, then purge old
     // completed/missed rows. Pending rows whose due_date is in the past were
