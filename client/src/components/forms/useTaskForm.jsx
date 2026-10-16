@@ -186,17 +186,21 @@ export function LookupBanner({ info, price, priceRed, wasPrice, department, depa
             : <span style={{ color: 'var(--text-muted)' }}>{departmentEmpty || '—'}</span>}
         </div>
       )}
-      {hasPrice && (
-        <div className="note" style={{ fontSize: priceRed ? 14 : 13 }}>
-          Selling Price:{' '}
-          <strong style={priceRed ? { color: 'var(--red)', fontSize: 17, fontWeight: 800 } : undefined}>
-            €{Number(price).toFixed(2)}
-          </strong>
-        </div>
-      )}
-      {hasWasPrice && (
-        <div className="note" style={{ fontSize: 13 }}>
-          Was Price: <strong>€{Number(wasPrice).toFixed(2)}</strong>
+      {(hasPrice || hasWasPrice) && (
+        <div className="note" style={{ fontSize: priceRed ? 14 : 13, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+          {hasPrice && (
+            <span>
+              Selling Price:{' '}
+              <strong style={priceRed ? { color: 'var(--red)', fontSize: 17, fontWeight: 800 } : undefined}>
+                €{Number(price).toFixed(2)}
+              </strong>
+            </span>
+          )}
+          {hasWasPrice && (
+            <span>
+              Was Price: <strong>€{Number(wasPrice).toFixed(2)}</strong>
+            </span>
+          )}
         </div>
       )}
       {productStatus && (
