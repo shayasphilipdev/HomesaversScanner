@@ -728,6 +728,13 @@ async function runAutoCleanup(db, env) {
       d1_copied_at: 'not.is.null'
     })
 
+    // 2a — Purge task_record_events whose parent records have been deleted.
+    // Events share the same lifecycle as their record: once the record is gone
+    // there is nothing to link the event back to. Keyed on `at` (the event
+    // timestamp) using the same cutoff so events from within the live window
+    // are never touched.
+    await db.remove('task_record_events', { at: `lt.${recCutoff}` })
+
     // 3 — Delete any remaining old photos by age (catch-all — covers photos
     // whose records were already deleted in a previous run, plus M18: includes
     // store_task_instances.photo_url via the updated list_old_photos RPC).
@@ -759,6 +766,21 @@ async function runAutoCleanup(db, env) {
         await deleteStorageFile(u.slice(storageBase.length))
       }
     }
+    // 5 — Store task instances: mark overdue pending as missed, then purge old
+    // completed/missed rows. Pending rows whose due_date is in the past were
+    // never actioned — marking them missed is more accurate than leaving them
+    // as ghost-pending entries. The purge window defaults to 90 days.
+    const today = new Date().toISOString().split('T')[0]
+    await db.rpc('mark_overdue_store_tasks', { cutoff_date: today })
+
+    const [stiSetting] = await db.select('app_settings', { select: 'value', key: 'eq.store_task_retention_days' })
+    const stiDays   = Math.max(30, Number(stiSetting?.value || 90))
+    const stiCutoff = new Date(Date.now() - stiDays * 86400000).toISOString().split('T')[0]
+    await db.remove('store_task_instances', {
+      status:   'in.(completed,missed)',
+      due_date: `lt.${stiCutoff}`
+    })
+
   } catch (e) {
     // Best-effort — never throw from a background task.
     console.error('[auto-cleanup]', e?.message || e)
