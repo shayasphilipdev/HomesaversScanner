@@ -10,6 +10,8 @@ const EMPTY = {
   product_code: '', reason_code: '', current_price: '', notes: ''
 }
 
+const PRICE_CHANGE_CODE = 'Price Change Not Applied'
+
 export default function TaskCForm({ onSaved, storeId }) {
   const { session } = useStore()
   const t = useTaskForm({ initial: EMPTY })
@@ -20,24 +22,29 @@ export default function TaskCForm({ onSaved, storeId }) {
       .then(setReasons).catch(() => setReasons([]))
   }, [])
 
+  const showPriceField = t.form.reason_code === PRICE_CHANGE_CODE
+  const showFields     = !!t.form.reason_code
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!t.form.product_code.trim()) return t.setError('Product code is required.')
     if (!t.form.reason_code)         return t.setError('Please select a reason code.')
-    if (t.form.current_price !== '' && isNaN(Number(t.form.current_price)))
-                                     return t.setError('Current price must be a number.')
+    if (showPriceField && !t.form.current_price.trim())
+                                     return t.setError('SEL/Till Price is required for this reason code.')
+    if (showPriceField && isNaN(Number(t.form.current_price)))
+                                     return t.setError('SEL/Till Price must be a number.')
 
     t.setSaving(true); t.setError('')
     try {
       const res = await createTaskRecord({
-        task_type:          'C',
-        store_id:           storeId || session.storeId || null,
-        product_code:       t.form.product_code.trim(),
-        notes:              t.form.notes.trim() || null,
+        task_type:    'C',
+        store_id:     storeId || session.storeId || null,
+        product_code: t.form.product_code.trim(),
+        notes:        t.form.notes.trim() || null,
         ...altFields(t.lookupInfo, t.form.product_code.trim()),
         details: {
           reason_code:   t.form.reason_code,
-          current_price: t.form.current_price === '' ? null : Number(t.form.current_price)
+          current_price: showPriceField ? Number(t.form.current_price) : null
         },
         status: 'pending'
       })
@@ -60,7 +67,10 @@ export default function TaskCForm({ onSaved, storeId }) {
               readerId="reader-c"
             />
 
-            <LookupBanner info={t.lookupInfo} />
+            <LookupBanner
+              info={t.lookupInfo}
+              price={t.lookupInfo?.price?.sale_rate}
+            />
 
             <div className="form-group">
               <label>Reason Code *</label>
@@ -73,19 +83,23 @@ export default function TaskCForm({ onSaved, storeId }) {
               />
             </div>
 
-            <div className="form-group">
-              <label>Current Price (optional)</label>
-              <input
-                type="number" value={t.form.current_price}
-                onChange={t.update('current_price')}
-                placeholder="€0.00" min="0" step="0.01"
-              />
-            </div>
+            {showPriceField && (
+              <div className="form-group">
+                <label>SEL/Till Price *</label>
+                <input
+                  type="number" value={t.form.current_price}
+                  onChange={t.update('current_price')}
+                  placeholder="€0.00" min="0" step="0.01"
+                />
+              </div>
+            )}
 
-            <div className="form-group full">
-              <label>Notes (optional)</label>
-              <textarea rows={2} value={t.form.notes} onChange={t.update('notes')} placeholder="Anything worth flagging…" />
-            </div>
+            {showFields && (
+              <div className="form-group full">
+                <label>Notes (optional)</label>
+                <textarea rows={2} value={t.form.notes} onChange={t.update('notes')} placeholder="Anything worth flagging…" />
+              </div>
+            )}
           </div>
 
           {t.error && <div className="login-error mt-12">{t.error}</div>}

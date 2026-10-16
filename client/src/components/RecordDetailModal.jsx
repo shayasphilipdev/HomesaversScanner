@@ -250,8 +250,14 @@ function fmt(key, v) {
 
 // The details blob is task-type specific, so render whatever keys it has rather
 // than guessing at a fixed shape.
+const DETAIL_KEY_LABELS = {
+  current_price:     'SEL/Till Price',
+  correct_was_price: 'SEL Was Price',
+  was_price:         'Was Price (lookup)',
+  reason_code:       'Reason Code',
+}
 function prettyKey(k) {
-  return String(k).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+  return DETAIL_KEY_LABELS[k] ?? String(k).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
 function Row({ label, value, mono }) {

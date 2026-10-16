@@ -10,6 +10,8 @@ const EMPTY = {
   product_code: '', reason_code: '', current_price: '', correct_was_price: '', notes: ''
 }
 
+const PRICE_CHANGE_CODE = 'Price Change Not Applied'
+
 export default function TaskNForm({ onSaved, storeId }) {
   const { session } = useStore()
   const t = useTaskForm({ initial: EMPTY })
@@ -20,28 +22,33 @@ export default function TaskNForm({ onSaved, storeId }) {
       .then(setReasons).catch(() => setReasons([]))
   }, [])
 
-  const wasPrice = t.lookupInfo?.price?.was_sale_rate ?? null
+  const wasPrice        = t.lookupInfo?.price?.was_sale_rate ?? null
+  const showPriceFields = t.form.reason_code === PRICE_CHANGE_CODE
+  const showFields      = !!t.form.reason_code
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!t.form.product_code.trim()) return t.setError('Product code is required.')
     if (!t.form.reason_code)         return t.setError('Please select a reason code.')
-    if (t.form.current_price !== '' && isNaN(Number(t.form.current_price)))
-                                     return t.setError('Current wrong price must be a number.')
+    if (showPriceFields) {
+      if (!t.form.current_price.trim())    return t.setError('SEL/Till Price is required for this reason code.')
+      if (isNaN(Number(t.form.current_price))) return t.setError('SEL/Till Price must be a number.')
+      if (!t.form.correct_was_price.trim()) return t.setError('SEL Was Price is required for this reason code.')
+    }
 
     t.setSaving(true); t.setError('')
     try {
       const res = await createTaskRecord({
-        task_type:          'N',
-        store_id:           storeId || session.storeId || null,
-        product_code:       t.form.product_code.trim(),
-        notes:              t.form.notes.trim() || null,
+        task_type:    'N',
+        store_id:     storeId || session.storeId || null,
+        product_code: t.form.product_code.trim(),
+        notes:        t.form.notes.trim() || null,
         ...altFields(t.lookupInfo, t.form.product_code.trim()),
         details: {
           reason_code:       t.form.reason_code,
-          current_price:     t.form.current_price === '' ? null : Number(t.form.current_price),
           was_price:         wasPrice,
-          correct_was_price: t.form.correct_was_price.trim() || null
+          current_price:     showPriceFields ? Number(t.form.current_price)       : null,
+          correct_was_price: showPriceFields ? t.form.correct_was_price.trim()    : null
         },
         status: 'pending'
       })
@@ -64,7 +71,11 @@ export default function TaskNForm({ onSaved, storeId }) {
               readerId="reader-n"
             />
 
-            <LookupBanner info={t.lookupInfo} />
+            <LookupBanner
+              info={t.lookupInfo}
+              price={t.lookupInfo?.price?.sale_rate}
+              wasPrice={wasPrice}
+            />
 
             <div className="form-group">
               <label>Reason Code *</label>
@@ -77,39 +88,34 @@ export default function TaskNForm({ onSaved, storeId }) {
               />
             </div>
 
-            <div className="form-group">
-              <label>Current Wrong Price (optional)</label>
-              <input
-                type="number" value={t.form.current_price}
-                onChange={t.update('current_price')}
-                placeholder="€0.00" min="0" step="0.01"
-              />
-            </div>
+            {showPriceFields && (
+              <div className="form-group">
+                <label>SEL/Till Price *</label>
+                <input
+                  type="number" value={t.form.current_price}
+                  onChange={t.update('current_price')}
+                  placeholder="€0.00" min="0" step="0.01"
+                />
+              </div>
+            )}
 
-            <div className="form-group">
-              <label>Current Was Price</label>
-              <input
-                type="text"
-                value={wasPrice != null ? `€${Number(wasPrice).toFixed(2)}` : ''}
-                readOnly
-                placeholder="Scan a product to populate"
-                style={{ background: 'var(--surface-2, #f5f5f5)', color: 'var(--text-muted, #666)', cursor: 'default' }}
-              />
-            </div>
+            {showPriceFields && (
+              <div className="form-group">
+                <label>SEL Was Price *</label>
+                <input
+                  type="text" value={t.form.correct_was_price}
+                  onChange={t.update('correct_was_price')}
+                  placeholder="e.g. €3.99"
+                />
+              </div>
+            )}
 
-            <div className="form-group">
-              <label>Correct Was/Now Price (optional)</label>
-              <input
-                type="text" value={t.form.correct_was_price}
-                onChange={t.update('correct_was_price')}
-                placeholder="e.g. €3.99"
-              />
-            </div>
-
-            <div className="form-group full">
-              <label>Notes (optional)</label>
-              <textarea rows={2} value={t.form.notes} onChange={t.update('notes')} placeholder="Anything worth flagging…" />
-            </div>
+            {showFields && (
+              <div className="form-group full">
+                <label>Notes (optional)</label>
+                <textarea rows={2} value={t.form.notes} onChange={t.update('notes')} placeholder="Anything worth flagging…" />
+              </div>
+            )}
           </div>
 
           {t.error && <div className="login-error mt-12">{t.error}</div>}

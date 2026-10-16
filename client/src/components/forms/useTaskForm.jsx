@@ -155,10 +155,11 @@ function StatusPill({ label, value }) {
 // plus the Department (`department` = item_group) and Product Status
 // (`productStatus` = product_type from the prices/ItemMaster table) when the
 // caller passes them — Department Check folds both into this box to save space.
-export function LookupBanner({ info, price, priceRed, department, departmentEmpty, productStatus }) {
+export function LookupBanner({ info, price, priceRed, wasPrice, department, departmentEmpty, productStatus }) {
   if (!info) return null
   const supplier = [info.supl_id, info.supplier_code].filter(Boolean).join(' · ')
-  const hasPrice = price != null && price !== '' && !isNaN(Number(price))
+  const hasPrice    = price    != null && price    !== '' && !isNaN(Number(price))
+  const hasWasPrice = wasPrice != null && wasPrice !== '' && !isNaN(Number(wasPrice))
   // Show the Department row whenever the caller opts in (passes either a value
   // or a placeholder) — that keeps it out of every other form's banner.
   const showDept = department != null || departmentEmpty != null
@@ -191,6 +192,11 @@ export function LookupBanner({ info, price, priceRed, department, departmentEmpt
           <strong style={priceRed ? { color: 'var(--red)', fontSize: 17, fontWeight: 800 } : undefined}>
             €{Number(price).toFixed(2)}
           </strong>
+        </div>
+      )}
+      {hasWasPrice && (
+        <div className="note" style={{ fontSize: 13 }}>
+          Was Price: <strong>€{Number(wasPrice).toFixed(2)}</strong>
         </div>
       )}
       {productStatus && (
