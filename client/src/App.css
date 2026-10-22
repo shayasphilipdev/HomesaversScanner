@@ -972,8 +972,10 @@ input.scan-input {
    Description (still just its old minWidth floor) routes any actual leftover
    space into Description specifically, the one column built to absorb it,
    instead of it showing up as unstyled dead space anywhere else. */
+/* Floor = the fixed columns (1415px) + 200px for Description, which would
+   otherwise collapse to 0 on a narrow window; the wrapper scrolls instead. */
 .pricing-scroll table {
-  width: 100%;
+  width: max(100%, 1615px);
   table-layout: fixed;
 }
 .pricing-scroll thead th {
@@ -987,7 +989,7 @@ input.scan-input {
    longer-form report tables. */
 .pricing-scroll thead th { padding: 8px 10px; font-size: 12.5px; white-space: nowrap; }
 .pricing-scroll tbody td { padding: 5px 10px; }
-.pricing-scroll input, .pricing-scroll select {
+.pricing-scroll input[type="text"], .pricing-scroll select {
   min-height: 30px;
   padding: 4px 8px;
   font-size: 13px;

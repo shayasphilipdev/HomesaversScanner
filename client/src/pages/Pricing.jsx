@@ -3,7 +3,7 @@ import { Navigate } from 'react-router-dom'
 import { useStore } from '../App.jsx'
 import { useToast } from '../components/Toast.jsx'
 import { downloadExcel } from '../lib/excel.js'
-import { getPricingItems, savePricingItem, deletePricingItem, getPricingReport, getTaskTypes, getDuplicateKeys} from '../lib/api.js'
+import { getPricingItems, savePricingItem, deletePricingItem, bulkDeletePricingItems, getPricingReport, getTaskTypes, getDuplicateKeys} from '../lib/api.js'
 import { VAT_OPTIONS, vatPct, marginPct } from '../lib/pricingOptions.js'
 import AgeClock from '../components/AgeClock.jsx'
 import MultiSelectDropdown from '../components/forms/MultiSelectDropdown.jsx'
@@ -50,6 +50,8 @@ export default function Pricing() {
   const [downloading, setDownloading] = useState(false)
   const [error, setError]       = useState('')
   const [detail, setDetail]     = useState(null)   // { record, storeName } | null — the Details popup
+  const [selected, setSelected] = useState(() => new Set())   // pricing item ids ticked for bulk delete
+  const [bulkDeleting, setBulkDeleting] = useState(false)
   // id → { it, values, timer } — pending debounced autosaves, flushed on unmount.
   const pendingRef = useRef({})
 
@@ -71,6 +73,10 @@ export default function Pricing() {
         return new Date(b.created_at) - new Date(a.created_at)
       })
       setItems(rows)
+      setSelected(prev => {
+        const live = new Set(rows.map(r => r.id))
+        return new Set([...prev].filter(id => live.has(id)))
+      })
       // Duplicate barcodes, same definition as the Reports page: another record
       // of the SAME task type carries this barcode, anywhere in the chain.
       // includeCleared is on because a pricing item's originating record may
@@ -160,6 +166,34 @@ export default function Pricing() {
     try { await deletePricingItem(it.id); await load() } catch (e) { toast.error(e.message) }
   }
 
+  const removeSelected = async () => {
+    const ids = items.filter(it => selected.has(it.id)).map(it => it.id)
+    if (!ids.length) return
+    const n = ids.length
+    if (!window.confirm(`Remove ${n} record${n === 1 ? '' : 's'} from the Pricing list?\n\nThe original records are NOT deleted — only these pricing copies.`)) return
+    // A debounced autosave still pending for a removed row would fire after the
+    // delete and fail with "Not found".
+    for (const id of ids) {
+      const p = pendingRef.current[id]
+      if (p) { clearTimeout(p.timer); delete pendingRef.current[id] }
+    }
+    setBulkDeleting(true)
+    try {
+      let deleted = 0
+      for (let i = 0; i < ids.length; i += 500) {
+        const res = await bulkDeletePricingItems(ids.slice(i, i + 500))
+        deleted += res.deleted || 0
+      }
+      toast.success(`Removed ${deleted} record${deleted === 1 ? '' : 's'} from Pricing.`)
+      setSelected(new Set())
+    } catch (e) {
+      toast.error(e.message)
+    } finally {
+      setBulkDeleting(false)
+      await load()
+    }
+  }
+
   const exportExcel = async () => {
     setDownloading(true); setError('')
     try {
@@ -175,6 +209,16 @@ export default function Pricing() {
 
   const toPrice = items.filter(i => i.pricing_status !== 'priced').length
   const priced  = items.filter(i => i.pricing_status === 'priced').length
+
+  const allSelected = items.length > 0 && items.every(it => selected.has(it.id))
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(items.map(it => it.id)))
+  const toggleOne = (id) => setSelected(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  })
+  const selectedSaving = [...selected].some(id => savingIds.has(id))
 
   // Live VAT % + margin for an item using the row's current (unsaved) edits.
   const liveVat    = (it) => vatPct((edits[it.id] || {}).vat_rate)
@@ -242,20 +286,39 @@ export default function Pricing() {
       ) : (
         <div className="card">
           <div className="card-header">{items.length.toLocaleString('en-IE')} record(s)</div>
+          {selected.size > 0 && (
+            <div className="flex-row" style={{ padding: '8px 16px', background: 'var(--surface-warm)', borderBottom: '1px solid var(--border)', gap: 8, flexWrap: 'wrap' }}>
+              <strong>{selected.size} selected</strong>
+              <span style={{ marginLeft: 'auto' }} />
+              <button className="btn btn-sm" disabled={bulkDeleting || selectedSaving} onClick={removeSelected}
+                title="Remove the selected rows from Pricing (the original records stay in Reports)"
+                style={{ background: '#C0392B', color: '#fff', border: 'none', fontWeight: 600 }}>
+                {bulkDeleting ? <><span className="spinner" /> Deleting…</> : `🗑 Delete (${selected.size})`}
+              </button>
+              <button className="btn btn-sm btn-outline" disabled={bulkDeleting} onClick={() => setSelected(new Set())}>
+                Clear selection
+              </button>
+            </div>
+          )}
           <div className="table-wrap pricing-scroll">
             <table style={{ fontSize: 13 }}>
               <thead>
                 <tr>
+                  <th style={{ width: 40 }}>
+                    <input type="checkbox" checked={allSelected} onChange={toggleAll} title="Select all rows" />
+                  </th>
                   <th style={{ whiteSpace: 'nowrap', width: 130 }}>Product Barcode</th>
                   <th style={{ whiteSpace: 'nowrap', width: 130 }}>Product Code</th>
-                  <th style={{ minWidth: 120, maxWidth: 160 }}>Description</th>
+                  <th>Description</th>
                   <th style={{ width: 90 }}>Cost</th>
                   <th style={{ whiteSpace: 'nowrap', width: 90 }}>Current SP</th>
                   <th style={{ whiteSpace: 'nowrap', width: 130 }}>New Selling Price *</th>
                   <th style={{ whiteSpace: 'nowrap', width: 140 }}>VAT Rate *</th>
                   <th style={{ whiteSpace: 'nowrap', width: 80 }}>Margin %</th>
                   <th style={{ width: 95 }}>Notes</th>
-                  <th style={{ width: 120 }}></th>
+                  {/* Sized for Details + both badges (≈245px measured) — this table
+                      is layout: fixed, so anything wider spills under Status. */}
+                  <th style={{ width: 250 }}></th>
                   <th style={{ width: 150 }}>Status</th>
                   {/* Delete lives in its own trailing column, away from Details —
                       users were misclicking Delete instead of Details when both
@@ -278,6 +341,7 @@ export default function Pricing() {
                     <tr key={it.id}
                         className={[isPriced && 'tr-priced', isDup && 'tr-duplicate'].filter(Boolean).join(' ') || undefined}
                         title={isDup ? 'Another record of this task type has the same barcode' : undefined}>
+                      <td><input type="checkbox" checked={selected.has(it.id)} onChange={() => toggleOne(it.id)} aria-label="Select row" /></td>
                       <td className="td-code" style={{ whiteSpace: 'nowrap' }}>
                         {r.barcode_no || r.product_code || empty}
                         {isDup && (
@@ -285,7 +349,7 @@ export default function Pricing() {
                         )}
                       </td>
                       <td className="td-code" style={{ whiteSpace: 'nowrap' }}>{it.product_barcode || empty}</td>
-                      <td style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                           title={r.item_name || r.description || r.product_name_label || ''}
                       >{r.item_name || r.description || r.product_name_label || empty}</td>
                       <td style={{ whiteSpace: 'nowrap', maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis' }}>{euro(it.cost) || empty}</td>
@@ -321,11 +385,6 @@ export default function Pricing() {
                       </td>
                       <td style={{ whiteSpace: 'nowrap' }}>
                         <div className="flex-row" style={{ gap: 6, whiteSpace: 'nowrap', alignItems: 'center' }}>
-                          {isSaving && (
-                            <span className="note" style={{ fontSize: 11.5, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                              <span className="spinner spinner-dark" /> Saving…
-                            </span>
-                          )}
                           <button
                             className="btn btn-sm btn-outline"
                             title="All details for this record"
@@ -350,7 +409,13 @@ export default function Pricing() {
                         </div>
                       </td>
                       <td style={{ whiteSpace: 'nowrap' }}>
-                        {isPriced
+                        {isSaving
+                          ? (
+                            <span className="note" style={{ fontSize: 11.5, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <span className="spinner spinner-dark" /> Saving…
+                            </span>
+                          )
+                          : isPriced
                           ? <span className="badge badge-completed" title={`Priced by ${it.priced_by_name || '—'} · ${fmtDT(it.priced_at)}`}>€ Priced</span>
                           : (
                             <>

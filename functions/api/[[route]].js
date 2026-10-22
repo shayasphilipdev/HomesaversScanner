@@ -2410,6 +2410,31 @@ export async function onRequest(context) {
       return json({ cols: P_COLS, headers: P_HEADERS, rows })
     }
 
+    // POST /pricing/items/bulk-delete { ids: [...] } — same effect per row as
+    // DELETE /pricing/items/:id, but three subrequests per 100 ids instead of
+    // three per row (Workers cap: 50).
+    if (path === '/pricing/items/bulk-delete' && method === 'POST') {
+      if (!isBackOffice(session)) return err('Forbidden', 403)
+      const body = await request.json().catch(() => ({}))
+      const ids = [...new Set((Array.isArray(body.ids) ? body.ids : []).filter(id => /^[a-f0-9-]{36}$/.test(id)))]
+      if (!ids.length) return err('ids required', 400)
+      if (ids.length > 500) return err('Delete at most 500 records per request', 400)
+      const now = new Date().toISOString()
+      let deleted = 0
+      for (let i = 0; i < ids.length; i += 100) {
+        const chunk = ids.slice(i, i + 100)
+        const removed = await db.remove('pricing_items', { id: `in.(${chunk.join(',')})` })
+        deleted += removed.length
+        const recIds = [...new Set(removed.map(r => r.task_record_id).filter(Boolean))]
+        if (!recIds.length) continue
+        try { await db.update('task_records', { id: `in.(${recIds.join(',')})` }, { pricing_removed_at: now }) } catch { /* purged */ }
+        await writeTaskEvents(db, recIds.map(rid => activityEventRow({
+          record_id: rid, event_type: 'pricing_removed', session, note: 'Removed from Pricing'
+        })))
+      }
+      return json({ deleted })
+    }
+
     // PATCH (save → Priced) / DELETE (remove the copy only) a pricing item.
     const priceItemMatch = path.match(/^\/pricing\/items\/([a-f0-9-]{36})$/)
     if (priceItemMatch && (method === 'PATCH' || method === 'DELETE')) {

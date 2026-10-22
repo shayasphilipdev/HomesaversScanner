@@ -498,6 +498,7 @@ const pricingQuery = ({ status, taskTypes, from, to } = {}) => {
 export const getPricingItems   = (opts) => request('/pricing/items'  + (pricingQuery(opts) ? `?${pricingQuery(opts)}` : ''))
 export const savePricingItem   = (id, body) => request(`/pricing/items/${id}`, { method: 'PATCH', body })
 export const deletePricingItem = (id) => request(`/pricing/items/${id}`, { method: 'DELETE' })
+export const bulkDeletePricingItems = (ids) => request('/pricing/items/bulk-delete', { method: 'POST', body: { ids } })
 export const getPricingReport  = (opts) => request('/pricing/report' + (pricingQuery(opts) ? `?${pricingQuery(opts)}` : ''))
 
 // ── Competition capture ──────────────────────────────────────────────────────
