@@ -3,7 +3,7 @@ import { Navigate } from 'react-router-dom'
 import { useStore } from '../App.jsx'
 import { useToast } from '../components/Toast.jsx'
 import { downloadExcel } from '../lib/excel.js'
-import { getPricingItems, savePricingItem, deletePricingItem, bulkDeletePricingItems, getPricingReport, getTaskTypes, getDuplicateKeys} from '../lib/api.js'
+import { getPricingItems, savePricingItem, bulkDeletePricingItems, getPricingReport, getTaskTypes, getDuplicateKeys} from '../lib/api.js'
 import { VAT_OPTIONS, vatPct, marginPct } from '../lib/pricingOptions.js'
 import AgeClock from '../components/AgeClock.jsx'
 import MultiSelectDropdown from '../components/forms/MultiSelectDropdown.jsx'
@@ -160,12 +160,6 @@ export default function Pricing() {
     })
   }
 
-  const remove = async (it) => {
-    const name = it.record?.item_name || it.record?.description || it.product_barcode || 'this record'
-    if (!window.confirm(`Remove ${name} from the Pricing list?\n\nThe original record is NOT deleted — only this pricing copy.`)) return
-    try { await deletePricingItem(it.id); await load() } catch (e) { toast.error(e.message) }
-  }
-
   const removeSelected = async () => {
     const ids = items.filter(it => selected.has(it.id)).map(it => it.id)
     if (!ids.length) return
@@ -268,6 +262,16 @@ export default function Pricing() {
               <button className="btn btn-sm btn-outline" onClick={exportExcel} disabled={downloading || !items.length}>
                 {downloading ? <><span className="spinner spinner-dark" /> …</> : '↓ Excel'}
               </button>
+              <button className="btn btn-sm" onClick={removeSelected}
+                disabled={!selected.size || bulkDeleting || selectedSaving}
+                title={selected.size ? 'Remove the selected rows from Pricing (the original records stay in Reports)' : 'Tick one or more rows to delete'}
+                style={{ background: '#C0392B', color: '#fff', border: 'none', fontWeight: 600 }}>
+                {bulkDeleting ? <><span className="spinner" /> Deleting…</> : `🗑 Delete${selected.size ? ` (${selected.size})` : ''}`}
+              </button>
+              <button className="btn btn-sm btn-outline" onClick={() => setSelected(new Set())}
+                disabled={!selected.size || bulkDeleting}>
+                Clear selection
+              </button>
             </div>
           </div>
         </div>
@@ -286,25 +290,11 @@ export default function Pricing() {
       ) : (
         <div className="card">
           <div className="card-header">{items.length.toLocaleString('en-IE')} record(s)</div>
-          {selected.size > 0 && (
-            <div className="flex-row" style={{ padding: '8px 16px', background: 'var(--surface-warm)', borderBottom: '1px solid var(--border)', gap: 8, flexWrap: 'wrap' }}>
-              <strong>{selected.size} selected</strong>
-              <span style={{ marginLeft: 'auto' }} />
-              <button className="btn btn-sm" disabled={bulkDeleting || selectedSaving} onClick={removeSelected}
-                title="Remove the selected rows from Pricing (the original records stay in Reports)"
-                style={{ background: '#C0392B', color: '#fff', border: 'none', fontWeight: 600 }}>
-                {bulkDeleting ? <><span className="spinner" /> Deleting…</> : `🗑 Delete (${selected.size})`}
-              </button>
-              <button className="btn btn-sm btn-outline" disabled={bulkDeleting} onClick={() => setSelected(new Set())}>
-                Clear selection
-              </button>
-            </div>
-          )}
           <div className="table-wrap pricing-scroll">
             <table style={{ fontSize: 13 }}>
               <thead>
                 <tr>
-                  <th style={{ width: 40 }}>
+                  <th style={{ width: 36 }}>
                     <input type="checkbox" checked={allSelected} onChange={toggleAll} title="Select all rows" />
                   </th>
                   <th style={{ whiteSpace: 'nowrap', width: 130 }}>Product Barcode</th>
@@ -316,14 +306,10 @@ export default function Pricing() {
                   <th style={{ whiteSpace: 'nowrap', width: 140 }}>VAT Rate *</th>
                   <th style={{ whiteSpace: 'nowrap', width: 80 }}>Margin %</th>
                   <th style={{ width: 95 }}>Notes</th>
-                  {/* Sized for Details + both badges (≈245px measured) — this table
-                      is layout: fixed, so anything wider spills under Status. */}
-                  <th style={{ width: 250 }}></th>
+                  {/* Fits Details + one badge; a second badge wraps below rather
+                      than spilling under Status (the table is layout: fixed). */}
+                  <th style={{ width: 195 }}></th>
                   <th style={{ width: 150 }}>Status</th>
-                  {/* Delete lives in its own trailing column, away from Details —
-                      users were misclicking Delete instead of Details when both
-                      buttons sat side by side in one cell. */}
-                  <th style={{ width: 90 }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -384,7 +370,7 @@ export default function Pricing() {
                         />
                       </td>
                       <td style={{ whiteSpace: 'nowrap' }}>
-                        <div className="flex-row" style={{ gap: 6, whiteSpace: 'nowrap', alignItems: 'center' }}>
+                        <div className="flex-row" style={{ gap: 6, rowGap: 4, flexWrap: 'wrap', whiteSpace: 'nowrap', alignItems: 'center' }}>
                           <button
                             className="btn btn-sm btn-outline"
                             title="All details for this record"
@@ -424,15 +410,6 @@ export default function Pricing() {
                               <AgeClock at={it.created_at} warnHours={8} staleHours={24} style={{ marginLeft: 5 }} />
                             </>
                           )}
-                      </td>
-                      {/* Delete sits alone at the true end of the row, one full
-                          column away from Details and Status — the previous
-                          layout put it right beside Details, and rows scanned
-                          left-to-right were landing a misclick on Delete. */}
-                      <td style={{ whiteSpace: 'nowrap' }}>
-                        <button className="btn btn-sm btn-outline" disabled={isSaving} onClick={() => remove(it)}>
-                          Delete
-                        </button>
                       </td>
                     </tr>
                   )
