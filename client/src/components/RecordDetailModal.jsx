@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import { getTaskRecordEvents, getProductMaster, updateTaskRecord, reverseTaskRecordStatus } from '../lib/api.js'
 import { TASK_FORMS } from '../lib/taskTypes.js'
 import { useToast } from './Toast.jsx'
@@ -92,7 +92,7 @@ function ReviewButtons({ record, showInternal, allowReview, onUpdated }) {
       // that locally so "Reviewed" shows immediately without a re-fetch.
       onUpdated?.(record.id, { ...patch, reviewed_at: now })
       window.dispatchEvent(new Event('hs:assignment-changed'))
-      toast.success(status === 'completed' ? 'Marked complete.' : 'Marked “no change needed”.')
+      toast.success(status === 'completed' ? 'Marked complete.' : 'Marked "no change needed".')
     } catch (e) {
       toast.error(e.message || 'Could not update this record')
     } finally {
@@ -597,7 +597,7 @@ export default function RecordDetailModal({ record, storeName, open, onClose, sh
               {/* Audit history — collapsible; collapsed by default to save space. */}
               <div style={{ marginTop: 14, paddingTop: 8, borderTop: '1px solid var(--border-soft)' }}>
                 <button
-                  type=”button”
+                  type="button"
                   onClick={() => setHistoryOpen(o => !o)}
                   style={{
                     all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center',
@@ -605,20 +605,20 @@ export default function RecordDetailModal({ record, storeName, open, onClose, sh
                   }}
                 >
                   <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{historyOpen ? '▾' : '▸'}</span>
-                  <span className=”note” style={{ fontSize: 11, fontWeight: 600 }}>
+                  <span className="note" style={{ fontSize: 11, fontWeight: 600 }}>
                     History
                     {events !== null && events.length > 0 && (
                       <span style={{ fontWeight: 400, marginLeft: 4 }}>({events.length})</span>
                     )}
                   </span>
                   {events === null && (
-                    <span className=”note” style={{ fontSize: 11, marginLeft: 4 }}><span className=”spinner spinner-dark” /></span>
+                    <span className="note" style={{ fontSize: 11, marginLeft: 4 }}><span className="spinner spinner-dark" /></span>
                   )}
                 </button>
                 {historyOpen && (
                   events === null ? null
                   : !events.length
-                    ? <div className=”note” style={{ fontSize: 11, marginTop: 4 }}>No history yet.</div>
+                    ? <div className="note" style={{ fontSize: 11, marginTop: 4 }}>No history yet.</div>
                     : (
                       <ol style={{ margin: '6px 0 0', paddingLeft: 16, fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
                         {events.map(ev => (
@@ -626,7 +626,7 @@ export default function RecordDetailModal({ record, storeName, open, onClose, sh
                             {describeEvent(ev)}
                             {' · '}<span style={{ fontWeight: 500 }}>{ev.by_user_name || 'System'}</span>
                             {' · '}{new Date(ev.at).toLocaleString('en-IE', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                            {ev.note && <span> · “{ev.note}”</span>}
+                            {ev.note && <span> · "{ev.note}"</span>}
                           </li>
                         ))}
                       </ol>
