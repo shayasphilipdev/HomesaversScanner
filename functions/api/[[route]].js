@@ -2311,12 +2311,30 @@ export async function onRequest(context) {
       })
       const sMap  = Object.fromEntries(stores.map(s => [s.id, s]))
       const ttMap = Object.fromEntries(taskTypes.map(t => [t.code, t.name]))
+
+      // Annotate each item with live message count and notes presence so the
+      // Pricing grid can surface comment/message bubbles without a second fetch.
+      let msgCountMap = {}
+      const recordIds = items.map(it => it.task_record_id).filter(Boolean)
+      if (recordIds.length) {
+        const msgRows = await db.select('task_record_messages', {
+          select:    'record_id',
+          record_id: `in.(${recordIds.join(',')})`,
+          limit:     '10000'
+        }).catch(() => [])
+        for (const m of msgRows) {
+          msgCountMap[m.record_id] = (msgCountMap[m.record_id] || 0) + 1
+        }
+      }
+
       return json(items.map(it => ({
         ...it,
         store_code:     sMap[it.store_id]?.store_code || '',
         store_name:     sMap[it.store_id]?.store_name || '',
         task_type_name: ttMap[it.record?.task_type] || it.record?.task_type || '',
-        details_fmt:    fmtDetails(it.record?.details)
+        details_fmt:    fmtDetails(it.record?.details),
+        message_count:  msgCountMap[it.task_record_id] || 0,
+        has_notes:      !!(it.record?.review_notes)
       })))
     }
 

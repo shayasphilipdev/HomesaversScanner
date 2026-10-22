@@ -840,6 +840,25 @@ input.scan-input {
 .badge-store-done { background: var(--blue-soft);  color: var(--blue); }
 .badge-deleted    { background: var(--red-soft);   color: var(--red); }
 
+/* ── Pricing page comment/message bubbles ── */
+.pricing-bubble {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  transition: opacity .15s;
+}
+.pricing-bubble:hover { opacity: .75; }
+.pricing-bubble--note { background: #FFF3CD; color: #856404; }
+.pricing-bubble--msg  { background: var(--blue-soft, #EBF4FF); color: var(--blue, #2563EB); }
+
 /* ── Age clock (waiting-time chip on open items) ── */
 .age-chip {
   display: inline-flex;

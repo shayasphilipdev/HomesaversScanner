@@ -308,8 +308,9 @@ function describeEvent(ev) {
 }
 
 export default function RecordDetailModal({ record, storeName, open, onClose, showInternal = true, allowReview = true, onUpdated, onPrev, onNext }) {
-  const [showEmpty, setShowEmpty] = useState(false)
-  const [events, setEvents]       = useState(null)
+  const [showEmpty, setShowEmpty]     = useState(false)
+  const [events, setEvents]           = useState(null)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [pm, setPm]               = useState(null)
   const [pmErr, setPmErr]         = useState('')
   // { images:[{url,label}], index } | null — the record's own Product/Barcode
@@ -350,7 +351,7 @@ export default function RecordDetailModal({ record, storeName, open, onClose, sh
   useEffect(() => {
     if (!open || !record?.id) return
     let alive = true
-    setEvents(null); setPm(null); setPmErr('')
+    setEvents(null); setPm(null); setPmErr(''); setHistoryOpen(false)
 
     getTaskRecordEvents(record.id)
       .then(e => { if (alive) setEvents(e || []) })
@@ -534,23 +535,43 @@ export default function RecordDetailModal({ record, storeName, open, onClose, sh
                   ))}
               </div>
 
-              {/* Audit history — background detail, so it gets a quiet heading
-                  and the smallest type in the popup. */}
+              {/* Audit history — collapsible; collapsed by default to save space. */}
               <div style={{ marginTop: 14, paddingTop: 8, borderTop: '1px solid var(--border-soft)' }}>
-                <div className="note" style={{ fontSize: 11, fontWeight: 600, marginBottom: 4 }}>History</div>
-                {events === null ? <div className="note" style={{ fontSize: 11 }}><span className="spinner spinner-dark" /> Loading…</div>
-                 : !events.length ? <div className="note" style={{ fontSize: 11 }}>No history yet.</div>
-                 : (
-                  <ol style={{ margin: 0, paddingLeft: 16, fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                    {events.map(ev => (
-                      <li key={ev.id} style={{ marginBottom: 2 }}>
-                        {describeEvent(ev)}
-                        {' · '}{ev.by_user_name}
-                        {' · '}{new Date(ev.at).toLocaleString('en-IE', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                        {ev.note && <span> · “{ev.note}”</span>}
-                      </li>
-                    ))}
-                  </ol>
+                <button
+                  type=”button”
+                  onClick={() => setHistoryOpen(o => !o)}
+                  style={{
+                    all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center',
+                    gap: 5, width: '100%'
+                  }}
+                >
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{historyOpen ? '▾' : '▸'}</span>
+                  <span className=”note” style={{ fontSize: 11, fontWeight: 600 }}>
+                    History
+                    {events !== null && events.length > 0 && (
+                      <span style={{ fontWeight: 400, marginLeft: 4 }}>({events.length})</span>
+                    )}
+                  </span>
+                  {events === null && (
+                    <span className=”note” style={{ fontSize: 11, marginLeft: 4 }}><span className=”spinner spinner-dark” /></span>
+                  )}
+                </button>
+                {historyOpen && (
+                  events === null ? null
+                  : !events.length
+                    ? <div className=”note” style={{ fontSize: 11, marginTop: 4 }}>No history yet.</div>
+                    : (
+                      <ol style={{ margin: '6px 0 0', paddingLeft: 16, fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                        {events.map(ev => (
+                          <li key={ev.id} style={{ marginBottom: 2 }}>
+                            {describeEvent(ev)}
+                            {' · '}<span style={{ fontWeight: 500 }}>{ev.by_user_name || 'System'}</span>
+                            {' · '}{new Date(ev.at).toLocaleString('en-IE', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                            {ev.note && <span> · “{ev.note}”</span>}
+                          </li>
+                        ))}
+                      </ol>
+                    )
                 )}
               </div>
             </div>

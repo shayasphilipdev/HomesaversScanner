@@ -329,6 +329,22 @@ export default function Pricing() {
                             title="All details for this record"
                             onClick={() => setDetail({ record: r, storeName: it.store_name })}
                           >🔍 Details</button>
+                          {it.has_notes && (
+                            <button
+                              type="button"
+                              className="pricing-bubble pricing-bubble--note"
+                              title="Has back-office notes — click to view"
+                              onClick={() => setDetail({ record: r, storeName: it.store_name })}
+                            >📝</button>
+                          )}
+                          {it.message_count > 0 && (
+                            <button
+                              type="button"
+                              className="pricing-bubble pricing-bubble--msg"
+                              title={`${it.message_count} message${it.message_count !== 1 ? 's' : ''} — click to view`}
+                              onClick={() => setDetail({ record: r, storeName: it.store_name })}
+                            >💬 <span>{it.message_count}</span></button>
+                          )}
                         </div>
                       </td>
                       <td style={{ whiteSpace: 'nowrap' }}>
