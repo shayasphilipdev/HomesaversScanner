@@ -3,7 +3,7 @@ import { useStore } from '../App.jsx'
 import {
   getStores, getTaskTypes, getToken, getTaskRecords,
   updateTaskRecord, bulkReviewTaskRecords, bulkClearTaskRecords,
-  deleteTaskRecord, bulkDeleteTaskRecords, deleteJkMatching,
+  bulkDeleteTaskRecords, deleteJkMatching,
   adminListTemplates, getStoreTaskReportRows,
   clearToken, getProductMaster, getProductMasterFilters,
   getSpacePlanReport, getCompetitorReport, sendToPricing, getBmReductions,
@@ -787,10 +787,15 @@ function HQReports() {
     (STORE_ARCHIVABLE.has(r.task_type) && r.status === 'pending')
   ).map(r => r.id), [records])
 
-  const selectableIds  = isBO ? pendingIds : storeClearableIds
+  const allIds = useMemo(() => records.map(r => r.id), [records])
+  // Admins may tick any row, since Delete applies to every status; the review
+  // buttons then act only on the pending rows within the selection.
+  const selectableIds  = isBO && isAdmin ? allIds : isBO ? pendingIds : storeClearableIds
   const selectableSet  = useMemo(() => new Set(selectableIds), [selectableIds])
   const showCheckCol   = isBO || storeClearableIds.length > 0
   const allSelectableSelected = selectableIds.length > 0 && selectableIds.every(id => selected.has(id))
+  const pendingSet = useMemo(() => new Set(pendingIds), [pendingIds])
+  const selectedPendingCount = [...selected].filter(id => pendingSet.has(id)).length
 
 
   // Records assigned to the signed-in user float to the top of whatever page
@@ -817,15 +822,26 @@ function HQReports() {
     if (!ids.length) { setDeleteTarget(null); return }
     setDeleting(true)
     try {
-      if (ids.length === 1) await deleteTaskRecord(ids[0])
-      else                  await bulkDeleteTaskRecords(ids)
-      const idSet = new Set(ids)
-      setRecords(rs => rs.filter(r => !idSet.has(r.id)))
-      setTotal(t => Math.max(0, t - ids.length))
-      setSelected(prev => { const n = new Set(prev); ids.forEach(i => n.delete(i)); return n })
-      toast.success(`${ids.length} record${ids.length === 1 ? '' : 's'} permanently deleted.`)
+      // Small batches keep each request well under the Workers 50-subrequest
+      // cap, which every photo delete counts towards.
+      let deleted = 0
+      for (let i = 0; i < ids.length; i += 15) {
+        const res = await bulkDeleteTaskRecords(ids.slice(i, i + 15))
+        deleted += res?.deleted || 0
+      }
+      if (deleted === ids.length) {
+        const idSet = new Set(ids)
+        setRecords(rs => rs.filter(r => !idSet.has(r.id)))
+        setTotal(t => Math.max(0, t - ids.length))
+        setSelected(prev => { const n = new Set(prev); ids.forEach(i => n.delete(i)); return n })
+        toast.success(`${deleted} record${deleted === 1 ? '' : 's'} permanently deleted.`)
+      } else {
+        toast.error(`Deleted ${deleted} of ${ids.length}. The others could not be deleted — the list has been refreshed.`)
+        runReport()
+      }
     } catch (e) {
       setError(e.message); toast.error(`Delete failed — ${e.message}`)
+      runReport()   // earlier batches may already have gone
     } finally {
       setDeleting(false)
       setDeleteTarget(null)
@@ -893,8 +909,8 @@ function HQReports() {
   }
 
   const bulkReview = async (status) => {
-    if (!selected.size) return
-    const ids = [...selected]
+    const ids = [...selected].filter(id => pendingSet.has(id))
+    if (!ids.length) return
     const n   = ids.length
     const label = status === 'completed' ? 'completed' : 'marked “no change needed”'
 
@@ -1165,7 +1181,10 @@ function HQReports() {
 
       {records.length > 0 && (
         <div className="card mt-20">
-          <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          {/* One permanent band: every action is always shown and simply
+              disabled until it applies, so ticking a row never pops a strip in
+              and pushes the grid down. */}
+          <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '8px 16px' }}>
             <span>
               Showing {records.length.toLocaleString('en-IE')}
               {total > records.length && <> of {total.toLocaleString('en-IE')}</>}
@@ -1177,16 +1196,49 @@ function HQReports() {
             {!isBO && storeClearableIds.length > 0 && (
               <span className="note" style={{ fontSize: 12 }}>· {storeClearableIds.length} archivable</span>
             )}
+            {selected.size > 0 && (
+              <span className="note" style={{ fontSize: 12, fontWeight: 700 }}>· {selected.size} selected</span>
+            )}
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              {isBO ? (
+                <>
+                  <button className="btn btn-sm btn-primary" disabled={busy || !selectedPendingCount} onClick={() => bulkReview('completed')}>
+                    ✓ Mark complete{selectedPendingCount ? ` (${selectedPendingCount})` : ''}
+                  </button>
+                  <button className="btn btn-sm btn-outline" disabled={busy || !selectedPendingCount} onClick={() => bulkReview('no_change_needed')}>
+                    ⊘ No change needed{selectedPendingCount ? ` (${selectedPendingCount})` : ''}
+                  </button>
+                  <button className="btn btn-sm btn-outline" disabled={busy || !selected.size} onClick={sendSelectedToPricing}
+                    title="Copy the selected records to the Pricing page (originals stay here)">
+                    € Send to Pricing{selected.size ? ` (${selected.size})` : ''}
+                  </button>
+                  {isAdmin && (
+                    <button className="btn btn-sm" disabled={busy || !selected.size} onClick={() => setDeleteTarget({ ids: [...selected] })}
+                      title={selected.size ? 'Permanently delete the selected records' : 'Tick one or more rows to delete'}
+                      style={{ background: '#C0392B', color: '#fff', border: 'none', fontWeight: 600 }}>
+                      🗑 Delete{selected.size ? ` (${selected.size})` : ''}
+                    </button>
+                  )}
+                </>
+              ) : (
+                <button className="btn btn-sm btn-primary" disabled={busy || !selected.size}
+                  onClick={() => setArchiveTarget({ ids: [...selected].filter(id => selectableSet.has(id)) })}>
+                  📦 Archive selected{selected.size ? ` (${[...selected].filter(id => selectableSet.has(id)).length})` : ''}
+                </button>
+              )}
+              <button className="btn btn-sm btn-outline" disabled={busy || !selected.size} onClick={() => setSelected(new Set())}>
+                Clear selection
+              </button>
               {/* Admin only, and it requires an explicit task-type filter: the
                   server refuses an unfiltered request rather than treating it
                   as "every type", because one button that means "delete
                   everything in range" is not something to be one click from. */}
-              {isAdmin && total > 0 && taskTypeIds.length > 0 && (
+              {isAdmin && (
                 <button
                   className="btn btn-sm"
                   onClick={() => setMatchDelete(true)}
-                  title="Permanently delete every record matching this report — all pages"
+                  disabled={!total || !taskTypeIds.length}
+                  title={taskTypeIds.length ? 'Permanently delete every record matching this report — all pages' : 'Choose one or more task types first'}
                   style={{ background: '#C0392B', color: '#fff', border: 'none', fontWeight: 600 }}
                 >🗑 Delete all matching</button>
               )}
@@ -1197,46 +1249,6 @@ function HQReports() {
               )}
             </div>
           </div>
-
-          {/* Bulk action bar — back office reviews, store users clear */}
-          {isBO && selected.size > 0 && (
-            <div className="flex-row" style={{ padding: '12px 18px', background: 'var(--surface-warm)', borderBottom: '1px solid var(--border)', gap: 8, flexWrap: 'wrap' }}>
-              <strong>{selected.size} selected</strong>
-              <span style={{ marginLeft: 'auto' }} />
-              <button className="btn btn-sm btn-primary" disabled={busy} onClick={() => bulkReview('completed')}>
-                ✓ Mark complete
-              </button>
-              <button className="btn btn-sm btn-outline" disabled={busy} onClick={() => bulkReview('no_change_needed')}>
-                ⊘ No change needed
-              </button>
-              <button className="btn btn-sm btn-outline" disabled={busy} onClick={sendSelectedToPricing}
-                title="Copy the selected records to the Pricing page (originals stay here)">
-                € Send to Pricing ({selected.size})
-              </button>
-              {isAdmin && (
-                <button className="btn btn-sm" disabled={busy} onClick={() => setDeleteTarget({ ids: [...selected] })}
-                  style={{ background: '#C0392B', color: '#fff', border: 'none', fontWeight: 600 }}>
-                  🗑 Delete ({selected.size})
-                </button>
-              )}
-              <button className="btn btn-sm btn-outline" disabled={busy} onClick={() => setSelected(new Set())}>
-                Clear selection
-              </button>
-            </div>
-          )}
-          {!isBO && selected.size > 0 && (
-            <div className="flex-row" style={{ padding: '12px 18px', background: 'var(--surface-warm)', borderBottom: '1px solid var(--border)', gap: 8, flexWrap: 'wrap' }}>
-              <strong>{selected.size} selected</strong>
-              <span style={{ marginLeft: 'auto' }} />
-              <button className="btn btn-sm btn-primary" disabled={busy}
-                onClick={() => setArchiveTarget({ ids: [...selected].filter(id => selectableSet.has(id)) })}>
-                {`📦 Archive selected (${[...selected].filter(id => selectableSet.has(id)).length})`}
-              </button>
-              <button className="btn btn-sm btn-outline" disabled={busy} onClick={() => setSelected(new Set())}>
-                Clear selection
-              </button>
-            </div>
-          )}
 
           <div className="table-wrap table-wrap--tall">
             <table>
@@ -1249,7 +1261,7 @@ function HQReports() {
                         checked={allSelectableSelected}
                         disabled={!selectableIds.length}
                         onChange={toggleAllSelectable}
-                        title={selectableIds.length ? (isBO ? 'Select all pending' : 'Select all clearable') : 'Nothing to select'}
+                        title={selectableIds.length ? (isBO ? (isAdmin ? 'Select all rows' : 'Select all pending') : 'Select all clearable') : 'Nothing to select'}
                       />
                     </th>
                   )}
@@ -1345,16 +1357,14 @@ function HQReports() {
                           {formatDMY(r.created_at)}
                           {isPending && <AgeClock at={r.created_at} style={{ marginLeft: 6 }} />}
                         </td>
-                        {/* Details, Messages and (J/K) Delete are for every
-                            user — a store needs the same look at its own
-                            record, the same conversation, and the same
-                            permanent-delete escape hatch HO has. Clear is the
-                            phone-app equivalent of the bulk "Clear selected"
-                            above, one row at a time. Complete/No-change stay
-                            back-office only — that review step is HO's alone.
-                            The Canned-reply picker inside Messages is gated
-                            by role, not by page, so it still never reaches a
-                            store login here. */}
+                        {/* Details and Messages are for every user — a store
+                            needs the same look at its own record and the same
+                            conversation. Complete/No-change stay back-office
+                            only — that review step is HO's alone. The
+                            Canned-reply picker inside Messages is gated by
+                            role, not by page, so it still never reaches a
+                            store login here. Permanent delete is the band's
+                            Delete button (admin only), not a per-row one. */}
                         <td>
                           <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
                             {isBO && isPending && (
@@ -1417,14 +1427,6 @@ function HQReports() {
                               title="Messages"
                               onClick={() => toggleMessages(r.id)}
                             >💬</button>
-                            {isAdmin && (
-                              <button
-                                className="btn btn-sm"
-                                title="Permanently delete this record"
-                                onClick={() => setDeleteTarget({ ids: [r.id] })}
-                                style={{ background: '#C0392B', color: '#fff', border: 'none', fontWeight: 600 }}
-                              >🗑</button>
-                            )}
                           </div>
                         </td>
                       </tr>

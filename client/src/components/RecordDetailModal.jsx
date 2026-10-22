@@ -218,10 +218,9 @@ function BackofficeComments({ record, onUpdated }) {
   )
 }
 
-// Rendered last, just before the history, and without a heading.
+// Shown inside the History section once expanded, above the audit events.
+// Created and Updated sit in the section's header instead.
 const TIME_FIELDS = [
-  ['created_at',         'Created'],
-  ['updated_at',         'Updated'],
   ['reviewed_at',        'Reviewed'],
   ['completed_at',       'Completed by HO'],
   ['store_completed_at', 'Store confirmed'],
@@ -385,6 +384,17 @@ export default function RecordDetailModal({ record, storeName, open, onClose, sh
     ['Product', record.photo_product_url],
     ['Barcode', record.photo_barcode_url],
   ].filter(([, u]) => u).map(([label, url]) => ({ label, url }))
+
+  const historyDate = (v) => {
+    if (!v) return null
+    const d = new Date(v)
+    return isNaN(d) ? String(v) : d.toLocaleString('en-IE', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+  }
+  const createdAt = historyDate(record.created_at)
+  const updatedAt = historyDate(record.updated_at)
+  const otherStamps = TIME_FIELDS
+    .map(([k, label]) => [k, label, historyDate(record[k])])
+    .filter(([, , v]) => showEmpty || v !== null)
 
   return (
     <>
@@ -573,64 +583,61 @@ export default function RecordDetailModal({ record, storeName, open, onClose, sh
                 />
               </div>
 
-              {/* Timestamps, unlabelled, immediately before the history they explain. */}
-              <div style={{ marginTop: 14 }}>
-                {TIME_FIELDS
-                  .map(([k, label]) => [k, label, fmt(k, record[k])])
-                  .filter(([, , v]) => showEmpty || v !== null)
-                  .map(([k, label, v]) => (
-                    <Row
-                      key={k}
-                      label={label}
-                      value={
-                        <>
-                          {v ?? <span className="td-muted">—</span>}
-                          {k === 'created_at' && record.status === 'pending' && (
-                            <AgeClock at={record.created_at} style={{ marginLeft: 8 }} />
-                          )}
-                        </>
-                      }
-                    />
-                  ))}
-              </div>
-
-              {/* Audit history — collapsible; collapsed by default to save space. */}
+              {/* One History section. Created/Updated ride in its header so they
+                  stay visible while it is collapsed; the other timestamps and
+                  the audit events open beneath it. */}
               <div style={{ marginTop: 14, paddingTop: 8, borderTop: '1px solid var(--border-soft)' }}>
                 <button
                   type="button"
                   onClick={() => setHistoryOpen(o => !o)}
                   style={{
                     all: 'unset', cursor: 'pointer', display: 'flex', alignItems: 'center',
-                    gap: 5, width: '100%'
+                    gap: 6, width: '100%', flexWrap: 'wrap'
                   }}
                 >
                   <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{historyOpen ? '▾' : '▸'}</span>
-                  <span className="note" style={{ fontSize: 11, fontWeight: 600 }}>
+                  <span className="note" style={{ fontSize: 12, fontWeight: 600 }}>
                     History
                     {events !== null && events.length > 0 && (
                       <span style={{ fontWeight: 400, marginLeft: 4 }}>({events.length})</span>
                     )}
                   </span>
                   {events === null && (
-                    <span className="note" style={{ fontSize: 11, marginLeft: 4 }}><span className="spinner spinner-dark" /></span>
+                    <span className="note" style={{ fontSize: 11 }}><span className="spinner spinner-dark" /></span>
                   )}
+                  <span className="note" style={{ marginLeft: 'auto', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <span>Created <strong style={{ color: 'var(--text)' }}>{createdAt || '—'}</strong></span>
+                    {record.status === 'pending' && <AgeClock at={record.created_at} />}
+                    {(updatedAt || showEmpty) && (
+                      <span>· Updated <strong style={{ color: 'var(--text)' }}>{updatedAt || '—'}</strong></span>
+                    )}
+                  </span>
                 </button>
                 {historyOpen && (
-                  events === null ? null
-                  : !events.length
-                    ? <div className="note" style={{ fontSize: 11, marginTop: 4 }}>No history yet.</div>
-                    : (
-                      <ol style={{ margin: '6px 0 0', paddingLeft: 16, fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-                        {events.map(ev => (
-                          <li key={ev.id} style={{ marginBottom: 2 }}>
-                            {describeEvent(ev)}
-                            {' · '}<span style={{ fontWeight: 500 }}>{ev.by_user_name || 'System'}</span>
-                            {' · '}{new Date(ev.at).toLocaleString('en-IE', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                            {ev.note && <span> · "{ev.note}"</span>}
-                          </li>
+                  <>
+                    {otherStamps.length > 0 && (
+                      <div className="note" style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 14px', fontSize: 11, marginTop: 6 }}>
+                        {otherStamps.map(([k, label, v]) => (
+                          <span key={k}>{label} <strong style={{ color: 'var(--text)' }}>{v ?? '—'}</strong></span>
                         ))}
-                      </ol>
-                    )
+                      </div>
+                    )}
+                    {events === null ? null
+                    : !events.length
+                      ? <div className="note" style={{ fontSize: 11, marginTop: 4 }}>No history yet.</div>
+                      : (
+                        <ol style={{ margin: '6px 0 0', paddingLeft: 16, fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                          {events.map(ev => (
+                            <li key={ev.id} style={{ marginBottom: 2 }}>
+                              {describeEvent(ev)}
+                              {' · '}<span style={{ fontWeight: 500 }}>{ev.by_user_name || 'System'}</span>
+                              {' · '}{historyDate(ev.at)}
+                              {ev.note && <span> · "{ev.note}"</span>}
+                            </li>
+                          ))}
+                        </ol>
+                      )}
+                  </>
                 )}
               </div>
             </div>
