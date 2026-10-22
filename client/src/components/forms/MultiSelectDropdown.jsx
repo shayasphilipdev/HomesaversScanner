@@ -159,7 +159,7 @@ export default function MultiSelectDropdown({
         style={{
           width: '100%',
           display: 'flex', alignItems: 'center', gap: 8,
-          textAlign: 'left', minHeight: 38, paddingRight: 12, paddingLeft: 12
+          textAlign: 'left', minHeight: 'var(--msd-trigger-h, 38px)', paddingRight: 12, paddingLeft: 12
         }}
         aria-expanded={open}
       >

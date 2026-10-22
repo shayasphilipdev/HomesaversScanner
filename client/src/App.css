@@ -692,6 +692,20 @@ body {
    reads as a "very high" band before you see any data. Opt-in per card so
    this doesn't ripple into every other .card-body on the page. */
 .report-filter-card { padding: 14px 18px; }
+/* Desktop only: phones keep the larger tap targets. */
+@media (min-width: 601px) {
+  .report-filter-card { padding: 8px 14px; --msd-trigger-h: 32px; }
+  .report-filter-card .filter-row { gap: 6px 10px; }
+  .report-filter-card .filter-field { gap: 2px; }
+  .report-filter-card .filter-field label { font-size: 11px; line-height: 1.2; }
+  .report-filter-card .filter-field input,
+  .report-filter-card .filter-field select,
+  .report-filter-card .filter-field input[type="date"],
+  .report-filter-card .filter-field input[type="datetime-local"] {
+    min-height: 32px; padding: 4px 10px; font-size: 13px;
+  }
+  .report-filter-card .filter-row .btn-sm { min-height: 32px; }
+}
 
 /* Top-of-nav capacity alert, admin only. Amber baseline, flashes red
    when the worst meter is over the critical threshold (85%). */
