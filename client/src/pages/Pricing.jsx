@@ -248,7 +248,7 @@ export default function Pricing() {
                 <tr>
                   <th style={{ whiteSpace: 'nowrap', width: 130 }}>Product Barcode</th>
                   <th style={{ whiteSpace: 'nowrap', width: 130 }}>Product Code</th>
-                  <th style={{ minWidth: 180 }}>Description</th>
+                  <th style={{ minWidth: 120, maxWidth: 160 }}>Description</th>
                   <th style={{ width: 90 }}>Cost</th>
                   <th style={{ whiteSpace: 'nowrap', width: 90 }}>Current SP</th>
                   <th style={{ whiteSpace: 'nowrap', width: 130 }}>New Selling Price *</th>
@@ -285,7 +285,9 @@ export default function Pricing() {
                         )}
                       </td>
                       <td className="td-code" style={{ whiteSpace: 'nowrap' }}>{it.product_barcode || empty}</td>
-                      <td>{r.item_name || r.description || r.product_name_label || empty}</td>
+                      <td style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                          title={r.item_name || r.description || r.product_name_label || ''}
+                      >{r.item_name || r.description || r.product_name_label || empty}</td>
                       <td style={{ whiteSpace: 'nowrap', maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis' }}>{euro(it.cost) || empty}</td>
                       <td style={{ whiteSpace: 'nowrap', maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis' }}>{euro(it.current_selling_price) || empty}</td>
                       <td>
