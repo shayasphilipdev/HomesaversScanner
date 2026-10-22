@@ -335,7 +335,7 @@ export default function Pricing() {
                               className="pricing-bubble pricing-bubble--note"
                               title="Has back-office notes — click to view"
                               onClick={() => setDetail({ record: r, storeName: it.store_name })}
-                            >📝</button>
+                            >📝 Note</button>
                           )}
                           {it.message_count > 0 && (
                             <button
@@ -343,7 +343,7 @@ export default function Pricing() {
                               className="pricing-bubble pricing-bubble--msg"
                               title={`${it.message_count} message${it.message_count !== 1 ? 's' : ''} — click to view`}
                               onClick={() => setDetail({ record: r, storeName: it.store_name })}
-                            >💬 <span>{it.message_count}</span></button>
+                            >💬 {it.message_count}</button>
                           )}
                         </div>
                       </td>

@@ -846,18 +846,27 @@ input.scan-input {
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 2px 6px;
-  border-radius: 999px;
-  font-size: 11.5px;
-  font-weight: 600;
-  line-height: 1;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
   white-space: nowrap;
-  transition: opacity .15s;
+  border: 1.5px solid transparent;
+  transition: filter .15s;
 }
-.pricing-bubble:hover { opacity: .75; }
-.pricing-bubble--note { background: #FFF3CD; color: #856404; }
-.pricing-bubble--msg  { background: var(--blue-soft, #EBF4FF); color: var(--blue, #2563EB); }
+.pricing-bubble:hover { filter: brightness(.92); }
+.pricing-bubble--note {
+  background: #F59E0B;
+  color: #fff;
+  border-color: #D97706;
+}
+.pricing-bubble--msg {
+  background: #2563EB;
+  color: #fff;
+  border-color: #1D4ED8;
+}
 
 /* ── Age clock (waiting-time chip on open items) ── */
 .age-chip {
