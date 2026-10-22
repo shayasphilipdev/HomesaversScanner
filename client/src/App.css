@@ -696,6 +696,7 @@ body {
 @media (min-width: 601px) {
   .report-filter-card { padding: 8px 14px; --msd-trigger-h: 32px; }
   .report-filter-card .filter-row { gap: 6px 10px; }
+  .report-filter-card .filter-row:last-child { margin-bottom: 0; }
   .report-filter-card .filter-field { gap: 2px; }
   .report-filter-card .filter-field label { font-size: 11px; line-height: 1.2; }
   .report-filter-card .filter-field input,
