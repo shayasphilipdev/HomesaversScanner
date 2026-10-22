@@ -5343,6 +5343,36 @@ export async function onRequest(context) {
       // body, so without this a store session could still write it with a
       // direct API call even though no button ever offers one.
       if (!isBO) delete updates.review_notes
+
+      // task_type retype — back-office only. Stores submit to the wrong task
+      // type sometimes; this lets back office move the record without losing
+      // any data (details JSON is kept as-is, pricer / reviewer can note
+      // what changed). Writes an activity event for the audit trail.
+      if (Object.prototype.hasOwnProperty.call(updates, 'task_type')) {
+        if (!isBO) return err('Not allowed to change task type', 403)
+        const VALID_TYPES = ['A','B','C','D','E','F','G','H','I','J','K','M','N']
+        if (!VALID_TYPES.includes(updates.task_type)) return err('Invalid task type', 400)
+        // Read the current type before the update so we can write a precise event.
+        const [existing] = await db.select('task_records', { select: 'task_type', id: `eq.${id}`, limit: '1' })
+        const fromType = existing?.task_type || null
+        if (fromType && fromType !== updates.task_type) {
+          // Apply the retype first, then write the audit event.
+          const retyped = await db.update('task_records', filter, { task_type: updates.task_type, updated_at: new Date().toISOString() })
+          if (!retyped.length) return err('Record not found or not allowed', 404)
+          await writeActivityEvent(db, {
+            record_id:  id,
+            event_type: 'retype',
+            session,
+            field:      'task_type',
+            old_value:  fromType,
+            new_value:  updates.task_type,
+            note:       `Moved from Task ${fromType} to Task ${updates.task_type}`
+          })
+          return json(retyped[0])
+        }
+        // Same type — nothing to do.
+        return json(existing || {})
+      }
       // Role-gate the status transition itself — see STATUS_SETTERS above.
       // Everything else in `updates` (notes, photos, etc.) is unaffected.
       if (updates.status !== undefined) {

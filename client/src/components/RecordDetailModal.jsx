@@ -286,6 +286,7 @@ const EVENT_LABEL = {
   photo:            'Photo',
   message:          'Message',
   message_resolved: 'Message thread',
+  retype:           'Task type changed',
 }
 
 function describeEvent(ev) {
@@ -299,6 +300,9 @@ function describeEvent(ev) {
   // here) and a note's is the note text, which the `note` column already
   // renders in quotes -- printing either would be noise.
   const SHOW_VALUE = kind === 'pricing_priced'
+  if (kind === 'retype') {
+    return <><strong>{label}</strong>{ev.old_value && ev.new_value && <span> · Task {ev.old_value} → Task {ev.new_value}</span>}</>
+  }
   return (
     <>
       <strong>{label}</strong>
@@ -311,6 +315,9 @@ export default function RecordDetailModal({ record, storeName, open, onClose, sh
   const [showEmpty, setShowEmpty]     = useState(false)
   const [events, setEvents]           = useState(null)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [moveTarget, setMoveTarget]   = useState('')
+  const [moveSaving, setMoveSaving]   = useState(false)
+  const [moveError, setMoveError]     = useState('')
   const [pm, setPm]               = useState(null)
   const [pmErr, setPmErr]         = useState('')
   // { images:[{url,label}], index } | null — the record's own Product/Barcode
@@ -352,6 +359,7 @@ export default function RecordDetailModal({ record, storeName, open, onClose, sh
     if (!open || !record?.id) return
     let alive = true
     setEvents(null); setPm(null); setPmErr(''); setHistoryOpen(false)
+    setMoveTarget(''); setMoveSaving(false); setMoveError('')
 
     getTaskRecordEvents(record.id)
       .then(e => { if (alive) setEvents(e || []) })
@@ -498,6 +506,57 @@ export default function RecordDetailModal({ record, storeName, open, onClose, sh
             <div className="rdm-right">
               <ReviewButtons record={record} showInternal={showInternal} allowReview={allowReview} onUpdated={onUpdated} />
               <ReverseStatusButton record={record} events={events} onUpdated={onUpdated} />
+
+              {/* Move to a different task type — back-office only. Keeps all
+                  existing details intact; writes an audit event. */}
+              {showInternal && (
+                <div style={{ marginBottom: 10 }}>
+                  <details style={{ fontSize: 13 }}>
+                    <summary style={{ cursor: 'pointer', color: 'var(--text-muted)', fontSize: 12, userSelect: 'none' }}>
+                      Move to a different task type…
+                    </summary>
+                    <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <select
+                        value={moveTarget}
+                        onChange={e => { setMoveTarget(e.target.value); setMoveError('') }}
+                        style={{ fontSize: 13 }}
+                      >
+                        <option value="">— select task type —</option>
+                        {Object.entries(TASK_FORMS)
+                          .filter(([code]) => code !== record.task_type)
+                          .map(([code, t]) => (
+                            <option key={code} value={code}>{code} — {t.name}</option>
+                          ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline"
+                        disabled={!moveTarget || moveSaving}
+                        onClick={async () => {
+                          if (!moveTarget) return
+                          setMoveSaving(true); setMoveError('')
+                          try {
+                            const updated = await updateTaskRecord(record.id, { task_type: moveTarget })
+                            onUpdated?.(record.id, updated)
+                            setMoveTarget('')
+                            // Reload events so the new audit entry appears.
+                            getTaskRecordEvents(record.id)
+                              .then(e => setEvents(e || []))
+                              .catch(() => {})
+                          } catch (e) {
+                            setMoveError(e.message || 'Could not move record')
+                          } finally {
+                            setMoveSaving(false)
+                          }
+                        }}
+                      >
+                        {moveSaving ? <><span className="spinner" /> Moving…</> : 'Move'}
+                      </button>
+                    </div>
+                    {moveError && <div className="login-error" style={{ marginTop: 6, fontSize: 12 }}>{moveError}</div>}
+                  </details>
+                </div>
+              )}
 
               {showInternal && <BackofficeComments record={record} onUpdated={onUpdated} />}
 
