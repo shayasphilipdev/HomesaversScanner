@@ -8,6 +8,7 @@ import {
 } from '../../lib/expiry.js'
 import ScannerInput from './ScannerInput.jsx'
 import ScreenshotInput from './ScreenshotInput.jsx'
+import { safeHref } from '../../lib/safeUrl.js'
 
 // Renders the inputs for a single completion form built from `blocks`.
 // Parent owns the `answers` object; this component just calls onAnswer(id, value).
@@ -450,7 +451,7 @@ function UploadBlock({ value, onChange, accept, capture, isImage = false }) {
       {value && (
         isImage
           ? <img src={value} alt="" style={{ display: 'block', maxWidth: 160, borderRadius: 8, marginBottom: 8 }} />
-          : <a href={value} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', marginBottom: 8 }}>📎 View attached file</a>
+          : safeHref(value) && <a href={safeHref(value)} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', marginBottom: 8 }}>📎 View attached file</a>
       )}
       <input
         type="file"

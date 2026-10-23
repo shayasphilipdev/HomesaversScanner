@@ -8,6 +8,7 @@ import { TASK_FORMS, STORE_ARCHIVABLE } from '../lib/taskTypes.js'
 import { isAdminRole } from '../lib/roles.js'
 import RecordMessages from './RecordMessages.jsx'
 import AgeClock from './AgeClock.jsx'
+import { safeHref } from '../lib/safeUrl.js'
 
 const STATUS_LABEL = {
   pending:          { label: 'Pending',          cls: 'badge-pending' },
@@ -311,9 +312,9 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
                     <td style={{ minWidth: 110, whiteSpace: 'nowrap' }}>{supplier || <span className="td-muted">—</span>}</td>
                     <td style={{ minWidth: 110, whiteSpace: 'nowrap' }}>
                       <div className="flex-row" style={{ gap: 6 }}>
-                        {r.photo_product_url && <a href={r.photo_product_url} target="_blank" rel="noopener noreferrer" title="Product photo">📷 product</a>}
-                        {r.photo_barcode_url && <a href={r.photo_barcode_url} target="_blank" rel="noopener noreferrer" title="Barcode photo">📷 barcode</a>}
-                        {!r.photo_product_url && !r.photo_barcode_url && <span className="td-muted">—</span>}
+                        {safeHref(r.photo_product_url) && <a href={safeHref(r.photo_product_url)} target="_blank" rel="noopener noreferrer" title="Product photo">📷 product</a>}
+                        {safeHref(r.photo_barcode_url) && <a href={safeHref(r.photo_barcode_url)} target="_blank" rel="noopener noreferrer" title="Barcode photo">📷 barcode</a>}
+                        {!safeHref(r.photo_product_url) && !safeHref(r.photo_barcode_url) && <span className="td-muted">—</span>}
                       </div>
                     </td>
                     <td style={{ minWidth: 120, whiteSpace: 'nowrap' }}>

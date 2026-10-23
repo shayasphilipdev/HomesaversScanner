@@ -4,6 +4,8 @@
 // rows    — array of plain objects
 // linkCols — optional Set of col keys whose values should become hyperlinks
 
+import { safeHref } from './safeUrl.js'
+
 export async function downloadExcel(filename, rows, cols, headers, linkCols) {
   const XLSX = await import('xlsx')
   const utils = XLSX.utils
@@ -27,7 +29,7 @@ export async function downloadExcel(filename, rows, cols, headers, linkCols) {
     rows.forEach((r, ri) => {
       cols.forEach((c, ci) => {
         if (!linkCols.has(c)) return
-        const url = String(r[c] || '').trim()
+        const url = safeHref(String(r[c] || ''))
         if (!url) return
         const cellAddr = utils.encode_cell({ r: ri + 1, c: ci })  // +1 for header row
         if (!ws[cellAddr]) return

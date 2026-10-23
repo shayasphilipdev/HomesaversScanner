@@ -26,6 +26,7 @@ import { canAccessMasterReports } from '../lib/roles.js'
 import RecordMessages from '../components/RecordMessages.jsx'
 import RecordDetailModal from '../components/RecordDetailModal.jsx'
 import AgeClock from '../components/AgeClock.jsx'
+import { safeHref } from '../lib/safeUrl.js'
 
 function toLocalInput(d) {
   const pad = n => String(n).padStart(2, '0')
@@ -1348,9 +1349,9 @@ function HQReports() {
                         </td>
                         <td>
                           <div className="flex-row" style={{ gap: 6 }}>
-                            {r.photo_product_url && <a href={r.photo_product_url} target="_blank" rel="noopener noreferrer">📷 product</a>}
-                            {r.photo_barcode_url && <a href={r.photo_barcode_url} target="_blank" rel="noopener noreferrer">📷 barcode</a>}
-                            {!r.photo_product_url && !r.photo_barcode_url && <span className="td-muted">—</span>}
+                            {safeHref(r.photo_product_url) && <a href={safeHref(r.photo_product_url)} target="_blank" rel="noopener noreferrer">📷 product</a>}
+                            {safeHref(r.photo_barcode_url) && <a href={safeHref(r.photo_barcode_url)} target="_blank" rel="noopener noreferrer">📷 barcode</a>}
+                            {!safeHref(r.photo_product_url) && !safeHref(r.photo_barcode_url) && <span className="td-muted">—</span>}
                           </div>
                         </td>
                         <td className="td-muted" style={{ whiteSpace: 'nowrap' }}>

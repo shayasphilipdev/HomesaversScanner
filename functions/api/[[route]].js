@@ -2564,6 +2564,9 @@ export async function onRequest(context) {
       if (!b.username || !b.display_name || !b.role) return err('username, display_name and role are required', 400)
       if (!b.pin || String(b.pin).length < 4) return err('PIN must be at least 4 characters', 400)
       if (![...STORE_ROLES, ...BO_ROLES].includes(b.role)) return err('Unknown role', 400)
+      // buying_manager / buying_head pass isAdminRole too, but must not be able
+      // to mint the strict admin role (see isOnlyAdmin).
+      if (b.role === 'admin' && !isOnlyAdmin(session)) return err('Only an admin can create an admin account', 403)
 
       const [hashRow] = await db.rpc('hash_pin', { pin: String(b.pin) })
       if (!hashRow?.hash) return err('Could not hash PIN', 500)
@@ -2591,7 +2594,9 @@ export async function onRequest(context) {
         pin_hash:               hashRow.hash,
         is_active:              b.is_active !== false
       })
-      return json(inserted[0] ?? inserted, 201)
+      const created = { ...(inserted[0] ?? {}) }
+      delete created.pin_hash
+      return json(created, 201)
     }
 
     const adminUserMatch = path.match(/^\/admin\/users\/([a-f0-9-]+)$/)
@@ -2599,6 +2604,10 @@ export async function onRequest(context) {
       if (!isAdminRole(session)) return err('Forbidden', 403)
       const id = adminUserMatch[1]
       const b  = await request.json()
+      if (!isOnlyAdmin(session)) {
+        const [target] = await db.select('users', { select: 'role', id: `eq.${id}`, limit: '1' })
+        if (target?.role === 'admin' || b.role === 'admin') return err('Only an admin can change an admin account', 403)
+      }
       const updates = {}
 
       if (b.username     !== undefined) updates.username     = String(b.username).trim()
@@ -2641,6 +2650,10 @@ export async function onRequest(context) {
       const id = adminUserPinMatch[1]
       const { pin } = await request.json()
       if (!pin || String(pin).length < 4) return err('PIN must be at least 4 characters', 400)
+      if (!isOnlyAdmin(session)) {
+        const [target] = await db.select('users', { select: 'role', id: `eq.${id}`, limit: '1' })
+        if (target?.role === 'admin') return err("Only an admin can reset an admin's PIN", 403)
+      }
       const [hashRow] = await db.rpc('hash_pin', { pin: String(pin) })
       const updated = await db.update('users', { id: `eq.${id}` }, { pin_hash: hashRow.hash, updated_at: new Date().toISOString() })
       if (!updated.length) return err('User not found', 404)
@@ -2737,8 +2750,9 @@ export async function onRequest(context) {
     // Read-only: the data is owned by the daily sync, not edited by hand.
     if (path === '/admin/alt-barcodes' && method === 'GET') {
       if (!isAdminRole(session)) return err('Forbidden', 403)
-      const limit = url.searchParams.get('limit') || '100'
-      const q     = url.searchParams.get('q')
+      const limit = String(Math.min(Math.max(Number(url.searchParams.get('limit')) || 100, 1), 1000))
+      // A comma or bracket in the search box would otherwise break the or=(...) filter.
+      const q     = (url.searchParams.get('q') || '').replace(/[%,()*]/g, ' ').trim()
       const params = {
         select: 'id,barcode_no,ean_barcode,item_name,supl_id,supplier_code,item_status,barcode_status,updated_at',
         order:  'updated_at.desc',
@@ -2772,8 +2786,8 @@ export async function onRequest(context) {
     // ean_barcode and ?limit= (default 200, max 1000).
     if (path === '/admin/prices' && method === 'GET') {
       if (!isAdminRole(session)) return err('Forbidden', 403)
-      const limit = Math.min(Number(url.searchParams.get('limit') || '200'), 1000)
-      const q     = url.searchParams.get('q')
+      const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 200, 1), 1000)
+      const q     = (url.searchParams.get('q') || '').replace(/[%,()*]/g, ' ').trim()
       const params = {
         select: 'ean_barcode,item_group,item_subgrp_id,product_type,sale_rate,updated_at',
         order:  'ean_barcode.asc',
@@ -5368,6 +5382,11 @@ export async function onRequest(context) {
       // body, so without this a store session could still write it with a
       // direct API call even though no button ever offers one.
       if (!isBO) delete updates.review_notes
+      // No screen sends these; accepting them let any session in scope move a
+      // record to another store or re-date it.
+      delete updates.id
+      delete updates.store_id
+      delete updates.created_at
 
       // task_type retype — back-office only. Stores submit to the wrong task
       // type sometimes; this lets back office move the record without losing
