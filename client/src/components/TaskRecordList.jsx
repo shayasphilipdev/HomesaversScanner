@@ -1,5 +1,5 @@
 import { Fragment, useState, useCallback, useEffect } from 'react'
-import { updateTaskRecord, deleteTaskRecord, bulkClearTaskRecords, bulkDeleteTaskRecords } from '../lib/api.js'
+import { updateTaskRecord, bulkClearTaskRecords, bulkDeleteTaskRecords } from '../lib/api.js'
 import ConfirmDeleteModal from './ConfirmDeleteModal.jsx'
 import ConfirmArchiveModal from './ConfirmArchiveModal.jsx'
 import { useStore } from '../App.jsx'
@@ -170,11 +170,21 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
     if (!ids.length) { setDeleteTarget(null); return }
     setDeleting(true)
     try {
-      if (ids.length === 1) await deleteTaskRecord(ids[0])
-      else                  await bulkDeleteTaskRecords(ids)
-      toast.success(`${ids.length} record${ids.length === 1 ? '' : 's'} permanently deleted.`)
+      // Small batches keep each request well under the Workers 50-subrequest
+      // cap, which every photo delete counts towards.
+      let deleted = 0
+      for (let i = 0; i < ids.length; i += 15) {
+        const res = await bulkDeleteTaskRecords(ids.slice(i, i + 15))
+        deleted += res?.deleted || 0
+      }
       setSelected(prev => { const n = new Set(prev); ids.forEach(i => n.delete(i)); return n })
-      for (const id of ids) onOptimisticRemove?.(id)
+      if (deleted === ids.length) {
+        toast.success(`${deleted} record${deleted === 1 ? '' : 's'} permanently deleted.`)
+        for (const id of ids) onOptimisticRemove?.(id)
+      } else {
+        toast.error(`Deleted ${deleted} of ${ids.length}. The others could not be deleted — the list has been refreshed.`)
+        onRefresh()
+      }
     } catch (e) {
       toast.error('Delete failed — ' + (e?.message || 'please try again'))
       onRefresh()
@@ -226,13 +236,15 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
               {`📦 Archive selected (${selectedClearableCount})`}
             </button>
           )}
-          {isAdmin && selected.size > 0 && (
+          {isAdmin && (
             <button
               className="btn btn-sm"
               onClick={() => setDeleteTarget({ ids: [...selected] })}
+              disabled={!selected.size || deleting}
+              title={selected.size ? 'Permanently delete the selected records' : 'Tick one or more rows to delete'}
               style={{ background: '#C0392B', color: '#fff', border: 'none', fontWeight: 600 }}
             >
-              🗑 Delete selected ({selected.size})
+              🗑 Delete{selected.size ? ` (${selected.size})` : ''}
             </button>
           )}
           <span className="note" style={{ fontSize: 12 }}>
@@ -347,17 +359,6 @@ export default function TaskRecordList({ records, loading, onRefresh, onOptimist
                             💬 <span style={{ fontSize: 12 }}>Msg</span>
                             {msgCount > 0 && <span className="msg-toggle-badge">{msgCount}</span>}
                           </button>
-                          {/* PERMANENT delete — admin only, any task type,
-                              behind the strong red modal. Everyone else
-                              archives, which is reversible. */}
-                          {isAdmin && (
-                            <button
-                              className="btn btn-sm"
-                              title="Permanently delete this record"
-                              onClick={() => setDeleteTarget({ ids: [r.id] })}
-                              style={{ background: '#C0392B', color: '#fff', border: 'none', fontWeight: 600 }}
-                            >🗑 Delete</button>
-                          )}
                         </div>
                       </td>
                     )}

@@ -1523,7 +1523,6 @@ function StoreTaskReports() {
   const [templates, setTemplates] = useState([])
 
   const [rows, setRows]           = useState([])
-  const [selected, setSelected]   = useState(new Set())
   const [loading, setLoading]     = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [error, setError]         = useState('')
@@ -1541,17 +1540,9 @@ function StoreTaskReports() {
         storeId:     storeIds.length ? storeIds.join(',') : undefined,
         template_id: tplIds.length   ? tplIds.join(',')   : undefined
       })
-      setRows(data); setSelected(new Set())
+      setRows(data)
     } catch (e) { setError(e.message); toast.error(e.message) } finally { setLoading(false) }
   }
-
-  const toggleOne = (id) => setSelected(prev => {
-    const next = new Set(prev)
-    if (next.has(id)) next.delete(id); else next.add(id)
-    return next
-  })
-  const allSelected = rows.length > 0 && selected.size === rows.length
-  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(rows.map(r => r.id)))
 
   const downloadXLSX = async () => {
     setDownloading(true); setError('')
@@ -1614,17 +1605,10 @@ function StoreTaskReports() {
         <div className="card mt-20">
           <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <span>{rows.length} result{rows.length === 1 ? '' : 's'}</span>
-            {selected.size > 0 && <span className="note" style={{ fontSize: 12 }}>· {selected.size} selected</span>}
-            <span style={{ marginLeft: 'auto' }} />
-            <button className="btn btn-sm btn-outline" onClick={() => setSelected(new Set(rows.map(r => r.id)))}>✓ Select all</button>
-            <button className="btn btn-sm btn-outline" onClick={() => setSelected(new Set())} disabled={!selected.size}>✕ Clear all</button>
           </div>
           <div className="table-wrap table-wrap--tall">
             <table>
               <thead><tr>
-                <th style={{ width: 36 }}>
-                  <input type="checkbox" checked={allSelected} onChange={toggleAll} title="Select all rows" />
-                </th>
                 <th style={{ minWidth: 160 }}>Template</th>
                 <th style={{ minWidth: 150 }}>Store</th>
                 <th style={{ width: 100, whiteSpace: 'nowrap' }}>Due</th>
@@ -1652,7 +1636,6 @@ function StoreTaskReports() {
                   }).filter(Boolean)
                   return (
                     <tr key={r.id}>
-                      <td><input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleOne(r.id)} /></td>
                       <td><strong>{t.title || '—'}</strong>{t.category && <span className="chip" style={{ marginLeft: 6 }}>{t.category}</span>}</td>
                       <td>{storeName(r.store_id) || '—'}</td>
                       <td style={{ whiteSpace: 'nowrap' }}>{r.deadline || '—'}</td>
