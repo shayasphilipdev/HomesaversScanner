@@ -761,19 +761,21 @@ async function runAutoCleanup(db, env) {
         body: JSON.stringify({ prefixes: uniquePaths })
       }).catch(() => {})
     }
-    // 5 — Store task instances: mark overdue pending as missed, then purge old
-    // completed/missed rows. Pending rows whose due_date is in the past were
-    // never actioned — marking them missed is more accurate than leaving them
-    // as ghost-pending entries. The purge window defaults to 90 days.
-    const today = new Date().toISOString().split('T')[0]
-    await db.rpc('mark_overdue_store_tasks', { cutoff_date: today })
-
+    // 5 — Store task instances: purge old completed/missed rows. Missed-marking
+    // is NOT done here: due_date is the day an instance was generated, not its
+    // deadline, so a due_date cutoff marked weekly/monthly/yearly tasks missed
+    // the day after they appeared and they vanished from store screens. The
+    // nightly mark_missed_store_task_instances() job marks them once their
+    // period has actually ended. The purge window defaults to 90 days.
     const [stiSetting] = await db.select('app_settings', { select: 'value', key: 'eq.store_task_retention_days' })
     const stiDays   = Math.max(30, Number(stiSetting?.value || 90))
     const stiCutoff = new Date(Date.now() - stiDays * 86400000).toISOString().split('T')[0]
     await db.remove('store_task_instances', {
       status:   'in.(completed,missed)',
-      due_date: `lt.${stiCutoff}`
+      due_date: `lt.${stiCutoff}`,
+      // A row still in its period (e.g. this year's yearly task) or a once-off
+      // would be regenerated as a fresh pending task the next night if deleted.
+      and:      endedPeriodFilter(new Date())
     })
 
   } catch (e) {
