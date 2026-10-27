@@ -10,9 +10,9 @@
 -- CONCURRENTLY statements cannot run inside a transaction: run them one at a
 -- time (e.g. in the SQL editor), not as a single migration.
 --
--- Status 2026-10-27: the index is applied (and a one-off VACUUM run).
--- NOT yet applied, awaiting approval: the four DROPs and the nightly
--- vacuum-task-records-visibility job below.
+-- Status 2026-10-27: all applied (index, the four DROPs, the nightly
+-- vacuum-task-records-visibility job), plus a one-off VACUUM. Store record
+-- list count for the busiest store: 25 ms / 1,081 blocks -> 9 ms / 88 blocks.
 
 create index concurrently if not exists idx_tr_store_type_created
   on public.task_records (store_id, task_type, created_at desc)
