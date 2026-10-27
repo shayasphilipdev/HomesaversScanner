@@ -291,7 +291,10 @@ const EVENT_LABEL = {
 function describeEvent(ev) {
   const kind = ev.event_type || 'status'
   if (kind === 'status' || kind === 'created') {
-    return <>{ev.from_status || '—'} → <strong>{ev.to_status}</strong></>
+    if (!ev.from_status) {
+      return <><strong>Created</strong>{ev.to_status && ev.to_status !== 'pending' && <> → <strong>{ev.to_status}</strong></>}</>
+    }
+    return <>{ev.from_status} → <strong>{ev.to_status}</strong></>
   }
   const label = EVENT_LABEL[kind] || kind
   // new_value is only shown where it is something a reader can use. A photo's
@@ -632,7 +635,7 @@ export default function RecordDetailModal({ record, storeName, open, onClose, sh
                               {describeEvent(ev)}
                               {' · '}<span style={{ fontWeight: 500 }}>{ev.by_user_name || 'System'}</span>
                               {' · '}{historyDate(ev.at)}
-                              {ev.note && <span> · "{ev.note}"</span>}
+                              {ev.note && !(!ev.from_status && ev.note === 'Created') && <span> · "{ev.note}"</span>}
                             </li>
                           ))}
                         </ol>

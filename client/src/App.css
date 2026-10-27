@@ -675,6 +675,9 @@ body {
 .filter-field input[type="date"], .filter-field input[type="datetime-local"] {
   width: 150px; min-height: 38px; padding: 8px 12px; font-size: 13.5px;
 }
+/* Date + time needs more room than a date: at 150px the time was cut off
+   ("12:0"), and 12-hour locales add AM/PM. */
+.filter-field input[type="datetime-local"] { width: 185px; }
 .filter-field--wide select, .filter-field--wide input { max-width: 320px; }
 /* MultiSelectDropdown trigger button — kept deliberately narrow; the summary
    text ellipsis-truncates on overflow. The open panel has its own width (see
@@ -987,10 +990,10 @@ input.scan-input {
    Description (still just its old minWidth floor) routes any actual leftover
    space into Description specifically, the one column built to absorb it,
    instead of it showing up as unstyled dead space anywhere else. */
-/* Floor = the fixed columns (1266px) + 200px for Description, which would
+/* Floor = the fixed columns (1266px) + 150px for Description, which would
    otherwise collapse to 0 on a narrow window; the wrapper scrolls instead. */
 .pricing-scroll table {
-  width: max(100%, 1466px);
+  width: max(100%, 1416px);
   table-layout: fixed;
 }
 .pricing-scroll thead th {

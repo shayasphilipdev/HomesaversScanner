@@ -1655,7 +1655,7 @@ function StoreTaskReports() {
                       <td><input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleOne(r.id)} /></td>
                       <td><strong>{t.title || '—'}</strong>{t.category && <span className="chip" style={{ marginLeft: 6 }}>{t.category}</span>}</td>
                       <td>{storeName(r.store_id) || '—'}</td>
-                      <td style={{ whiteSpace: 'nowrap' }}>{r.due_date || '—'}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}>{r.deadline || '—'}</td>
                       <td style={{ whiteSpace: 'nowrap' }}>
                         <span className={'badge ' + (r.status === 'completed' ? 'badge-completed' : r.status === 'missed' ? 'badge-deleted' : 'badge-pending')}>{r.status}</span>
                         {r.status === 'pending' && <AgeClock at={r.created_at} style={{ marginLeft: 5 }} />}

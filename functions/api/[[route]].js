@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-10-27-store-task-missed-fix'
+const API_REVISION   = '2026-10-27-phase2-safe-fixes'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -573,6 +573,23 @@ function periodKeyFor(template, date) {
 function currentPeriodKeys(date) {
   const iso = date.toISOString().slice(0, 10)
   return [iso, isoWeek(date), iso.slice(0, 7), iso.slice(0, 4)]
+}
+
+// The last day of an instance's period, i.e. its real deadline, as YYYY-MM-DD.
+// due_date is only the day the instance was generated (the Monday, the 1st, ...).
+// Once-offs have no calendar deadline and return ''.
+function periodEnd(key) {
+  const k = String(key || '')
+  let m
+  if (/^\d{4}-\d{2}-\d{2}$/.test(k)) return k
+  if ((m = k.match(/^(\d{4})-W(\d{2})$/))) {
+    const jan4 = Date.UTC(+m[1], 0, 4)
+    const week1Monday = jan4 - ((new Date(jan4).getUTCDay() + 6) % 7) * 86400000
+    return new Date(week1Monday + ((+m[2] - 1) * 7 + 6) * 86400000).toISOString().slice(0, 10)
+  }
+  if ((m = k.match(/^(\d{4})-(\d{2})$/))) return new Date(Date.UTC(+m[1], +m[2], 0)).toISOString().slice(0, 10)
+  if (/^\d{4}$/.test(k)) return `${k}-12-31`
+  return ''
 }
 
 // PostgREST filter: instances a store should see today — either the instance's
@@ -2101,8 +2118,11 @@ export async function onRequest(context) {
       const body = await request.json()
       const name = String(body.name || '').trim()
       if (!name) return err('name required', 400)
-      const existing = await db.select('competitor_retailers', { select: 'id,name', name: `ilike.${name}`, limit: '1' })
-      if (existing.length) return json(existing[0])
+      // Exact, case-insensitive match. ilike treated * and _ in a typed name as
+      // wildcards, so a new retailer could resolve to some other existing one.
+      const all = await db.select('competitor_retailers', { select: 'id,name' })
+      const existing = all.find(r => String(r.name || '').trim().toLowerCase() === name.toLowerCase())
+      if (existing) return json(existing)
       const inserted = await db.insert('competitor_retailers', { name, is_active: true, created_by_user_id: session.user_id || null, created_at: new Date().toISOString() })
       return json(inserted[0] ?? inserted, 201)
     }
@@ -3650,7 +3670,7 @@ export async function onRequest(context) {
         return {
           template:     t.title || '',
           store_name:   storeName[r.store_id] || '',
-          due_date:     r.due_date || '',
+          due_date:     periodEnd(r.period_key),
           period_key:   r.period_key || '',
           status:       r.status || '',
           completed_at: r.completed_at || '',
@@ -3722,7 +3742,7 @@ export async function onRequest(context) {
         params['store_id'] = `in.(${scope.join(',')})`
       }
       const rows = await db.select('store_task_instances', params)
-      return json(rows)
+      return json(rows.map(r => ({ ...r, deadline: periodEnd(r.period_key) })))
     }
 
     // GET /reports/expiry-overview?from=&to=&storeId=
