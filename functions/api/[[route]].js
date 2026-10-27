@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-10-27-phase2-safe-fixes'
+const API_REVISION   = '2026-10-27-d1-writes-bulk-photo-delete'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -690,6 +690,33 @@ async function ensureInstancesExist(db, env, storeId, date) {
 // Called via ctx.waitUntil() so it never blocks or delays the login response.
 // Reads retention settings from app_settings; updates last_auto_cleanup_at
 // when done so it only fires once per ~23 hours.
+// Delete task-photos objects with one request per 1,000 paths rather than one
+// per file: a Worker may make only 50 subrequests, so a per-file loop failed as
+// soon as a delete touched ~25 records with photos.
+async function deleteStoragePaths(env, paths) {
+  const unique = [...new Set(paths.filter(Boolean))]
+  let deleted = 0, failed = 0
+  for (let i = 0; i < unique.length; i += 1000) {
+    const chunk = unique.slice(i, i + 1000)
+    const res = await fetch(`${env.SUPABASE_URL}/storage/v1/object/task-photos`, {
+      method:  'DELETE',
+      headers: {
+        'apikey':        env.SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`,
+        'Content-Type':  'application/json'
+      },
+      body: JSON.stringify({ prefixes: chunk })
+    }).catch(() => null)
+    if (res?.ok) {
+      const body = await res.json().catch(() => null)
+      deleted += Array.isArray(body) ? body.length : chunk.length
+    } else {
+      failed += chunk.length
+    }
+  }
+  return { deleted, failed }
+}
+
 async function runAutoCleanup(db, env) {
   try {
     // Stamp first so concurrent workers don't double-fire.
@@ -765,35 +792,12 @@ async function runAutoCleanup(db, env) {
       }
     }
 
-    // Delete all collected photos in ONE bulk request — no matter how many files.
-    const uniquePaths = [...new Set(photoPathsToDelete)]
-    if (uniquePaths.length) {
-      await fetch(`${env.SUPABASE_URL}/storage/v1/object/task-photos`, {
-        method:  'DELETE',
-        headers: {
-          'apikey':        env.SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`,
-          'Content-Type':  'application/json'
-        },
-        body: JSON.stringify({ prefixes: uniquePaths })
-      }).catch(() => {})
-    }
-    // 5 — Store task instances: purge old completed/missed rows. Missed-marking
-    // is NOT done here: due_date is the day an instance was generated, not its
-    // deadline, so a due_date cutoff marked weekly/monthly/yearly tasks missed
-    // the day after they appeared and they vanished from store screens. The
-    // nightly mark_missed_store_task_instances() job marks them once their
-    // period has actually ended. The purge window defaults to 90 days.
-    const [stiSetting] = await db.select('app_settings', { select: 'value', key: 'eq.store_task_retention_days' })
-    const stiDays   = Math.max(30, Number(stiSetting?.value || 90))
-    const stiCutoff = new Date(Date.now() - stiDays * 86400000).toISOString().split('T')[0]
-    await db.remove('store_task_instances', {
-      status:   'in.(completed,missed)',
-      due_date: `lt.${stiCutoff}`,
-      // A row still in its period (e.g. this year's yearly task) or a once-off
-      // would be regenerated as a fresh pending task the next night if deleted.
-      and:      endedPeriodFilter(new Date())
-    })
+    await deleteStoragePaths(env, photoPathsToDelete)
+    // Store task instances are not handled here. Marking missed and the 90-day
+    // purge both run nightly in pg_cron (mark_missed_store_task_instances,
+    // purge_store_task_instances): the purge never completed from this
+    // background task, which runs on the free plan's 10 ms CPU budget, and a
+    // due_date-based missed-marking hid open weekly/monthly/yearly tasks.
 
   } catch (e) {
     // Best-effort — never throw from a background task.
@@ -3189,15 +3193,10 @@ export async function onRequest(context) {
         updated_at:  `lt.${cutoff}`,
         d1_copied_at: 'not.is.null'
       })
-      for (const r of doomedRecs) {
-        for (const u of [r.photo_product_url, r.photo_barcode_url].filter(Boolean)) {
-          if (!u.startsWith(storBase)) continue
-          await fetch(`${env.SUPABASE_URL}/storage/v1/object/task-photos/${u.slice(storBase.length)}`, {
-            method: 'DELETE',
-            headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}` }
-          }).catch(() => {})
-        }
-      }
+      await deleteStoragePaths(env, doomedRecs
+        .flatMap(r => [r.photo_product_url, r.photo_barcode_url])
+        .filter(u => u && u.startsWith(storBase))
+        .map(u => u.slice(storBase.length)))
       const removed = await db.remove('task_records', {
         status:      `in.(cleared,store_completed)`,
         updated_at:  `lt.${cutoff}`,
@@ -3213,16 +3212,8 @@ export async function onRequest(context) {
       const days = Math.max(1, Number(setting?.value || 21))
 
       const old = await db.rpc('list_old_photos', { days })
-      let deleted = 0, failed = 0
-      for (const o of old) {
-        const dRes = await fetch(`${env.SUPABASE_URL}/storage/v1/object/task-photos/${o.name}`, {
-          method:  'DELETE',
-          headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}` }
-        })
-        if (dRes.ok || dRes.status === 404) deleted++
-        else failed++
-      }
-      return json({ deleted, failed, days, scanned: old.length })
+      const { deleted, failed } = await deleteStoragePaths(env, (old || []).map(o => o.name))
+      return json({ deleted, failed, days, scanned: (old || []).length })
     }
 
     // /admin/stores/:id/reset-pin removed in Phase 9J — stores no longer
@@ -5356,16 +5347,28 @@ export async function onRequest(context) {
       // than guessed.
       const storeId = scope && scope.length === 1 ? scope[0] : null
 
+      // 'save-ok' is ~90% of all events and every one is a save that already
+      // exists as its task_record. One row each (written, then deleted three
+      // weeks later) pushed D1 past the free plan's 100,000 rows written/day.
+      // Keep 1 in SAVE_OK_SAMPLE, marked, so a device's activity and save
+      // timings stay visible; multiply counts by sampled_1_in to estimate.
+      const SAVE_OK_SAMPLE = 20
       const rows = events
         .filter(e => e && typeof e.type === 'string' && e.t)
-        .map(e => ({
-          device_id:    deviceId,
-          user_id:      session.user_id || null,
-          store_id:     storeId,
-          event_type:   String(e.type).slice(0, 40),
-          detail_json:  e.d != null ? JSON.stringify(e.d) : null,
-          client_at_ms: Number(e.t) || Date.now(),
-        }))
+        .filter(e => e.type !== 'save-ok' || Math.random() < 1 / SAVE_OK_SAMPLE)
+        .map(e => {
+          const d = e.type === 'save-ok'
+            ? { ...(e.d && typeof e.d === 'object' ? e.d : { value: e.d ?? null }), sampled_1_in: SAVE_OK_SAMPLE }
+            : e.d
+          return {
+            device_id:    deviceId,
+            user_id:      session.user_id || null,
+            store_id:     storeId,
+            event_type:   String(e.type).slice(0, 40),
+            detail_json:  d != null ? JSON.stringify(d) : null,
+            client_at_ms: Number(e.t) || Date.now(),
+          }
+        })
       if (!rows.length) return json({ ok: true, inserted: 0 })
 
       try {
@@ -5607,6 +5610,7 @@ export async function onRequest(context) {
 
       const storageBase = `${env.SUPABASE_URL}/storage/v1/object/public/task-photos/`
       let deletedCount = 0
+      const photoPaths = []
       // Chunk the id list — a single URL with thousands of UUIDs blows past the
       // request URL length limit (that was the "Internal error" on big deletes).
       const CHUNK = 100
@@ -5621,15 +5625,12 @@ export async function onRequest(context) {
         const removed = await db.remove('task_records', filter)
         deletedCount += removed.length
         for (const r of doomed) {
-          for (const u of [r.photo_product_url, r.photo_barcode_url].filter(Boolean)) {
-            if (!u.startsWith(storageBase)) continue
-            await fetch(`${env.SUPABASE_URL}/storage/v1/object/task-photos/${u.slice(storageBase.length)}`, {
-              method:  'DELETE',
-              headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}` }
-            }).catch(() => {})
+          for (const u of [r.photo_product_url, r.photo_barcode_url]) {
+            if (u && u.startsWith(storageBase)) photoPaths.push(u.slice(storageBase.length))
           }
         }
       }
+      await deleteStoragePaths(env, photoPaths)
       return json({ deleted: deletedCount })
     }
 
