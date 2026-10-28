@@ -92,8 +92,17 @@ Consequences to keep in mind when touching this table:
 - a barcode lookup can return **more than one row**; order by
   `barcode_status.asc` so the Active product wins
 - schema changes here have to straddle the deploy (add the new key, deploy,
-  drop the old) because `ON CONFLICT` errors without a matching index, and the
-  nightly sync truncates before it uploads
+  drop the old) because `ON CONFLICT` errors without a matching index
+
+### Product master syncs (2026-10-28)
+`scripts/sync-prices.py` (07:00) and `scripts/sync-alt-barcodes.py` (07:30),
+deployed to `C:\Homesavers\scripts` and run by `run_sync.bat`. They **do not
+truncate**: every chunk upserts over the existing rows, every request retries
+dropped connections, and rows older than the run's start are flushed only after
+the whole upload has landed. A failed run leaves yesterday's complete data.
+The old truncate-first version lost one connection on 2026-10-28 and left every
+store scanning against 13% of the barcodes for a morning. Edit the repo copy,
+then copy it to `C:\Homesavers\scripts` (the two must stay identical).
 
 `GET /api/ping` returns `rev: API_REVISION` (public, no login) so you can check
 which build is live before letting an unattended job depend on it.

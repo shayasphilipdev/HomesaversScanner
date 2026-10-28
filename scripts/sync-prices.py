@@ -6,13 +6,19 @@ posts to /api/prices/sync in chunks of 2000 rows.
 Pattern borrowed from the existing price-tracker Python scripts.
 """
 
-import os, sys, json, pathlib, datetime, requests
+import os, sys, json, pathlib, datetime, time, requests
 import pandas as pd
 
 BASE_URL    = "https://homesaversscanner.pages.dev"
 SECRET_FILE = r"C:\Homesavers\.sync-secret"
 LOG_FILE    = r"C:\Homesavers\logs\sync-prices-py.log"
 CHUNK_SIZE  = 2000
+
+# Waits between attempts of one request (~3.7 min in all before giving up),
+# and the responses worth another attempt: rate limiting and Cloudflare/origin
+# trouble. A 4xx is a real rejection and is not retried.
+RETRY_WAITS      = [3, 6, 12, 20, 30, 30, 30, 30, 30, 30]
+TRANSIENT_STATUS = {429, 500, 502, 503, 504, 520, 521, 522, 523, 524, 525, 526, 527, 530}
 
 # Excel header (after strip) → our DB field name
 COLUMN_MAP = {
@@ -58,13 +64,41 @@ def _safe_float(val):
         return None
 
 
+def http(method, url, **kw):
+    """requests.request, retried on dropped connections, timeouts and 429/5xx.
+
+    The office link drops connections now and then: on 2026-10-28 both morning
+    syncs died on a single ConnectionResetError (10054) part-way through the
+    upload. Every call this script makes is safe to repeat -- a chunk is an
+    upsert keyed on ean_barcode, the flush deletes by a fixed cutoff, the
+    refresh is a refresh -- so a dropped or stalled request is just sent again.
+    """
+    name = url.rsplit("/api/", 1)[-1]
+    for attempt, wait in enumerate([0] + RETRY_WAITS):
+        if wait:
+            time.sleep(wait)
+        last = attempt == len(RETRY_WAITS)
+        try:
+            resp = requests.request(method, url, **kw)
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout,
+                requests.exceptions.ChunkedEncodingError) as e:
+            if last:
+                raise
+            log(f"Retry {attempt + 1}/{len(RETRY_WAITS)} for {method} {name}: {e}", "WARN")
+            continue
+        if resp.status_code in TRANSIENT_STATUS and not last:
+            log(f"Retry {attempt + 1}/{len(RETRY_WAITS)} for {method} {name}: HTTP {resp.status_code}", "WARN")
+            continue
+        return resp
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def record_run(headers, *, file_name, file_size, imported, skipped, status, message, started_at):
     """Post the run result to /api/sync-runs so it shows in Settings -> Data Sync."""
     try:
-        requests.post(
-            f"{BASE_URL}/api/sync-runs",
+        http(
+            "POST", f"{BASE_URL}/api/sync-runs",
             headers=headers,
             json={
                 "kind":             "prices",
@@ -103,13 +137,13 @@ def main():
     # this run after a successful import — i.e. drop products no longer in the file.
     flush_cutoff = None
     try:
-        flush_cutoff = requests.get(f"{BASE_URL}/api/sync/server-time", headers=headers, timeout=30).json().get("now")
+        flush_cutoff = http("GET", f"{BASE_URL}/api/sync/server-time", headers=headers, timeout=30).json().get("now")
     except Exception as e:
         log(f"Could not get server time (stale flush will be skipped): {e}", "WARN")
 
     # Fetch config from app
     try:
-        cfg = requests.get(f"{BASE_URL}/api/prices/sync-config", headers=headers, timeout=30).json()
+        cfg = http("GET", f"{BASE_URL}/api/prices/sync-config", headers=headers, timeout=30).json()
     except Exception as e:
         fail(f"Could not fetch config: {e}")
 
@@ -188,16 +222,16 @@ def main():
     if not payload:
         fail("Nothing to upload.")
 
-    # Full replace: empty the table before reimporting so it never bloats over
-    # time. Guard with a row floor so a truncated/corrupt file can't wipe it.
+    # No table reset. This used to empty the table before uploading, so one
+    # dropped connection part-way through left every store scanning against a
+    # mostly empty table (2026-10-28: 8,000 of 101,963 prices for a morning).
+    # Each chunk is an upsert that stamps updated_at, so loading over the
+    # existing rows and then flushing everything older than this run's start
+    # (below) ends with the same table -- and a run that fails part-way leaves
+    # the previous complete data in place. The floor stops a truncated/corrupt
+    # file from being trusted at all.
     if len(payload) < 1000:
-        fail(f"Only {len(payload)} rows parsed - too few to safely replace the table. Aborting.")
-    try:
-        r = requests.post(f"{BASE_URL}/api/prices/sync/reset", headers=headers, timeout=120)
-        r.raise_for_status()
-        log("Cleared old prices data (full replace).")
-    except Exception as e:
-        fail(f"Could not reset table before import: {e}")
+        fail(f"Only {len(payload)} rows parsed - too few to trust this file. Aborting.")
 
     # Post in chunks
     imported = 0
@@ -205,11 +239,13 @@ def main():
         chunk = payload[i:i + CHUNK_SIZE]
         chunk_num = i // CHUNK_SIZE + 1
         try:
-            resp = requests.post(
-                f"{BASE_URL}/api/prices/sync",
+            # Short read timeout: a chunk normally lands in ~2 s, so a request
+            # stalled for 2 minutes is retried rather than waited on.
+            resp = http(
+                "POST", f"{BASE_URL}/api/prices/sync",
                 headers=headers,
                 json=chunk,
-                timeout=300
+                timeout=(15, 120)
             )
             resp.raise_for_status()
             result = resp.json()
@@ -223,21 +259,24 @@ def main():
                imported=imported, skipped=skipped, status="ok",
                message=f"Imported {imported}, skipped {skipped}", started_at=started_at)
 
-    # Flush stale rows (full-replace) — only after a healthy import, to protect
-    # against a partial/corrupt file wiping the table.
+    # Flush stale rows: this is what removes products no longer in the file. It
+    # runs only after every chunk has landed -- a failed chunk exits via fail()
+    # above -- so a partial upload never deletes anything.
     FLUSH_MIN = 1000
     if flush_cutoff and imported >= FLUSH_MIN:
         try:
-            d = requests.post(f"{BASE_URL}/api/prices/flush-stale",
-                              headers=headers, json={"before": flush_cutoff}, timeout=180).json()
+            d = http("POST", f"{BASE_URL}/api/prices/flush-stale",
+                     headers=headers, json={"before": flush_cutoff}, timeout=180).json()
             log(f"Flushed {d.get('deleted', 0)} stale price row(s).")
         except Exception as e:
             log(f"Could not flush stale rows: {e}", "WARN")
     elif imported < FLUSH_MIN:
         log(f"Skipped stale flush — only {imported} rows imported (< {FLUSH_MIN}).", "WARN")
+    else:
+        log("Skipped stale flush — no server time; discontinued rows stay until the next run.", "WARN")
 
     try:
-        requests.post(f"{BASE_URL}/api/product-master/refresh", headers=headers, timeout=120)
+        http("POST", f"{BASE_URL}/api/product-master/refresh", headers=headers, timeout=120)
         log("Product Master lookup refreshed.")
     except Exception as e:
         log(f"Could not refresh Product Master: {e}", "WARN")

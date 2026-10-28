@@ -575,6 +575,47 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-10-28 — Morning product sync emptied the master; syncs no longer truncate
+
+**What happened.** Both morning syncs lost their connection part-way through:
+prices at 07:03 (chunk 5 of 51) and barcodes at 07:32 (chunk 15 of 108), each a
+single `ConnectionResetError 10054` on the HO PC's upload. Each script emptied
+its table first (`/sync/reset`) and never retried, so until the re-run stores
+scanned against 8,000 of 101,964 prices and 27,981 of 214,603 barcodes.
+Department Check saved 74% of scans with no department (normally ~1%) in every
+store that was scanning; the HO task forms and Product Master were hit too.
+
+**Recovery.** Both re-run with retries and no reset: prices complete at 09:56,
+barcodes at 10:18. The uplink was still dropping, so a plain re-run had already
+failed again at chunk 18. Prices needed 10 retries and barcodes 37, mostly
+stalled uploads (`The write operation timed out`). The 1,151 Department Check
+records saved 07:02–10:18 with no department, plus one Non-Scan and one Wrong
+Description from Limerick, were then re-resolved against the restored master.
+The resolution matched `resolveScan()` and filled empty fields only. 37
+barcodes that are genuinely not in the master were left as they were.
+
+**The fix** (`scripts/sync-prices.py`, `scripts/sync-alt-barcodes.py`, copied
+to `C:\Homesavers\scripts`):
+- `http()` wraps every request and retries dropped connections, timeouts and
+  429/5xx with backoff (~3.7 min per request). A 4xx is not retried. Every call
+  is idempotent: chunks are upserts, the flush deletes by a fixed cutoff.
+- No table reset. Chunks upsert over the existing rows (both endpoints stamp
+  `updated_at`), then `flush-stale` deletes rows older than the run's start,
+  and only after every chunk has landed. A failed run now leaves yesterday's
+  complete data instead of a part-empty table.
+- Chunk timeout `(15, 120)` instead of 300 s, so a stalled upload is retried
+  rather than waited on.
+- Cost: re-writing the whole master leaves a day's dead row versions for
+  autovacuum, which cleaned prices within a minute of today's load. The
+  database is at 285 MB of 500 MB after recovery.
+
+Tested before deploying with a fake-server dry run of both `main()`s: no reset
+call, dropped chunks retried, flush after the last chunk, run recorded OK. The
+`/sync/reset` endpoints are now unused and left in place.
+
+**Not fixed:** why this PC's upload keeps stalling (office network/firewall).
+The retries absorb it, but the syncs will keep taking longer while it lasts.
+
 ### 2026-09-30 — Department breakdown bars added to the store Dashboard
 
 Requested: show the same "Department Check records by department" bars on a
