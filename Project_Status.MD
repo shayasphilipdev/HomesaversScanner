@@ -620,6 +620,24 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-10-30 — Local-PC rebuild runbook written to the repo
+
+Added `docs/local-pc-rebuild-runbook.md` — a full write-up of every process
+that currently depends on the ransomware-hit local PC, so it can be rebuilt
+from the GitHub codebase alone once that machine is cleared. Covers: the 5
+data syncs (prices, alt-barcodes, B&M daily file, CN-code master, delivery
+manifest) with source/destination/schedule/script for each; the 3 scheduled
+report emails; the local upload server; which secrets/config files live only
+on that PC (and a reminder these are NOT being rotated now, per the security
+notice below); software prerequisites; and which parts of the system
+(live site, archiver Worker, Supabase/D1 data) do **not** depend on the PC at
+all and kept running throughout. Also flags two existing documentation
+inconsistencies found while researching this (not fixed, since they're
+local-PC config, not live code): the area-manager email's documented time
+(08:00 vs 09:00 in two different setup docs), and the aging-report task
+pointing at the git working tree instead of the deployed scripts copy like
+every other job.
+
 ### 2026-10-30 — Local PC ransomware attack: no pushes from that machine, no secret rotation, live app unaffected
 
 See the SECURITY NOTICE callout at the top of this file for the full detail

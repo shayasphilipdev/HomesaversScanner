@@ -339,6 +339,18 @@ Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
 
 ---
 
+## Local-PC rebuild runbook
+
+Wrote up, in `docs/local-pc-rebuild-runbook.md`, exactly how every process that currently runs from the affected local PC actually works — so it can be rebuilt from the GitHub codebase alone once that machine is cleared, without relying on anyone's memory of how it was set up.
+
+Covers all 5 data syncs (prices, alt-barcodes, the B&M daily file, the CN-code master list, the delivery manifest), the 3 scheduled report emails, and the local upload helper — what each one reads, where it sends it, when it runs, and which Windows scheduled task drives it. Also lists exactly which secrets/credentials live only on that PC (not being rotated right now, per the standing security note), what software needs to be installed again, and — importantly — which parts of the system were never affected at all and kept working the whole time (the live site, the background archiving job, and all the Supabase/D1 data).
+
+Found two small inconsistencies in the existing setup notes while writing this up (left as-is, just flagged in the runbook, since they're about the local PC's configuration, not the live app): one email's documented send time doesn't match between two setup docs, and one scheduled job's instructions point at the wrong folder copy of its script.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
 ## Store Dashboard now shows its own department breakdown bars
 
 Added the same "Department Check records by department" bars store staff's own Dashboard now shows too — same colours and legend as the back-office one, just without a store name label (since it's only ever their one store) and sitting right above Recent activity, as asked.
