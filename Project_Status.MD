@@ -5,7 +5,52 @@ fresh Claude session opening this repo cold, **read this file first** — it has
 the architecture, data model, every module, recent changes, known issues, and
 the project memory all in one place.
 
-*Last updated: 2026-09-25.*
+*Last updated: 2026-10-30.*
+
+---
+
+> ## ⚠ SECURITY NOTICE (2026-10-30) — read before touching the local PC
+>
+> The machine at `C:\Scraping\homesavers-scanner` (the "local source / primary
+> dev box" row in §2 below) suffered a **ransomware attack**. It has **not**
+> been cleared/verified clean as of this note.
+>
+> **DO NOT push anything from that PC to GitHub** until the business
+> explicitly says the machine has been cleared. That means no `git push`, no
+> `git commit` intended to reach `origin`, and no direct deploy action
+> (`wrangler deploy`, `wrangler d1 execute`, etc.) run FROM that machine,
+> until given the all-clear. Code changes continue to go through a cloud
+> Claude Code session (or another known-clean environment), pushed to GitHub
+> from there — exactly as this repo's recent history already does.
+>
+> **Secret rotation has NOT happened and is not happening right now** — this
+> was an explicit decision by the business, not an oversight. Every secret
+> that lived on that PC (`PRODUCT_SYNC_SECRET` / `C:\Homesavers\.sync-secret`,
+> the Brevo SMTP credentials in the two local `.config.json` report-job
+> files, and anything that may have been in a local `.dev.vars`) is still the
+> original value. A future session should **not** instruct the user to
+> rotate these again unprompted, and should **not** assume any of them have
+> changed. If the user raises rotation again themselves, help as asked —
+> otherwise leave it alone.
+>
+> **The live app itself is unaffected and working normally.** Confirmed
+> 2026-10-30: the website, Supabase, and Cloudflare D1 are all cloud-hosted
+> and were never on the compromised PC, so there is no data-loss or
+> live-service impact from this incident — only the local machine's own
+> files and its role in running the nightly Windows Task Scheduler sync/email
+> jobs are affected (see §2 and the "Known limitations" section for what
+> those jobs depend on).
+>
+> **Also logged 2026-10-30, while responding to this incident:** `main`'s git
+> commit HISTORY was found to be a different, shorter lineage (50 commits,
+> 2026-10-05 to 2026-10-28) than the cloud session's prior working branch —
+> an unrelated-histories situation, confirmed NOT a content-loss issue
+> (every feature from the prior history was independently verified present
+> in current `main`'s files). Cause not confirmed with the user. If this
+> surfaces again (a future push refusing to merge with "unrelated
+> histories"), don't force a merge of the old lineage — treat current `main`
+> as the source of truth, restart the working branch from it, and reapply
+> only whatever specific change prompted the push, same as was done here.
 
 ---
 
@@ -574,6 +619,26 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 ---
 
 ## 11. Recent work
+
+### 2026-10-30 — Local PC ransomware attack: no pushes from that machine, no secret rotation, live app unaffected
+
+See the SECURITY NOTICE callout at the top of this file for the full detail
+— logged here too for the dated history. The local dev box
+(`C:\Scraping\homesavers-scanner`) was hit by ransomware and is not yet
+cleared. Per the business's explicit instruction: no pushes/deploys from
+that PC until it's confirmed clean, and secret rotation is deliberately not
+happening right now (not an oversight — don't re-raise it unprompted).
+Confirmed the live app, Supabase, and D1 are all cloud-hosted and completely
+unaffected — the incident only touches that one local machine and the
+Windows-scheduled jobs that ran from it.
+
+Also discovered while responding: this cloud session's long-running working
+branch had an unrelated git history from current `main` (different root
+commit entirely). Verified it was a history-only divergence, not a
+content-loss one — every prior feature was independently confirmed present
+in `main`'s actual files — then restarted the branch from `main` rather
+than forcing a merge. See the SECURITY NOTICE callout for what to do if
+this recurs.
 
 ### 2026-10-28 — Morning product sync emptied the master; syncs no longer truncate
 
