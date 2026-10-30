@@ -12,7 +12,7 @@ Reads only (no database). All work is local on the back-office PC, like the sync
 Folders:
     INPUT       U:\\...\\Live\\Inbound file\\Delivery Manifest   (HSVMAN*.csv)
     ITEMMASTER  Y:\\...\\ProductMaster\\2026                     (latest ItemMaster*.xlsx)
-    OUTPUT      Y:\\Supply Chain\\012 - Manifest\\2026           (Manifest- <Load> - <Trailer>.xlsx)
+    OUTPUT      Y:\\Supply Chain\\SUPPLY CHAIN 2026\\STORE MANIFEST   (Manifest- <Load> - <Trailer>.xlsx)
 
 Run:
     py manifest-generator.py                 # process every NEW HSVMAN (output not already present)
@@ -36,7 +36,7 @@ from openpyxl.utils import get_column_letter
 # ── Folders ─────────────────────────────────────────────────────────────────
 INPUT_DIR      = r"U:\Finance Dept-Shared Folder\B&M - Homesavers Shared Database\Live\Inbound file\Delivery Manifest"
 ITEMMASTER_DIR = r"Y:\Supply Chain & Buying - Shared\Data\VRSDAILYDATADUMP\ProductMaster\2026"
-OUTPUT_DIR     = r"Y:\Supply Chain\012 - Manifest\2026"
+OUTPUT_DIR     = r"Y:\Supply Chain\SUPPLY CHAIN 2026\STORE MANIFEST"
 PREVIEW_DIR    = r"C:\Homesavers\manifest-preview"
 LOG_FILE       = r"C:\Homesavers\logs\manifest-generator.log"
 
