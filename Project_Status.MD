@@ -5,7 +5,7 @@ fresh Claude session opening this repo cold, **read this file first** — it has
 the architecture, data model, every module, recent changes, known issues, and
 the project memory all in one place.
 
-*Last updated: 2026-10-30.*
+*Last updated: 2026-11-02.*
 
 ---
 
@@ -619,6 +619,21 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 ---
 
 ## 11. Recent work
+
+### 2026-11-02 — Website disaster-recovery guide
+
+Added `docs/website-disaster-recovery-guide.md` — distinct from the
+local-PC runbook above, this covers the actual website/database/hosting,
+not the PC's background jobs. It identifies the 4 accounts the whole
+system is built on (GitHub, Cloudflare, Supabase, Brevo), gives step-by-step
+rebuild instructions for each from nothing, inventories every secret by
+name and *location only* (no values written down anywhere, in GitHub or
+otherwise — consistent with the no-rotation decision in the SECURITY
+NOTICE above), and ends with a short "do this today while access still
+works" checklist. Also sent directly to the user as a standalone file so
+a copy exists outside GitHub too. Nothing here is urgent — the live site,
+Supabase and Cloudflare remain completely unaffected by the PC incident;
+this is a just-in-case plan only.
 
 ### 2026-10-30 — Local-PC rebuild runbook written to the repo
 

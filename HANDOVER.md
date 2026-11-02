@@ -351,6 +351,18 @@ Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
 
 ---
 
+## Website disaster-recovery guide (separate from the local-PC runbook)
+
+You asked how to recreate the website from zero if the local PC situation turned out worse than it is — this is a different question from the local-PC runbook above, which only covers the background jobs on that PC. This new one is about the actual website, database and hosting.
+
+Wrote `docs/website-disaster-recovery-guide.md` and sent you a copy directly too, so you have it saved somewhere outside GitHub as well. It lays out: the 4 accounts that make up the entire system (GitHub, Cloudflare, Supabase, Brevo) and what each one does; step-by-step instructions to rebuild each one from nothing if it ever came to that; where every secret/password is configured today (by name and location only — deliberately **no actual secret values** are written down anywhere in this file, in GitHub or otherwise); and one short checklist of things worth doing today, while normal access still works, to make this plan actually usable later.
+
+Worth being clear: nothing needs rebuilding right now. The live site, Supabase, and Cloudflare are all completely unaffected by the PC issue — this document is purely a "just in case everything were lost" plan, not an active task.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
 ## Store Dashboard now shows its own department breakdown bars
 
 Added the same "Department Check records by department" bars store staff's own Dashboard now shows too — same colours and legend as the back-office one, just without a store name label (since it's only ever their one store) and sitting right above Recent activity, as asked.
