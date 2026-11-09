@@ -370,3 +370,15 @@ Added the same "Department Check records by department" bars store staff's own D
 Found one thing that needed fixing along the way: the data behind this was previously locked to back-office logins only at the server level — a store login asking for it got refused outright. Opened that up; a store login now only ever gets back its own store's numbers, the same protection every other part of the app already relies on, so nothing about who can see what changed except that store staff can now see their own department split.
 
 Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## Confirmed: Qilin ransomware, PC fully wiped — phased plan to put everything back
+
+Confirmed what happened: Qilin ransomware. The PC has been formatted and set up as a brand-new machine — meaning it's clean now, but also completely empty. No codebase, no scheduled jobs, no saved passwords for any of the sync/email scripts. Everything that used to run from that one PC needs rebuilding from scratch.
+
+The app itself was never affected and store staff can keep scanning normally the whole time this is being rebuilt — only the behind-the-scenes jobs (the daily price/barcode updates, the three report emails, the delivery manifest, the CN-code list) need putting back.
+
+Wrote `docs/post-wipe-restoration-plan.md` — a step-by-step order to do this in, starting with the two things that matter most (the price and barcode updates, since those feed what staff actually see when scanning), then the daily data files, then the delivery manifest, then the three emails, then the least-urgent diagnostic tool last. For passwords: since everything has to be typed in fresh on the new PC anyway, this is a sensible moment to set new ones rather than trying to reuse the old ones (some of which Cloudflare won't even let us look up again) — the plan covers exactly which ones to change and which to just carry over as-is.
+
+Pushed and merged to `main` (once GitHub access on this session is reconnected — flagged separately). Full write-up in `Project_Status.MD` §11.

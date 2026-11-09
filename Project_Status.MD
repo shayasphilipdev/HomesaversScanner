@@ -5,33 +5,45 @@ fresh Claude session opening this repo cold, **read this file first** — it has
 the architecture, data model, every module, recent changes, known issues, and
 the project memory all in one place.
 
-*Last updated: 2026-11-02.*
+*Last updated: 2026-11-09.*
 
 ---
 
-> ## ⚠ SECURITY NOTICE (2026-10-30) — read before touching the local PC
+> ## ⚠ SECURITY NOTICE (2026-10-30, updated 2026-11-09) — local PC fully wiped and reinstalled
 >
-> The machine at `C:\Scraping\homesavers-scanner` (the "local source / primary
-> dev box" row in §2 below) suffered a **ransomware attack**. It has **not**
-> been cleared/verified clean as of this note.
+> **2026-11-09 update:** confirmed as a **Qilin ransomware** attack. The
+> machine at `C:\Scraping\homesavers-scanner` (the "local source / primary
+> dev box" row in §2 below) had its files encrypted and has since been
+> **formatted and reinstalled as a new PC** — a fresh OS, not a cleaned-up
+> old one. Practical effect: that machine is clean now, but it is also
+> **completely empty** — no codebase, no Windows services, no Scheduled
+> Tasks, no local secret files. Everything that used to run from it (the 5
+> data syncs, the 3 report emails, the local upload server, the delivery
+> manifest) has to be rebuilt from nothing. **The live app itself was never
+> affected and has kept working throughout** — see the original note below
+> for what is and isn't touched.
 >
-> **DO NOT push anything from that PC to GitHub** until the business
-> explicitly says the machine has been cleared. That means no `git push`, no
-> `git commit` intended to reach `origin`, and no direct deploy action
-> (`wrangler deploy`, `wrangler d1 execute`, etc.) run FROM that machine,
-> until given the all-clear. Code changes continue to go through a cloud
-> Claude Code session (or another known-clean environment), pushed to GitHub
-> from there — exactly as this repo's recent history already does.
+> **Pushing from that PC is fine again** once it's rebuilt with a working
+> git setup — it's a clean machine now, not the infected one. The restore
+> plan is `docs/post-wipe-restoration-plan.md`, built on top of the two docs
+> written during the original incident: `docs/local-pc-rebuild-runbook.md`
+> (what each job does and how) and `docs/website-disaster-recovery-guide.md`
+> (the website/database/hosting side, which never needed touching).
 >
-> **Secret rotation has NOT happened and is not happening right now** — this
-> was an explicit decision by the business, not an oversight. Every secret
-> that lived on that PC (`PRODUCT_SYNC_SECRET` / `C:\Homesavers\.sync-secret`,
-> the Brevo SMTP credentials in the two local `.config.json` report-job
-> files, and anything that may have been in a local `.dev.vars`) is still the
-> original value. A future session should **not** instruct the user to
-> rotate these again unprompted, and should **not** assume any of them have
-> changed. If the user raises rotation again themselves, help as asked —
-> otherwise leave it alone.
+> **Secret rotation is now an open decision, not a "don't ask" one.** The
+> original note below said not to re-raise rotation because every local
+> secret file still held its original, un-rotated value and changing it
+> would have broken jobs still running from the infected PC. That reasoning
+> no longer applies: the PC is wiped, so every local secret has to be
+> re-entered from scratch regardless. `PRODUCT_SYNC_SECRET` and the Brevo
+> credentials can't be read back from Cloudflare once set anyway, so those
+> are being rotated as part of the rebuild (see the restoration plan). The
+> Supabase URL/anon key are being reused as-is (Supabase can show those
+> again, and the website side was never compromised, so there's no reason
+> to change them). A future session can treat this as settled — it does not
+> need to ask again.
+>
+> --- *Original note, 2026-10-30, kept for history* ---
 >
 > **The live app itself is unaffected and working normally.** Confirmed
 > 2026-10-30: the website, Supabase, and Cloudflare D1 are all cloud-hosted
@@ -41,16 +53,15 @@ the project memory all in one place.
 > jobs are affected (see §2 and the "Known limitations" section for what
 > those jobs depend on).
 >
-> **Also logged 2026-10-30, while responding to this incident:** `main`'s git
-> commit HISTORY was found to be a different, shorter lineage (50 commits,
-> 2026-10-05 to 2026-10-28) than the cloud session's prior working branch —
-> an unrelated-histories situation, confirmed NOT a content-loss issue
-> (every feature from the prior history was independently verified present
-> in current `main`'s files). Cause not confirmed with the user. If this
-> surfaces again (a future push refusing to merge with "unrelated
-> histories"), don't force a merge of the old lineage — treat current `main`
-> as the source of truth, restart the working branch from it, and reapply
-> only whatever specific change prompted the push, same as was done here.
+> `main`'s git commit HISTORY was found to be a different, shorter lineage
+> (50 commits, 2026-10-05 to 2026-10-28) than the cloud session's prior
+> working branch — an unrelated-histories situation, confirmed NOT a
+> content-loss issue (every feature from the prior history was independently
+> verified present in current `main`'s files). If this surfaces again (a
+> future push refusing to merge with "unrelated histories"), don't force a
+> merge of the old lineage — treat current `main` as the source of truth,
+> restart the working branch from it, and reapply only whatever specific
+> change prompted the push, same as was done here.
 
 ---
 
@@ -619,6 +630,24 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 ---
 
 ## 11. Recent work
+
+### 2026-11-09 — Confirmed Qilin ransomware; PC wiped and reinstalled; phased restoration plan written
+
+The local PC incident from 2026-10-30 is now confirmed as a Qilin
+ransomware attack, and the machine has been **formatted and reinstalled**
+rather than cleaned in place — it's a brand-new, empty Windows install with
+no codebase, no Scheduled Tasks, no Windows services, no local secret
+files. The live app, Supabase, and Cloudflare were never affected and have
+kept working throughout; only what used to run from that PC (5 data syncs,
+3 report emails, the local upload server, the delivery manifest) needs
+rebuilding. Wrote `docs/post-wipe-restoration-plan.md` — a phased,
+dependency-ordered plan (baseline the new PC → secrets → highest-impact
+syncs first → the rest → scheduled tasks → verify) that builds on the two
+docs already written during the original incident rather than repeating
+them. Also updated the SECURITY NOTICE above: secret rotation, previously
+on hold, is now happening as part of the rebuild (every local secret has
+to be re-entered from scratch anyway), and pushing from that PC is fine
+again once it's rebuilt, since it's a clean machine now.
 
 ### 2026-11-02 — Website disaster-recovery guide
 
