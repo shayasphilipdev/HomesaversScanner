@@ -46,15 +46,35 @@ def ask(label, default=""):
     return val or default
 
 
-def ask_secret(label, existing):
+def ask_secret(label, existing, check=None):
     hint = " [Enter = keep the saved one]" if existing else ""
     while True:
         val = getpass.getpass(f"{label}{hint}: ").strip()
-        if val:
-            return val
-        if existing:
-            return existing
-        print("  required")
+        if not val:
+            if existing:
+                return existing
+            print("  required")
+            continue
+        # Ctrl+V in a Windows console does not paste into a hidden prompt: it
+        # types a control character (0x16) instead. Right-click pastes.
+        if any(ord(c) < 32 or ord(c) == 127 for c in val):
+            print("  That didn't paste properly (Ctrl+V doesn't work here). Paste with RIGHT-CLICK, then Enter.")
+            continue
+        print(f"  received {len(val)} characters")
+        if check:
+            problem = check(val)
+            if problem:
+                print(f"  {problem}")
+                continue
+        return val
+
+
+def check_smtp_key(key):
+    if key.startswith("xkeysib-"):
+        return "That is a Brevo API key. This needs the SMTP key (SMTP & API -> SMTP tab, starts with xsmtpsib-)."
+    if not key.startswith("xsmtpsib-"):
+        print("  note: Brevo SMTP keys normally start with 'xsmtpsib-' - check you copied the whole key.")
+    return None
 
 
 def ask_list(label, default, required):
@@ -92,7 +112,7 @@ def main():
     smtp = {
         "host": tpl_smtp["host"], "port": tpl_smtp["port"], "security": tpl_smtp["security"],
         "username": ask("SMTP login", cur_smtp.get("username", "")),
-        "password": ask_secret("SMTP key", cur_smtp.get("password", "")),
+        "password": ask_secret("SMTP key (paste with right-click)", cur_smtp.get("password", ""), check_smtp_key),
         "from": ask("From (must be a sender verified in Brevo)", cur_smtp.get("from", tpl_smtp["from"])),
     }
     print("Testing the Brevo login...", end=" ", flush=True)
@@ -100,7 +120,8 @@ def main():
         test_login(smtp)
     except Exception as e:
         print("FAILED")
-        sys.exit(f"Brevo login failed: {e}\nNothing was written. Check the SMTP login and key and run again.")
+        sys.exit(f"Brevo login failed: {e}\nNothing was written. Check the SMTP login and the SMTP key "
+                 f"(Brevo -> SMTP & API -> SMTP tab; a newly generated key, pasted with right-click) and run again.")
     print("OK")
 
     a, w, m = (current[n] or {} for n in NAMES)
@@ -113,7 +134,7 @@ def main():
     print("\n== Area-manager Department Check (Monday + Thursday 08:00) ==")
     print("   Each area manager's own address comes from Admin -> Employees.")
     area_bcc = ask_list("Bcc", m.get("bcc", templates["dept-check-area-managers"].get("bcc", [])), required=False)
-    anon = ask_secret("Supabase anon key (Supabase -> Project Settings -> API keys)",
+    anon = ask_secret("Supabase anon key (Supabase -> Project Settings -> API keys; paste with right-click)",
                       m.get("supabase_anon_key", ""))
 
     def build(name, **over):

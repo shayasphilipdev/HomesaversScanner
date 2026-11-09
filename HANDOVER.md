@@ -561,3 +561,13 @@ As you approved, two kinds of scans that used to come in blank are now handled:
 **Scanner fixed:** new scans like these now come in with the right product straight away. It only uses the cleaned-up code when the scan doesn't match as typed and the cleaned code is a real product. Label codes and other junk still come in blank, as before.
 
 Pushed and merged to `main`; the website updates automatically. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## Email setup: the Brevo login failed, and the helper now catches the likely cause
+
+The first email setup attempt failed at the Brevo login, and as designed, nothing was saved. The most likely cause: on Windows, **Ctrl+V doesn't paste into the hidden key prompt**. It types an invisible character instead. The helper now spots that and asks you to paste with **right-click**. It also shows how many characters it received, and warns if an API key was pasted instead of the SMTP key.
+
+The scheduled tasks for the syncs, the manifest and the upload server are all installed. The four email tasks get added once the email setup succeeds.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.

@@ -631,6 +631,20 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-09 — Phase 6 first attempt: Brevo login failed; helper now catches bad pastes
+
+First `setup-email-configs.py` run on the PC: login `c240c0001@smtp-brevo.com`
+(Brevo's newer SMTP-login style), sender `shayas.philip@supplychain1.ie`,
+then `454 4.7.0 501 5.5.2 Invalid syntax (unable to parse)` — nothing
+written, as designed. Likeliest cause: Ctrl+V into the hidden `getpass`
+prompt on a Windows console types a 0x16 control character instead of
+pasting. The helper now rejects control characters ("paste with
+right-click"), prints how many characters it received, rejects a Brevo
+API key (`xkeysib-`) in place of the SMTP key (`xsmtpsib-`), and the
+failure message points at the SMTP tab. Tested. Installer run the same
+day: all six non-email tasks registered; the four email tasks correctly
+skipped (no configs yet).
+
 ### 2026-11-09 — Text typed before barcodes and RB2–RB9 stickers: records fixed, scanner fixed
 
 User approved the other session's open question. Done for existing records
