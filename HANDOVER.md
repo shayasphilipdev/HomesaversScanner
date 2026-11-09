@@ -497,3 +497,22 @@ All 20 deliveries on the SFTP server, from 29 Oct to today, now have manifests i
 From now on, the normal run only picks up new deliveries. It'll run on its own once the scheduled tasks are set up in Phase 8.
 
 Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## Phases 8 and 7: one installer sets up every scheduled job
+
+New `scripts/install-scheduled-tasks.ps1`. Run it once on the PC and the jobs run on their own again, at the times they used to run before the attack:
+
+- CN-code list: 02:45
+- Item Master (prices): 07:00
+- Alternate barcodes: 07:30
+- B&M Daily: 08:15
+- Delivery manifests: every 30 minutes, 07:05 to 19:05
+- Upload server (for the Manual Upload buttons): whenever you log in
+
+The `buying 1` user needs to stay logged in, though a locked screen is fine, because the B&M upload uses Excel, which only works while someone is logged in. If the PC was off at a run time, the job runs as soon as it's back on.
+
+The three emails get added once their logins are sorted (Phase 6).
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.

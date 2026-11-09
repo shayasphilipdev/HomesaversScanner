@@ -631,6 +631,24 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-09 — Phases 8 + 7: one installer for every Scheduled Task
+
+User chose the order 8 → 7 → 9 → 6 (automate now, emails once the Brevo
+login is found). New `scripts/install-scheduled-tasks.ps1` registers, for
+the logged-on user, with times taken from pre-attack `sync_runs`:
+CN codes 02:45, Prices 07:00 (08:00 until 24 Oct), Alt barcodes 07:30,
+B&M Daily 08:15 (all `run_sync.bat <job>`), Manifest every 30 min
+07:05–19:05 (`wscript run-manifest.vbs`; history showed :05/:35 runs), and
+the upload server at logon (`pythonw local_upload_server.py`, restarts on
+failure, then health-checked on `localhost:8765/health`). All run the
+deployed copy in `C:\Homesavers\scripts`.
+- **Interactive logon type** ("only when logged on"): B&M drives Excel via
+  COM, which fails in a non-interactive session. The `buying 1` user must
+  stay logged on (locked is fine). `StartWhenAvailable` + `WakeToRun`.
+- Tasks are in the root task folder (creating a folder needs admin).
+- Email tasks deliberately not registered yet (Phase 6).
+- Not run here (no Windows); reviewed by hand, ASCII-only for PS 5.1.
+
 ### 2026-11-09 — Phase 5 complete: every delivery since 28 Oct has a manifest
 
 All 20 HSVMAN files on the SFTP server (29 Oct – 9 Nov) now have manifests

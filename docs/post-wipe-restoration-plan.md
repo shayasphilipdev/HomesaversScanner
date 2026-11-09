@@ -163,24 +163,38 @@ Needs the password in `C:\Homesavers\.manifest-sftp-password`; set
 
 ## Phase 7 — Local upload server (lowest priority)
 
-Diagnostic/manual tool, not part of the daily automated flow. If the D1
-capacity meter in Admin → Settings needs a Cloudflare API token too,
-generate a fresh one in the Cloudflare dashboard while you're in there.
+The small server behind Admin → Settings → Manual Upload
+(`local_upload_server.py`, `http://localhost:8765`). Registered by the same
+installer as Phase 8, to start at logon, windowless. If the D1 capacity
+meter in Admin → Settings needs a Cloudflare API token too, generate a
+fresh one in the Cloudflare dashboard.
 
 ## Phase 8 — Now automate everything above with Scheduled Tasks
 
-Only once every job in Phases 3–7 has run cleanly by hand at least once:
+Done in this order (8 → 7 → 9 → 6) so the syncs run on their own while the
+email logins are gathered. One script registers every task for the
+logged-on user:
 
-1. Recreate each Scheduled Task: "Alt-barcodes-ScannerApp" / prices
-   (see runbook §4.1/§4.2 for the exact morning schedule), "Homesavers
-   B&M Daily Sync", "Homesavers CN Code Sync", "Homesavers Manifest",
-   "Homesavers Department Check Weekly" (Mon), "Homesavers Aging Report"
-   (Wed), "Homesavers Dept Check Area Mon"/"Thu", "Homesavers Upload
-   Server" (ONLOGON).
-2. **Worth fixing while you're at it:** the existing setup docs disagree
-   on the area-manager email's time (08:00 in one, 09:00 in the other) —
-   pick one, set the task to that time, and make sure both docs say the
-   same thing afterward.
+`powershell -ExecutionPolicy Bypass -File scripts\install-scheduled-tasks.ps1`
+(`-Remove` takes them all off again)
+
+| Task | When | Runs |
+|---|---|---|
+| Homesavers CN Code Sync | daily 02:45 | `run_sync.bat cn-codes` |
+| Homesavers Prices Sync | daily 07:00 | `run_sync.bat prices` |
+| Homesavers Alt Barcodes Sync | daily 07:30 | `run_sync.bat alt-barcodes` |
+| Homesavers B&M Daily Sync | daily 08:15 | `run_sync.bat bm-daily` |
+| Homesavers Manifest | every 30 min, 07:05–19:05 | `run-manifest.vbs` |
+| Homesavers Upload Server | at logon | `pythonw local_upload_server.py` |
+
+Times are the ones the jobs actually ran at before the attack (from
+`sync_runs`). The tasks run "only when logged on" because the B&M sync
+drives Excel, which doesn't work in a background session: keep the
+`buying 1` user logged on (locked is fine). Missed runs catch up as soon as
+the PC is available; the PC is woken for runs. The three email tasks are
+added in Phase 6, once their config files exist. **Still to settle then:**
+the existing setup docs disagree on the area-manager email's time (08:00
+in one, 09:00 in the other).
 
 ## Phase 9 — Let it run on its own schedule, then verify
 
