@@ -381,4 +381,14 @@ The app itself was never affected and store staff can keep scanning normally the
 
 Wrote `docs/post-wipe-restoration-plan.md` — a step-by-step order to do this in, starting with the two things that matter most (the price and barcode updates, since those feed what staff actually see when scanning), then the daily data files, then the delivery manifest, then the three emails, then the least-urgent diagnostic tool last. For passwords: since everything has to be typed in fresh on the new PC anyway, this is a sensible moment to set new ones rather than trying to reuse the old ones (some of which Cloudflare won't even let us look up again) — the plan covers exactly which ones to change and which to just carry over as-is.
 
-Pushed and merged to `main` (once GitHub access on this session is reconnected — flagged separately). Full write-up in `Project_Status.MD` §11.
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## Restoration plan restructured — the 3 most urgent files grouped first
+
+You flagged that getting Item Master (prices), the Alternate Barcode file, and the B&M Daily file pushed back up manually matters more than anything else in the plan — restructured it to put that front and center.
+
+Those three are now one single, clearly-marked urgent phase, done by hand, as soon as the one password they both need is back in place — not waiting on any of the automated scheduling to be rebuilt first. Everything else (CN-codes, the delivery manifest, the report emails, the diagnostic upload tool) comes after, and setting up all the automatic scheduled runs for everything is now its own single step at the end, once every job has been proven working by hand at least once.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.

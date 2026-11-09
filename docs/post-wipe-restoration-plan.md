@@ -12,12 +12,19 @@ local upload server — everything that used to run from that one PC.
 **What's fine:** the live website, Supabase, and Cloudflare (Pages, D1, the
 archiver Worker). None of them ever ran on that PC, and nothing about this
 incident touches them. Store staff can keep scanning normally throughout
-this whole restoration — the app just won't get fresh prices/barcodes/data
-until Phase 3 below is done, and the data it's scanning against today is
-whatever last synced successfully before the attack.
+this whole restoration — but the data they're scanning against is frozen
+at whatever last synced successfully before the attack, and gets staler
+every day these three files don't go up: **Item Master (prices), the
+Alternate Barcode file, and the B&M Daily file.** Getting those three
+pushed again — even by hand, before any Scheduled Task exists — is the
+single most important thing in this plan. Everything else here (CN-codes,
+the manifest, the report emails, the upload server) matters, but none of
+it affects what staff see when they scan.
 
 This plan sequences the rebuild by actual business impact, not by file
-order. For the exact command/script/schedule for any individual job, see
+order: get the three critical files flowing again first (Phase 3), then
+everything else, then automate all of it at the end. For the exact
+command/script/schedule for any individual job, see
 `docs/local-pc-rebuild-runbook.md` — this plan tells you what order to do
 things in and why; that one tells you exactly how each piece works.
 For what to do if Cloudflare/Supabase/GitHub themselves were ever affected
@@ -48,46 +55,56 @@ Nothing below will work without this groundwork:
    checkout on purpose, so a branch switch here can never break a live
    job).
 
-## Phase 2 — Secrets: rotate what can't be recovered, reuse what can
+## Phase 2 — Unlock the one secret these pushes need
 
-Every local secret file is gone, so each of these has to be entered fresh
-either way. Given that, this is the point to **rotate** rather than guess
-at old values — especially since Cloudflare never lets you read a secret
-back out once it's set, only replace it.
+The three critical syncs in Phase 3 all authenticate to the website the
+same way, with one shared secret — nothing else needs sorting out before
+you can push them:
 
 | Secret | Action | Where it goes |
 |---|---|---|
-| `SUPABASE_URL` / `SUPABASE_ANON_KEY` | **Reuse** — pull fresh from Supabase dashboard → Project Settings → API (Supabase will show you these again anytime) | Only needed locally if you use `.dev.vars` for local dev; the live site's own copy in Cloudflare was never affected |
-| `PRODUCT_SYNC_SECRET` | **Rotate** — generate a new random string | Set in Cloudflare Pages → Settings → Environment variables, replacing the old value; save the same value to a new `C:\Homesavers\.sync-secret` on this PC. (A Pages env var change needs a new deployment to take effect — the next normal push will do it, or trigger a redeploy manually.) |
-| `ARCHIVE_TRIGGER_SECRET` | **Rotate** if you also need to touch the archiver Worker — otherwise leave it; the Worker runs independently in Cloudflare and was never affected | `wrangler secret put` on the archiver Worker + matching Pages env var |
-| CN-code app session cookie (`C:\Homesavers\.cn-source-cookie`) | **Must regenerate regardless** — log into the internal app fresh in a browser on this PC and copy the session cookie; these expire periodically even without an incident | `C:\Homesavers\.cn-source-cookie` |
-| Brevo SMTP credentials (3 config files: aging-report, dept-check-weekly, dept-check-area-managers) | **Rotate if you can** via the Brevo dashboard (regenerate the SMTP key), otherwise reuse whatever the business has on file for that account | Recreate each `*.config.json` from the `.config.example.json` template already in the repo |
-| Cloudflare API token (D1 capacity meter in Admin → Settings) | **Rotate** — generate a fresh one in the Cloudflare dashboard | Pasted into Admin → Settings on the live site (stored server-side, not on this PC) |
+| `PRODUCT_SYNC_SECRET` | **Rotate** — generate a new random string (Cloudflare never lets you read the old value back out, only replace it, so there's nothing to recover anyway) | Set in Cloudflare Pages → Settings → Environment variables, replacing the old value; save the same value to a new `C:\Homesavers\.sync-secret` on this PC. (A Pages env var change needs a new deployment to take effect — the next normal push will do it, or trigger a redeploy manually.) |
+| `SUPABASE_URL` / `SUPABASE_ANON_KEY` | **Reuse** — pull fresh from Supabase dashboard → Project Settings → API if you need them for local dev (`.dev.vars`) | Not needed for the sync scripts themselves — they only talk to the website's own API, not Supabase directly |
 
-## Phase 3 — Prices + Alt-barcodes syncs (highest impact — these feed what staff scan against)
+Every other secret (Brevo credentials, the CN-code app cookie, the
+Cloudflare API token for the D1 meter) is only needed later, in the phase
+that actually uses it — no reason to hold up Phase 3 gathering those too.
 
-These two directly control what Department Check and every other task form
-shows for product name, price, and department. Restore them first:
+## Phase 3 — URGENT: manually push Item Master, Alt-barcodes, and B&M Daily
 
-1. Run each manually once and watch the output:
-   `run_sync.bat prices` then `run_sync.bat alt-barcodes`
-   (or `run_sync.bat all` for both).
-2. Confirm success in the app: Admin → Settings → Data Sync should show a
-   green "ok" run for each, with a sensible row count (tens of thousands,
-   not a handful — a near-empty result means the source file/folder wasn't
-   found, not that the sync ran and found nothing).
-3. Only once a manual run succeeds, recreate the Scheduled Task(s) that
-   run these automatically (both currently run from the same morning
-   schedule — see runbook §4.1/§4.2 for the exact time and command).
+**This is the phase that matters most.** These three files are what
+Department Check and every other task form actually show staff when they
+scan — product name, price, department, UOM. Every day they stay stale is
+a day of scans and store decisions made against out-of-date information.
+Push all three by hand today, before worrying about Scheduled Tasks or
+anything else below:
 
-## Phase 4 — B&M daily file + CN-code master syncs
+1. `run_sync.bat prices` — Item Master.
+2. `run_sync.bat alt-barcodes` — Alternate Barcode file.
+3. `run_sync.bat bm-daily` — B&M Daily file.
+   (`run_sync.bat all` runs prices + alt-barcodes together, but not
+   bm-daily — run that one separately either way.)
+4. After each one, confirm in the app: Admin → Settings → Data Sync should
+   show a green "ok" run, with a sensible row count (tens of thousands for
+   prices/alt-barcodes — a near-empty result means the source file/folder
+   wasn't found on this PC yet, not that the sync ran and found nothing).
 
-Lower urgency than Phase 3, but still daily operational data:
+Don't wait for the Scheduled Tasks to exist to do this — run these three
+by hand, today, as many times as needed until each one lands clean.
+Scheduled-Task automation for all jobs is consolidated into Phase 8, once
+everything in this plan has been proven working manually at least once.
 
-1. `run_sync.bat bm-daily`, then `run_sync.bat cn-codes` — confirm each
-   completes.
-2. Recreate "Homesavers B&M Daily Sync" and "Homesavers CN Code Sync" as
-   Scheduled Tasks once each has run cleanly by hand.
+## Phase 4 — CN-code master sync
+
+Daily operational data, but it doesn't feed what staff see when scanning
+— lower urgency than Phase 3:
+
+1. Get the CN-code app session cookie first: log into the internal app
+   (`86.43.71.253:4000`) fresh in a browser on this PC, copy the session
+   cookie, save it to `C:\Homesavers\.cn-source-cookie` (this one expires
+   periodically even without an incident, so it needs doing fresh either
+   way).
+2. `run_sync.bat cn-codes` — confirm it completes.
 
 ## Phase 5 — Delivery manifest
 
@@ -95,30 +112,39 @@ Lower urgency than Phase 3, but still daily operational data:
    from this PC (this is the path it was moved to on 2026-10-30).
 2. Run `manifest-generator.py` manually, check the output file lands
    correctly.
-3. Recreate the "Homesavers Manifest" Scheduled Task.
 
 ## Phase 6 — The 3 report emails
 
-1. Recreate the 3 `*.config.json` files from Phase 2.
+1. Recreate the 3 `*.config.json` files from the `.config.example.json`
+   templates in the repo. Get Brevo SMTP credentials fresh from the Brevo
+   dashboard if you can (rotate them), otherwise reuse whatever the
+   business has on file for that account.
 2. Run each script manually with a **test send to yourself only** — don't
    point it at the real recipient list until you've confirmed it works:
    `dept-check-weekly.py`, `aging-report.py`, `dept-check-area-managers.py`.
-3. Recreate the 3 Scheduled Tasks: "Homesavers Department Check Weekly"
-   (Mon), "Homesavers Aging Report" (Wed), "Homesavers Dept Check Area
-   Mon"/"Thu". **Worth fixing while you're at it:** the existing setup
-   docs disagree on the area-manager email's time (08:00 in one, 09:00 in
-   the other) — pick one, set the task to that time, and make sure both
-   docs say the same thing afterward.
 
 ## Phase 7 — Local upload server (lowest priority)
 
-Diagnostic/manual tool, not part of the daily automated flow. Reinstall
-per `install-upload-server-task.cmd`, recreate the "Homesavers Upload
-Server" ONLOGON task whenever convenient.
+Diagnostic/manual tool, not part of the daily automated flow. If the D1
+capacity meter in Admin → Settings needs a Cloudflare API token too,
+generate a fresh one in the Cloudflare dashboard while you're in there.
 
-## Phase 8 — Let it run on its own schedule, then verify
+## Phase 8 — Now automate everything above with Scheduled Tasks
 
-Once every job above has been triggered manually and confirmed working:
+Only once every job in Phases 3–7 has run cleanly by hand at least once:
+
+1. Recreate each Scheduled Task: "Alt-barcodes-ScannerApp" / prices
+   (see runbook §4.1/§4.2 for the exact morning schedule), "Homesavers
+   B&M Daily Sync", "Homesavers CN Code Sync", "Homesavers Manifest",
+   "Homesavers Department Check Weekly" (Mon), "Homesavers Aging Report"
+   (Wed), "Homesavers Dept Check Area Mon"/"Thu", "Homesavers Upload
+   Server" (ONLOGON).
+2. **Worth fixing while you're at it:** the existing setup docs disagree
+   on the area-manager email's time (08:00 in one, 09:00 in the other) —
+   pick one, set the task to that time, and make sure both docs say the
+   same thing afterward.
+
+## Phase 9 — Let it run on its own schedule, then verify
 
 1. Don't touch anything overnight — let the real Scheduled Tasks fire on
    their own schedule for one full cycle.
@@ -135,6 +161,6 @@ Once every job above has been triggered manually and confirmed working:
   them were affected. If that ever changes, that's
   `docs/website-disaster-recovery-guide.md`, not this document.
 - This plan assumes you (or whoever has hands on the new PC) are doing the
-  Phase 1–7 steps directly — a cloud session can write and push the code
-  side of things, but can't install software or create Scheduled Tasks on
-  a machine it has no access to.
+  Phase 1–8 steps directly — a cloud session can write and push the code
+  side of things, but can't install software, push files, or create
+  Scheduled Tasks on a machine it has no access to.

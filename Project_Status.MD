@@ -631,6 +631,21 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-09 (later) — Restoration plan restructured: Item Master, Alt-barcodes, B&M Daily grouped as the urgent manual push
+
+Restructured `docs/post-wipe-restoration-plan.md` per the user's own
+priority call: the manual push of Item Master (prices), the Alternate
+Barcode file, and the B&M Daily file matters more than anything else in
+the plan, since those three are the only ones that feed what staff
+actually see when scanning. They're now one single phase (Phase 3),
+done by hand as soon as the one secret they share
+(`PRODUCT_SYNC_SECRET`) is back in place — explicitly not gated on
+rebuilding any Scheduled Tasks first. CN-code sync, the delivery
+manifest, the report emails, and the upload server moved to their own
+later phases; recreating every Scheduled Task across all jobs is now
+consolidated into a single phase at the end, once each job has run
+clean by hand at least once.
+
 ### 2026-11-09 — Confirmed Qilin ransomware; PC wiped and reinstalled; phased restoration plan written
 
 The local PC incident from 2026-10-30 is now confirmed as a Qilin
