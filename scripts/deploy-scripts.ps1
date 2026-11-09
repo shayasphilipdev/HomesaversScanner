@@ -38,7 +38,7 @@ $files = @(
   'run-manifest.vbs',
   'aging-report.py',
   'dept-check-weekly.py',              # Monday 09:00 "who missed Department Check" email
-  'dept-check-area-managers.py'        # Thursday 09:00 + Monday 09:00 per-area-manager email
+  'dept-check-area-managers.py'        # Thursday 08:00 + Monday 08:00 per-area-manager email
 )
 
 # Git-ignored, so it only exists locally — copy it if present, never fail on it.

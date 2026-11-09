@@ -29,7 +29,7 @@ To check who is missing an email, run a dry-run (see Testing below).
 ## How it works
 
 ```
-Windows Task Scheduler (Mon 09:00 or Thu 09:00)
+Windows Task Scheduler (Mon 08:00 or Thu 08:00)
   └─> C:\Homesavers\scripts\dept-check-area-managers.py
         ├─ reads C:\Homesavers\.sync-secret
         ├─ reads dept-check-area-managers.config.json  (SMTP credentials only)

@@ -153,13 +153,32 @@ Needs the password in `C:\Homesavers\.manifest-sftp-password`; set
 
 ## Phase 6 — The 3 report emails
 
-1. Recreate the 3 `*.config.json` files from the `.config.example.json`
-   templates in the repo. Get Brevo SMTP credentials fresh from the Brevo
-   dashboard if you can (rotate them), otherwise reuse whatever the
-   business has on file for that account.
-2. Run each script manually with a **test send to yourself only** — don't
-   point it at the real recipient list until you've confirmed it works:
-   `dept-check-weekly.py`, `aging-report.py`, `dept-check-area-managers.py`.
+Done last (order 8 → 7 → 9 → 6) because it needs the Brevo login.
+
+1. Get the Brevo SMTP login and an SMTP key: Brevo → **SMTP & API → SMTP**.
+   Also the Supabase **anon** key (Supabase → Project Settings → API keys),
+   which the area-manager email uses to read who the area managers are.
+2. `git pull`, run `scripts\deploy-scripts.ps1`, then
+   `& (Get-Content C:\Homesavers\python-path.txt) scripts\setup-email-configs.py`.
+   It asks for the login, key (hidden), sender, and recipients, **tests the
+   Brevo login before writing anything**, then writes the three config files
+   into `C:\Homesavers\scripts`. Defaults offered:
+   - Aging report — To naeem@a-i-m.ie, jeff@homesavers.ie,
+     shauna@supplychain1.ie; Cc shayas.philip@supplychain1.ie,
+     chamya.herath@supplychain1.ie (from `Project_Status.MD` §9).
+   - Weekly Department Check — **no record of the old list**; enter it.
+   - Area-manager emails — each manager's address comes from Admin →
+     Employees; Bcc defaults to shayas.philip@supplychain1.ie.
+   Re-running it keeps every value (press Enter).
+3. Send each one to yourself only first, with `--to <your address>`:
+   `aging-report.py`, `dept-check-weekly.py`,
+   `dept-check-area-managers.py --period full-week`.
+4. Re-run `scripts\install-scheduled-tasks.ps1` — it registers the email
+   tasks once their configs exist: Aging Report Wed 08:00, Department Check
+   Weekly Mon 09:00, Dept Check Area Mon 08:00 (full week) and Thu 08:00
+   (mid-week). The long-standing 08:00/09:00 mismatch for the area-manager
+   email is settled as **08:00** — the setup doc's actual registration
+   commands and its recorded "next runs" both say 08:00.
 
 ## Phase 7 — Local upload server (lowest priority)
 

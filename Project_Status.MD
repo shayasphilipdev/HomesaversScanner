@@ -631,6 +631,30 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-09 — Phases 7 + 8 installed on the PC; Phase 6 tooling ready
+
+- `install-scheduled-tasks.ps1` run on the new PC: all six tasks
+  registered, upload server answering on `localhost:8765/health`. Phase 9
+  check scheduled in this session for 2026-11-10 09:00 UTC (= Irish time):
+  reads `sync_runs` for the overnight/morning runs.
+- **Phase 6 tooling:** new `scripts/setup-email-configs.py` asks for the
+  Brevo login/key (hidden prompt), sender and recipients, tests the Brevo
+  login (STARTTLS + LOGIN, no send) before writing, then writes the three
+  `*.config.json` into `C:\Homesavers\scripts` (UTF-8 without BOM — a BOM
+  makes `json.load` fail). Re-runs keep values on Enter. Defaults: aging
+  recipients from §9; area Bcc from the template. **The weekly Department
+  Check recipient list was only in the lost config** — the user must give
+  it. Tested with scripted answers (first run, keep-on-Enter, bad address,
+  failed login writes nothing).
+- Installer now also registers the 4 email tasks, each only once its
+  config exists: Aging Report Wed 08:00, Department Check Weekly Mon 09:00,
+  Dept Check Area Mon 08:00 (`--period full-week`) + Thu 08:00
+  (`--period mid-week`), windowless via `pythonw`.
+- **08:00 vs 09:00 for the area-manager email settled as 08:00**: the
+  emails don't log runs anywhere, and the setup doc's registration commands
+  and recorded "next runs" say 08:00; only a comment and a diagram said
+  09:00 — both corrected.
+
 ### 2026-11-09 — Phases 8 + 7: one installer for every Scheduled Task
 
 User chose the order 8 → 7 → 9 → 6 (automate now, emails once the Brevo

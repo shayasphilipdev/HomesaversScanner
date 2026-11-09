@@ -516,3 +516,18 @@ The `buying 1` user needs to stay logged in, though a locked screen is fine, bec
 The three emails get added once their logins are sorted (Phase 6).
 
 Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## Phases 7 and 8 running; Phase 6 (emails) ready to set up
+
+The scheduled jobs and the upload server are installed and running on the new PC. I'll check tomorrow at 09:00 that everything ran on its own overnight (Phase 9).
+
+For the three report emails, a new helper (`scripts/setup-email-configs.py`) asks you questions and creates the config files, so you don't edit any files by hand. It checks the Brevo login before saving anything.
+- **Aging report:** recipients filled in from our records.
+- **Weekly Department Check:** the old recipient list was only on the wiped PC, so you'll need to enter it.
+- **Area-manager emails:** each manager's address comes from Admin → Employees, as before.
+
+Running the scheduler installer again then adds the four email tasks: aging report Wednesday 08:00, weekly check Monday 09:00, area-manager emails Monday and Thursday 08:00.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.

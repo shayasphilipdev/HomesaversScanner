@@ -13,7 +13,8 @@
 # screen is fine). If the PC was off or asleep at a run time, the task runs as
 # soon as it can; the PC is also woken for runs.
 #
-# The three report emails are added in Phase 6, once their config files exist.
+# The report emails (Phase 6) are registered only once their config files exist
+# (scripts\setup-email-configs.py writes them); re-run this after that.
 
 [CmdletBinding()]
 param([switch]$Remove)
@@ -28,7 +29,16 @@ $daily = @(
   @{ Name = 'Homesavers Alt Barcodes Sync'; At = '07:30'; Job = 'alt-barcodes' },
   @{ Name = 'Homesavers B&M Daily Sync';    At = '08:15'; Job = 'bm-daily' }
 )
-$names = @($daily | ForEach-Object { $_.Name }) + 'Homesavers Manifest', 'Homesavers Upload Server'
+# Report emails: registered only when their config file exists.
+$emails = @(
+  @{ Name = 'Homesavers Aging Report';            Day = 'Wednesday'; At = '08:00'; Script = 'aging-report.py';             Config = 'aging-report.config.json';             Args = '' },
+  @{ Name = 'Homesavers Department Check Weekly'; Day = 'Monday';    At = '09:00'; Script = 'dept-check-weekly.py';        Config = 'dept-check-weekly.config.json';        Args = '' },
+  @{ Name = 'Homesavers Dept Check Area Mon';     Day = 'Monday';    At = '08:00'; Script = 'dept-check-area-managers.py'; Config = 'dept-check-area-managers.config.json'; Args = '--period full-week' },
+  @{ Name = 'Homesavers Dept Check Area Thu';     Day = 'Thursday';  At = '08:00'; Script = 'dept-check-area-managers.py'; Config = 'dept-check-area-managers.config.json'; Args = '--period mid-week' }
+)
+$names = @($daily | ForEach-Object { $_.Name }) +
+         @('Homesavers Manifest', 'Homesavers Upload Server') +
+         @($emails | ForEach-Object { $_.Name })
 
 if ($Remove) {
   foreach ($n in $names) {
@@ -85,10 +95,22 @@ $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoi
 Register 'Homesavers Upload Server' $action $trigger $settings 'local_upload_server.py on http://localhost:8765, at logon'
 Start-ScheduledTask -TaskName 'Homesavers Upload Server'
 
+# Phase 6: report emails, windowless; each script logs to C:\Homesavers\logs
+foreach ($e in $emails) {
+  if (-not (Test-Path (Join-Path $S $e.Config))) {
+    Write-Host "Skipped     $($e.Name) - no $($e.Config) yet (run setup-email-configs.py)" -ForegroundColor Yellow
+    continue
+  }
+  $arg     = ("`"$S\$($e.Script)`" $($e.Args)").Trim()
+  $action  = New-ScheduledTaskAction -Execute $pyw -Argument $arg -WorkingDirectory $S
+  $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $e.Day -At $e.At
+  Register $e.Name $action $trigger (New-Settings (New-TimeSpan -Hours 1)) "$($e.Script) $($e.Args), $($e.Day) $($e.At)"
+}
+
 # Summary
 Start-Sleep -Seconds 3
 Write-Host ''
-$names | ForEach-Object { Get-ScheduledTask -TaskName $_ } | ForEach-Object {
+$names | ForEach-Object { Get-ScheduledTask -TaskName $_ -ErrorAction SilentlyContinue } | ForEach-Object {
   $i = $_ | Get-ScheduledTaskInfo
   [pscustomobject]@{ Task = $_.TaskName; State = $_.State; NextRun = $i.NextRunTime }
 } | Format-Table -AutoSize | Out-Host
