@@ -461,3 +461,11 @@ As you asked, the manifest script now reads the delivery files from `B:\Supply C
 The SFTP download is built and tested but switched off. To finish it, we need the SFTP server's internal address from the router's port-forwarding rule for 2222. The SFTP password is already saved on the PC.
 
 Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## SFTP server found: 192.168.1.77, port 22
+
+From inside the office, the SFTP server answers on its internal address `192.168.1.77`, port 22. Port 2222 is only for outside users, through the router. With the folder you gave (`Inbound File\Delivery Manifest`), these are now the script's defaults. SFTP stays switched off until a test confirms the login and that the delivery files are there; until then, manifests keep using the B: folder.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.

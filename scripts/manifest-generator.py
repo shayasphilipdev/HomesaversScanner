@@ -58,15 +58,15 @@ OUTPUT_DIRS     = [rf"\\192.168.1.205\Buying Data\{_MANIFESTS}\Store Manifest",
                    rf"B:\{_MANIFESTS}\Store Manifest"]
 PREVIEW_DIR    = r"C:\Homesavers\manifest-preview"
 
-# B&M's SFTP drop for the HSVMAN files. PENDING: from inside the office the
-# server is only reachable on its internal LAN address, which isn't known yet.
-# Set that as SFTP_HOST/SFTP_PORT (test first with --sftp-host/--sftp-port
-# --sftp-list), set SFTP_REMOTE_DIR, then turn this on.
+# B&M's SFTP drop for the HSVMAN files: our own server. Outside users reach
+# it as 93.107.17.189:2222 (router-forwarded); from inside the office that
+# address doesn't loop back, so the LAN address and its real port are used.
+# Off until a --sftp-list run confirms login and files.
 SFTP_ENABLED       = False
-SFTP_HOST          = "93.107.17.189"
-SFTP_PORT          = 2222
+SFTP_HOST          = "192.168.1.77"
+SFTP_PORT          = 22
 SFTP_USER          = "bandm"
-SFTP_REMOTE_DIR    = ""   # set once --sftp-list has shown where the HSVMAN files live
+SFTP_REMOTE_DIR    = "Inbound File/Delivery Manifest"   # relative to the bandm login folder
 SFTP_PASSWORD_FILE = r"C:\Homesavers\.manifest-sftp-password"
 SFTP_KNOWN_HOSTS   = r"C:\Homesavers\manifest-sftp-known_hosts"
 SFTP_INBOUND_DIR   = r"C:\Homesavers\manifest-inbound"

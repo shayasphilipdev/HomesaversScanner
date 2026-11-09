@@ -141,12 +141,14 @@ share (`B:` on the new PC = the old `Y:` = `\\192.168.1.205\Buying Data`):
 3. Live run: builds every delivery from the last 2 days that doesn't
    already have a manifest in `Store Manifest`.
 
-**Pending — SFTP.** The script can also download straight from B&M's SFTP,
-but that server is inside the office and its public address
-(`93.107.17.189:2222`) doesn't loop back from inside. Once its internal
-LAN address is known (router `192.168.1.254`, port forwarding rule for
-2222), test with `--sftp-host <ip> --sftp-port <port> --sftp-list`, then
-it can be switched on. The SFTP password is already saved on the PC.
+**Pending — SFTP.** The script can also download straight from B&M's SFTP.
+That server is ours, inside the office; its public address
+(`93.107.17.189:2222`) doesn't loop back from inside, so the script uses
+its LAN address `192.168.1.77` port 22 and folder
+`Inbound File/Delivery Manifest` (now the defaults). Test with
+`--sftp-list "Inbound File/Delivery Manifest"`; once it shows the HSVMAN
+files, `SFTP_ENABLED` can be switched on. The SFTP password is already
+saved on the PC.
 
 ## Phase 6 — The 3 report emails
 

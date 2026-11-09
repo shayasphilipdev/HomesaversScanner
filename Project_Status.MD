@@ -631,6 +631,16 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-09 — SFTP server located: 192.168.1.77:22, folder `Inbound File/Delivery Manifest`
+
+Router `192.168.1.254` forwards external 2222 to `192.168.1.77`. From the
+new PC (`192.168.1.89`): ping OK, **2222 closed, 22 open** — so the
+service listens on 22 internally. User gave the remote folder
+`Inbound File\Delivery Manifest`. These are now the defaults in
+`manifest-generator.py` (`SFTP_HOST`, `SFTP_PORT`, `SFTP_REMOTE_DIR`);
+`SFTP_ENABLED` stays `False` until a `--sftp-list` run confirms login and
+files. Input until then: the Buying Data share (previous entry).
+
 ### 2026-11-09 — Manifest uses the Buying Data share for now; SFTP on hold
 
 The user put the SFTP route on hold (internal LAN address of the server

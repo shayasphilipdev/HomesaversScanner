@@ -191,12 +191,13 @@ show the exact shape each config file needs — copy and fill in.
   B&M's SFTP (user `bandm`) into `C:\Homesavers\manifest-inbound`, keeping
   server timestamps, host key pinned in `C:\Homesavers\manifest-sftp-known_hosts`,
   password in `C:\Homesavers\.manifest-sftp-password`, needs `paramiko`.
-  Off (`SFTP_ENABLED = False`) because the server is inside the office:
-  its public address `93.107.17.189:2222` doesn't loop back from inside, and
-  its internal LAN address isn't known yet (router `192.168.1.254` → port
-  forwarding rule for 2222). To finish: test with
-  `--sftp-host <lan-ip> --sftp-port <port> --sftp-list`, then set
-  `SFTP_HOST`/`SFTP_PORT`/`SFTP_REMOTE_DIR` and `SFTP_ENABLED = True`.
+  The server is our own, inside the office: outside users reach it as
+  `93.107.17.189:2222` (router `192.168.1.254` forwards to it), which
+  doesn't loop back from inside, so the script uses its LAN address
+  **`192.168.1.77:22`** (port 2222 is closed internally) and folder
+  **`Inbound File/Delivery Manifest`**. Off (`SFTP_ENABLED = False`) until
+  `--sftp-list "Inbound File/Delivery Manifest"` confirms login and files;
+  then set `SFTP_ENABLED = True`.
 - No database writes — pure file-to-file, reads only from the app's side
   (reports the run to `/api/sync-runs` so it shows in Admin → Settings →
   Data Sync, same as the other syncs).
