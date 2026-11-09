@@ -392,3 +392,19 @@ You flagged that getting Item Master (prices), the Alternate Barcode file, and t
 Those three are now one single, clearly-marked urgent phase, done by hand, as soon as the one password they both need is back in place — not waiting on any of the automated scheduling to be rebuilt first. Everything else (CN-codes, the delivery manifest, the report emails, the diagnostic upload tool) comes after, and setting up all the automatic scheduled runs for everything is now its own single step at the end, once every job has been proven working by hand at least once.
 
 Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## Phase 1 started — one setup script for the new PC
+
+Wrote `scripts/setup-new-pc.ps1`. Run it once on the new PC (after cloning the repo to `C:\Apps\HomesaversScanner`) and it installs or checks everything Phase 1 needs, then prints a PASS / WARN / FAIL list. FAIL means it would block the urgent uploads; WARN means it's only needed later.
+
+It also shows the newest Item Master, Alternate Barcode and B&M Daily file it can see on the file server, so you'll know straight away whether that server is still producing fresh files after the attack.
+
+Two problems found and fixed on the way:
+- The deploy step would **not** have copied the B&M Daily and CN-code scripts onto a fresh PC (they used to be kept only on the old PC). B&M Daily would have failed. They're now copied like everything else.
+- The B&M Daily upload needs **Microsoft Excel installed** on the PC. The earlier notes named the wrong prerequisite; corrected.
+
+One risk: the old PC's copies of those two scripts may have had small edits that were never saved to GitHub. The GitHub copies are all we have now. If B&M or CN-codes behave differently from before, check that first.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.

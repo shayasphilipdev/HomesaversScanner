@@ -85,9 +85,12 @@ show the exact shape each config file needs — copy and fill in.
   Python somewhere else, update those paths when re-registering the tasks.
   Packages needed: `requests`, `pandas`, `openpyxl` (`pip install requests
   pandas openpyxl`).
-- **PowerShell `ImportExcel` module**: `Install-Module -Name ImportExcel
-  -Scope CurrentUser` (for `sync-bm-daily.ps1`, `sync-cn-codes.ps1`, and the
-  legacy `.ps1` sync scripts — pure .NET, no Excel installation needed).
+- **Microsoft Excel** (desktop Office) — `sync-bm-daily.ps1` opens the B&M
+  file through Excel itself (`Excel.Application` COM), so it fails without
+  it. *(Corrected 2026-11-09: an earlier version of this runbook said the
+  `ImportExcel` PowerShell module, which is only used by the legacy
+  `sync-prices.ps1` / `sync-products.ps1` — not by anything current.
+  `sync-cn-codes.ps1` reads JSON over HTTP and needs neither.)*
 - **Network access** to:
   - `Y:` mapped drive (or the UNC path behind it) for the product master /
     manifest ItemMaster folders — see `README-sync-products.md` for the
@@ -319,13 +322,14 @@ inside `scripts/` on the rebuilt machine for the same reason — install
    https://github.com/shayasphilipdev/HomesaversScanner.git`.
 2. Install Python 3.13 (base install) +
    `pip install requests pandas openpyxl`.
-3. Install the `ImportExcel` PowerShell module
-   (`Install-Module -Name ImportExcel -Scope CurrentUser`).
+3. Make sure Microsoft Excel is installed (the B&M Daily sync needs it).
+   Steps 2–4 and the deploy are automated by `scripts/setup-new-pc.ps1`.
 4. Map/confirm access to `Y:`, `U:`, and the B&M UNC share; confirm the
    internal app at `86.43.71.253:4000` is reachable.
-5. Recreate `C:\Homesavers\.sync-secret` and
-   `C:\Homesavers\.cn-source-cookie` with their **existing** values (not
-   rotated — see §2 and the security notice).
+5. Recreate `C:\Homesavers\.sync-secret` (with a **new** value, set in
+   Cloudflare too — the 2026-11 rebuild rotates it, see
+   `docs/post-wipe-restoration-plan.md` Phase 2) and
+   `C:\Homesavers\.cn-source-cookie` (fresh login cookie).
 6. Copy the three `.config.example.json` files to their real names inside
    `C:\Homesavers\scripts\` and fill in the **existing** Brevo + Supabase
    credentials.

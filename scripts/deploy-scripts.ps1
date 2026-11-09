@@ -23,12 +23,16 @@ $dst = 'C:\Homesavers\scripts'
 
 if (-not (Test-Path $dst)) { New-Item -ItemType Directory -Path $dst -Force | Out-Null }
 
-# Everything a scheduled task needs at runtime. The *.ps1 sync scripts already
-# live in $dst and are edited there, so they are not listed here.
+# Everything a scheduled task needs at runtime. The B&M and CN-code .ps1 scripts
+# used to be edited in place in $dst and left out of this list; the PC rebuild of
+# 2026-11 lost that copy, so the repo is now their only source and they deploy
+# like everything else (run_sync.bat calls them from $dst by absolute path).
 $files = @(
   'run_sync.bat',            # wrapper the Item Master / Prices / B&M tasks call
   'sync-prices.py',
   'sync-alt-barcodes.py',
+  'sync-bm-daily.ps1',       # run_sync.bat "bm-daily"
+  'sync-cn-codes.ps1',       # run_sync.bat "cn-codes"
   'local_upload_server.py',  # run_sync.bat "server" job
   'manifest-generator.py',
   'run-manifest.vbs',

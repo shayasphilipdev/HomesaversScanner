@@ -34,26 +34,39 @@ For what to do if Cloudflare/Supabase/GitHub themselves were ever affected
 
 ## Phase 1 — Baseline the new PC
 
-Nothing below will work without this groundwork:
+Nothing below will work without this groundwork. Most of it is automated
+by `scripts/setup-new-pc.ps1`:
 
-1. Install Python 3.13 as the base system install — **not** inside a
-   `.venv`. A `.venv` in this exact folder got quarantined by antivirus
-   once before after it made outbound network calls; the scripts are
-   written to run against the base install for that reason.
-2. `pip install requests pandas openpyxl`
-3. Install the PowerShell `ImportExcel` module (`Install-Module
-   ImportExcel`) — needed by the B&M daily and CN-code PowerShell scripts.
-4. Remap/confirm the network drives and shares the scripts read from:
-   the `Y:` share (delivery manifest output), and whatever UNC path the
-   B&M daily file and the product-master workbook come from.
-5. Confirm this PC can reach the internal CN-code app
-   (`86.43.71.253:4000`) on the network.
-6. Clone the GitHub repo fresh onto this PC.
-7. Run `scripts/deploy-scripts.ps1` — this copies the scripts into their
-   separate "deployed" location at `C:\Homesavers\scripts`, which is what
-   every Scheduled Task actually points at (kept apart from the git
-   checkout on purpose, so a branch switch here can never break a live
-   job).
+1. Install Git (`winget install --id Git.Git -e`), open a new PowerShell
+   window, and clone the repo:
+   `git clone https://github.com/shayasphilipdev/HomesaversScanner.git C:\Apps\HomesaversScanner`
+2. Make sure **Microsoft Excel** is installed — the B&M Daily sync opens
+   its file through Excel itself and fails without it.
+3. Run the setup script from the clone:
+   `cd C:\Apps\HomesaversScanner` then
+   `powershell -ExecutionPolicy Bypass -File scripts\setup-new-pc.ps1`
+   It installs Python 3.13 (base install, **not** a `.venv` — antivirus
+   quarantined a `.venv` here once after it made network calls) and the
+   `requests`/`pandas`/`openpyxl` packages if missing, checks Excel,
+   creates `C:\Homesavers\{scripts,logs,manifest-preview}`, checks the
+   website is reachable, checks this PC can open the three critical
+   source folders on `\\192.168.1.205\Buying Data` **and shows the newest
+   file in each** (so you can see whether that server is still producing
+   daily files), checks the later-phase drives/app (U:, Y:, the CN-code
+   app at `86.43.71.253:4000`), and deploys the scripts to
+   `C:\Homesavers\scripts` — the separate copy every Scheduled Task points
+   at, kept apart from the git checkout so a branch switch can never break
+   a live job.
+4. Fix anything it reports as **FAIL** and re-run it until there are none.
+   **WARN** items belong to later phases and can wait.
+
+Source folders the three urgent uploads read (also in Admin → Settings):
+
+| File | Folder |
+|---|---|
+| Item Master | `\\192.168.1.205\Buying Data\Supply Chain & Buying - Shared\Data\VRSDAILYDATADUMP\ProductMaster\2026` |
+| Alternate Barcodes | `\\192.168.1.205\Buying Data\Supply Chain & Buying - Shared\Data\VRSDAILYDATADUMP\ProductMaster-ALTBarcode\2026` |
+| B&M Daily | `\\192.168.1.205\Buying Data\Supply Chain & Buying - Shared\Data\B&M Product File Excel\2026` |
 
 ## Phase 2 — Unlock the one secret these pushes need
 

@@ -631,6 +631,37 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-09 (Phase 1 started) — `setup-new-pc.ps1`; deploy now ships the B&M/CN scripts; Excel prerequisite corrected
+
+- **New `scripts/setup-new-pc.ps1`** automates Phase 1 of the restoration
+  plan on the rebuilt PC: installs Python 3.13 + `requests`/`pandas`/
+  `openpyxl` if missing (winget), checks Excel, creates `C:\Homesavers\*`,
+  pings the website, opens the three critical source folders on
+  `\\192.168.1.205\Buying Data` and reports the newest file in each (so a
+  stalled upstream export shows up immediately), checks U:/Y:/the CN-code
+  app for later phases, runs `deploy-scripts.ps1`, and ends with a
+  PASS/WARN/FAIL table. Not executed here — written and reviewed in the
+  cloud session; first real run is on the new PC.
+- **`deploy-scripts.ps1` now copies `sync-bm-daily.ps1` and
+  `sync-cn-codes.ps1`.** They were deliberately excluded before ("edited in
+  place in `C:\Homesavers\scripts`"), so on the wiped PC `run_sync.bat
+  bm-daily` would have failed with file-not-found. Risk to note: the lost
+  deployed copies may have had local edits never committed; the repo
+  copies (last changed in the 2026-10-05 history) are now the only source.
+  If B&M/CN behave differently than before, that's the first suspect.
+- **Prerequisite corrected:** B&M Daily needs **Microsoft Excel** installed
+  (`Excel.Application` COM), not the `ImportExcel` module the runbook
+  claimed; that module is only used by the legacy `.ps1` syncs. Fixed in
+  `docs/local-pc-rebuild-runbook.md` and the restoration plan.
+- Source folders (from `app_settings` / the B&M script): Item Master
+  `...\VRSDAILYDATADUMP\ProductMaster\2026`, Alt-barcodes
+  `...\VRSDAILYDATADUMP\ProductMaster-ALTBarcode\2026`, B&M
+  `...\B&M Product File Excel\2026`, all under
+  `\\192.168.1.205\Buying Data\Supply Chain & Buying - Shared\Data`.
+  Manifest needs `U:` (Finance shared folder, input) and `Y:` (output).
+- Repo now cloned on the new PC at `C:\Apps\HomesaversScanner` (was
+  `C:\Scraping\homesavers-scanner`).
+
 ### 2026-11-09 (later) — Restoration plan restructured: Item Master, Alt-barcodes, B&M Daily grouped as the urgent manual push
 
 Restructured `docs/post-wipe-restoration-plan.md` per the user's own
