@@ -631,6 +631,21 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-09 — Phase 4 complete: CN-code master live again; source-app auth concern
+
+`cn_code_master` reloaded on the rebuilt PC: 43,061 codes (dry run, import
+and table all agree; +7 vs 28 Oct). The "cookie" in
+`C:\Homesavers\.cn-source-cookie` is the fixed line from
+`scripts/README-cn-codes.md` (`admin_authenticated=true; user_email=...`),
+not a browser session — the restoration plan was corrected.
+
+**Security concern raised with the user (not this app's code):** the
+CN-code source app at `http://86.43.71.253:4000` treats a client-supplied
+`admin_authenticated=true` cookie as admin auth, over plain HTTP, on a
+public IP. If port 4000 is reachable from outside the office, anyone who
+knows that line can export from it or act as admin. Recommended its owner
+restrict the port to the office network. Nothing in this repo can fix it.
+
 ### 2026-11-09 — Phase 3 complete: the three urgent uploads are live again
 
 Run by hand on the rebuilt PC, each verified in `sync_runs` and the table

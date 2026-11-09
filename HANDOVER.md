@@ -431,3 +431,13 @@ All three urgent uploads ran by hand on the new PC, and each was checked in the 
 Stores have been scanning against 28 Oct data for 12 days; they're now on today's prices. These still need running by hand each day until the scheduled tasks are rebuilt in Phase 8.
 
 Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## Phase 4 done: CN-code list live again
+
+The CN-code list was reloaded on the new PC: 43,061 codes, 7 more than on 28 Oct. It needed no browser login after all, just a one-line file (the plan has been corrected).
+
+Flagged for whoever looks after the CN-code app (not our app): it treats a fixed label as an admin login, over unencrypted http, on a public IP. Its port should only accept connections from the office network.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
