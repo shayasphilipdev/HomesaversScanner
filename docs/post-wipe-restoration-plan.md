@@ -112,12 +112,16 @@ everything in this plan has been proven working manually at least once.
 Daily operational data, but it doesn't feed what staff see when scanning
 — lower urgency than Phase 3:
 
-1. Get the CN-code app session cookie first: log into the internal app
-   (`86.43.71.253:4000`) fresh in a browser on this PC, copy the session
-   cookie, save it to `C:\Homesavers\.cn-source-cookie` (this one expires
-   periodically even without an incident, so it needs doing fresh either
-   way).
-2. `run_sync.bat cn-codes` — confirm it completes.
+1. Create `C:\Homesavers\.cn-source-cookie` containing the one line from
+   `scripts/README-cn-codes.md` (`admin_authenticated=true; user_email=...`).
+   *(Corrected 2026-11-09: an earlier version said to log in through a
+   browser and copy a session cookie. The CN-code app doesn't use one — it
+   accepts that fixed line.)*
+2. Dry run first — reads the export, changes nothing:
+   `powershell -ExecutionPolicy Bypass -File C:\Homesavers\scripts\sync-cn-codes.ps1 -DryRun`
+3. `run_sync.bat cn-codes` — this one empties `cn_code_master` and
+   reloads it (only after a successful fetch, so a source outage never
+   wipes it). Confirm `=== CN-code sync finished OK ===`.
 
 ## Phase 5 — Delivery manifest
 
