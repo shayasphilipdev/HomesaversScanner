@@ -531,3 +531,19 @@ For the three report emails, a new helper (`scripts/setup-email-configs.py`) ask
 Running the scheduler installer again then adds the four email tasks: aging report Wednesday 08:00, weekly check Monday 09:00, area-manager emails Monday and Thursday 08:00.
 
 Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## Records checked against the latest product files
+
+You asked for every Department Check and every pending record to be checked against today's product files, with product and barcode status brought up to date.
+
+- **Blank records filled:** 3, the only ones today's files can fill. That's 2 Department Checks from 7 Nov (now showing STATIONERY) and 1 Non-Scan. The other blanks are scans that genuinely aren't in the product master, such as labels, misreads and web links.
+- **Product status updated:** 10 records changed from Inactive to Active. Barcode status was already correct everywhere.
+- **Checked afterwards:** all 226,529 live records now match the latest files on product status, barcode status and department.
+- **Product names left alone:** the latest file adds " *" to the end of about 5,200 product names. You only asked for statuses, so record names stay as they were when scanned.
+- **Archive (older Department Checks):** nothing to fix. None of its blanks can be filled, and every archived record is from before the product files went out of date.
+
+The report emails are on hold until you get the Brevo reset email.
+
+Full write-up in `Project_Status.MD` §11.

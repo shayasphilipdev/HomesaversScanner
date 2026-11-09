@@ -631,6 +631,44 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-09 — Records re-checked against the refreshed master; Phase 6 on hold
+
+**Phase 6 (emails) on hold**: the user is waiting for a Brevo password-reset
+email; no Brevo login yet. Nothing else blocked by it.
+
+**Scope (user's ask):** every Department Check plus every pending record,
+re-checked against today's product files. Resolution mirrors
+`resolveScan()` exactly (barcode_no → 11-digit UPC-A check-digit recovery
+→ ean_barcode, `barcode_status`/`item_status` asc, then `prices` for
+`item_group`), keyed on `barcode_no`, else `product_code`.
+
+- **Blanks, filled (only where empty):** 3 of 1,307 live blanks could now
+  be resolved — 2 Department Checks (7 Nov, both STATIONERY, matched by
+  ean_barcode) and 1 Non-Scan (28 Oct, GM FAT SNAX 50 BOX). The rest are
+  genuine non-matches (labels, misreads, URLs, letters typed before the
+  barcode, RB2–RB9 stickers). Few because the 28 Oct master the stores
+  scanned against was complete, just 12 days old (+16 prices, +143 alt
+  barcodes since).
+- **Product / barcode status, updated to latest (user's follow-up ask):**
+  10 records, all `item_status` Inactive → Active (9 J pending, 1 J
+  cleared); `barcode_status` already matched everywhere. Verified after:
+  226,529 live J + pending records, 0 status / department mismatches, 0
+  fillable blanks.
+- **Not changed:** product names. The latest file appends " *" to 5,206
+  item names (15,411 record diffs are exactly that; ~369 more are " *" plus
+  small source edits, incl. doubled apostrophes). The user asked for status
+  only; the scan-time names were left.
+- **D1 archive:** one scan (708,807 rows read) found 5,277 archived J rows
+  missing details over 3,406 codes; the 1,892 that could match by shape
+  (digits / `NN-NN-NNN-NN`) were all checked — **none** match today's files.
+  Archive statuses were **not** rewritten: every archived J row is from
+  29 Oct or earlier, i.e. scanned against a master at most a day old, so
+  the outage never touched it; rewriting would replace historical snapshots
+  with today's state (and checking 57,265 non-active barcodes against the
+  archive needs a server-side job, not this session's tools).
+- Not done (still the other session's open question, needs the user's go
+  ahead): stripping letters typed before barcodes, RB2–RB9 prefixes.
+
 ### 2026-11-09 — Phases 7 + 8 installed on the PC; Phase 6 tooling ready
 
 - `install-scheduled-tasks.ps1` run on the new PC: all six tasks
