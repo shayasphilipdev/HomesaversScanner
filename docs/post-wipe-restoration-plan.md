@@ -146,6 +146,8 @@ from our SFTP server — LAN address `192.168.1.77` port 22, folder
 `Inbound File/Delivery Manifest` (outside users use `93.107.17.189:2222`,
 which doesn't loop back from inside) — into `C:\Homesavers\manifest-inbound`,
 keeping each file's original date. Output stays in `Store Manifest` above.
+Each live run also saves a copy of the downloaded originals into the
+`HSVMAN FILES- MANIFEST` folder itself (dates kept, never overwriting).
 Needs the password in `C:\Homesavers\.manifest-sftp-password`; set
 `SFTP_ENABLED = False` in the script to go back to reading the share.
 

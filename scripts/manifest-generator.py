@@ -15,6 +15,8 @@ Folders (B: on the rebuilt PC = the old Y: = \\\\192.168.1.205\\Buying Data):
                 off, ...\\02 - Manifests - Homesavers\\HSVMAN FILES- MANIFEST instead
     ITEMMASTER  ...\\VRSDAILYDATADUMP\\ProductMaster\\2026                              (latest ItemMaster*.xlsx)
     OUTPUT      ...\\02 - Manifests - Homesavers\\HSVMAN FILES- MANIFEST\\Store Manifest
+    ORIGINALS   live SFTP runs also copy each downloaded HSVMAN into
+                ...\\HSVMAN FILES- MANIFEST (never overwriting), so the share keeps them
     Each is tried by UNC path first (works in a scheduled task with no drive
     mapped), then by drive letter.
 
@@ -35,6 +37,7 @@ import hashlib
 import os
 import posixpath
 import re
+import shutil
 import stat
 import sys
 import time
@@ -335,6 +338,33 @@ def sftp_list(start, max_depth=3, max_dirs=300):
             log(f"No HSVMAN files found within {max_depth} folder levels of {start}.", "WARN")
     finally:
         sftp.close(); client.close()
+
+
+def save_originals(src_dir, dest_dirs):
+    """Copy the downloaded HSVMAN originals to the share (first of dest_dirs that
+    exists), keeping their dates. Never overwrites: a same-name file of a
+    different size is reported and left alone. Failure here never stops the
+    manifests being built."""
+    dest = first_existing(dest_dirs)
+    if not dest:
+        log(f"Originals NOT saved - share folder not reachable: {dest_dirs[0]}", "WARN")
+        return
+    srcs = set(glob.glob(os.path.join(src_dir, "HSVMAN*.csv")) + glob.glob(os.path.join(src_dir, "HSVMAN*.CSV")))
+    copied = 0
+    for src in sorted(srcs):
+        target = os.path.join(dest, os.path.basename(src))
+        try:
+            if os.path.exists(target):
+                if os.path.getsize(target) != os.path.getsize(src):
+                    log(f"Original {os.path.basename(src)} already on the share with a different size - left as is", "WARN")
+                continue
+            tmp = target + ".part"
+            shutil.copy2(src, tmp)
+            os.replace(tmp, target)
+            copied += 1
+        except OSError as e:
+            log(f"Could not save original {os.path.basename(src)}: {e}", "WARN")
+    log(f"Originals: {copied} new HSVMAN file(s) saved to {dest}")
 
 
 def sftp_fetch(remote_dir, days, take_all):
@@ -682,6 +712,8 @@ def main():
                            status="error", message=f"SFTP fetch failed: {e}"[:300], started_at=None)
             sys.exit(1)
         input_dir = SFTP_INBOUND_DIR
+        if not args.dry_run:
+            save_originals(SFTP_INBOUND_DIR, INPUT_DIRS)
     else:
         input_dir = first_existing(INPUT_DIRS)
         if not input_dir:

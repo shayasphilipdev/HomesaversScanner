@@ -631,6 +631,18 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-09 — Manifest job keeps the SFTP originals on the share
+
+At the user's request, every live manifest run now copies the HSVMAN files
+it has downloaded from SFTP into
+`...\02 - Manifests - Homesavers\HSVMAN FILES- MANIFEST` (UNC first, then
+`B:`). Dates kept (`copy2` via `.part` + rename); never overwrites — a
+same-name file of a different size is logged and left; `--dry-run` copies
+nothing; an unreachable share only warns and the manifests are still
+built. Side benefit: that folder is the fallback input
+(`SFTP_ENABLED = False`), so it always holds the same files. Tested (fake
+SFTP + fake share).
+
 ### 2026-11-09 — Manifest input switched to SFTP (login confirmed)
 
 `--sftp-list "Inbound File/Delivery Manifest"` against `192.168.1.77:22`

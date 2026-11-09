@@ -197,7 +197,11 @@ show the exact shape each config file needs — copy and fill in.
   doesn't loop back from inside, so the script uses its LAN address
   **`192.168.1.77:22`** (port 2222 is closed internally) and folder
   **`Inbound File/Delivery Manifest`**. Confirmed working 2026-11-09
-  (`--sftp-list` showed 20 HSVMAN files, 29 Oct – 9 Nov).
+  (`--sftp-list` showed 20 HSVMAN files, 29 Oct – 9 Nov). Every live run
+  also copies the downloaded originals into the `HSVMAN FILES- MANIFEST`
+  share folder (`shutil.copy2`, dates kept; an existing same-name file is
+  never overwritten — a size mismatch is logged as a WARN). Skipped on
+  `--dry-run`; an unreachable share only warns.
 - No database writes — pure file-to-file, reads only from the app's side
   (reports the run to `/api/sync-runs` so it shows in Admin → Settings →
   Data Sync, same as the other syncs).

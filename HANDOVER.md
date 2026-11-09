@@ -479,3 +479,11 @@ The login test worked: 20 delivery files are on the SFTP server, from 29 Oct to 
 29 and 30 Oct had deliveries too, and they don't have manifests yet. I've given you the command to build any that are missing.
 
 Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## Manifest job now keeps a copy of the original delivery files on B:
+
+As you asked, every time the manifest job downloads delivery files from SFTP, it also saves the original files into `B:\Supply Chain\005 - Reports\04 - H1 Declaration Manifest\02 - Manifests - Homesavers\HSVMAN FILES- MANIFEST`. The copies keep their original dates. Files already in that folder are never overwritten. A dry run doesn't copy anything. If B: can't be reached, the manifests are still built and the log shows a warning.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
