@@ -631,6 +631,18 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-09 — Manifest input switched to SFTP (login confirmed)
+
+`--sftp-list "Inbound File/Delivery Manifest"` against `192.168.1.77:22`
+logged in as `bandm` (host key matched the one pinned on the first
+connect) and found 20 HSVMAN files: 29 Oct (4), 30 Oct (3), 5 Nov (5),
+6 Nov (5), 9 Nov (3). User confirmed SFTP as the input: `SFTP_ENABLED = True`.
+Output unchanged (`...\HSVMAN FILES- MANIFEST\Store Manifest` on the Buying
+Data share). If the password file is missing the script now logs a WARN
+and reads the share instead of silently switching. Note 29–30 Oct
+deliveries also have no manifests (last manifest run was 28 Oct).
+`setup-new-pc.ps1` now checks `192.168.1.77:22` for input.
+
 ### 2026-11-09 — SFTP server located: 192.168.1.77:22, folder `Inbound File/Delivery Manifest`
 
 Router `192.168.1.254` forwards external 2222 to `192.168.1.77`. From the

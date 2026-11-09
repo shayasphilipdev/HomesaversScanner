@@ -187,7 +187,8 @@ show the exact shape each config file needs — copy and fill in.
 - **Writes**: `...\HSVMAN FILES- MANIFEST\Store Manifest\Manifest- <Load> - <Trailer>.xlsx`
   (a subfolder of the input; only that last folder is ever created, and
   only if its parent exists). Previously `Y:\Supply Chain\SUPPLY CHAIN 2026\STORE MANIFEST`.
-- **SFTP route (built, pending):** the script can instead download from
+- **Input since 2026-11-09 is SFTP** (the share above is the fallback with
+  `SFTP_ENABLED = False`): the script downloads from
   B&M's SFTP (user `bandm`) into `C:\Homesavers\manifest-inbound`, keeping
   server timestamps, host key pinned in `C:\Homesavers\manifest-sftp-known_hosts`,
   password in `C:\Homesavers\.manifest-sftp-password`, needs `paramiko`.
@@ -195,9 +196,8 @@ show the exact shape each config file needs — copy and fill in.
   `93.107.17.189:2222` (router `192.168.1.254` forwards to it), which
   doesn't loop back from inside, so the script uses its LAN address
   **`192.168.1.77:22`** (port 2222 is closed internally) and folder
-  **`Inbound File/Delivery Manifest`**. Off (`SFTP_ENABLED = False`) until
-  `--sftp-list "Inbound File/Delivery Manifest"` confirms login and files;
-  then set `SFTP_ENABLED = True`.
+  **`Inbound File/Delivery Manifest`**. Confirmed working 2026-11-09
+  (`--sftp-list` showed 20 HSVMAN files, 29 Oct – 9 Nov).
 - No database writes — pure file-to-file, reads only from the app's side
   (reports the run to `/api/sync-runs` so it shows in Admin → Settings →
   Data Sync, same as the other syncs).

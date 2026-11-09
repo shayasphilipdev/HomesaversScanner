@@ -141,14 +141,13 @@ share (`B:` on the new PC = the old `Y:` = `\\192.168.1.205\Buying Data`):
 3. Live run: builds every delivery from the last 2 days that doesn't
    already have a manifest in `Store Manifest`.
 
-**Pending — SFTP.** The script can also download straight from B&M's SFTP.
-That server is ours, inside the office; its public address
-(`93.107.17.189:2222`) doesn't loop back from inside, so the script uses
-its LAN address `192.168.1.77` port 22 and folder
-`Inbound File/Delivery Manifest` (now the defaults). Test with
-`--sftp-list "Inbound File/Delivery Manifest"`; once it shows the HSVMAN
-files, `SFTP_ENABLED` can be switched on. The SFTP password is already
-saved on the PC.
+**Input is now SFTP (2026-11-09).** The script downloads the HSVMAN files
+from our SFTP server — LAN address `192.168.1.77` port 22, folder
+`Inbound File/Delivery Manifest` (outside users use `93.107.17.189:2222`,
+which doesn't loop back from inside) — into `C:\Homesavers\manifest-inbound`,
+keeping each file's original date. Output stays in `Store Manifest` above.
+Needs the password in `C:\Homesavers\.manifest-sftp-password`; set
+`SFTP_ENABLED = False` in the script to go back to reading the share.
 
 ## Phase 6 — The 3 report emails
 

@@ -469,3 +469,13 @@ Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
 From inside the office, the SFTP server answers on its internal address `192.168.1.77`, port 22. Port 2222 is only for outside users, through the router. With the folder you gave (`Inbound File\Delivery Manifest`), these are now the script's defaults. SFTP stays switched off until a test confirms the login and that the delivery files are there; until then, manifests keep using the B: folder.
 
 Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## Manifests now come straight from the SFTP server
+
+The login test worked: 20 delivery files are on the SFTP server, from 29 Oct to today. As you confirmed, the manifest script now downloads them directly from the SFTP server, so nobody has to copy them into B: any more. The finished manifests still go into the `Store Manifest` folder on B:.
+
+29 and 30 Oct had deliveries too, and they don't have manifests yet. I've given you the command to build any that are missing.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.

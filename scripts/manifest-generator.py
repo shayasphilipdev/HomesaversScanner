@@ -10,8 +10,9 @@ manifest that matches the agreed sample:
 Reads only (no database). All work is local on the back-office PC, like the sync jobs.
 
 Folders (B: on the rebuilt PC = the old Y: = \\\\192.168.1.205\\Buying Data):
-    INPUT       ...\\02 - Manifests - Homesavers\\HSVMAN FILES- MANIFEST                 (HSVMAN*.csv)
-                (or B&M's SFTP into C:\\Homesavers\\manifest-inbound once SFTP_ENABLED)
+    INPUT       B&M's SFTP (192.168.1.77:22, Inbound File/Delivery Manifest) downloaded
+                into C:\\Homesavers\\manifest-inbound (HSVMAN*.csv); with SFTP_ENABLED
+                off, ...\\02 - Manifests - Homesavers\\HSVMAN FILES- MANIFEST instead
     ITEMMASTER  ...\\VRSDAILYDATADUMP\\ProductMaster\\2026                              (latest ItemMaster*.xlsx)
     OUTPUT      ...\\02 - Manifests - Homesavers\\HSVMAN FILES- MANIFEST\\Store Manifest
     Each is tried by UNC path first (works in a scheduled task with no drive
@@ -61,8 +62,9 @@ PREVIEW_DIR    = r"C:\Homesavers\manifest-preview"
 # B&M's SFTP drop for the HSVMAN files: our own server. Outside users reach
 # it as 93.107.17.189:2222 (router-forwarded); from inside the office that
 # address doesn't loop back, so the LAN address and its real port are used.
-# Off until a --sftp-list run confirms login and files.
-SFTP_ENABLED       = False
+# Confirmed 2026-11-09 (login OK, 20 HSVMAN files). Set False to fall back to
+# reading INPUT_DIRS on the Buying Data share.
+SFTP_ENABLED       = True
 SFTP_HOST          = "192.168.1.77"
 SFTP_PORT          = 22
 SFTP_USER          = "bandm"
@@ -635,6 +637,8 @@ def main():
         sftp_list(args.sftp_list)
         log("=== Manifest generator finished ==="); return
     use_sftp = SFTP_ENABLED and os.path.exists(SFTP_PASSWORD_FILE)
+    if SFTP_ENABLED and not use_sftp:
+        log(f"SFTP is enabled but {SFTP_PASSWORD_FILE} is missing - reading the share instead", "WARN")
 
     itemmaster_dir = first_existing(ITEMMASTER_DIRS)
     im_path = latest(itemmaster_dir, "ItemMaster*.xlsx") if itemmaster_dir else None

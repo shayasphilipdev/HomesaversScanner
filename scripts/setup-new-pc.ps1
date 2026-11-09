@@ -124,16 +124,16 @@ foreach ($s in $Sources) {
 # Same folders as manifest-generator.py (B: on this PC = old Y: = \\192.168.1.205\Buying Data).
 $mf = 'Supply Chain\005 - Reports\04 - H1 Declaration Manifest\02 - Manifests - Homesavers\HSVMAN FILES- MANIFEST'
 $manifestIns = "\\192.168.1.205\Buying Data\$mf", "B:\$mf"
+# Input: the office SFTP server on its LAN address (manifest-generator.py SFTP_HOST/PORT).
+if (Test-Path "$Home_\.manifest-sftp-password") {
+  $sftp = Test-NetConnection -ComputerName 192.168.1.77 -Port 22 -WarningAction SilentlyContinue
+  if ($sftp.TcpTestSucceeded) { Add-Result 'PASS' 'Manifest input (SFTP)' '192.168.1.77:22 reachable; password file present' }
+  else { Add-Result 'WARN' 'Manifest input (SFTP)' '192.168.1.77:22 not reachable from this PC' }
+} else { Add-Result 'WARN' 'Manifest input (SFTP)' "No $Home_\.manifest-sftp-password - save the SFTP password before Phase 5" }
+# Output: Store Manifest is created on first run; only its parent must exist.
 $inFound = $manifestIns | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-if ($inFound) {
-  $hsv = Get-ChildItem -LiteralPath $inFound -Filter 'HSVMAN*.csv' -File -ErrorAction SilentlyContinue |
-         Sort-Object LastWriteTime -Descending | Select-Object -First 1
-  if ($hsv) { Add-Result 'PASS' 'Manifest input' "$inFound - newest $($hsv.Name), $($hsv.LastWriteTime.ToString('yyyy-MM-dd HH:mm'))" }
-  else { Add-Result 'WARN' 'Manifest input' "$inFound reachable but has no HSVMAN*.csv files yet" }
-} else { Add-Result 'WARN' 'Manifest input' "Not reachable: $($manifestIns[0])" }
-# The Store Manifest folder is created on first run; only its parent must exist.
 if ($inFound) { Add-Result 'PASS' 'Manifest output' "$inFound\Store Manifest" }
-else { Add-Result 'WARN' 'Manifest output' 'Parent folder not reachable (see Manifest input)' }
+else { Add-Result 'WARN' 'Manifest output' "Parent folder not reachable: $($manifestIns[0])" }
 
 $cn = Test-NetConnection -ComputerName 86.43.71.253 -Port 4000 -WarningAction SilentlyContinue
 if ($cn.TcpTestSucceeded) { Add-Result 'PASS' 'CN-code app' '86.43.71.253:4000 reachable' }
