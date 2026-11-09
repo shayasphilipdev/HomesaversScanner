@@ -661,6 +661,14 @@ the U: drive. Behaviour otherwise unchanged:
   was confirmed to exist (Y: isn't mapped on the new PC), so the output side
   works without Y:. Same run showed today's ALT Barcode file (15:57) had
   landed after the 15:48 alt-barcodes upload.
+- **Cause found:** the office's own public IP is `93.107.17.189` — the SFTP
+  server is the business's own, inside the office, port-forwarded on 2222.
+  From inside, the public address doesn't loop back (no NAT hairpin), so the
+  PC must use the server's internal LAN address. Not `192.168.1.205`
+  (22 and 2222 both refused). U: no longer exists after the attack, so SFTP
+  is the only route to the HSVMAN files now. Added `--sftp-host` /
+  `--sftp-port` overrides so the internal address can be tested before it's
+  made the default.
 - Setup script tidied: the "Python launcher" WARN is gone (jobs use
   `python-path.txt`), pip's notices no longer show as red errors.
 - Tested in the cloud session against a fake SFTP server (window,

@@ -606,7 +606,17 @@ def main():
     ap.add_argument("--sftp-list", nargs="?", const=".", metavar="PATH",
                     help="List which SFTP folders hold HSVMAN files, then exit. Changes nothing.")
     ap.add_argument("--sftp-dir", help="Override SFTP_REMOTE_DIR for this run.")
+    ap.add_argument("--sftp-host", help="Override SFTP_HOST for this run (e.g. the server's internal LAN address).")
+    ap.add_argument("--sftp-port", type=int, help="Override SFTP_PORT for this run.")
     args = ap.parse_args()
+
+    # From inside the office the public address doesn't loop back (no NAT
+    # hairpin), so the server is reached on its LAN address instead.
+    global SFTP_HOST, SFTP_PORT
+    if args.sftp_host:
+        SFTP_HOST = args.sftp_host
+    if args.sftp_port:
+        SFTP_PORT = args.sftp_port
 
     log("=== Manifest generator starting ===")
     use_sftp = os.path.exists(SFTP_PASSWORD_FILE)
