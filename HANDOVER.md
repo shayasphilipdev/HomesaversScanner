@@ -441,3 +441,13 @@ The CN-code list was reloaded on the new PC: 43,061 codes, 7 more than on 28 Oct
 Flagged for whoever looks after the CN-code app (not our app): it treats a fixed label as an admin login, over unencrypted http, on a public IP. Its port should only accept connections from the office network.
 
 Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## Delivery manifests now come from B&M's SFTP, not the U: drive
+
+As you asked, the manifest script now downloads the delivery files directly from B&M's SFTP server. It keeps each file's original date, so it only builds manifests for new deliveries and doesn't rebuild old ones. It skips any file B&M is still uploading, and it remembers the server's identity, refusing to connect if that ever changes.
+
+The SFTP password is saved only on the PC, never on GitHub. The first step is a one-off search to find which folder on the server holds the delivery files; that folder then gets set in the script.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.

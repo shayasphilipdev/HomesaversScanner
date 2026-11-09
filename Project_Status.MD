@@ -631,6 +631,34 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-09 — Delivery manifest input moved from U: to B&M's SFTP
+
+At the user's request `manifest-generator.py` now downloads HSVMAN*.csv
+from B&M's SFTP (`93.107.17.189:2222`, user `bandm`) instead of reading
+the U: drive. Behaviour otherwise unchanged:
+- Downloads into `C:\Homesavers\manifest-inbound`, restoring each file's
+  **server mtime**, so the existing `--days` window (default 2) still means
+  delivery time. Without that, the first download would have made the
+  whole SFTP history look like "today" and rebuilt every old manifest.
+- Only files inside the window (or all with `--all`), not already present
+  at the same size, and not modified in the last 120 s (still uploading).
+  Downloads go to `.part` then rename, so a dropped transfer never leaves
+  a half file that `*.csv` would pick up.
+- Password in `C:\Homesavers\.manifest-sftp-password` (PC only, never in
+  the repo). Host key pinned on first connect
+  (`C:\Homesavers\manifest-sftp-known_hosts`); a changed key is refused.
+- `--sftp-list` walks the server (3 levels) and reports which folders hold
+  HSVMAN files. **`SFTP_REMOTE_DIR` is still empty** — the script refuses
+  to run until it's set from that output.
+- No password file = old U: behaviour. ItemMaster and output folders also
+  fall back to `\\192.168.1.205\Buying Data\...` when Y: isn't mapped (the
+  output UNC only if it already exists).
+- `setup-new-pc.ps1` installs `paramiko` and checks 93.107.17.189:2222.
+- Tested in the cloud session against a fake SFTP server (window,
+  settle-skip, mtime kept, no re-download, size-change re-download,
+  `--all`, main() wiring, U: fallback, missing-dir error). Real login not
+  tested — the password stays on the PC.
+
 ### 2026-11-09 — Phase 4 complete: CN-code master live again; source-app auth concern
 
 `cn_code_master` reloaded on the rebuilt PC: 43,061 codes (dry run, import

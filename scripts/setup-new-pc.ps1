@@ -72,12 +72,15 @@ if ($py) {
 # 2. Python packages
 if ($py) {
   if (-not $NoInstall) {
-    Write-Host "Installing/updating requests, pandas, openpyxl..."
-    & $py -m pip install --quiet --upgrade requests pandas openpyxl 2>&1 | Out-Host
+    Write-Host "Installing/updating requests, pandas, openpyxl, paramiko..."
+    & $py -m pip install --quiet --upgrade requests pandas openpyxl paramiko 2>&1 | Out-Host
   }
   & $py -c "import requests, pandas, openpyxl" 2>$null
   if ($LASTEXITCODE -eq 0) { Add-Result 'PASS' 'Python packages' 'requests, pandas, openpyxl import OK' }
   else { Add-Result 'FAIL' 'Python packages' "Missing. Run: `"$py`" -m pip install requests pandas openpyxl" }
+  & $py -c "import paramiko" 2>$null
+  if ($LASTEXITCODE -eq 0) { Add-Result 'PASS' 'SFTP package' 'paramiko import OK (manifest SFTP input)' }
+  else { Add-Result 'WARN' 'SFTP package' "paramiko missing - needed for Phase 5. Run: `"$py`" -m pip install paramiko" }
 }
 
 # 3. Microsoft Excel - sync-bm-daily.ps1 opens the B&M file through Excel itself
@@ -121,11 +124,17 @@ foreach ($s in $Sources) {
 
 # 7. Later phases: manifest drives and the CN-code app
 $manifestIn  = 'U:\Finance Dept-Shared Folder\B&M - Homesavers Shared Database\Live\Inbound file\Delivery Manifest'
-$manifestOut = 'Y:\Supply Chain\SUPPLY CHAIN 2026\STORE MANIFEST'
-if (Test-Path -LiteralPath $manifestIn)  { Add-Result 'PASS' 'Manifest input (U:)' $manifestIn }
-else { Add-Result 'WARN' 'Manifest input (U:)' "Not reachable - map the U: drive (Finance shared folder) before Phase 5" }
-if (Test-Path -LiteralPath $manifestOut) { Add-Result 'PASS' 'Manifest output (Y:)' $manifestOut }
-else { Add-Result 'WARN' 'Manifest output (Y:)' 'Not reachable - map Y: to \\192.168.1.205\Buying Data before Phase 5' }
+$manifestOuts = 'Y:\Supply Chain\SUPPLY CHAIN 2026\STORE MANIFEST',
+                '\\192.168.1.205\Buying Data\Supply Chain\SUPPLY CHAIN 2026\STORE MANIFEST'
+if (Test-Path "$Home_\.manifest-sftp-password") {
+  $sftp = Test-NetConnection -ComputerName 93.107.17.189 -Port 2222 -WarningAction SilentlyContinue
+  if ($sftp.TcpTestSucceeded) { Add-Result 'PASS' 'Manifest input (SFTP)' '93.107.17.189:2222 reachable; password file present' }
+  else { Add-Result 'WARN' 'Manifest input (SFTP)' '93.107.17.189:2222 not reachable from this PC - check the firewall / ask B&M to allow this office IP' }
+} elseif (Test-Path -LiteralPath $manifestIn) { Add-Result 'PASS' 'Manifest input (U:)' $manifestIn }
+else { Add-Result 'WARN' 'Manifest input' "Neither the SFTP password file ($Home_\.manifest-sftp-password) nor U: is set up - needed for Phase 5" }
+$outFound = $manifestOuts | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+if ($outFound) { Add-Result 'PASS' 'Manifest output' $outFound }
+else { Add-Result 'WARN' 'Manifest output' 'Not reachable - map Y: to \\192.168.1.205\Buying Data before Phase 5' }
 
 $cn = Test-NetConnection -ComputerName 86.43.71.253 -Port 4000 -WarningAction SilentlyContinue
 if ($cn.TcpTestSucceeded) { Add-Result 'PASS' 'CN-code app' '86.43.71.253:4000 reachable' }

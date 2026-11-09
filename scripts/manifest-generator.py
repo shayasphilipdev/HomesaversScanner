@@ -10,24 +10,32 @@ manifest that matches the agreed sample:
 Reads only (no database). All work is local on the back-office PC, like the sync jobs.
 
 Folders:
-    INPUT       U:\\...\\Live\\Inbound file\\Delivery Manifest   (HSVMAN*.csv)
-    ITEMMASTER  Y:\\...\\ProductMaster\\2026                     (latest ItemMaster*.xlsx)
-    OUTPUT      Y:\\Supply Chain\\SUPPLY CHAIN 2026\\STORE MANIFEST   (Manifest- <Load> - <Trailer>.xlsx)
+    INPUT       SFTP 93.107.17.189:2222 -> C:\\Homesavers\\manifest-inbound   (HSVMAN*.csv)
+                (falls back to U:\\...\\Live\\Inbound file\\Delivery Manifest when
+                 C:\\Homesavers\\.manifest-sftp-password does not exist)
+    ITEMMASTER  Y:\\...\\ProductMaster\\2026, else the same folder by UNC path   (latest ItemMaster*.xlsx)
+    OUTPUT      Y:\\Supply Chain\\SUPPLY CHAIN 2026\\STORE MANIFEST, else by UNC path if that exists
 
 Run:
     py manifest-generator.py                 # process every NEW HSVMAN (output not already present)
     py manifest-generator.py --dry-run       # build the newest one to a local preview folder, no Y: write
     py manifest-generator.py --file "<path>" # force-process one HSVMAN file
+    py manifest-generator.py --sftp-list     # show which SFTP folders hold HSVMAN files (changes nothing)
 """
 from __future__ import annotations
 
 import argparse
+import base64
 import csv
 import datetime as dt
 import glob
+import hashlib
 import os
+import posixpath
 import re
+import stat
 import sys
+import time
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -35,9 +43,24 @@ from openpyxl.utils import get_column_letter
 
 # ── Folders ─────────────────────────────────────────────────────────────────
 INPUT_DIR      = r"U:\Finance Dept-Shared Folder\B&M - Homesavers Shared Database\Live\Inbound file\Delivery Manifest"
-ITEMMASTER_DIR = r"Y:\Supply Chain & Buying - Shared\Data\VRSDAILYDATADUMP\ProductMaster\2026"
-OUTPUT_DIR     = r"Y:\Supply Chain\SUPPLY CHAIN 2026\STORE MANIFEST"
+# Y: is \\192.168.1.205\Buying Data on the office PCs. The UNC forms work when
+# no drive is mapped (a scheduled task running whether logged on or not). The
+# output UNC is only used if that folder already exists - never created blind.
+ITEMMASTER_DIRS = [r"Y:\Supply Chain & Buying - Shared\Data\VRSDAILYDATADUMP\ProductMaster\2026",
+                   r"\\192.168.1.205\Buying Data\Supply Chain & Buying - Shared\Data\VRSDAILYDATADUMP\ProductMaster\2026"]
+OUTPUT_DIRS     = [r"Y:\Supply Chain\SUPPLY CHAIN 2026\STORE MANIFEST",
+                   r"\\192.168.1.205\Buying Data\Supply Chain\SUPPLY CHAIN 2026\STORE MANIFEST"]
 PREVIEW_DIR    = r"C:\Homesavers\manifest-preview"
+
+# B&M's SFTP drop for the HSVMAN files. Used whenever the password file exists.
+SFTP_HOST          = "93.107.17.189"
+SFTP_PORT          = 2222
+SFTP_USER          = "bandm"
+SFTP_REMOTE_DIR    = ""   # set once --sftp-list has shown where the HSVMAN files live
+SFTP_PASSWORD_FILE = r"C:\Homesavers\.manifest-sftp-password"
+SFTP_KNOWN_HOSTS   = r"C:\Homesavers\manifest-sftp-known_hosts"
+SFTP_INBOUND_DIR   = r"C:\Homesavers\manifest-inbound"
+SFTP_SETTLE_SECS   = 120  # skip files modified this recently: B&M may still be uploading them
 LOG_FILE       = r"C:\Homesavers\logs\manifest-generator.log"
 
 # Run reporting — same pipeline as the Alt-Barcode / Prices syncs, so manifest
@@ -225,6 +248,113 @@ def load_itemmaster_lookup(path):
 def latest(pattern_dir, pattern):
     files = glob.glob(os.path.join(pattern_dir, pattern))
     return max(files, key=os.path.getmtime) if files else None
+
+
+def first_existing(paths):
+    return next((p for p in paths if os.path.isdir(p)), None)
+
+
+# ── SFTP inbound ────────────────────────────────────────────────────────────
+
+def _is_hsvman(name):
+    u = name.upper()
+    return u.startswith("HSVMAN") and u.endswith(".CSV")
+
+
+def sftp_connect():
+    """Password login, with the server's host key pinned on first use: later
+    connections are refused if the key changes, so nobody can impersonate it."""
+    try:
+        import paramiko
+    except ImportError:
+        log(f'paramiko is not installed. Run:  "{sys.executable}" -m pip install paramiko', "ERROR")
+        sys.exit(1)
+    with open(SFTP_PASSWORD_FILE, encoding="utf-8") as f:
+        password = f.read().strip()
+    client = paramiko.SSHClient()
+    first_use = not os.path.exists(SFTP_KNOWN_HOSTS)
+    if first_use:
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    else:
+        client.load_host_keys(SFTP_KNOWN_HOSTS)
+        client.set_missing_host_key_policy(paramiko.RejectPolicy())
+    try:
+        client.connect(SFTP_HOST, port=SFTP_PORT, username=SFTP_USER, password=password,
+                       timeout=30, banner_timeout=30, auth_timeout=30,
+                       allow_agent=False, look_for_keys=False)
+    except paramiko.BadHostKeyException:
+        log(f"SFTP host key for {SFTP_HOST} has CHANGED - refusing to connect. If B&M confirm they "
+            f"changed their server, delete {SFTP_KNOWN_HOSTS} and run again.", "ERROR")
+        raise
+    if first_use:
+        key = client.get_transport().get_remote_server_key()
+        client.save_host_keys(SFTP_KNOWN_HOSTS)
+        fp = base64.b64encode(hashlib.sha256(key.asbytes()).digest()).decode().rstrip("=")
+        log(f"SFTP host key saved on first connect: {key.get_name()} SHA256:{fp}")
+    return client, client.open_sftp()
+
+
+def sftp_list(start, max_depth=3, max_dirs=300):
+    """Walk the SFTP tree and report which folders hold HSVMAN files."""
+    client, sftp = sftp_connect()
+    try:
+        log(f"SFTP connected as {SFTP_USER}@{SFTP_HOST}:{SFTP_PORT}; home = {sftp.normalize('.')}")
+        queue, visited, found = [(start, 0)], 0, []
+        while queue and visited < max_dirs:
+            path, depth = queue.pop(0)
+            visited += 1
+            try:
+                entries = sftp.listdir_attr(path)
+            except IOError as e:
+                log(f"  cannot list {path}: {e}", "WARN"); continue
+            hsv = [a for a in entries if not stat.S_ISDIR(a.st_mode) and _is_hsvman(a.filename)]
+            if depth == 0:
+                log("Top level: " + ", ".join(sorted(a.filename + ("/" if stat.S_ISDIR(a.st_mode) else "")
+                                                      for a in entries))[:2000])
+            if hsv:
+                newest = max(hsv, key=lambda a: a.st_mtime)
+                found.append(path)
+                log(f"  {path}: {len(hsv)} HSVMAN file(s), newest {newest.filename} "
+                    f"({dt.datetime.fromtimestamp(newest.st_mtime):%Y-%m-%d %H:%M})")
+            if depth < max_depth:
+                queue += [(posixpath.join(path, a.filename), depth + 1)
+                          for a in entries if stat.S_ISDIR(a.st_mode)]
+        if not found:
+            log(f"No HSVMAN files found within {max_depth} folder levels of {start}.", "WARN")
+    finally:
+        sftp.close(); client.close()
+
+
+def sftp_fetch(remote_dir, days, take_all):
+    """Download new HSVMAN files into SFTP_INBOUND_DIR, keeping each file's
+    server timestamp so the --days window means delivery time, not download time."""
+    os.makedirs(SFTP_INBOUND_DIR, exist_ok=True)
+    cutoff = dt.date.today() - dt.timedelta(days=max(0, days - 1))
+    cutoff_ts = dt.datetime.combine(cutoff, dt.time()).timestamp()
+    now = time.time()
+    client, sftp = sftp_connect()
+    got = 0
+    try:
+        for a in sftp.listdir_attr(remote_dir):
+            if stat.S_ISDIR(a.st_mode) or not _is_hsvman(a.filename):
+                continue
+            if not take_all and a.st_mtime < cutoff_ts:
+                continue
+            if now - a.st_mtime < SFTP_SETTLE_SECS:
+                log(f"SFTP: {a.filename} modified under {SFTP_SETTLE_SECS}s ago - leaving it for the next run")
+                continue
+            local = os.path.join(SFTP_INBOUND_DIR, a.filename)
+            if os.path.exists(local) and os.path.getsize(local) == a.st_size:
+                continue
+            tmp = local + ".part"
+            sftp.get(posixpath.join(remote_dir, a.filename), tmp)
+            os.replace(tmp, local)
+            os.utime(local, (a.st_mtime, a.st_mtime))
+            got += 1
+            log(f"SFTP: downloaded {a.filename} ({a.st_size:,} bytes)")
+    finally:
+        sftp.close(); client.close()
+    log(f"SFTP: {got} new HSVMAN file(s) from {remote_dir}")
 
 
 # ── Workbook building ───────────────────────────────────────────────────────
@@ -473,12 +603,23 @@ def main():
     ap.add_argument("--file", help="Force-process one HSVMAN file path.")
     ap.add_argument("--days", type=int, default=2, help="Only consider HSVMAN files from the last N days (default 2 = yesterday+today).")
     ap.add_argument("--all", action="store_true", help="Ignore the day window (process every HSVMAN; full backfill).")
+    ap.add_argument("--sftp-list", nargs="?", const=".", metavar="PATH",
+                    help="List which SFTP folders hold HSVMAN files, then exit. Changes nothing.")
+    ap.add_argument("--sftp-dir", help="Override SFTP_REMOTE_DIR for this run.")
     args = ap.parse_args()
 
     log("=== Manifest generator starting ===")
-    im_path = latest(ITEMMASTER_DIR, "ItemMaster*.xlsx")
+    use_sftp = os.path.exists(SFTP_PASSWORD_FILE)
+    if args.sftp_list is not None:
+        if not use_sftp:
+            log(f"No SFTP password file at {SFTP_PASSWORD_FILE}", "ERROR"); sys.exit(1)
+        sftp_list(args.sftp_list)
+        log("=== Manifest generator finished ==="); return
+
+    itemmaster_dir = first_existing(ITEMMASTER_DIRS)
+    im_path = latest(itemmaster_dir, "ItemMaster*.xlsx") if itemmaster_dir else None
     if not im_path:
-        log(f"No ItemMaster found in {ITEMMASTER_DIR}", "ERROR"); sys.exit(1)
+        log(f"No ItemMaster found in any of {ITEMMASTER_DIRS}", "ERROR"); sys.exit(1)
 
     def get_lookup():
         log(f"ItemMaster: {os.path.basename(im_path)}")
@@ -489,14 +630,37 @@ def main():
         log(f"ItemMaster lookup rows: {len(lk):,}")
         return lk
 
-    out_dir = PREVIEW_DIR if args.dry_run else OUTPUT_DIR
     report  = not args.dry_run          # only live runs show in Settings -> Data Sync
+    if args.dry_run:
+        out_dir = PREVIEW_DIR
+    else:
+        out_dir = first_existing(OUTPUT_DIRS)
+        if not out_dir:
+            log(f"Output folder not reachable: {OUTPUT_DIRS[0]} (map Y: to \\\\192.168.1.205\\Buying Data)", "ERROR")
+            sys.exit(1)
 
     if args.file:
         process_file(args.file, get_lookup(), out_dir, report=report)
         log("=== Manifest generator finished ==="); return
 
-    files = glob.glob(os.path.join(INPUT_DIR, "HSVMAN*.csv")) + glob.glob(os.path.join(INPUT_DIR, "HSVMAN*.CSV"))
+    input_dir = INPUT_DIR
+    if use_sftp:
+        remote_dir = args.sftp_dir or SFTP_REMOTE_DIR
+        if not remote_dir:
+            log("SFTP_REMOTE_DIR is not set yet - run with --sftp-list to find the HSVMAN folder.", "ERROR")
+            sys.exit(1)
+        try:
+            sftp_fetch(remote_dir, args.days, args.all)
+        except Exception as e:
+            log(f"SFTP fetch failed: {e}", "ERROR")
+            if report:
+                record_run(file_name="SFTP fetch", file_size=None, imported=0, skipped=0,
+                           status="error", message=f"SFTP fetch failed: {e}"[:300], started_at=None)
+            sys.exit(1)
+        input_dir = SFTP_INBOUND_DIR
+    log(f"Input: {input_dir}")
+
+    files = glob.glob(os.path.join(input_dir, "HSVMAN*.csv")) + glob.glob(os.path.join(input_dir, "HSVMAN*.CSV"))
     files = sorted(set(files), key=os.path.getmtime)
     if not args.all:
         cutoff = dt.date.today() - dt.timedelta(days=max(0, args.days - 1))

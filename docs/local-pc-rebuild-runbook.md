@@ -96,7 +96,7 @@ show the exact shape each config file needs — copy and fill in.
     manifest ItemMaster folders — see `README-sync-products.md` for the
     default path and the known "`Y:` not mapped under the task's account"
     gotcha.
-  - `U:` mapped drive (delivery manifest CSV inbox) — see §4.5.
+  - B&M's SFTP server `93.107.17.189:2222` (delivery manifest CSV inbox, replaced `U:` on 2026-11-09) — see §4.5.
   - `\\192.168.1.205\Buying Data\...` (B&M Product File, UNC not mapped
     drive — `sync-bm-daily.ps1` deliberately uses the UNC path so it still
     resolves for a task running "whether logged on or not", where per-user
@@ -179,10 +179,17 @@ show the exact shape each config file needs — copy and fill in.
 
 ### 4.5 Delivery manifest
 - **Script**: `scripts/manifest-generator.py`
-- **Reads**: new `HSVMAN*.csv` files from
-  `U:\Finance Dept-Shared Folder\B&M - Homesavers Shared Database\Live\Inbound file\Delivery Manifest`,
-  looks up Group/Subgroup/Product ID from the latest ItemMaster (same `Y:`
-  folder as §4.1) by Short Code, writes a formatted Excel workbook.
+- **Reads**: new `HSVMAN*.csv` files from B&M's SFTP server
+  (`93.107.17.189:2222`, user `bandm`, folder `SFTP_REMOTE_DIR` in the
+  script), downloaded into `C:\Homesavers\manifest-inbound` with their
+  server timestamps kept. Password: `C:\Homesavers\.manifest-sftp-password`
+  (never in the repo). Host key pinned on first connect in
+  `C:\Homesavers\manifest-sftp-known_hosts`; a changed key is refused.
+  Needs the `paramiko` package. If the password file is absent it falls
+  back to the old `U:\Finance Dept-Shared Folder\B&M - Homesavers Shared Database\Live\Inbound file\Delivery Manifest`
+  (switched to SFTP 2026-11-09). Looks up Group/Subgroup/Product ID from
+  the latest ItemMaster (`Y:` folder as §4.1, or the same folder by UNC
+  path) by Short Code, writes a formatted Excel workbook.
 - **Writes**: `Y:\Supply Chain\SUPPLY CHAIN 2026\STORE MANIFEST\Manifest-
   <Load> - <Trailer>.xlsx` (changed 2026-10-30, from the older
   `Y:\Supply Chain\012 - Manifest\2026`).
