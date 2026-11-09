@@ -7,10 +7,19 @@
 Set fso = CreateObject("Scripting.FileSystemObject")
 scriptDir = fso.GetParentFolderName(WScript.ScriptFullName)
 
-pyExe = "C:\Users\shayas\AppData\Local\Programs\Python\Python313\python.exe"
+Set sh = CreateObject("WScript.Shell")
+
+' Same lookup order as run_sync.bat: the path setup-new-pc.ps1 recorded first.
+pyExe = ""
+If fso.FileExists("C:\Homesavers\python-path.txt") Then
+  Set ts = fso.OpenTextFile("C:\Homesavers\python-path.txt", 1)
+  If Not ts.AtEndOfStream Then pyExe = Trim(ts.ReadLine)
+  ts.Close
+End If
+If pyExe = "" Or Not fso.FileExists(pyExe) Then pyExe = sh.ExpandEnvironmentStrings("%LOCALAPPDATA%\Programs\Python\Python313\python.exe")
+If Not fso.FileExists(pyExe) Then pyExe = "C:\Users\shayas\AppData\Local\Programs\Python\Python313\python.exe"
 If Not fso.FileExists(pyExe) Then pyExe = "python"
 
-Set sh = CreateObject("WScript.Shell")
 sh.Run """" & pyExe & """ """ & scriptDir & "\manifest-generator.py""", 0, True
 Set sh = Nothing
 Set fso = Nothing

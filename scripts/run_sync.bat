@@ -16,8 +16,22 @@ setlocal
 :: install has requests + pandas + openpyxl and is AV-safe.
 :: ============================================================
 
+:: Python: the path setup-new-pc.ps1 recorded, then the usual install spots,
+:: then whatever launcher is on PATH. The old PC's hard-coded per-user path
+:: alone broke on the rebuilt PC (different profile, no "py" on PATH).
+set PYEXE=
+if exist "C:\Homesavers\python-path.txt" set /p PYEXE=<"C:\Homesavers\python-path.txt"
+if defined PYEXE if exist "%PYEXE%" goto have_py
+set PYEXE=%LOCALAPPDATA%\Programs\Python\Python313\python.exe
+if exist "%PYEXE%" goto have_py
 set PYEXE=C:\Users\shayas\AppData\Local\Programs\Python\Python313\python.exe
-if not exist "%PYEXE%" set PYEXE=py
+if exist "%PYEXE%" goto have_py
+set PYEXE=%ProgramFiles%\Python313\python.exe
+if exist "%PYEXE%" goto have_py
+set PYEXE=py
+where py >nul 2>&1 && goto have_py
+set PYEXE=python
+:have_py
 set SCRIPTS_DIR=%~dp0
 
 set JOB=%1
@@ -26,7 +40,7 @@ if "%JOB%"=="" (
     exit /b 1
 )
 
-echo [%DATE% %TIME%] Starting sync: %JOB%
+echo [%DATE% %TIME%] Starting sync: %JOB% (Python: %PYEXE%)
 
 if /i "%JOB%"=="prices"       goto run_prices
 if /i "%JOB%"=="alt-barcodes" goto run_alt_barcodes

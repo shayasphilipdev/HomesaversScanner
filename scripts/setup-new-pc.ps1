@@ -56,6 +56,9 @@ if (-not $py -and -not $NoInstall -and (Get-Command winget -ErrorAction Silently
 if ($py) {
   $ver = & $py --version 2>&1
   Add-Result 'PASS' 'Python' "$ver at $py"
+  # run_sync.bat and run-manifest.vbs read this first, so the jobs use exactly this Python.
+  if (-not (Test-Path $Home_)) { New-Item -ItemType Directory -Path $Home_ -Force | Out-Null }
+  Set-Content -Path "$Home_\python-path.txt" -Value $py -NoNewline -Encoding ascii
   if ($py -ne $PyKnown) {
     $hasPy = [bool](Get-Command py -ErrorAction SilentlyContinue)
     $hasPython = [bool](Get-Command python -ErrorAction SilentlyContinue)

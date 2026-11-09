@@ -408,3 +408,13 @@ Two problems found and fixed on the way:
 One risk: the old PC's copies of those two scripts may have had small edits that were never saved to GitHub. The GitHub copies are all we have now. If B&M or CN-codes behave differently from before, check that first.
 
 Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## Phase 3 first try: the uploads couldn't find Python — fixed
+
+The first Item Master upload on the new PC didn't run at all. The script was still looking for Python where it lived on the old PC (under the old Windows user's folder), and the new PC has it somewhere else. Fixed: the setup script now writes down exactly where Python is, and the upload and manifest scripts use that. The upload's first line now also shows which Python it's using, so this is easy to spot if it ever happens again.
+
+For reference, before Phase 3 every job's last good run was 28 Oct, so stores have been scanning against 12-day-old prices and barcodes.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.

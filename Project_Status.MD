@@ -631,6 +631,21 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-09 (Phase 3, first attempt) — jobs couldn't find Python on the rebuilt PC; fixed
+
+First manual `run_sync.bat prices` on the new PC printed `'"py"' is not
+recognized` and ran nothing: the wrapper only tried the old PC's per-user
+path (`C:\Users\shayas\...\Python313`) then `py`, and the new PC has
+neither. `setup-new-pc.ps1` now records the Python it found in
+`C:\Homesavers\python-path.txt`; `run_sync.bat` and `run-manifest.vbs`
+read that first, then try `%LOCALAPPDATA%`, the old path, `Program Files`,
+`py`, `python`. `run_sync.bat` now prints which Python it uses on the
+"Starting sync" line. Added `.gitattributes` pinning `*.bat`/`*.cmd` to
+CRLF (the repo stored `run_sync.bat` with LF, which cmd can misparse
+around labels/`goto`). Baseline before Phase 3: every sync's last good run
+was 2026-10-28 (prices 101,964 rows, alt-barcodes 214,603, B&M 14,515,
+CN codes 43,054, manifest 1,489).
+
 ### 2026-11-09 (Phase 1 started) — `setup-new-pc.ps1`; deploy now ships the B&M/CN scripts; Excel prerequisite corrected
 
 - **New `scripts/setup-new-pc.ps1`** automates Phase 1 of the restoration
