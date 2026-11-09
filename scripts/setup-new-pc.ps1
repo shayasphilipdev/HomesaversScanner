@@ -59,12 +59,7 @@ if ($py) {
   # run_sync.bat and run-manifest.vbs read this first, so the jobs use exactly this Python.
   if (-not (Test-Path $Home_)) { New-Item -ItemType Directory -Path $Home_ -Force | Out-Null }
   Set-Content -Path "$Home_\python-path.txt" -Value $py -NoNewline -Encoding ascii
-  if ($py -ne $PyKnown) {
-    $hasPy = [bool](Get-Command py -ErrorAction SilentlyContinue)
-    $hasPython = [bool](Get-Command python -ErrorAction SilentlyContinue)
-    if ($hasPy -and $hasPython) { Add-Result 'PASS' 'Python launcher' "run_sync.bat falls back to 'py', run-manifest.vbs to 'python' - both found" }
-    else { Add-Result 'WARN' 'Python launcher' "'py'/'python' not both on PATH yet - open a NEW PowerShell window and re-run; if it persists, reinstall Python with 'Add python.exe to PATH' ticked" }
-  }
+  Add-Result 'PASS' 'Python for jobs' "recorded in $Home_\python-path.txt (run_sync.bat / run-manifest.vbs use it)"
 } else {
   Add-Result 'FAIL' 'Python' 'Not installed. Install Python 3.13 from python.org (tick "Add python.exe to PATH"), then re-run this script.'
 }
@@ -73,7 +68,10 @@ if ($py) {
 if ($py) {
   if (-not $NoInstall) {
     Write-Host "Installing/updating requests, pandas, openpyxl, paramiko..."
-    & $py -m pip install --quiet --upgrade requests pandas openpyxl paramiko 2>&1 | Out-Host
+    # pip writes notices to stderr; under PowerShell 5.1 that shows as a red
+    # NativeCommandError even on success, so print it as plain text instead.
+    & $py -m pip install --quiet --upgrade --no-warn-script-location --disable-pip-version-check requests pandas openpyxl paramiko 2>&1 |
+      ForEach-Object { Write-Host "  $_" }
   }
   & $py -c "import requests, pandas, openpyxl" 2>$null
   if ($LASTEXITCODE -eq 0) { Add-Result 'PASS' 'Python packages' 'requests, pandas, openpyxl import OK' }
@@ -160,4 +158,5 @@ if ($fails) {
   Write-Host "$fails item(s) FAILED - fix these and re-run before Phase 3." -ForegroundColor Red
   exit 1
 }
-Write-Host 'Phase 1 done for the urgent uploads. Next: Phase 2 (sync secret).' -ForegroundColor Green
+if (Test-Path "$Home_\.sync-secret") { Write-Host 'No FAILs: the PC is ready to run the syncs.' -ForegroundColor Green }
+else { Write-Host 'Phase 1 done for the urgent uploads. Next: Phase 2 (sync secret).' -ForegroundColor Green }

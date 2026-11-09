@@ -654,6 +654,15 @@ the U: drive. Behaviour otherwise unchanged:
   fall back to `\\192.168.1.205\Buying Data\...` when Y: isn't mapped (the
   output UNC only if it already exists).
 - `setup-new-pc.ps1` installs `paramiko` and checks 93.107.17.189:2222.
+- **First check on the new PC: port 2222 NOT reachable** (TCP connect
+  fails), so the SFTP route is blocked by the office firewall or by B&M
+  allowlisting source IPs; with the user to resolve with B&M / IT. The
+  output UNC `\\192.168.1.205\Buying Data\Supply Chain\SUPPLY CHAIN 2026\STORE MANIFEST`
+  was confirmed to exist (Y: isn't mapped on the new PC), so the output side
+  works without Y:. Same run showed today's ALT Barcode file (15:57) had
+  landed after the 15:48 alt-barcodes upload.
+- Setup script tidied: the "Python launcher" WARN is gone (jobs use
+  `python-path.txt`), pip's notices no longer show as red errors.
 - Tested in the cloud session against a fake SFTP server (window,
   settle-skip, mtime kept, no re-download, size-change re-download,
   `--all`, main() wiring, U: fallback, missing-dir error). Real login not
