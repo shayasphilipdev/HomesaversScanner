@@ -631,6 +631,41 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-09 — Text typed before barcodes and RB2–RB9 stickers: records fixed, scanner fixed
+
+User approved the other session's open question. Done for existing records
+(live + archive) and for new scans.
+
+**Rule (one rule everywhere):** only when a scan doesn't resolve as typed,
+try (a) reduced stickers `RB` + a 1–2 digit tier + real code —
+`RB208-03-085-00C` → `08-03-085-00C`, `RB25163339` → `163339` (two-digit
+tiers exist: `RB12…`, `RB15…`, `RB29…`; the client's `RB1` strip gets those
+wrong); (b) anything in front of a barcode — keyboard text (`Mm`, `I'm`,
+`The`), the `]C1` GS1 symbology prefix, stray symbols (`À`, `⁰`, `£`, `@`) —
+only if what's left is a 6–16 digit barcode or a `NN-NN-NNN-NN[A-Z]` code;
+never if the scan contains `/`. A candidate is kept only if it resolves
+through the normal `resolveScan()` chain (incl. UPC-A check-digit
+recovery). `product_code` keeps the raw scan; `barcode_no` gets the real
+code; RB stickers also get `details.reduced_barcode` (same as RB1).
+
+- **API** (`functions/api/[[route]].js`): `prefixedScanCandidates()` +
+  `resolvePrefixedScan()`; the Dept Scan save path (`resolve_barcode`) falls
+  back to it on a miss, using the RAW `product_code`. Plain all-digit misses
+  cost no extra lookups. `API_REVISION` = `2026-11-09-prefixed-scan-fallback`.
+  Unit-tested against a fake DB (both stripping rules, RB tiers, ]C1,
+  superscripts, product codes, URLs excluded, label codes stay misses).
+- **Live records:** 219 fixed (198 J text-prefixed, 20 J RB stickers, 1
+  pending Wrong Price RB sticker); every J got its department; no sticker
+  matched two products.
+- **Archive (D1):** 578 J rows fixed (572 distinct raw scans, 109 of them
+  RB stickers). Done by loading the 572 resolved mappings into a temp table
+  `tmp_prefixed_map` (count + checksum verified against Supabase: 572 /
+  20573), one `UPDATE … FROM` keyed on the exact raw scan, then dropped.
+  Label codes (`B6…`, `K2…`, `PS…`, `NSAD…`, `LAPS…`) all stayed unmatched.
+  D1 reads today ≈ 2.1M of 5M (three full scans).
+- Still unmatched by design: real non-products (labels, misreads, URLs,
+  junk text) — they stay blank.
+
 ### 2026-11-09 — Records re-checked against the refreshed master; Phase 6 on hold
 
 **Phase 6 (emails) on hold**: the user is waiting for a Brevo password-reset

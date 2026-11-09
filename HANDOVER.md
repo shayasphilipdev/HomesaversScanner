@@ -547,3 +547,17 @@ You asked for every Department Check and every pending record to be checked agai
 The report emails are on hold until you get the Brevo reset email.
 
 Full write-up in `Project_Status.MD` §11.
+
+---
+
+## Text typed before barcodes and RB2–RB9 stickers: records and scanner fixed
+
+As you approved, two kinds of scans that used to come in blank are now handled:
+- **Reduced-price stickers starting `RB2` to `RB9`**, and ones with two digits after RB like `RB15…`. Before, only `RB1` was understood, and even that went wrong for the two-digit ones.
+- **Text or symbols in front of a barcode**, like `Mm5025970022918` or `I'm8006540818824`, or the scanner's own `]C1` prefix.
+
+**Records fixed:** 219 in the live records (all Department Checks except 1 Wrong Price) and 578 older Department Checks in the archive. Every Department Check got its department. The original scan is kept on each record, and stickers also show "Reduced Barcode", the same as RB1.
+
+**Scanner fixed:** new scans like these now come in with the right product straight away. It only uses the cleaned-up code when the scan doesn't match as typed and the cleaned code is a real product. Label codes and other junk still come in blank, as before.
+
+Pushed and merged to `main`; the website updates automatically. Full write-up in `Project_Status.MD` §11.

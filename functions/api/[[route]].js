@@ -150,7 +150,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-10-27-d1-writes-bulk-photo-delete'
+const API_REVISION   = '2026-11-09-prefixed-scan-fallback'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -273,6 +273,39 @@ async function resolveScan(db, rawBarcode) {
     price = p || null
   }
   return { ...alt, price, recovered_from: recoveredFrom }
+}
+
+// Codes a raw scan may really be, for scans that do not resolve as typed.
+// Each is only kept if it resolves (resolvePrefixedScan), so a wrong guess
+// costs a lookup, never a wrong product.
+//  - Reduced stickers: "RB" + a 1-2 digit tier + the real code. The client
+//    already strips "RB1"; this also covers RB2-RB9 and two-digit tiers
+//    (RB208-03-085-00C -> 08-03-085-00C, RB25163339 -> 163339).
+//  - Anything in front of a barcode: keyboard text ("Mm", "I'm", "The"),
+//    a "]C1" scanner symbology prefix, stray symbols. Only when what is left
+//    is a plain 6-16 digit barcode or a 2-2-3-2 product code.
+function prefixedScanCandidates(raw) {
+  const s = String(raw || '').trim()
+  const rb = /^RB([0-9])(.+)$/i.exec(s)
+  if (rb) {
+    const out = [rb[2].trim()]
+    if (/^[0-9]/.test(rb[2]) && rb[2].length > 1) out.push(rb[2].slice(1).trim())
+    return out.filter(Boolean)
+  }
+  if (s.includes('/')) return []   // a scanned link, never a product
+  const rest = s.replace(/^\]C1/, '').replace(/^[^0-9]+/, '').trim()
+  if (rest && rest !== s && (/^[0-9]{6,16}$/.test(rest) || /^[0-9]{2}-[0-9]{2}-[0-9]{3}-[0-9]{2}[A-Z]?$/i.test(rest))) {
+    return [rest]
+  }
+  return []
+}
+
+async function resolvePrefixedScan(db, raw) {
+  for (const code of prefixedScanCandidates(raw)) {
+    const hit = await resolveScan(db, code)
+    if (hit) return { lookup: hit, code: hit.recovered_from ? hit.barcode_no : code }
+  }
+  return null
 }
 
 // When a record was actually scanned, as reported by the device.
@@ -5240,8 +5273,22 @@ export async function onRequest(context) {
         const scanned = String(body.resolve_code || body.product_code || '').trim()
         lookup = scanned ? await resolveScan(db, scanned) : null
         const recovered = lookup?.recovered_from && lookup.barcode_no ? lookup.barcode_no : null
+        // Not a product as scanned: try it without a reduced-sticker prefix or
+        // text typed in front of it. Uses the RAW scan, since the client's own
+        // "RB1" strip is wrong for two-digit tiers (RB12166871 is RB12 + 166871).
+        let normalized = null
+        if (!lookup) {
+          const p = await resolvePrefixedScan(db, body.product_code)
+          if (p) {
+            lookup = p.lookup
+            normalized = p.code
+            if (/^RB[0-9]/i.test(String(body.product_code).trim())) {
+              details = { ...details, reduced_barcode: String(body.product_code).trim() }
+            }
+          }
+        }
         enrich = {
-          barcode_no:      recovered || scanned || null,
+          barcode_no:      recovered || normalized || scanned || null,
           product_barcode: lookup?.ean_barcode   || null,
           item_name:       lookup?.item_name     || null,
           supl_id:         lookup?.supl_id       || null,
