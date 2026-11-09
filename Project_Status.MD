@@ -631,6 +631,25 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-09 — Phase 3 complete: the three urgent uploads are live again
+
+Run by hand on the rebuilt PC, each verified in `sync_runs` and the table
+itself:
+
+| Upload | File picked | Rows | vs 28 Oct |
+|---|---|---|---|
+| Item Master (prices) | `ItemMaster_2026_11_09 VRS.xlsx` | 101,980, all refreshed, 0 stale | +16 |
+| Alternate barcodes | `ALT Barcode Master_2026_11_05 VRS.xlsx` | 214,746, all refreshed, 0 stale (14,882 skipped, same as before) | +143 |
+| B&M Daily | `HomeSavers_20261109.xlsx` | 14,213, 0 skipped | −302 |
+
+Stores scan against current prices again after 12 days on 28 Oct data.
+B&M: the dry run at 16:12 saw only the 5 Nov file; today's file landed
+before the real run at 16:23, so the B&M export is running. The newest
+ALT Barcode file at 15:48 was still 5 Nov — re-run `alt-barcodes` later
+(safe, it upserts) and check the file name; if it stays at 5 Nov, the
+upstream ALT Barcode export needs checking. Excel COM confirmed working
+on the new PC. Not yet automated — Scheduled Tasks are Phase 8.
+
 ### 2026-11-09 (Phase 3, first attempt) — jobs couldn't find Python on the rebuilt PC; fixed
 
 First manual `run_sync.bat prices` on the new PC printed `'"py"' is not

@@ -418,3 +418,16 @@ The first Item Master upload on the new PC didn't run at all. The script was sti
 For reference, before Phase 3 every job's last good run was 28 Oct, so stores have been scanning against 12-day-old prices and barcodes.
 
 Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## Phase 3 done: today's prices, barcodes and B&M file are live
+
+All three urgent uploads ran by hand on the new PC, and each was checked in the database:
+- **Item Master:** today's file, 101,980 prices, all fresh.
+- **Alternate barcodes:** 214,746 barcodes, all fresh. The newest file available was from **5 Nov**, though. Run it again later today or tomorrow; if it still picks a 5 Nov file, whoever produces that export should check it.
+- **B&M Daily:** today's file, 14,213 products.
+
+Stores have been scanning against 28 Oct data for 12 days; they're now on today's prices. These still need running by hand each day until the scheduled tasks are rebuilt in Phase 8.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
