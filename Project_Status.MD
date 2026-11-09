@@ -631,6 +631,18 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-09 — Phase 5 complete: every delivery since 28 Oct has a manifest
+
+All 20 HSVMAN files on the SFTP server (29 Oct – 9 Nov) now have manifests
+in `...\HSVMAN FILES- MANIFEST\Store Manifest`, every one 100% matched
+against the Item Master with no rejections (verified in `sync_runs`):
+5, 6 and 9 Nov (13) were built one at a time with `--file` from the share
+(~1 min each — the ItemMaster reloads per file); 29 and 30 Oct (7) by the
+first SFTP run with `--days 12` (~4 s each, one ItemMaster load). That run
+also saved the 7 missing originals to the share; the other 13 were
+already there and matched in size. Day-to-day: the plain run (2-day
+window) only fetches and builds what's new. Scheduling is Phase 8.
+
 ### 2026-11-09 — Manifest job keeps the SFTP originals on the share
 
 At the user's request, every live manifest run now copies the HSVMAN files

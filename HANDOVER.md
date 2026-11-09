@@ -487,3 +487,13 @@ Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
 As you asked, every time the manifest job downloads delivery files from SFTP, it also saves the original files into `B:\Supply Chain\005 - Reports\04 - H1 Declaration Manifest\02 - Manifests - Homesavers\HSVMAN FILES- MANIFEST`. The copies keep their original dates. Files already in that folder are never overwritten. A dry run doesn't copy anything. If B: can't be reached, the manifests are still built and the log shows a warning.
 
 Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## Phase 5 done: every delivery since 28 Oct has a manifest
+
+All 20 deliveries on the SFTP server, from 29 Oct to today, now have manifests in the `Store Manifest` folder. Every one matched 100% against the Item Master. The original delivery files are all in the `HSVMAN FILES- MANIFEST` folder too.
+
+From now on, the normal run only picks up new deliveries. It'll run on its own once the scheduled tasks are set up in Phase 8.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
