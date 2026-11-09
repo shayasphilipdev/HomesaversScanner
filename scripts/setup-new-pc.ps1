@@ -121,18 +121,19 @@ foreach ($s in $Sources) {
 }
 
 # 7. Later phases: manifest drives and the CN-code app
-$manifestIn  = 'U:\Finance Dept-Shared Folder\B&M - Homesavers Shared Database\Live\Inbound file\Delivery Manifest'
-$manifestOuts = 'Y:\Supply Chain\SUPPLY CHAIN 2026\STORE MANIFEST',
-                '\\192.168.1.205\Buying Data\Supply Chain\SUPPLY CHAIN 2026\STORE MANIFEST'
-if (Test-Path "$Home_\.manifest-sftp-password") {
-  $sftp = Test-NetConnection -ComputerName 93.107.17.189 -Port 2222 -WarningAction SilentlyContinue
-  if ($sftp.TcpTestSucceeded) { Add-Result 'PASS' 'Manifest input (SFTP)' '93.107.17.189:2222 reachable; password file present' }
-  else { Add-Result 'WARN' 'Manifest input (SFTP)' '93.107.17.189:2222 not reachable from this PC - check the firewall / ask B&M to allow this office IP' }
-} elseif (Test-Path -LiteralPath $manifestIn) { Add-Result 'PASS' 'Manifest input (U:)' $manifestIn }
-else { Add-Result 'WARN' 'Manifest input' "Neither the SFTP password file ($Home_\.manifest-sftp-password) nor U: is set up - needed for Phase 5" }
-$outFound = $manifestOuts | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-if ($outFound) { Add-Result 'PASS' 'Manifest output' $outFound }
-else { Add-Result 'WARN' 'Manifest output' 'Not reachable - map Y: to \\192.168.1.205\Buying Data before Phase 5' }
+# Same folders as manifest-generator.py (B: on this PC = old Y: = \\192.168.1.205\Buying Data).
+$mf = 'Supply Chain\005 - Reports\04 - H1 Declaration Manifest\02 - Manifests - Homesavers\HSVMAN FILES- MANIFEST'
+$manifestIns = "\\192.168.1.205\Buying Data\$mf", "B:\$mf"
+$inFound = $manifestIns | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+if ($inFound) {
+  $hsv = Get-ChildItem -LiteralPath $inFound -Filter 'HSVMAN*.csv' -File -ErrorAction SilentlyContinue |
+         Sort-Object LastWriteTime -Descending | Select-Object -First 1
+  if ($hsv) { Add-Result 'PASS' 'Manifest input' "$inFound - newest $($hsv.Name), $($hsv.LastWriteTime.ToString('yyyy-MM-dd HH:mm'))" }
+  else { Add-Result 'WARN' 'Manifest input' "$inFound reachable but has no HSVMAN*.csv files yet" }
+} else { Add-Result 'WARN' 'Manifest input' "Not reachable: $($manifestIns[0])" }
+# The Store Manifest folder is created on first run; only its parent must exist.
+if ($inFound) { Add-Result 'PASS' 'Manifest output' "$inFound\Store Manifest" }
+else { Add-Result 'WARN' 'Manifest output' 'Parent folder not reachable (see Manifest input)' }
 
 $cn = Test-NetConnection -ComputerName 86.43.71.253 -Port 4000 -WarningAction SilentlyContinue
 if ($cn.TcpTestSucceeded) { Add-Result 'PASS' 'CN-code app' '86.43.71.253:4000 reachable' }

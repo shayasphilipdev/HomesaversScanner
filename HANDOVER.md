@@ -451,3 +451,13 @@ As you asked, the manifest script now downloads the delivery files directly from
 The SFTP password is saved only on the PC, never on GitHub. The first step is a one-off search to find which folder on the server holds the delivery files; that folder then gets set in the script.
 
 Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## Manifest: using the Buying Data share for now, SFTP on hold
+
+As you asked, the manifest script now reads the delivery files from `B:\Supply Chain\005 - Reports\04 - H1 Declaration Manifest\02 - Manifests - Homesavers\HSVMAN FILES- MANIFEST` and saves the manifests into its `Store Manifest` subfolder. It uses the share's network path first, so it will keep working when it's run as a scheduled task with no B: drive. The `Store Manifest` folder is created automatically the first time.
+
+The SFTP download is built and tested but switched off. To finish it, we need the SFTP server's internal address from the router's port-forwarding rule for 2222. The SFTP password is already saved on the PC.
+
+Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.

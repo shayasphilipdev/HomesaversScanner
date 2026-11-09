@@ -631,6 +631,29 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-09 — Manifest uses the Buying Data share for now; SFTP on hold
+
+The user put the SFTP route on hold (internal LAN address of the server
+still unknown) and gave interim folders. `B:` on the rebuilt PC is the old
+`Y:` (`\\192.168.1.205\Buying Data`):
+- **Input:** `...\Supply Chain\005 - Reports\04 - H1 Declaration Manifest\02 - Manifests - Homesavers\HSVMAN FILES- MANIFEST`
+- **Output:** that folder `\Store Manifest` (subfolder of the input; the
+  non-recursive `HSVMAN*.csv` glob never reads it back as input).
+- Every folder is tried by UNC first, then by drive letter, so a scheduled
+  task with no drive mapped still works. Output picks the first candidate
+  whose **parent** exists, so only the final `Store Manifest` folder is ever
+  created. U: removed from the script (lost in the attack).
+- SFTP code kept but gated by `SFTP_ENABLED = False`; the password file on
+  the PC no longer switches it on by itself. `--sftp-list` still works for
+  testing.
+- `setup-new-pc.ps1` now checks these folders and shows the newest HSVMAN
+  file. Runbook §4.3/§4.4 no longer claim the B&M/CN scripts are left out
+  of the deploy.
+- Tests (fake share + fake SFTP, 10 cases) pass, including: SFTP off reads
+  the share, existing manifests skipped, Store Manifest contents not read
+  as input, unreachable input/output stop with an error, nothing created
+  under a missing parent.
+
 ### 2026-11-09 — Delivery manifest input moved from U: to B&M's SFTP
 
 At the user's request `manifest-generator.py` now downloads HSVMAN*.csv

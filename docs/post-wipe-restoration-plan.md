@@ -125,23 +125,28 @@ Daily operational data, but it doesn't feed what staff see when scanning
 
 ## Phase 5 — Delivery manifest
 
-The delivery files (HSVMAN*.csv) now come from B&M's SFTP server
-(`93.107.17.189:2222`, user `bandm`) instead of the U: drive. The script
-downloads them into `C:\Homesavers\manifest-inbound`, keeping each file's
-original date, then works exactly as before.
+The old U: inbox was lost in the attack. For now the delivery files
+(HSVMAN*.csv) are read from, and manifests written to, the Buying Data
+share (`B:` on the new PC = the old `Y:` = `\\192.168.1.205\Buying Data`):
 
-1. Re-run `setup-new-pc.ps1` (installs the `paramiko` SFTP package).
-2. Save the SFTP password to `C:\Homesavers\.manifest-sftp-password`
-   (typed at a hidden prompt, so it never lands in PowerShell history).
-3. `py manifest-generator.py --sftp-list` (from `C:\Homesavers\scripts`)
-   — connects, saves the server's identity, and shows which folder holds
-   the HSVMAN files. Changes nothing. That folder then goes into
-   `SFTP_REMOTE_DIR` in the script.
-4. Dry run (`--dry-run`) builds the newest manifest into
-   `C:\Homesavers\manifest-preview` for checking.
-5. Confirm `Y:\Supply Chain\SUPPLY CHAIN 2026\STORE MANIFEST` is reachable
-   (map Y: to `\\192.168.1.205\Buying Data`; the script also tries that
-   UNC path if Y: isn't mapped), then run it for real.
+| | Folder |
+|---|---|
+| Input | `B:\Supply Chain\005 - Reports\04 - H1 Declaration Manifest\02 - Manifests - Homesavers\HSVMAN FILES- MANIFEST` |
+| Output | `...\HSVMAN FILES- MANIFEST\Store Manifest` (created on first run) |
+
+1. `git pull`, then re-run `setup-new-pc.ps1` — deploys the updated script
+   and shows the newest HSVMAN file it can see.
+2. Dry run: builds the newest manifest into `C:\Homesavers\manifest-preview`
+   for checking; writes nothing to the share.
+3. Live run: builds every delivery from the last 2 days that doesn't
+   already have a manifest in `Store Manifest`.
+
+**Pending — SFTP.** The script can also download straight from B&M's SFTP,
+but that server is inside the office and its public address
+(`93.107.17.189:2222`) doesn't loop back from inside. Once its internal
+LAN address is known (router `192.168.1.254`, port forwarding rule for
+2222), test with `--sftp-host <ip> --sftp-port <port> --sftp-list`, then
+it can be switched on. The SFTP password is already saved on the PC.
 
 ## Phase 6 — The 3 report emails
 

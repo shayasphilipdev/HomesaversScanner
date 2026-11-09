@@ -96,7 +96,7 @@ show the exact shape each config file needs — copy and fill in.
     manifest ItemMaster folders — see `README-sync-products.md` for the
     default path and the known "`Y:` not mapped under the task's account"
     gotcha.
-  - B&M's SFTP server `93.107.17.189:2222` (delivery manifest CSV inbox, replaced `U:` on 2026-11-09) — see §4.5.
+  - The manifest inbox on `\\192.168.1.205\Buying Data` (`B:`), which replaced the lost `U:` on 2026-11-09 — see §4.5.
   - `\\192.168.1.205\Buying Data\...` (B&M Product File, UNC not mapped
     drive — `sync-bm-daily.ps1` deliberately uses the UNC path so it still
     resolves for a task running "whether logged on or not", where per-user
@@ -151,9 +151,8 @@ show the exact shape each config file needs — copy and fill in.
   `POST /api/bm-daily/sync` in chunks of 5000).
 - **Invoked via**: `run_sync.bat bm-daily`, which runs the DEPLOYED copy at
   `C:\Homesavers\scripts\sync-bm-daily.ps1` explicitly (not
-  `%SCRIPTS_DIR%`) — this script isn't in `deploy-scripts.ps1`'s file list,
-  so it has to be copied to `C:\Homesavers\scripts\` manually when it
-  changes.
+  `%SCRIPTS_DIR%`). Deployed by `deploy-scripts.ps1` since 2026-11-09
+  (previously edited in place there and left out of the deploy list).
 - **Task Scheduler entry**: confirmed to exist as **"Homesavers B&M Daily
   Sync"** (named in `startup-sync.vbs`'s own comment); exact time not
   documented anywhere in the repo.
@@ -167,8 +166,8 @@ show the exact shape each config file needs — copy and fill in.
 - Keeps only `product_prism_code` (= `ean_barcode`), full-replaces
   `cn_code_master` — but **only empties the table after a successful fetch
   that returns rows**, so a source outage leaves the existing table intact.
-- **Invoked via**: `run_sync.bat cn-codes` → deployed copy. Same "not in
-  `deploy-scripts.ps1`'s list" caveat as 4.3.
+- **Invoked via**: `run_sync.bat cn-codes` → deployed copy (deployed by
+  `deploy-scripts.ps1` since 2026-11-09, as 4.3).
 - **Schedule**: `README-cn-codes.md` documents 02:45 daily as its own
   direct Task Scheduler registration (`"Homesavers CN Code Sync"`,
   confirmed by name in `startup-sync.vbs` too).
@@ -179,20 +178,25 @@ show the exact shape each config file needs — copy and fill in.
 
 ### 4.5 Delivery manifest
 - **Script**: `scripts/manifest-generator.py`
-- **Reads**: new `HSVMAN*.csv` files from B&M's SFTP server
-  (`93.107.17.189:2222`, user `bandm`, folder `SFTP_REMOTE_DIR` in the
-  script), downloaded into `C:\Homesavers\manifest-inbound` with their
-  server timestamps kept. Password: `C:\Homesavers\.manifest-sftp-password`
-  (never in the repo). Host key pinned on first connect in
-  `C:\Homesavers\manifest-sftp-known_hosts`; a changed key is refused.
-  Needs the `paramiko` package. If the password file is absent it falls
-  back to the old `U:\Finance Dept-Shared Folder\B&M - Homesavers Shared Database\Live\Inbound file\Delivery Manifest`
-  (switched to SFTP 2026-11-09). Looks up Group/Subgroup/Product ID from
-  the latest ItemMaster (`Y:` folder as §4.1, or the same folder by UNC
-  path) by Short Code, writes a formatted Excel workbook.
-- **Writes**: `Y:\Supply Chain\SUPPLY CHAIN 2026\STORE MANIFEST\Manifest-
-  <Load> - <Trailer>.xlsx` (changed 2026-10-30, from the older
-  `Y:\Supply Chain\012 - Manifest\2026`).
+- **Reads**: new `HSVMAN*.csv` files from
+  `\\192.168.1.205\Buying Data\Supply Chain\005 - Reports\04 - H1 Declaration Manifest\02 - Manifests - Homesavers\HSVMAN FILES- MANIFEST`
+  (tried by UNC first, then as `B:\...` — `B:` is the old `Y:`). Set
+  2026-11-09: the old `U:` Finance inbox was lost in the attack. Looks up
+  Group/Subgroup/Product ID from the latest ItemMaster (§4.1 folder, UNC
+  then `B:`/`Y:`) by Short Code, writes a formatted Excel workbook.
+- **Writes**: `...\HSVMAN FILES- MANIFEST\Store Manifest\Manifest- <Load> - <Trailer>.xlsx`
+  (a subfolder of the input; only that last folder is ever created, and
+  only if its parent exists). Previously `Y:\Supply Chain\SUPPLY CHAIN 2026\STORE MANIFEST`.
+- **SFTP route (built, pending):** the script can instead download from
+  B&M's SFTP (user `bandm`) into `C:\Homesavers\manifest-inbound`, keeping
+  server timestamps, host key pinned in `C:\Homesavers\manifest-sftp-known_hosts`,
+  password in `C:\Homesavers\.manifest-sftp-password`, needs `paramiko`.
+  Off (`SFTP_ENABLED = False`) because the server is inside the office:
+  its public address `93.107.17.189:2222` doesn't loop back from inside, and
+  its internal LAN address isn't known yet (router `192.168.1.254` → port
+  forwarding rule for 2222). To finish: test with
+  `--sftp-host <lan-ip> --sftp-port <port> --sftp-list`, then set
+  `SFTP_HOST`/`SFTP_PORT`/`SFTP_REMOTE_DIR` and `SFTP_ENABLED = True`.
 - No database writes — pure file-to-file, reads only from the app's side
   (reports the run to `/api/sync-runs` so it shows in Admin → Settings →
   Data Sync, same as the other syncs).

@@ -9,12 +9,13 @@ manifest that matches the agreed sample:
 
 Reads only (no database). All work is local on the back-office PC, like the sync jobs.
 
-Folders:
-    INPUT       SFTP 93.107.17.189:2222 -> C:\\Homesavers\\manifest-inbound   (HSVMAN*.csv)
-                (falls back to U:\\...\\Live\\Inbound file\\Delivery Manifest when
-                 C:\\Homesavers\\.manifest-sftp-password does not exist)
-    ITEMMASTER  Y:\\...\\ProductMaster\\2026, else the same folder by UNC path   (latest ItemMaster*.xlsx)
-    OUTPUT      Y:\\Supply Chain\\SUPPLY CHAIN 2026\\STORE MANIFEST, else by UNC path if that exists
+Folders (B: on the rebuilt PC = the old Y: = \\\\192.168.1.205\\Buying Data):
+    INPUT       ...\\02 - Manifests - Homesavers\\HSVMAN FILES- MANIFEST                 (HSVMAN*.csv)
+                (or B&M's SFTP into C:\\Homesavers\\manifest-inbound once SFTP_ENABLED)
+    ITEMMASTER  ...\\VRSDAILYDATADUMP\\ProductMaster\\2026                              (latest ItemMaster*.xlsx)
+    OUTPUT      ...\\02 - Manifests - Homesavers\\HSVMAN FILES- MANIFEST\\Store Manifest
+    Each is tried by UNC path first (works in a scheduled task with no drive
+    mapped), then by drive letter.
 
 Run:
     py manifest-generator.py                 # process every NEW HSVMAN (output not already present)
@@ -42,17 +43,26 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 # ── Folders ─────────────────────────────────────────────────────────────────
-INPUT_DIR      = r"U:\Finance Dept-Shared Folder\B&M - Homesavers Shared Database\Live\Inbound file\Delivery Manifest"
-# Y: is \\192.168.1.205\Buying Data on the office PCs. The UNC forms work when
-# no drive is mapped (a scheduled task running whether logged on or not). The
-# output UNC is only used if that folder already exists - never created blind.
-ITEMMASTER_DIRS = [r"Y:\Supply Chain & Buying - Shared\Data\VRSDAILYDATADUMP\ProductMaster\2026",
-                   r"\\192.168.1.205\Buying Data\Supply Chain & Buying - Shared\Data\VRSDAILYDATADUMP\ProductMaster\2026"]
-OUTPUT_DIRS     = [r"Y:\Supply Chain\SUPPLY CHAIN 2026\STORE MANIFEST",
-                   r"\\192.168.1.205\Buying Data\Supply Chain\SUPPLY CHAIN 2026\STORE MANIFEST"]
+# \\192.168.1.205\Buying Data is mapped as B: on the rebuilt PC (Y: on the old
+# one). The U: inbox the manifests used to come from was lost in the attack.
+# UNC first so a scheduled task works with no drive mapped. Input/ItemMaster:
+# first folder that exists. Output: first one whose parent exists, so only the
+# final "Store Manifest" folder is ever created, never a tree in a wrong place.
+_MANIFESTS = r"Supply Chain\005 - Reports\04 - H1 Declaration Manifest\02 - Manifests - Homesavers\HSVMAN FILES- MANIFEST"
+INPUT_DIRS      = [rf"\\192.168.1.205\Buying Data\{_MANIFESTS}",
+                   rf"B:\{_MANIFESTS}"]
+ITEMMASTER_DIRS = [r"\\192.168.1.205\Buying Data\Supply Chain & Buying - Shared\Data\VRSDAILYDATADUMP\ProductMaster\2026",
+                   r"B:\Supply Chain & Buying - Shared\Data\VRSDAILYDATADUMP\ProductMaster\2026",
+                   r"Y:\Supply Chain & Buying - Shared\Data\VRSDAILYDATADUMP\ProductMaster\2026"]
+OUTPUT_DIRS     = [rf"\\192.168.1.205\Buying Data\{_MANIFESTS}\Store Manifest",
+                   rf"B:\{_MANIFESTS}\Store Manifest"]
 PREVIEW_DIR    = r"C:\Homesavers\manifest-preview"
 
-# B&M's SFTP drop for the HSVMAN files. Used whenever the password file exists.
+# B&M's SFTP drop for the HSVMAN files. PENDING: from inside the office the
+# server is only reachable on its internal LAN address, which isn't known yet.
+# Set that as SFTP_HOST/SFTP_PORT (test first with --sftp-host/--sftp-port
+# --sftp-list), set SFTP_REMOTE_DIR, then turn this on.
+SFTP_ENABLED       = False
 SFTP_HOST          = "93.107.17.189"
 SFTP_PORT          = 2222
 SFTP_USER          = "bandm"
@@ -619,12 +629,12 @@ def main():
         SFTP_PORT = args.sftp_port
 
     log("=== Manifest generator starting ===")
-    use_sftp = os.path.exists(SFTP_PASSWORD_FILE)
     if args.sftp_list is not None:
-        if not use_sftp:
+        if not os.path.exists(SFTP_PASSWORD_FILE):
             log(f"No SFTP password file at {SFTP_PASSWORD_FILE}", "ERROR"); sys.exit(1)
         sftp_list(args.sftp_list)
         log("=== Manifest generator finished ==="); return
+    use_sftp = SFTP_ENABLED and os.path.exists(SFTP_PASSWORD_FILE)
 
     itemmaster_dir = first_existing(ITEMMASTER_DIRS)
     im_path = latest(itemmaster_dir, "ItemMaster*.xlsx") if itemmaster_dir else None
@@ -644,16 +654,16 @@ def main():
     if args.dry_run:
         out_dir = PREVIEW_DIR
     else:
-        out_dir = first_existing(OUTPUT_DIRS)
+        out_dir = next((p for p in OUTPUT_DIRS if os.path.isdir(os.path.dirname(p))), None)
         if not out_dir:
-            log(f"Output folder not reachable: {OUTPUT_DIRS[0]} (map Y: to \\\\192.168.1.205\\Buying Data)", "ERROR")
+            log(f"Output folder not reachable: {OUTPUT_DIRS[0]}", "ERROR")
             sys.exit(1)
+    log(f"Output: {out_dir}")
 
     if args.file:
         process_file(args.file, get_lookup(), out_dir, report=report)
         log("=== Manifest generator finished ==="); return
 
-    input_dir = INPUT_DIR
     if use_sftp:
         remote_dir = args.sftp_dir or SFTP_REMOTE_DIR
         if not remote_dir:
@@ -668,6 +678,15 @@ def main():
                            status="error", message=f"SFTP fetch failed: {e}"[:300], started_at=None)
             sys.exit(1)
         input_dir = SFTP_INBOUND_DIR
+    else:
+        input_dir = first_existing(INPUT_DIRS)
+        if not input_dir:
+            log(f"Input folder not reachable: {INPUT_DIRS[0]}", "ERROR")
+            if report:
+                record_run(file_name="Manifest input", file_size=None, imported=0, skipped=0,
+                           status="error", message=f"Input folder not reachable: {INPUT_DIRS[0]}"[:300],
+                           started_at=None)
+            sys.exit(1)
     log(f"Input: {input_dir}")
 
     files = glob.glob(os.path.join(input_dir, "HSVMAN*.csv")) + glob.glob(os.path.join(input_dir, "HSVMAN*.CSV"))
