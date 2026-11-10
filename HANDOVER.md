@@ -766,3 +766,16 @@ The backup finished OK at 13:42. Checked on the server:
 ## Backup photos: kept only one week after the app deletes them
 
 As requested, the backup no longer keeps photos forever. It copies the photos that are in the app, and when the app deletes a photo (after 21 days), the backup removes its copy 7 days later. The backup's `photos` folder therefore stays about the same size as the app's, around 140 MB. If the app ever reports no photos at all, the backup deletes nothing, in case it's an error.
+
+---
+
+## 10 Nov: nightly backup scheduled
+
+`install-scheduled-tasks.ps1` was re-run, and **Homesavers App Backup** is registered for 03:00 every night. Claude's check tomorrow at 09:10 will look at the first scheduled backup, the archive's third run (22:30), and the 07:00 B&M SFTP sync.
+
+Still to do when there's time:
+- Ask IT to keep daily NAS snapshots of `HomesaversScannerBackup` for 30+ days.
+- Save the new tokens and passwords in Bitwarden (Supabase database password, `homesavers-backup-d1-export`, `homesavers-archiver-d1-usage-read`, SFTP, sync secret).
+- Set up the Aging Report email.
+- Do the Supabase key switch.
+- Share the Department Check schedule.
