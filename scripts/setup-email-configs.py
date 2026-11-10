@@ -196,6 +196,11 @@ def main():
         smtp.update(test_login(smtp) or {})
     except Exception as e:
         print("FAILED")
+        if "unauthorized ip" in str(e).lower():
+            sys.exit(f"Brevo login failed: {e}\nNothing was written. The key and login are fine - Brevo is "
+                     "blocking this office's internet address. In Brevo: profile menu -> Security -> "
+                     "Authorised IPs (https://app.brevo.com/security/authorised_ips), add the office's public "
+                     "IP (or approve it from Brevo's 'new IP' email), then run this again.")
         sys.exit(f"Brevo login failed: {e}\nNothing was written. Check the SMTP login and the SMTP key "
                  f"(Brevo -> SMTP & API -> SMTP tab; a newly generated key, pasted with right-click) and run again.\n"
                  f"If it still fails, send the lines above (they contain no secrets).")

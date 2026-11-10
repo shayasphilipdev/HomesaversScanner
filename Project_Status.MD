@@ -631,6 +631,26 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-10 — Brevo login cause found: "525 5.7.1 Unauthorized IP address"
+
+The per-method diagnostic run on the PC answered it:
+- The certificate is Brevo's own (`smtp-relay-ovh.brevo.com`, issued by Let's
+  Encrypt), so nothing is intercepting the connection.
+- Brevo offers PLAIN, LOGIN and CRAM-MD5, and every method got
+  `525 5.7.1 Unauthorized IP address`.
+
+So the login and the 90-character key are fine. Brevo's **Authorised IPs**
+security setting is on, and the office's public IP (93.107.17.189 as of
+2026-11-09) isn't on its list. The earlier 454 "unable to parse" was Python
+reporting only the last method's error.
+
+The fix is in Brevo, not in code: profile menu → Security → Authorised IPs →
+add the office's public IP (or approve it from Brevo's "new IP" email). Then
+re-run the helper.
+
+The helper now recognises 525 "Unauthorized IP" and prints these steps
+instead of the generic "check the key" advice.
+
 ### 2026-11-10 — Brevo login fails again with a correct 90-character key: per-method login diagnostic
 
 The second attempt, using the full 90-character SMTP key pasted with right-click,

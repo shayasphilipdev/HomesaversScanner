@@ -596,3 +596,13 @@ The helper now tries each login method separately and prints what Brevo answered
 Next on the PC: `git pull`, run `scripts\deploy-scripts.ps1`, then run the email helper again. If it still fails, send the lines it prints (they contain no secrets).
 
 Full write-up in `Project_Status.MD` §11.
+
+---
+
+## Email setup: cause found. Brevo is blocking the office's internet address
+
+The new check gave a clear answer. Brevo replied **"Unauthorized IP address"** to every login method. Your login and key are correct, and nothing on the PC is interfering. Brevo's **Authorised IPs** setting only allows logins from approved addresses, and the office's address (93.107.17.189) isn't approved.
+
+**Fix (in Brevo):** profile menu (top right) → **Security** → **Authorised IPs** → add `93.107.17.189`. You can also approve it from Brevo's "new IP address" email if one arrived. Then run the email helper again.
+
+The helper now recognises this error and gives these steps itself.
