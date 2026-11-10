@@ -712,3 +712,11 @@ It goes live once the archive job is redeployed from the PC. That needs Node, pl
 4. `npx wrangler secret put CLOUDFLARE_API_TOKEN` (paste the token with right-click).
 
 The stores aren't affected; this job only runs at night.
+
+---
+
+## 10 Nov: archive third run deployed
+
+The archive job was redeployed from the PC (`wrangler deploy`), and the token `homesavers-archiver-d1-usage-read` was added as its `CLOUDFLARE_API_TOKEN` secret. Checked from here: the live job is the new version, including the 22:30 run and the allowance check. The first extra run is tonight at 22:30. It also uses the new key handling, which works with the current Supabase key.
+
+Note for this PC: Node is installed but isn't on the PATH in older PowerShell windows. Either restart the PC, or run `$env:Path += ";C:\Program Files\nodejs"`, then use `npx.cmd wrangler ...` from `C:\Apps\HomesaversScanner\workers\archiver`.

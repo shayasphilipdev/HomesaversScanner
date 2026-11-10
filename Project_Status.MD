@@ -631,6 +631,22 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-10 — Archiver third run deployed
+
+The user ran `wrangler deploy` (wrangler 4.160.0) from `workers/archiver` and
+set `CLOUDFLARE_API_TOKEN`: token `homesavers-archiver-d1-usage-read`, with
+Account Analytics: Read.
+
+Verified via the Cloudflare API that the deployed `homesavers-archiver` script
+contains `runExtra`, the `30 22 * * *` dispatch and `X-Archive-Mode`. The first
+extra run is at 22:30 UTC on 10 Nov. A check is scheduled for 11 Nov at 09:10.
+
+The deploy also went live with `sbBearer` (non-JWT key support).
+
+PC note: Node is at `C:\Program Files\nodejs` but isn't on the PATH in older
+shells. Use `npx.cmd` (plain `npx` may be blocked by the script execution
+policy).
+
 ### 2026-11-10 — Archiver: third, allowance-limited nightly run (22:30 UTC)
 
 The user asked for a third archive run that checks the remaining D1 write
