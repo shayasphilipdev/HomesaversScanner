@@ -631,6 +631,23 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-10 — Excel download "Server returned 500": error now shows the server's reason
+
+The user got "Server returned 500" downloading Reports → HO records to Excel.
+
+**Checked so far:**
+- Supabase edge logs from 14:56–14:58: every `report_task_records_flat_page`
+  call (the recent-records half) returned 200.
+- The archive half's D1 SQL runs fine when called directly (16 ms).
+- The Pages ARCHIVE binding is present in `wrangler.toml`.
+- Pages Function logs aren't reachable from here, and `authedFetch` threw away
+  the `{error}` body, so the reason was lost.
+
+**Change:** `authedFetch` in `Reports.jsx` now shows the server's `error`
+text, and says which half failed ("older records" = `/reports/archive`,
+"recent records" = `/reports/task-records`). Next step: the user retries and
+sends the full message.
+
 ### 2026-11-10 — Pending HO-review records stay in the app (every action works on them)
 
 The user wants every option (Complete, No change, Undo, Assign, Messages,

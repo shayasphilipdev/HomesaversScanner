@@ -298,7 +298,14 @@ async function authedFetch(url) {
     window.location.reload()
     throw new Error('Session expired — please sign in again.')
   }
-  if (!res.ok) throw new Error(`Server returned ${res.status}`)
+  if (!res.ok) {
+    // Show the server's own reason (it sends {error: "..."}), not just the code,
+    // so a failed download can be diagnosed from what the user sees.
+    let why = ''
+    try { const b = await res.clone().json(); why = b?.error || '' } catch { /* not JSON */ }
+    const which = url.includes('/reports/archive') ? ' (older records)' : url.includes('/reports/task-records') ? ' (recent records)' : ''
+    throw new Error(`Server returned ${res.status}${which}${why ? `: ${why}` : ''}`)
+  }
   return res
 }
 
