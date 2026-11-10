@@ -158,7 +158,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-11-10-new-supabase-keys'
+const API_REVISION   = '2026-11-10-backup-card'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -2896,7 +2896,16 @@ export async function onRequest(context) {
         order:  'finished_at.desc',
         limit:  '40'
       })
-      return json(rows)
+      // The nightly app backup runs once a day, so busy kinds could push it out
+      // of the 40-row window: always include its latest few.
+      const backups = await db.select('sync_runs', {
+        select: 'id,kind,file_name,file_size_bytes,records_imported,records_skipped,status,message,started_at,finished_at',
+        kind:   'eq.backup',
+        order:  'finished_at.desc',
+        limit:  '5'
+      }).catch(() => [])
+      const seen = new Set(rows.map(r => r.id))
+      return json(rows.concat(backups.filter(r => !seen.has(r.id))))
     }
 
     // GET /admin/capacity — DB + storage usage, restricted to the strict

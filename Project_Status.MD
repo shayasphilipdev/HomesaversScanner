@@ -631,6 +631,66 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-10 — Nightly app backup to B: (`scripts/backup-app.py`, task "Homesavers App Backup" 03:00)
+
+The user asked for a backup of everything the app needs, on B:, to recover
+from ransomware. Destination: `B:\Supply Chain & Buying - Shared\HomesaversScannerBackup`
+(UNC `\\192.168.1.205\Buying Data\...` first). The user confirmed the B:
+server is a NAS with snapshots. Those snapshots are the real ransomware
+protection, because the PC can write to B:.
+
+**What it saves:**
+- `daily\YYYY-MM-DD\`, keeping 30 (and pruning only after a clean run):
+  - `pg_dump -Fc --no-owner -n public` of the database. Data is excluded for
+    the four product-master tables, which are rebuilt daily.
+  - The schema as SQL.
+  - `cron.job` and `storage.buckets` as CSV.
+  - A `git bundle --all` after `git fetch`.
+  - `pc-settings.zip`: `C:\Homesavers` without dot-files (the secrets) or
+    big/derived folders. Password, key, secret, token and cookie fields in
+    JSON are blanked. Scheduled tasks are included as XML.
+  - `MANIFEST.txt` with SHA-256 checksums.
+- `d1\` gets a weekly (Sunday) `wrangler d1 export` of `homesavers-archive`,
+  gzipped, keeping 8. A D1 export locks the database while it runs; 03:00 is
+  clear of the archiver's 01:30, 01:45 and 22:30 runs.
+- `photos\` is an incremental mirror of the `task-photos` bucket, using
+  public URLs and the list from `storage.objects`.
+
+**Checks:**
+- `pg_restore --list` must show TABLE DATA for every public base table except
+  the four structure-only ones.
+- The archive export must be over 1 MB.
+- `git bundle verify`.
+
+**Connection:**
+- PostgreSQL 17 client tools (EDB zip) go into `C:\Homesavers\pgsql`.
+- It uses the Supabase **session pooler**, `postgres.<ref>@aws-0|aws-1-eu-central-1.pooler.supabase.com:5432`,
+  with SSL required. Direct `db.<ref>.supabase.co` is IPv6-only.
+- `--setup` saves the working host in `C:\Homesavers\backup-config.json` and
+  the database password in `C:\Homesavers\.supabase-db-password` (this PC
+  only; also kept in Bitwarden). The password is passed by environment
+  variable, never on the command line.
+
+**Reporting:** a `sync_runs` row with kind `backup` (`records_imported` = MB).
+A new **App Backup** card on Admin → Settings → Data Sync. `/admin/sync-runs`
+now always appends the latest 5 backup runs. API_REVISION is
+`2026-11-10-backup-card`. The B&M card footnote is updated for the SFTP
+schedule.
+
+**Other files:** `install-scheduled-tasks.ps1` registers the task once the
+password file exists. `deploy-scripts.ps1` deploys it. New
+`docs/backup-and-restore.md`, also copied into the backup root as
+`README-RESTORE.txt`.
+
+Tested with fake pg tools:
+- Layout and manifest are correct.
+- No secret appears in `pc-settings.zip` (5 planted secrets checked).
+- Pruning keeps 30.
+- A dump missing tables records an error, and nothing is pruned.
+
+The client build couldn't be run here (npm registry blocked); the JSX change
+is a copy of the existing SyncCard pattern.
+
 ### 2026-11-10 — Archiver third run deployed
 
 The user ran `wrangler deploy` (wrangler 4.160.0) from `workers/archiver` and

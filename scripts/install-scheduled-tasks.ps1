@@ -41,7 +41,7 @@ $emails = @(
   @{ Name = 'Homesavers Dept Check Area Thu';     Day = 'Thursday';  At = '08:00'; Script = 'dept-check-area-managers.py'; Config = 'dept-check-area-managers.config.json'; Args = '--period mid-week';  Paused = $true }
 )
 $names = @($daily | ForEach-Object { $_.Name }) +
-         @('Homesavers B&M Daily Sync', 'Homesavers Manifest', 'Homesavers Upload Server') +
+         @('Homesavers B&M Daily Sync', 'Homesavers App Backup', 'Homesavers Manifest', 'Homesavers Upload Server') +
          @($emails | ForEach-Object { $_.Name })
 
 if ($Remove) {
@@ -92,6 +92,17 @@ $trigger.Repetition = (New-ScheduledTaskTrigger -Once -At '07:00' `
   -RepetitionInterval (New-TimeSpan -Minutes 30) -RepetitionDuration (New-TimeSpan -Hours 5)).Repetition
 Register 'Homesavers B&M Daily Sync' $action $trigger (New-Settings (New-TimeSpan -Minutes 30)) `
   'sync-bm-daily.py (B&M product CSV from SFTP), every 30 min 07:00-12:00'
+
+# App backup (2026-11-10): nightly 03:00, windowless. Registered once
+# backup-app.py --setup has been run (it needs the database password file).
+if (Test-Path 'C:\Homesavers\.supabase-db-password') {
+  $action  = New-ScheduledTaskAction -Execute $pyw -Argument "`"$S\backup-app.py`"" -WorkingDirectory $S
+  $trigger = New-ScheduledTaskTrigger -Daily -At '03:00'
+  Register 'Homesavers App Backup' $action $trigger (New-Settings (New-TimeSpan -Hours 3)) `
+    'backup-app.py: database, photos, code, PC settings to B: (archive export weekly)'
+} else {
+  Write-Host "Skipped     Homesavers App Backup - run backup-app.py --setup first" -ForegroundColor Yellow
+}
 
 # Phase 8: delivery manifests every 30 min, 07:05-19:05 (idle runs take seconds)
 $action  = New-ScheduledTaskAction -Execute 'wscript.exe' -Argument "`"$S\run-manifest.vbs`"" -WorkingDirectory $S

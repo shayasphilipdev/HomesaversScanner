@@ -720,3 +720,20 @@ The stores aren't affected; this job only runs at night.
 The archive job was redeployed from the PC (`wrangler deploy`), and the token `homesavers-archiver-d1-usage-read` was added as its `CLOUDFLARE_API_TOKEN` secret. Checked from here: the live job is the new version, including the 22:30 run and the allowance check. The first extra run is tonight at 22:30. It also uses the new key handling, which works with the current Supabase key.
 
 Note for this PC: Node is installed but isn't on the PATH in older PowerShell windows. Either restart the PC, or run `$env:Path += ";C:\Program Files\nodejs"`, then use `npx.cmd wrangler ...` from `C:\Apps\HomesaversScanner\workers\archiver`.
+
+---
+
+## Nightly app backup to B:
+
+Every night at 03:00 the PC backs up everything needed to rebuild the app into `B:\Supply Chain & Buying - Shared\HomesaversScannerBackup`:
+- the database
+- the Department Check archive (weekly, on Sundays)
+- all task photos
+- the app code
+- the PC's settings and schedules
+
+Passwords are never included; they stay in Bitwarden. It keeps 30 days. Each result shows on Admin → Settings → Data Sync → **App Backup**. How to restore is in `README-RESTORE.txt` in that folder, also `docs/backup-and-restore.md`.
+
+Important: because the PC can write to B:, ransomware on the PC could also reach this folder. The real protection is the **NAS snapshots**. Ask IT to keep daily snapshots of this folder for at least 30 days.
+
+One-time setup on the PC: `git pull`, `deploy-scripts.ps1`, `backup-app.py --setup` (paste the Supabase database password from Bitwarden), one manual run, then `install-scheduled-tasks.ps1`.

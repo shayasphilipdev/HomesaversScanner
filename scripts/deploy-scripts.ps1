@@ -32,6 +32,7 @@ $files = @(
   'sync-prices.py',
   'sync-alt-barcodes.py',
   'sync-bm-daily.py',        # run_sync.bat "bm-daily" (SFTP CSV, 07:00-12:00)
+  'backup-app.py',           # nightly 03:00 app backup to B: (Homesavers App Backup)
   'sync-bm-daily.ps1',       # run_sync.bat "bm-daily-excel" (old Excel route, manual fallback)
   'sync-cn-codes.ps1',       # run_sync.bat "cn-codes"
   'local_upload_server.py',  # run_sync.bat "server" job

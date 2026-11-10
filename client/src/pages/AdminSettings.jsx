@@ -588,6 +588,7 @@ function SyncDashboard({ syncRuns, onRefresh, values, toast }) {
   const cnRuns       = syncRuns.filter(r => r.kind === 'cn_codes').slice(0, 5)
   const bmRuns       = syncRuns.filter(r => r.kind === 'bm_daily').slice(0, 5)
   const manifestRuns = syncRuns.filter(r => r.kind === 'manifest').slice(0, 5)
+  const backupRuns   = syncRuns.filter(r => r.kind === 'backup').slice(0, 5)
 
   return (
     <div style={{ marginBottom: 20 }}>
@@ -631,7 +632,7 @@ function SyncDashboard({ syncRuns, onRefresh, values, toast }) {
           sheetDefault="1"
           endpoint="/bm-daily/upload-excel"
           syncCmd="run_sync.bat bm-daily"
-          footnote="Pulled automatically every night (08:15) from the latest HomeSavers_*.xlsx B&M product file (Task Scheduler job 'Homesavers B&M Daily Sync'). Full replace of ProductIDs; red = a run failed."
+          footnote="Pulled automatically from B&M's SFTP product file (HSVPRD*.CSV), checked every 30 min 07:00-12:00 (Task Scheduler job 'Homesavers B&M Daily Sync'); also saves the CSV and the HomeSavers_*.xlsx to the share. Full replace of ProductIDs; red = a run failed or today's file had not arrived by 11:30."
           toast={toast}
         />
         <SyncCard
@@ -641,6 +642,15 @@ function SyncDashboard({ syncRuns, onRefresh, values, toast }) {
           rowsLabel="rows in manifest"
           footnote="Generated automatically every 30 minutes from new HSVMAN files (Task Scheduler job 'Homesavers Manifest'). One entry per manifest; red = a load failed to generate."
           syncCmd="manifest-generator.py"
+          toast={toast}
+        />
+        <SyncCard
+          title="App Backup"
+          icon="🗄️"
+          runs={backupRuns}
+          rowsLabel="MB saved"
+          footnote="Nightly 03:00 backup of the database, photos, code and PC settings to B:\Supply Chain & Buying - Shared\HomesaversScannerBackup (archive export weekly on Sundays). Task Scheduler job 'Homesavers App Backup'; red = a part failed (see the message)."
+          syncCmd="backup-app.py"
           toast={toast}
         />
       </div>
