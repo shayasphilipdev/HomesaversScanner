@@ -698,3 +698,17 @@ The one-time fill-in from 28 Oct finished on the PC. The app was checked afterwa
 It's the Department Check scans. From 2 to 8 Nov stores logged 17,000–31,000 a day, but the nightly job that moves old records to the archive can only move about 18,000 a night. The rest are waiting in the main database. Nothing is lost.
 
 Now that Department Checks follow a schedule (9 Nov: 8,700; today so far: 3,000), the archive job should catch up in about 10–11 nights and the figure should come back down. Claude will keep an eye on it. If it ever needs to go faster, a third nightly run can be added in Cloudflare with no code change.
+
+---
+
+## Archive: a third nightly run that only uses the allowance left over
+
+The archive job now has a third run at 22:30 (Irish winter time). It first asks Cloudflare how many of the day's 100,000 archive writes have been used, keeps 10,000 spare, and moves only as many records as the rest allows. That's up to about 11,000 a night, on top of the usual 18,000. It never deletes anything, and if it can't read the usage it does nothing.
+
+It goes live once the archive job is redeployed from the PC. That needs Node, plus a Cloudflare API token that can read analytics. The steps are in the reply of 10 Nov and below:
+1. Cloudflare → My Profile → API Tokens → Create Token → Custom token → permission **Account → Account Analytics → Read** → this account → Create. Copy the token.
+2. On the PC: `winget install OpenJS.NodeJS.LTS`, open a new PowerShell, `cd C:\Apps\HomesaversScanner\workers\archiver`, `git pull`, `npx wrangler login`.
+3. `npx wrangler deploy`
+4. `npx wrangler secret put CLOUDFLARE_API_TOKEN` (paste the token with right-click).
+
+The stores aren't affected; this job only runs at night.

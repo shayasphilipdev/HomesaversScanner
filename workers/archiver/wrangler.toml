@@ -44,7 +44,13 @@ workers_dev = true
 #
 # Both land before pg_cron's purge_old_task_records() at 02:00, and the second is
 # a no-op once the first has caught up: it simply finds nothing past the cutoff.
-crons = ["30 1 * * *", "45 1 * * *"]
+#
+# THIRD run (2026-11-10), 22:30 UTC: allowance-limited. It reads today's D1
+# rows-written from Cloudflare analytics and moves only what the rest of the
+# 100,000/day allowance pays for (no purging). Needs the CLOUDFLARE_API_TOKEN
+# secret (Account Analytics: Read); without it the run records "skipped" and
+# does nothing. Records it stamps are purged by pg_cron the next morning.
+crons = ["30 1 * * *", "45 1 * * *", "30 22 * * *"]
 
 
 [vars]
@@ -64,6 +70,11 @@ SUPABASE_URL = "https://eggspkdengnxktwkdwpw.supabase.co"
 # nothing marked to act on and Task J stops being purged, so do not leave it
 # there for long.
 SHADOW_MODE = "0"
+
+# For the 22:30 allowance check (not secret). The API token is a secret:
+#   npx wrangler secret put CLOUDFLARE_API_TOKEN
+CLOUDFLARE_ACCOUNT_ID  = "565191064c74a1e202aa0211133c895d"
+D1_ARCHIVE_DATABASE_ID = "6c728765-d614-4282-a648-4b3fc3bf78fe"
 
 [[d1_databases]]
 binding       = "ARCHIVE"

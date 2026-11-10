@@ -341,7 +341,11 @@ const INSERT_SQL = `
      details_json, marked_for_deletion)
   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
 
-export async function runArchive(env, triggerKind) {
+// opts.maxRecords caps how many records this run may move (the allowance-
+// limited extra run); opts.skipPurge leaves both D1 purges to the 01:30 runs.
+export async function runArchive(env, triggerKind, opts = {}) {
+  const maxRecords = Number.isFinite(opts.maxRecords) ? opts.maxRecords : Infinity
+  const skipPurge  = !!opts.skipPurge
   const startedAt = Date.now()
   const shadow    = env.SHADOW_MODE === '1'
   let scanned = 0, inserted = 0, alreadyHad = 0, deleted = 0, marked = 0, error = null
@@ -366,7 +370,7 @@ export async function runArchive(env, triggerKind) {
     let cursor = '1970-01-01T00:00:00Z'
 
     // Subrequests already spent: 3 settings reads (scan/archive/dept) + 1 stores read.
-    let subreq = 4
+    let subreq = 4 + (opts.subrequestsUsed || 0)   // + the extra run's analytics call
     // Ids archived but not yet stamped. Flushed every MARK_FLUSH_PAGES so one
     // mark call covers several pages. Unflushed ids are simply re-archived next
     // run (INSERT OR IGNORE), so losing them costs nothing but a repeat.
@@ -385,7 +389,10 @@ export async function runArchive(env, triggerKind) {
       // the D1 purge and the run-log write. Running out mid-page is what killed
       // the 2026-09-25 run.
       const pageCost = 1 + Math.ceil(BATCH / D1_CHUNK)
-      if (subreq + pageCost + 1 + PURGE_MAX_CHUNKS + DEVICE_LOG_PURGE_MAX_CHUNKS + 1 > SUBREQUEST_BUDGET) break
+      const purgeCost = skipPurge ? 0 : PURGE_MAX_CHUNKS + DEVICE_LOG_PURGE_MAX_CHUNKS
+      if (subreq + pageCost + 1 + purgeCost + 1 > SUBREQUEST_BUDGET) break
+      const want = Math.min(BATCH, maxRecords - scanned)
+      if (want <= 0) break
 
       // EVERY type is archived, but Department Check (J) moves on a shorter
       // window than the rest -- so "due to move" is per-type and must match
@@ -407,7 +414,7 @@ export async function runArchive(env, triggerKind) {
         `&store_id=not.is.null` +
         `&or=(and(task_type.eq.J,created_at.lt.${encodeURIComponent(deptCutoffIso)}),` +
         `and(task_type.neq.J,created_at.lt.${encodeURIComponent(cutoffIso)}))` +
-        `&order=created_at.asc,id.asc&limit=${BATCH}`)
+        `&order=created_at.asc,id.asc&limit=${want}`)
 
       subreq += 1
       if (!rows.length) break
@@ -442,7 +449,7 @@ export async function runArchive(env, triggerKind) {
       // run's fresh sweep from the beginning.
       cursor = (last === cursor) ? new Date(Date.parse(last) + 1).toISOString() : last
 
-      if (rows.length < BATCH) break
+      if (rows.length < want) break
     }
     await flushMarks()
 
@@ -459,7 +466,7 @@ export async function runArchive(env, triggerKind) {
     // Deliberately AFTER the sweep and inside the same try: if archiving failed
     // this run, skip the deletion too. A broken archiver is a reason to stop
     // destroying things, not to carry on.
-    if (!shadow) {
+    if (!shadow && !skipPurge) {
       purged = await purgeArchive(env, cfg.purgeMs)
       // Device-log retention. Independent of the archive window and cheap (the
       // oldest rows sit at the front of the table), but still inside !shadow:
@@ -509,9 +516,77 @@ function sbBearer(key) {
   return typeof key === 'string' && key.startsWith('eyJ') ? { Authorization: `Bearer ${key}` } : {}
 }
 
+
+// ── Third, allowance-limited run (22:30 UTC) ────────────────────────────────
+//
+// The two 01:30/01:45 runs move ~18,000 records a night, which fell behind the
+// Department Check volume of early Nov 2026. A third run at the END of the UTC
+// day can use whatever is left of the day's D1 write allowance (100,000 rows
+// written per UTC day on the free plan): it asks Cloudflare's analytics how
+// many rows have been written today, keeps a reserve for the rest of the day,
+// and moves only as many records as the remainder pays for. It never purges
+// (those writes stay with the 01:30 run, on the next day's allowance). If the
+// usage cannot be read, it does nothing -- the safe direction.
+const EXTRA_CRON          = '30 22 * * *'
+const D1_DAILY_WRITE_CAP  = 100_000
+const WRITE_RESERVE       = 10_000   // late-evening device logs etc. + analytics lag
+const WRITES_PER_RECORD   = 3        // row + index, rounded UP from the ~2 observed
+
+async function d1RowsWrittenToday(env) {
+  if (!env.CLOUDFLARE_API_TOKEN || !env.CLOUDFLARE_ACCOUNT_ID) {
+    throw new Error('CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID not configured')
+  }
+  const now = new Date()
+  const since = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+  const query = `query ($a: string, $db: string, $since: string, $until: string) {
+    viewer { accounts(filter: { accountTag: $a }) {
+      d1AnalyticsAdaptiveGroups(limit: 1000,
+        filter: { databaseId: $db, datetime_geq: $since, datetime_leq: $until }) {
+        sum { rowsWritten } } } } }`
+  const res = await fetch('https://api.cloudflare.com/client/v4/graphql', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, variables: {
+      a: env.CLOUDFLARE_ACCOUNT_ID, db: env.D1_ARCHIVE_DATABASE_ID,
+      since: since.toISOString(), until: now.toISOString() } }),
+  })
+  const j = await res.json().catch(() => null)
+  if (!res.ok || !j || j.errors || !j.data) {
+    throw new Error(`D1 analytics failed: ${JSON.stringify(j?.errors || j || res.status).slice(0, 300)}`)
+  }
+  const groups = j.data.viewer?.accounts?.[0]?.d1AnalyticsAdaptiveGroups || []
+  return groups.reduce((t, g) => t + (g.sum?.rowsWritten || 0), 0)
+}
+
+export async function runExtra(env, triggerKind = 'extra') {
+  let written
+  try {
+    written = await d1RowsWrittenToday(env)
+  } catch (e) {
+    const error = `extra run skipped: ${String(e?.message || e).slice(0, 400)}`
+    try {
+      await env.ARCHIVE.prepare(
+        `INSERT OR REPLACE INTO archive_runs
+           (started_at_ms, trigger_kind, cutoff_iso, shadow, scanned, inserted,
+            already_had, deleted, marked, purged, duration_ms, error)
+         VALUES (?,?,?,?,0,0,0,0,0,0,0,?)`
+      ).bind(Date.now(), triggerKind, new Date().toISOString(), env.SHADOW_MODE === '1' ? 1 : 0, error).run()
+    } catch { /* bookkeeping only */ }
+    return { skipped: true, error }
+  }
+  const left = D1_DAILY_WRITE_CAP - WRITE_RESERVE - written
+  const maxRecords = Math.floor(left / WRITES_PER_RECORD)
+  if (maxRecords < 500) {
+    return { skipped: true, rowsWrittenToday: written, reason: 'not enough of today\'s allowance left' }
+  }
+  const result = await runArchive(env, triggerKind, { maxRecords, skipPurge: true, subrequestsUsed: 1 })
+  return { ...result, rowsWrittenToday: written, maxRecords }
+}
+
 export default {
   async scheduled(controller, env, ctx) {
-    ctx.waitUntil(runArchive(env, 'cron'))
+    if (controller.cron === EXTRA_CRON) ctx.waitUntil(runExtra(env, 'extra'))
+    else                                ctx.waitUntil(runArchive(env, 'cron'))
   },
 
   // Manual trigger, so a run can be observed on demand instead of waiting for
@@ -540,7 +615,9 @@ export default {
     if ((request.headers.get('X-Archive-Secret') || '').trim() !== expected) {
       return new Response('Forbidden', { status: 403 })
     }
-    const result = await runArchive(env, 'manual')
+    const result = (request.headers.get('X-Archive-Mode') || '').trim() === 'extra'
+      ? await runExtra(env, 'manual-extra')
+      : await runArchive(env, 'manual')
     return Response.json(result)
   },
 }

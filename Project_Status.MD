@@ -631,6 +631,45 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-10 — Archiver: third, allowance-limited nightly run (22:30 UTC)
+
+The user asked for a third archive run that checks the remaining D1 write
+allowance first. The dashboard showed 46–83k of the 100k/day used.
+
+`workers/archiver`:
+- New cron `30 22 * * *` runs `runExtra()`.
+  - It reads today's (UTC) D1 `rowsWritten` from the GraphQL analytics API
+    (`d1AnalyticsAdaptiveGroups`, same query as the Pages usage chart).
+  - It keeps a 10k reserve and allows `(100k − 10k − written) / 3` records
+    (3 writes per record, rounded up from the ~2 observed).
+  - It calls `runArchive(..., { maxRecords, skipPurge: true })`. It never
+    purges; the 01:30 run keeps doing that on the next day's allowance.
+  - Under 500 records allowed → skips.
+  - If analytics can't be read → logs `extra run skipped` in `archive_runs`
+    and moves nothing.
+- Without purges it can afford more pages: about 11,000 records a night,
+  versus 9,000 per regular run. Total goes from ~18k to ~29k a night.
+- `runArchive` takes `opts` (`maxRecords`, `skipPurge`, `subrequestsUsed`). The
+  page `limit` shrinks to the remaining allowance. The two regular runs are
+  unchanged.
+- The manual `/run` endpoint accepts header `X-Archive-Mode: extra`.
+- `wrangler.toml`:
+  - Third cron.
+  - `CLOUDFLARE_ACCOUNT_ID` and `D1_ARCHIVE_DATABASE_ID` vars.
+  - **New secret `CLOUDFLARE_API_TOKEN`**, needing Account Analytics: Read.
+- **Needs `npx wrangler deploy` from `workers/archiver`.** This Worker is not
+  deployed by the Pages push. The deploy also carries the earlier
+  `sbBearer` change, which is harmless with the legacy key.
+
+Mock tests:
+- With plenty of allowance it's limited by subrequests: 11,000 moved, 42 of
+  50 subrequests, no purge.
+- With 80k written it moves exactly 3,333.
+- With 89k written it skips.
+- When analytics fails it skips and moves nothing.
+- The regular run is unchanged: 9,000 moved, both purges.
+- The cron dispatch picks the right run.
+
 ### 2026-11-10 — Why Supabase shows 72%: the Department Check archive backlog
 
 The database is 362 MB of the 500 MB free-plan limit.
