@@ -631,6 +631,23 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-10 — First complete app backup verified; photo retention vs backup
+
+The `sync_runs` backup row at 13:42 is ok:
+- 38 MB daily backup
+- archive exported via the API (53 MB gz)
+- 275 photos already mirrored, 0 new
+
+The app deletes task photos at `photo_retention_days` (21), via the nightly
+cleanup's `list_old_photos` plus record-linked deletes. Storage now holds
+20 Oct – 10 Nov (275 files, 142 MB).
+
+The backup mirror (`photos\`) is append-only, so every photo is kept
+permanently from 10 Nov on, under its bucket path. Archived D1 rows keep their
+`photo_*_url`, so a photo can be found by the path after `/task-photos/`.
+Photos deleted before 20 Oct can't be recovered. Growth is about 140 MB per
+21 days.
+
 ### 2026-11-10 — First app backup run; archive export switched to the D1 export API with its own token
 
 **Setup:**

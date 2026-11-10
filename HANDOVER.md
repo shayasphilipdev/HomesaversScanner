@@ -748,3 +748,15 @@ The first backup worked for the database, all 275 photos, the code and the PC se
 - Save it in Bitwarden.
 
 Run `backup-app.py --setup` again to add it (answer Y to keep the database password), then `backup-app.py --force-d1`.
+
+---
+
+## 10 Nov: first complete backup, and what happens to deleted photos
+
+The backup finished OK at 13:42. Checked on the server:
+- 38 MB daily backup
+- archive exported (53 MB compressed)
+- database 30 tables, code, PC settings
+- all 275 photos already in the backup's `photos` folder
+
+**Photos removed from the app:** the app deletes task photos after 21 days (Admin → Settings → "photo retention days"). The backup's `photos` folder is **never cleaned**: each night it adds new photos and keeps every photo it has ever copied. From now on, a photo the app deletes stays in `B:\...\HomesaversScannerBackup\photos`, under the same folder path as in the app. The archived records keep their photo link, so the file can be found by that path. Photos deleted before the first backup (anything from before 20 Oct) were already gone and can't be recovered. The folder grows by about 140 MB every three weeks.
