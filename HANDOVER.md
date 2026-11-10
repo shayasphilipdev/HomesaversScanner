@@ -614,3 +614,9 @@ The helper now recognises this error and gives these steps itself.
 After the office IP was added in Brevo, the email helper logged in OK and saved the three email settings files.
 
 As you asked, the two **Department Check emails** (the weekly one to Jeff's list, and the area-manager ones on Monday and Thursday) **are not switched on**. Department checks now follow a schedule rather than running every week. The task installer now leaves them out, and removes them if they were added before. Only the **Aging Report** (Wednesday 08:00) is scheduled. You can still test-send all three by hand. When you share the department check schedule, I'll set those two emails to follow it.
+
+---
+
+## Email test sends said "Config not found": the helper hadn't finished
+
+The email helper only saves its settings files at the very end, after all its questions are answered. The run stopped after "Brevo login... OK", so nothing was saved. It was waiting for the weekly Department Check list, which you don't have yet. That list can now be left blank, since the email is paused. The helper also says "Not finished yet" after the login check, and "Done - all three settings files saved" at the end.

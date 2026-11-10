@@ -205,15 +205,16 @@ def main():
                  f"(Brevo -> SMTP & API -> SMTP tab; a newly generated key, pasted with right-click) and run again.\n"
                  f"If it still fails, send the lines above (they contain no secrets).")
     print(f"OK (login method {smtp.get('auth', 'default')})")
+    print("Not finished yet - answer the questions below; the files are written at the end.")
 
     a, w, m = (current[n] or {} for n in NAMES)
     print("\n== Aging report (Wednesday 08:00) ==")
     aging_to = ask_list("To", a.get("recipients", AGING_TO), required=True)
     aging_cc = ask_list("Cc", a.get("cc", AGING_CC), required=False)
-    print("\n== Weekly Department Check (Monday 09:00) ==")
-    weekly_to = ask_list("To", w.get("recipients", []), required=True)
+    print("\n== Weekly Department Check (paused - not scheduled; Enter to leave blank) ==")
+    weekly_to = ask_list("To", w.get("recipients", []), required=False)
     weekly_cc = ask_list("Cc", w.get("cc", []), required=False)
-    print("\n== Area-manager Department Check (Monday + Thursday 08:00) ==")
+    print("\n== Area-manager Department Check (paused - not scheduled) ==")
     print("   Each area manager's own address comes from Admin -> Employees.")
     area_bcc = ask_list("Bcc", m.get("bcc", templates["dept-check-area-managers"].get("bcc", [])), required=False)
     anon = ask_secret("Supabase anon key (Supabase -> Project Settings -> API keys; paste with right-click)",
@@ -240,7 +241,8 @@ def main():
             json.dump(cfg, f, indent=2)
         os.replace(tmp, path)
         print(f"Wrote {path}")
-    print("\nNext: send each email to yourself only, with --to, before it goes to the real list.")
+    print("\nDone - all three settings files saved.")
+    print("Next: send each email to yourself only, with --to, before it goes to the real list.")
 
 
 if __name__ == "__main__":

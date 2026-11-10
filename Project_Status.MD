@@ -631,6 +631,22 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-10 — Email test sends: "Config not found", because the helper hadn't finished
+
+The helper printed "Testing the Brevo login... OK", but the three
+`*.config.json` files were never written to `C:\Homesavers\scripts`. The
+helper only writes them after the remaining questions are answered. The weekly
+Department Check "To" was **required** and had no default, so with no list to
+give, the run was never finished.
+
+`scripts/setup-email-configs.py`:
+- After the OK it now says "Not finished yet - answer the questions below".
+- The weekly Department Check "To" can be left blank, since that email is
+  paused. The scripts' `--to` test sends work without a list.
+- Both Department Check sections are labelled "paused".
+- It ends with "Done - all three settings files saved."
+- A new test covers the blank weekly list.
+
 ### 2026-11-10 — Brevo working; Aging Report emails on; Department Check emails paused
 
 - With the office IP on Brevo's Authorised IPs list, the email helper logged in
