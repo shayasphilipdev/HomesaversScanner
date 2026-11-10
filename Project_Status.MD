@@ -631,6 +631,34 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-10 — HO records: older (D1) records now listed on screen too (API_REVISION 2026-11-10-archive-on-screen)
+
+The user wants the screen to show everything the Excel export has. This
+replaces the earlier "Excel also includes…" note.
+
+**Server, `/reports/archive`:**
+- New `format=records`, which returns rows shaped like `/task-records`:
+  `archived: true`, `store_id`, ISO `created_at`, `details` as an object,
+  `review_notes` for back office only.
+- Now applies the `item_status` / `barcode_status` filters, matched
+  case-insensitively with `lower()`. Previously the archive half of the export
+  ignored them.
+
+**Client, `HQReports`:**
+- `runReport` also loads every archived record for the same filters whenever
+  the range reaches past the live window (same rule as the export; not for
+  "Assigned to me").
+- They're listed **after** the live rows once every live page is loaded, as
+  greyed, view-only rows labelled "🕘 Older record · <status>": no checkbox,
+  review, assign, archive, messages or details.
+- The header shows "+ N older records (over 14 days)".
+- The Excel export now passes `item_status`, `barcode_status` and
+  `includeCleared` to the archive as well.
+
+The wording deliberately avoids "archive", because the `cleared` status is
+already labelled "Archived" in the app. JSX checked with the TypeScript
+parser: 0 errors. The full Vite build couldn't run here (npm blocked).
+
 ### 2026-11-10 — HO records: screen 56 vs Excel 79 explained; on-screen note added
 
 The user saw 56 records on Reports → HO records but 79 in the Excel export.

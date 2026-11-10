@@ -495,6 +495,11 @@ function HQReports() {
   const [records, setRecords]         = useState([])
   const [total, setTotal]             = useState(0)
   const [hasMore, setHasMore]         = useState(false)
+  // Archived records (older than the live window, read from the D1 archive)
+  // for the same filters, listed read-only under the live ones. null = the
+  // range does not reach the archive.
+  const [archivedRecords, setArchivedRecords] = useState(null)
+  const [archiveLoading, setArchiveLoading]   = useState(false)
   const PAGE_SIZE = 200
   const [storesById, setStoresById]   = useState({})
   const [selected, setSelected]       = useState(new Set())
@@ -595,8 +600,50 @@ function HQReports() {
     })
   }
 
+  // Does the chosen date range reach back into the archive? Same rule as the
+  // Excel export (one day of slack around the overnight move).
+  const reachesArchive = () => {
+    const liveDays = appConfig?.retention?.live_days ?? 21
+    return new Date(from).getTime() < Date.now() - (liveDays - 1) * 86400000
+  }
+
+  // Every archived record for the current filters, shaped like live records.
+  const fetchArchivedRecords = async () => {
+    const out = []
+    let cursor = null
+    for (let i = 0; i < 200; i++) {
+      const ap = new URLSearchParams({ from, to, format: 'records' })
+      if (storeIds.length)         ap.set('storeId',        storeIds.join(','))
+      if (taskTypeIds.length)      ap.set('taskType',       taskTypeIds.join(','))
+      if (statusIds.length)        ap.set('status',         statusIds.join(','))
+      if (showingArchived)         ap.set('includeCleared', '1')
+      if (itemStatusIds.length)    ap.set('item_status',    itemStatusIds.join(','))
+      if (barcodeStatusIds.length) ap.set('barcode_status', barcodeStatusIds.join(','))
+      if (cursor) {
+        ap.set('after_created_at_ms', cursor.after_created_at_ms)
+        ap.set('after_id',            cursor.after_id)
+      }
+      const res  = await authedFetch(`/api/reports/archive?${ap}`)
+      const page = await res.json()
+      out.push(...(page.rows || []))
+      if (!page.cursor) break
+      cursor = page.cursor
+    }
+    // Newest first, like the live grid.
+    return out.sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0))
+  }
+
   const runReport = async (overrides = {}) => {
     setLoading(true); setError(''); setSelected(new Set())
+    const wantMine = overrides.assignedToMeOnly ?? assignedToMeOnly
+    setArchivedRecords(null)
+    if (!wantMine && reachesArchive()) {
+      setArchiveLoading(true)
+      fetchArchivedRecords()
+        .then(rows => setArchivedRecords(rows))
+        .catch(e => { setArchivedRecords([]); toast.error('Could not read the archive: ' + e.message) })
+        .finally(() => setArchiveLoading(false))
+    }
     try {
       const data = await fetchPage(0, overrides)
       // Tolerate bare-array (legacy) and paginated ({records,total,has_more}).
@@ -740,6 +787,9 @@ function HQReports() {
           // it is stored.
           if (taskTypeIds.length) ap.set('taskType', taskTypeIds.join(','))
           if (statusIds.length)   ap.set('status',   statusIds.join(','))
+          if (itemStatusIds.length)    ap.set('item_status',    itemStatusIds.join(','))
+          if (barcodeStatusIds.length) ap.set('barcode_status', barcodeStatusIds.join(','))
+          if (showingArchived)         ap.set('includeCleared', '1')
           // No status selected means the same here as it does live: everything
           // except archived. The server applies that default itself.
           if (aCursor) {
@@ -1180,7 +1230,7 @@ function HQReports() {
         </div>
       </div>
 
-      {records.length > 0 && (
+      {(records.length > 0 || (!hasMore && archivedRecords?.length > 0)) && (
         <div className="card mt-20">
           {/* One permanent band: every action is always shown and simply
               disabled until it applies, so ticking a row never pops a strip in
@@ -1191,20 +1241,16 @@ function HQReports() {
               {total > records.length && <> of {total.toLocaleString('en-IE')}</>}
               {' '}record{records.length !== 1 ? 's' : ''}
             </span>
-            {(() => {
-              // The grid reads only the live records; the Excel export ALSO adds
-              // archived ones (older than the live window) when the date range
-              // reaches back that far -- same rule as downloadXLSX. Say so, or
-              // the two counts look like a bug.
-              const liveDays = appConfig?.retention?.live_days ?? 21
-              const reachesArchive = new Date(from).getTime() < Date.now() - (liveDays - 1) * 86400000
-              return reachesArchive ? (
-                <span className="note" style={{ fontSize: 12 }}
-                      title={`Records older than ${liveDays} days are moved to the archive. They are not listed on this screen, but ↓ Excel includes them for the dates chosen.`}>
-                  · ↓ Excel also includes archived records older than {liveDays} days
-                </span>
-              ) : null
-            })()}
+            {archiveLoading && (
+              <span className="note" style={{ fontSize: 12 }}><span className="spinner spinner-dark" /> loading older records…</span>
+            )}
+            {archivedRecords && archivedRecords.length > 0 && (
+              <span className="note" style={{ fontSize: 12 }}
+                    title={`Records older than ${appConfig?.retention?.live_days ?? 21} days are stored separately to keep the app fast. They are listed after the newer records and can be viewed and exported, but not changed.`}>
+                · + {archivedRecords.length.toLocaleString('en-IE')} older record{archivedRecords.length !== 1 ? 's' : ''} (over {appConfig?.retention?.live_days ?? 21} days)
+                {hasMore ? ' - shown after all newer records are loaded' : ' - at the bottom, view only'}
+              </span>
+            )}
             {pendingIds.length > 0 && isBO && (
               <span className="note" style={{ fontSize: 12 }}>· {pendingIds.length} pending</span>
             )}
@@ -1458,6 +1504,35 @@ function HQReports() {
                         </tr>
                       )}
                     </Fragment>
+                  )
+                })}
+                {!hasMore && (archivedRecords || []).map(r => {
+                  const desc = r.item_name || r.description || r.product_name_label || ''
+                  return (
+                    <tr key={'arch-' + r.id} style={{ background: 'var(--bg-muted, #f6f6f6)' }}
+                        title="Older record (stored separately) - view only">
+                      {showCheckCol && <td />}
+                      <td><strong>{TASK_FORMS[r.task_type]?.name || r.task_type}</strong></td>
+                      <td>{storesById[r.store_id]?.store_name || r.store_name || <span className="td-muted">—</span>}</td>
+                      <td className="td-code" style={{ whiteSpace: 'nowrap' }}>{r.product_barcode || r.product_code || <span className="td-muted">—</span>}</td>
+                      <td>{desc || <span className="td-muted">—</span>}</td>
+                      <td className="td-code">{r.barcode_no || r.product_code || ''}</td>
+                      <td>
+                        <div className="flex-row" style={{ gap: 6 }}>
+                          {safeHref(r.photo_product_url) && <a href={safeHref(r.photo_product_url)} target="_blank" rel="noopener noreferrer">📷 product</a>}
+                          {safeHref(r.photo_barcode_url) && <a href={safeHref(r.photo_barcode_url)} target="_blank" rel="noopener noreferrer">📷 barcode</a>}
+                          {!safeHref(r.photo_product_url) && !safeHref(r.photo_barcode_url) && <span className="td-muted">—</span>}
+                        </div>
+                      </td>
+                      <td className="td-muted" style={{ whiteSpace: 'nowrap' }}>{formatDMY(r.created_at)}</td>
+                      <td>
+                        <div className="flex-row" style={{ gap: 6, justifyContent: 'flex-end', flexWrap: 'nowrap', alignItems: 'center' }}>
+                          <span className="note" style={{ fontSize: 12 }}>
+                            🕘 Older record · {(STATUS_LABEL[r.status] || {}).label || r.status}
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
                   )
                 })}
               </tbody>

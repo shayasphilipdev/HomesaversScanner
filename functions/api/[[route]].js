@@ -158,7 +158,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-11-10-backup-card'
+const API_REVISION   = '2026-11-10-archive-on-screen'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -5859,6 +5859,19 @@ export async function onRequest(context) {
       } else if (p.get('includeCleared') !== '1') {
         where.push(`status <> 'cleared'`)
       }
+      // Product / Barcode status -- the live report applies these too, so the
+      // archive must, or an archived row would ignore the filter. Matched
+      // case-insensitively, as the live grid does (the sync has written both).
+      const wantItem = csvA(p.get('item_status')).map(x => x.toLowerCase())
+      if (wantItem.length) {
+        where.push(`lower(item_status) IN (${wantItem.map(() => '?').join(',')})`)
+        args.push(...wantItem)
+      }
+      const wantBarcode = csvA(p.get('barcode_status')).map(x => x.toLowerCase())
+      if (wantBarcode.length) {
+        where.push(`lower(barcode_status) IN (${wantBarcode.map(() => '?').join(',')})`)
+        args.push(...wantBarcode)
+      }
       if (afterMs && afterId) {
         where.push('(created_at_ms > ? OR (created_at_ms = ? AND id > ?))')
         args.push(Number(afterMs), Number(afterMs), afterId)
@@ -5869,7 +5882,7 @@ export async function onRequest(context) {
       const PAGE = 2000
       args.push(PAGE)
 
-      const sql = `SELECT id, created_at_ms, store_name, product_code, barcode_no,
+      const sql = `SELECT id, created_at_ms, store_id, store_name, product_code, barcode_no,
                           product_barcode, item_name, supl_id, supplier_code,
                           item_status, barcode_status, department, status, source,
                           task_type, description, uom, quantity, notes,
@@ -5948,7 +5961,28 @@ export async function onRequest(context) {
       // builds the sheet from the live export's `cols`, which already omits this
       // for them, so nothing visible changes either way; this is about what
       // leaves the Worker, not what reaches the spreadsheet.
-      const outRows = rows.map(flatArchived)
+      // format=records: the same rows shaped like GET /task-records, so the
+      // Reports grid can list archived records next to live ones (read-only:
+      // they no longer exist in Postgres, so nothing can act on them there).
+      const asRecord = (r) => {
+        let d = null
+        try { d = r.details_json ? JSON.parse(r.details_json) : null } catch { d = null }
+        if (!d && r.department) d = { item_group: r.department }
+        return {
+          id: r.id, archived: true, task_type: r.task_type, store_id: r.store_id,
+          store_name: r.store_name || '', created_at: new Date(r.created_at_ms).toISOString(),
+          status: r.status, product_code: r.product_code, product_barcode: r.product_barcode,
+          barcode_no: r.barcode_no, item_name: r.item_name, description: r.description,
+          product_name_label: r.product_name_label, actual_product_name: r.actual_product_name,
+          supl_id: r.supl_id, supplier_code: r.supplier_code, supplier_name: r.supl_id || null,
+          item_status: r.item_status, barcode_status: r.barcode_status, uom: r.uom,
+          quantity: r.quantity, notes: r.notes, photo_product_url: r.photo_product_url,
+          photo_barcode_url: r.photo_barcode_url, details: d,
+          ...(isBO ? { review_notes: r.review_notes } : {}),
+          message_count: 0,
+        }
+      }
+      const outRows = p.get('format') === 'records' ? rows.map(asRecord) : rows.map(flatArchived)
       if (!isBO) for (const r of outRows) delete r.review_notes
 
       return json({

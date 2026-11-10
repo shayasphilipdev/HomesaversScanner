@@ -787,3 +787,14 @@ Still to do when there's time:
 Records older than 14 days are moved from the app into the archive. The **screen** only lists the records still in the app, the last 14 days. The **Excel** download also adds the archived records for the dates you chose. The report's default range is the last 30 days, so the Excel normally has more rows: the extra ones are the older, archived records.
 
 The screen now says "↓ Excel also includes archived records older than 14 days" whenever this applies. To make both match, set the **From** date to within the last 14 days.
+
+---
+
+## HO records: older records now show on screen as well
+
+The screen now lists the same records as the Excel. Records older than 14 days are stored separately, so they appear at the bottom, greyed and marked "🕘 Older record". You can see them and export them, but not change them. The Product / Barcode status filters now also apply to these older records, in the Excel and on screen.
+
+**Where records go over time (plain English):**
+- **"Archived" status:** a button people press to say a record is dealt with and hide it from the normal view. It's still a normal record in the app.
+- **Older records:** after 14 days (7 for Department Check), the system automatically moves records to separate long-term storage, so the app's database stays under its 500 MB limit. They're kept there another 35 days, then deleted (49 days in total).
+- Photos are deleted after 21 days. Daily dashboard counts are kept 180 days.
