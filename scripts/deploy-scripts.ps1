@@ -31,7 +31,8 @@ $files = @(
   'run_sync.bat',            # wrapper the Item Master / Prices / B&M tasks call
   'sync-prices.py',
   'sync-alt-barcodes.py',
-  'sync-bm-daily.ps1',       # run_sync.bat "bm-daily"
+  'sync-bm-daily.py',        # run_sync.bat "bm-daily" (SFTP CSV, 07:00-12:00)
+  'sync-bm-daily.ps1',       # run_sync.bat "bm-daily-excel" (old Excel route, manual fallback)
   'sync-cn-codes.ps1',       # run_sync.bat "cn-codes"
   'local_upload_server.py',  # run_sync.bat "server" job
   'manifest-generator.py',

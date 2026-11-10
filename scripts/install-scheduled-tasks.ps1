@@ -31,8 +31,7 @@ $user = "$env:USERDOMAIN\$env:USERNAME"
 $daily = @(
   @{ Name = 'Homesavers CN Code Sync';      At = '02:45'; Job = 'cn-codes' },
   @{ Name = 'Homesavers Prices Sync';       At = '07:00'; Job = 'prices' },
-  @{ Name = 'Homesavers Alt Barcodes Sync'; At = '07:30'; Job = 'alt-barcodes' },
-  @{ Name = 'Homesavers B&M Daily Sync';    At = '08:15'; Job = 'bm-daily' }
+  @{ Name = 'Homesavers Alt Barcodes Sync'; At = '07:30'; Job = 'alt-barcodes' }
 )
 # Report emails: registered only when their config file exists.
 $emails = @(
@@ -42,7 +41,7 @@ $emails = @(
   @{ Name = 'Homesavers Dept Check Area Thu';     Day = 'Thursday';  At = '08:00'; Script = 'dept-check-area-managers.py'; Config = 'dept-check-area-managers.config.json'; Args = '--period mid-week';  Paused = $true }
 )
 $names = @($daily | ForEach-Object { $_.Name }) +
-         @('Homesavers Manifest', 'Homesavers Upload Server') +
+         @('Homesavers B&M Daily Sync', 'Homesavers Manifest', 'Homesavers Upload Server') +
          @($emails | ForEach-Object { $_.Name })
 
 if ($Remove) {
@@ -59,7 +58,7 @@ if ($Remove) {
 $pyFile = 'C:\Homesavers\python-path.txt'
 if (-not (Test-Path $pyFile)) { throw "$pyFile missing - run scripts\setup-new-pc.ps1 first." }
 $py = (Get-Content $pyFile -Raw).Trim()
-foreach ($f in @('run_sync.bat', 'run-manifest.vbs', 'manifest-generator.py', 'local_upload_server.py')) {
+foreach ($f in @('run_sync.bat', 'run-manifest.vbs', 'manifest-generator.py', 'local_upload_server.py', 'sync-bm-daily.py')) {
   if (-not (Test-Path (Join-Path $S $f))) { throw "$S\$f missing - run scripts\deploy-scripts.ps1 first." }
 }
 $pyw = Join-Path (Split-Path $py) 'pythonw.exe'   # windowless, for the always-on server
@@ -82,6 +81,17 @@ foreach ($d in $daily) {
   $trigger = New-ScheduledTaskTrigger -Daily -At $d.At
   Register $d.Name $action $trigger (New-Settings (New-TimeSpan -Hours 2)) "run_sync.bat $($d.Job), daily $($d.At)"
 }
+
+# B&M Daily file from SFTP (2026-11-10): every 30 min 07:00-12:00, windowless.
+# Each run exits at once unless a NEW product CSV is on the server, so today's
+# file is picked up as soon as it lands; if it is still missing at 11:30 the
+# run shows as failed on Admin -> Settings -> Data Sync.
+$action  = New-ScheduledTaskAction -Execute $pyw -Argument "`"$S\sync-bm-daily.py`"" -WorkingDirectory $S
+$trigger = New-ScheduledTaskTrigger -Daily -At '07:00'
+$trigger.Repetition = (New-ScheduledTaskTrigger -Once -At '07:00' `
+  -RepetitionInterval (New-TimeSpan -Minutes 30) -RepetitionDuration (New-TimeSpan -Hours 5)).Repetition
+Register 'Homesavers B&M Daily Sync' $action $trigger (New-Settings (New-TimeSpan -Minutes 30)) `
+  'sync-bm-daily.py (B&M product CSV from SFTP), every 30 min 07:00-12:00'
 
 # Phase 8: delivery manifests every 30 min, 07:05-19:05 (idle runs take seconds)
 $action  = New-ScheduledTaskAction -Execute 'wscript.exe' -Argument "`"$S\run-manifest.vbs`"" -WorkingDirectory $S

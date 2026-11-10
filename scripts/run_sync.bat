@@ -7,7 +7,8 @@ setlocal
 ::   run_sync.bat prices       — import latest ItemMaster_*.xlsx → prices table
 ::   run_sync.bat alt-barcodes — import latest ALT Barcode Master_*.xlsx
 ::   run_sync.bat all          — run both in sequence
-::   run_sync.bat bm-daily     — import latest B&M Product File xlsx -> bm_daily_file
+::   run_sync.bat bm-daily     — newest B&M product CSV from SFTP -> Excel copy + bm_daily_file
+::   run_sync.bat bm-daily-excel — old way: latest B&M Product File xlsx (needs Excel)
 ::   run_sync.bat cn-codes     — pull CN-code master -> cn_code_master
 ::   run_sync.bat server       — start local upload server (http://localhost:8765)
 ::
@@ -46,10 +47,11 @@ if /i "%JOB%"=="prices"       goto run_prices
 if /i "%JOB%"=="alt-barcodes" goto run_alt_barcodes
 if /i "%JOB%"=="all"          goto run_all
 if /i "%JOB%"=="bm-daily"     goto run_bm_daily
+if /i "%JOB%"=="bm-daily-excel" goto run_bm_daily_excel
 if /i "%JOB%"=="cn-codes"     goto run_cn_codes
 if /i "%JOB%"=="server"       goto run_server
 
-echo Unknown job: %JOB%. Use prices, alt-barcodes, bm-daily, cn-codes, all, or server.
+echo Unknown job: %JOB%. Use prices, alt-barcodes, bm-daily, bm-daily-excel, cn-codes, all, or server.
 exit /b 1
 
 
@@ -75,6 +77,11 @@ goto end
 :: the old scheduled tasks passed a malformed -File argument (a stray space and
 :: an unterminated quote) and failed silently every night with 0xFFFD0000.
 :run_bm_daily
+"%PYEXE%" "%SCRIPTS_DIR%sync-bm-daily.py"
+goto end
+
+
+:run_bm_daily_excel
 powershell -NonInteractive -ExecutionPolicy Bypass -File "C:\Homesavers\scripts\sync-bm-daily.ps1"
 goto end
 
