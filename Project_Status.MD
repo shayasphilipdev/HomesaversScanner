@@ -631,6 +631,39 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-10 — First app backup run; archive export switched to the D1 export API with its own token
+
+**Setup:**
+- Pooler `aws-1-eu-central-1` (aws-0 answers "tenant not found").
+- A 16-character database password, reset by the user because all passwords
+  were lost after the attack.
+- 31 relations in `public`.
+
+**First run** (`--force-d1`, 3 minutes, 38 MB):
+- Database dump OK: 30 tables, 26 with data. Largest: alt_barcodes 214,786,
+  task_record_events 214,563, task_records 212,287.
+- Code bundle OK (origin/main 5ac7f66).
+- 23 PC-settings files.
+- 275 of 275 photos copied.
+
+**Archive export failed:** `wrangler d1 export` with the OAuth login got
+"Authentication error [code: 10000]" from `/d1/database/<id>/export`.
+
+**Fix:** `d1_export_api()` uses Cloudflare's polling export API (start, poll
+`current_bookmark`, download `signed_url`) with its own token, saved to
+`C:\Homesavers\.cloudflare-d1-export-token`.
+- Token name: `homesavers-backup-d1-export`, permission Account → D1 → Edit.
+- `--setup` asks for it and checks it with a GET on the database.
+- Wrangler stays only as a fallback, run with `NO_COLOR`.
+- Mock test: polling flow, bookmark carried over, gzip written, a 403 is
+  reported clearly.
+
+**Also:**
+- `--setup` reports the length of the pasted password.
+- A refused password stops with a clear message instead of trying the other
+  host.
+- Pruning is skipped after a failed run, so the first run's folder is kept.
+
 ### 2026-11-10 — Nightly app backup to B: (`scripts/backup-app.py`, task "Homesavers App Backup" 03:00)
 
 The user asked for a backup of everything the app needs, on B:, to recover

@@ -68,6 +68,9 @@ POOLER_HOSTS = ["aws-1-eu-central-1.pooler.supabase.com",
 PHOTO_BUCKET = "task-photos"
 PHOTO_URL    = f"https://{PROJECT_REF}.supabase.co/storage/v1/object/public/{PHOTO_BUCKET}/"
 D1_NAME      = "homesavers-archive"
+D1_ID        = "6c728765-d614-4282-a648-4b3fc3bf78fe"
+CF_ACCOUNT   = "565191064c74a1e202aa0211133c895d"
+D1_TOKEN_FILE = os.path.join(HOME, ".cloudflare-d1-export-token")   # secret: this PC only
 
 # Database server is PostgreSQL 17: pg_dump must be 17 or newer.
 PG_ZIPS = [f"https://get.enterprisedb.com/postgresql/postgresql-{v}-windows-x64-binaries.zip"
@@ -240,6 +243,26 @@ def setup():
         sys.exit("Could not connect to the database. Check the password (Supabase -> Project Settings -> "
                  "Database) and that this PC can reach the internet on port 5432, then run --setup again.")
 
+    have = os.path.exists(D1_TOKEN_FILE)
+    ans = input("Cloudflare token for the weekly archive export: " +
+                ("keep the saved one? [Y/n]: " if have else "add it now? [Y/n]: ")).strip().lower()
+    if (have and ans == "n") or (not have and ans != "n"):
+        tok = getpass.getpass("Cloudflare API token with D1 Edit (paste with right-click, hidden): ").strip()
+        if tok and not any(ord(c) < 32 for c in tok):
+            with open(D1_TOKEN_FILE, "w", encoding="utf-8") as f:
+                f.write(tok)
+            log(f"Token saved to {D1_TOKEN_FILE} (this PC only; {len(tok)} characters)")
+    if os.path.exists(D1_TOKEN_FILE):
+        import requests
+        with open(D1_TOKEN_FILE, encoding="utf-8") as f:
+            tok = f.read().strip()
+        r = requests.get(f"https://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT}/d1/database/{D1_ID}",
+                         headers={"Authorization": f"Bearer {tok}"}, timeout=30)
+        if r.status_code == 200:
+            log(f"  OK: the token can see the archive database ({r.json()['result'].get('name')})")
+        else:
+            log(f"  token check failed ({r.status_code}): {r.text[:200]}", "WARN")
+
     dest = first_dir(DEST_CANDIDATES)
     log(f"Backup folder: {dest or 'NOT REACHABLE'}")
     if os.path.exists(NPX):
@@ -370,12 +393,16 @@ def backup_d1(root, notes, force):
         (today - dt.date.fromisoformat(newest)).days >= 7
     if not due:
         notes.append(f"archive: weekly export not due (last {newest})"); return
-    if not os.path.exists(NPX):
-        notes.append("archive: SKIPPED - Node/npx not installed"); return
     tmp = os.path.join(tempfile.gettempdir(), f"d1-{today}.sql")
-    cwd = os.path.join(REPO, "workers", "archiver")
-    run([NPX, "--yes", "wrangler", "d1", "export", D1_NAME, "--remote", "--output", tmp],
-        cwd=cwd if os.path.isdir(cwd) else None, timeout=3600)
+    if os.path.exists(D1_TOKEN_FILE):
+        d1_export_api(tmp)
+    elif os.path.exists(NPX):
+        cwd = os.path.join(REPO, "workers", "archiver")
+        run([NPX, "--yes", "wrangler", "d1", "export", D1_NAME, "--remote", "--output", tmp],
+            env=dict(os.environ, NO_COLOR="1", FORCE_COLOR="0"),
+            cwd=cwd if os.path.isdir(cwd) else None, timeout=3600)
+    else:
+        raise RuntimeError(f"no {D1_TOKEN_FILE} and no Node - run backup-app.py --setup")
     if os.path.getsize(tmp) < 1024 * 1024:
         raise RuntimeError(f"archive export is only {os.path.getsize(tmp):,} bytes")
     out = os.path.join(d1dir, f"{today}-archive.sql.gz")
@@ -386,6 +413,41 @@ def backup_d1(root, notes, force):
     for old in sorted(f for f in os.listdir(d1dir) if f.endswith("-archive.sql.gz"))[:-KEEP_D1]:
         os.remove(os.path.join(d1dir, old))
     notes.append(f"archive: exported ({os.path.getsize(out) / 1e6:.0f} MB compressed)")
+
+
+def d1_export_api(out_path):
+    """Cloudflare's D1 export API (polling): start, poll until complete, then
+    download the SQL from the signed URL. Needs a token with D1 Edit - the
+    export locks the database while it runs, so Cloudflare treats it as a write."""
+    import requests
+    with open(D1_TOKEN_FILE, encoding="utf-8") as f:
+        token = f.read().strip()
+    url = f"https://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT}/d1/database/{D1_ID}/export"
+    h = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    body = {"output_format": "polling"}
+    deadline = time.time() + 1800
+    while True:
+        r = requests.post(url, headers=h, json=body, timeout=120)
+        j = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+        if r.status_code != 200 or not j.get("success"):
+            raise RuntimeError(f"D1 export API {r.status_code}: {json.dumps(j.get('errors') or j)[:300]}")
+        res = j.get("result") or {}
+        status = res.get("status")
+        if status == "complete":
+            signed = (res.get("result") or {}).get("signed_url")
+            if not signed:
+                raise RuntimeError("D1 export finished without a download link")
+            with requests.get(signed, stream=True, timeout=600) as d, open(out_path, "wb") as f:
+                d.raise_for_status()
+                for chunk in d.iter_content(1 << 20):
+                    f.write(chunk)
+            return
+        if status == "error":
+            raise RuntimeError(f"D1 export failed: {res.get('error') or res.get('messages')}")
+        if time.time() > deadline:
+            raise RuntimeError("D1 export did not finish within 30 minutes")
+        body = {"output_format": "polling", "current_bookmark": res.get("at_bookmark")}
+        time.sleep(3)
 
 
 def prune_daily(root):

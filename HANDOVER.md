@@ -737,3 +737,14 @@ Passwords are never included; they stay in Bitwarden. It keeps 30 days. Each res
 Important: because the PC can write to B:, ransomware on the PC could also reach this folder. The real protection is the **NAS snapshots**. Ask IT to keep daily snapshots of this folder for at least 30 days.
 
 One-time setup on the PC: `git pull`, `deploy-scripts.ps1`, `backup-app.py --setup` (paste the Supabase database password from Bitwarden), one manual run, then `install-scheduled-tasks.ps1`.
+
+---
+
+## First backup: everything saved except the archive (fixed, needs one token)
+
+The first backup worked for the database, all 275 photos, the code and the PC settings (38 MB). The weekly archive export was refused by Cloudflare. It now uses its own token instead:
+- Name: `homesavers-backup-d1-export`
+- Permission: Account → D1 → Edit
+- Save it in Bitwarden.
+
+Run `backup-app.py --setup` again to add it (answer Y to keep the database password), then `backup-app.py --force-d1`.

@@ -43,7 +43,7 @@ The job is **Homesavers App Backup**: daily at 03:00 on the back-office PC, runn
    - tests the connection
 3. Run `backup-app.py` once by hand and check `MANIFEST.txt`.
 4. Re-run `scripts\install-scheduled-tasks.ps1` to register the 03:00 task.
-5. The weekly archive export needs Node and a one-time `npx.cmd wrangler login`.
+5. The weekly archive export uses its own Cloudflare API token, `homesavers-backup-d1-export`. It needs **Account → D1 → Edit**: a D1 export locks the database while it runs, so Cloudflare counts it as a write. `--setup` asks for the token and saves it to `C:\Homesavers\.cloudflare-d1-export-token`, on this PC only; keep a copy in Bitwarden. Without the token, the script falls back to `npx.cmd wrangler d1 export`. That relies on a `wrangler login`, which has to be renewed by hand and was refused with code 10000 on 2026-11-10.
 
 ## Restoring
 
