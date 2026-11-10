@@ -631,6 +631,30 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-10 — B&M one-off backfill: `sync-bm-daily.py --backfill-from YYYY-MM-DD`
+
+The user wanted the share folders filled in from 28 Oct, using the files still
+on SFTP, and **only the missing days**.
+
+`--backfill-from`:
+- Checks `Product File CSV` and `B&M Product File Excel\<year>` first.
+- Downloads and saves only the SFTP files whose CSV and/or
+  `HomeSavers_<date>.xlsx` is missing.
+- With several files on one day, all CSVs are kept and the Excel is built from
+  the day's last file.
+- Nothing that's already there is touched or re-downloaded.
+- Never uploads, never changes the sync state, never writes to Data Sync.
+- With `--dry-run` it only lists the gaps.
+
+The copy logic is now one `save_copies()` helper used by the normal sync.
+
+Tests:
+- Preview downloads nothing.
+- The real run fetches only the 3 incomplete files and leaves the existing
+  Excels as they are.
+- No upload.
+- The earlier logic tests still pass.
+
 ### 2026-11-10 — `utcnow()` deprecation warning removed from the price / alt-barcode syncs
 
 Python 3.13 on the rebuilt PC warns that `datetime.utcnow()` is deprecated.

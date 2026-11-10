@@ -678,3 +678,9 @@ The Item Master was synced by hand at 11:15 with `ItemMaster_2026_11_10 VRS.xlsx
 - none is missing a price
 
 Alternate barcodes are still on the 9 Nov file.
+
+---
+
+## B&M files from 28 Oct: filling in only the missing days
+
+This is a one-time job that fills the gaps in the two B&M folders from the files still on the SFTP server. It first checks `Product File CSV` and `B&M Product File Excel\2026`, then fetches and saves only the days whose CSV or Excel is missing. Files already there are left alone. The app is not changed: nothing is uploaded and the daily sync isn't affected. Add `--dry-run` to only list the missing days.

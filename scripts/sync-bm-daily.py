@@ -320,6 +320,93 @@ def upload(codes):
     return written
 
 
+def save_copies(local, name, header, data, excel_dir=None):
+    """CSV copy + Excel on the share; never overwrites. Returns problems found."""
+    notes = []
+    fdate = file_date(name)
+    xlsx_name = f"HomeSavers_{fdate:%Y%m%d}.xlsx"
+    csv_dir = first_dir(CSV_DIRS)
+    if not csv_dir:
+        notes.append("CSV copy NOT saved (share not reachable)")
+    else:
+        dest = os.path.join(csv_dir, name)
+        if os.path.exists(dest):
+            log(f"CSV copy already there: {dest}")
+        else:
+            shutil.copy2(local, dest); log(f"CSV copy saved: {dest}")
+    xl_dir = excel_dir or first_dir([os.path.join(b, f"{fdate:%Y}") for b in EXCEL_BASE])
+    if not xl_dir:
+        notes.append("Excel NOT saved (share not reachable)")
+    else:
+        dest = os.path.join(xl_dir, xlsx_name)
+        if os.path.exists(dest):
+            log(f"Excel already there, left as it is: {dest}")
+        else:
+            build_excel(header, data, dest, f"{fdate:%Y%m%d}-01"); log(f"Excel saved: {dest}")
+    return notes
+
+
+def backfill(since, preview=False):
+    """One-off: fill the gaps in the two share folders from the SFTP files dated
+    `since` or later. Only days whose CSV or Excel is MISSING are downloaded and
+    saved; nothing already there is touched. Nothing is uploaded, the sync state
+    is not changed. Where a day has several files, every CSV is kept and the
+    Excel comes from the day's last file. preview=True only lists the gaps."""
+    csv_dir = first_dir(CSV_DIRS)
+    xl_dirs = {}
+    if not csv_dir:
+        raise RuntimeError(f"CSV folder not reachable: {CSV_DIRS[0]}")
+
+    def xl_path(d):
+        if d.year not in xl_dirs:
+            xl_dirs[d.year] = first_dir([os.path.join(b, f"{d:%Y}") for b in EXCEL_BASE])
+            if not xl_dirs[d.year]:
+                raise RuntimeError(f"Excel folder not reachable: {EXCEL_BASE[0]}\\{d:%Y}")
+        return os.path.join(xl_dirs[d.year], f"HomeSavers_{d:%Y%m%d}.xlsx")
+
+    client, sftp = sftp_connect()
+    try:
+        files = sorted((a for a in sftp.listdir_attr(SFTP_REMOTE_DIR)
+                        if not stat.S_ISDIR(a.st_mode) and FILE_RE.match(a.filename)
+                        and file_date(a.filename) >= since
+                        and time.time() - a.st_mtime >= SFTP_SETTLE_SECS),
+                       key=lambda a: a.filename.upper())
+        last_of_day = {file_date(a.filename): a.filename for a in files}
+        todo = []
+        for a in files:
+            d = file_date(a.filename)
+            need_csv = not os.path.exists(os.path.join(csv_dir, a.filename))
+            need_xl = last_of_day[d] == a.filename and not os.path.exists(xl_path(d))
+            if need_csv or need_xl:
+                todo.append((a, need_csv, need_xl))
+        log(f"Backfill: {len(files)} SFTP file(s) dated {since} or later; "
+            f"{len(todo)} with a missing CSV and/or Excel")
+        for a, need_csv, need_xl in todo:
+            log(f"  missing: {a.filename}  " + " + ".join(
+                x for x, n in (("CSV", need_csv), (os.path.basename(xl_path(file_date(a.filename))), need_xl)) if n))
+        if preview:
+            log("=== Preview only: nothing saved ===")
+            return 0
+        problems = 0
+        for a, need_csv, need_xl in todo:
+            try:
+                local = sftp_download(sftp, SFTP_REMOTE_DIR, a)
+                if need_csv:
+                    shutil.copy2(local, os.path.join(csv_dir, a.filename))
+                    log(f"CSV copy saved: {os.path.join(csv_dir, a.filename)}")
+                if need_xl:
+                    header, data = read_csv(local)
+                    d = file_date(a.filename)
+                    build_excel(header, data, xl_path(d), f"{d:%Y%m%d}-01")
+                    log(f"Excel saved: {xl_path(d)}")
+            except Exception as e:
+                log(f"{a.filename}: {e}", "ERROR"); problems += 1
+    finally:
+        sftp.close(); client.close()
+    log(f"=== Backfill finished: {len(todo)} file(s) filled in, {problems} problem(s); the app was not changed ===")
+    return 1 if problems else 0
+
+
 # ── Main ────────────────────────────────────────────────────────────────────
 
 def main():
@@ -329,7 +416,17 @@ def main():
     ap.add_argument("--file", help="Use this local HSVPRD CSV instead of SFTP.")
     ap.add_argument("--list", action="store_true", help="List the SFTP folder and stop.")
     ap.add_argument("--excel-out", help="Write the Excel here instead of the share (testing).")
+    ap.add_argument("--backfill-from", metavar="YYYY-MM-DD",
+                    help="One-off: save the MISSING CSV / Excel copies of the SFTP files from this "
+                         "date on (with --dry-run: only list them). No upload; the app is not changed.")
     args = ap.parse_args()
+    if args.backfill_from:
+        log("=== B&M Daily backfill (copies only, no upload) starting ===")
+        try:
+            return backfill(dt.date.fromisoformat(args.backfill_from), preview=args.dry_run)
+        except Exception as e:
+            log(f"Backfill FAILED: {e}", "ERROR")
+            return 1
 
     started = dt.datetime.now(dt.timezone.utc).isoformat()
     state = load_state()
@@ -397,24 +494,7 @@ def main():
             return 0
 
         # Copies on the share. A failure here is reported but never blocks the upload.
-        csv_dir = first_dir(CSV_DIRS)
-        if not csv_dir:
-            notes.append("CSV copy NOT saved (share not reachable)")
-        else:
-            dest = os.path.join(csv_dir, name)
-            if os.path.exists(dest):
-                log(f"CSV copy already there: {dest}")
-            else:
-                shutil.copy2(local, dest); log(f"CSV copy saved: {dest}")
-        xl_dir = args.excel_out or first_dir([os.path.join(b, f"{fdate:%Y}") for b in EXCEL_BASE])
-        if not xl_dir:
-            notes.append("Excel NOT saved (share not reachable)")
-        else:
-            dest = os.path.join(xl_dir, xlsx_name)
-            if os.path.exists(dest):
-                log(f"Excel already there, left as it is: {dest}")
-            else:
-                build_excel(header, data, dest, f"{fdate:%Y%m%d}-01"); log(f"Excel saved: {dest}")
+        notes += save_copies(local, name, header, data, args.excel_out)
         for n in notes:
             log(n, "WARN")
 
