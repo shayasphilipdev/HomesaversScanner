@@ -631,6 +631,22 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-10 — Backup photos: 7-day grace after the app deletes them (user decision)
+
+The user said photos aren't important and asked to keep only what's in the
+app, plus about a week.
+
+`backup_photos()` now:
+- Records in `photos-removed.json` (backup root) the day each local photo was
+  first seen missing from the bucket.
+- Deletes it once `PHOTO_GRACE_DAYS` (7) have passed, and tidies empty folders.
+- Deletes nothing if the bucket listing comes back empty, which is more
+  likely an error than an empty bucket.
+
+This replaces the append-only mirror described in the previous entry. Tested:
+missing photos are kept, then removed after 8 days, and an empty listing
+removes nothing.
+
 ### 2026-11-10 — First complete app backup verified; photo retention vs backup
 
 The `sync_runs` backup row at 13:42 is ok:

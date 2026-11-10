@@ -760,3 +760,9 @@ The backup finished OK at 13:42. Checked on the server:
 - all 275 photos already in the backup's `photos` folder
 
 **Photos removed from the app:** the app deletes task photos after 21 days (Admin → Settings → "photo retention days"). The backup's `photos` folder is **never cleaned**: each night it adds new photos and keeps every photo it has ever copied. From now on, a photo the app deletes stays in `B:\...\HomesaversScannerBackup\photos`, under the same folder path as in the app. The archived records keep their photo link, so the file can be found by that path. Photos deleted before the first backup (anything from before 20 Oct) were already gone and can't be recovered. The folder grows by about 140 MB every three weeks.
+
+---
+
+## Backup photos: kept only one week after the app deletes them
+
+As requested, the backup no longer keeps photos forever. It copies the photos that are in the app, and when the app deletes a photo (after 21 days), the backup removes its copy 7 days later. The backup's `photos` folder therefore stays about the same size as the app's, around 140 MB. If the app ever reports no photos at all, the backup deletes nothing, in case it's an error.

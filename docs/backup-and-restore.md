@@ -30,7 +30,7 @@ Written 2026-11-10, after the Qilin ransomware attack on the back-office PC.
     - the scheduled tasks as XML
   - `MANIFEST.txt`: file sizes and SHA-256 checksums, table counts, and any problems.
 - **`d1\YYYY-MM-DD-archive.sql.gz`**: the Department Check archive (Cloudflare D1). Exported weekly on Sundays; the last 8 are kept.
-- **`photos\`**: a copy of every task photo. Only new photos are added, and photos are never deleted from here.
+- **`photos\`**: a copy of the task photos currently in the app. New photos are added each night. A photo the app deletes (after 21 days) is removed from here 7 days later.
 
 The job is **Homesavers App Backup**: daily at 03:00 on the back-office PC, running `C:\Homesavers\scripts\backup-app.py`. Its result shows on Admin → Settings → Data Sync → **App Backup**. Log: `C:\Homesavers\logs\backup-app.log`.
 

@@ -13,9 +13,10 @@ PC can write to B:, so a copy here alone would not survive an attack on it).
             pc-settings.zip        C:\Homesavers settings + scheduled tasks, NO secrets
             MANIFEST.txt           what was saved, sizes, SHA-256, checks
         d1\YYYY-MM-DD-archive.sql.gz   Department Check archive (weekly, Sundays)
-        photos\...                 mirror of the task-photos bucket (new files only)
+        photos\...                 copy of the task-photos bucket; photos the app deletes
+                                   are removed from here 7 days later
 
-Kept: 30 daily folders, 8 weekly archive exports; photos are never deleted.
+Kept: 30 daily folders, 8 weekly archive exports; photos until 7 days after the app deletes them.
 Product-master tables (prices, alt_barcodes, bm_daily_file, cn_code_master)
 are saved as structure only: they are rebuilt from the daily source files.
 
@@ -79,6 +80,7 @@ STRUCTURE_ONLY = ["prices", "alt_barcodes", "bm_daily_file", "cn_code_master"]
 
 KEEP_DAILY  = 30
 KEEP_D1     = 8
+PHOTO_GRACE_DAYS = 7   # photos deleted from the app stay in the backup this long
 SECRET_KEYS = re.compile(r"pass|secret|token|key|cookie", re.I)
 
 
@@ -320,7 +322,41 @@ def backup_photos(host, root, notes):
             new += 1
         else:
             log(f"photo {name}: HTTP {r.status_code}", "WARN")
-    notes.append(f"photos: {len(rows)} in the bucket, {new} new copied")
+
+    # Photos the app has deleted are kept PHOTO_GRACE_DAYS more, then removed
+    # (user, 2026-11-10: photos are not important; a week's safety net is enough).
+    # The day each one was first seen missing is remembered in photos-removed.json.
+    in_bucket = {os.path.normcase(os.path.join(pdir, *n.split("/"))) for n, _ in rows}
+    state_path = os.path.join(root, "photos-removed.json")
+    try:
+        with open(state_path, encoding="utf-8") as f:
+            missing_since = json.load(f)
+    except Exception:
+        missing_since = {}
+    today = dt.date.today()
+    still, removed = {}, 0
+    if rows:   # an empty listing is more likely an error than an empty bucket: delete nothing
+        for base, _dirs, files in os.walk(pdir):
+            for fn in files:
+                p = os.path.join(base, fn)
+                if os.path.normcase(p) in in_bucket or fn.endswith(".part"):
+                    continue
+                rel = os.path.relpath(p, pdir)
+                since = dt.date.fromisoformat(missing_since.get(rel, today.isoformat()))
+                if (today - since).days >= PHOTO_GRACE_DAYS:
+                    os.remove(p); removed += 1
+                else:
+                    still[rel] = since.isoformat()
+        for base, dirs, files in os.walk(pdir, topdown=False):   # tidy empty folders
+            if base != pdir and not dirs and not files:
+                try:
+                    os.rmdir(base)
+                except OSError:
+                    pass
+        with open(state_path, "w", encoding="utf-8") as f:
+            json.dump(still, f, indent=0)
+    notes.append(f"photos: {len(rows)} in the bucket, {new} new copied, "
+                 f"{len(still)} deleted from the app kept for now, {removed} removed after {PHOTO_GRACE_DAYS} days")
 
 
 def backup_code(day_dir, notes):
