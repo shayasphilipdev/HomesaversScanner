@@ -631,6 +631,45 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-10 — Brevo login fails again with a correct 90-character key: per-method login diagnostic
+
+The second attempt, using the full 90-character SMTP key pasted with right-click,
+failed again with `454 4.7.0 501 5.5.2 Invalid syntax (unable to parse)`. That
+error is not "wrong password" (which would be 535). It means the server couldn't
+parse what was sent. Python's `s.login()` tries CRAM-MD5, then PLAIN, then LOGIN,
+and reports only the **last** error, so we couldn't tell which method was
+rejected, or whether something in between (antivirus email/SSL scanning on
+port 587, which is common on a freshly rebuilt PC) was rewriting the traffic.
+
+`scripts/setup-email-configs.py`:
+- `test_login()` now tries each method on its own fresh connection: PLAIN with
+  an initial response, LOGIN step-by-step, LOGIN with an initial response, then
+  CRAM-MD5. For each one it prints the server's answer.
+- It also prints the TLS certificate's server name and issuer, and warns when
+  the certificate isn't Brevo's. A certificate-verify failure is reported as
+  "something is intercepting port 587".
+- It prints the methods the server offers, the login, and the key's length and
+  whether it starts with `xsmtpsib-`. It never prints the key itself.
+- The first method that works is saved in each config as `smtp.auth` and
+  `smtp.auth_initial_response`.
+- The pasted secret is also rejected if it contains non-ASCII or whitespace
+  characters (a non-breaking or zero-width space copied from a web page). The
+  helper shows the character codes.
+
+`aging-report.py`, `dept-check-weekly.py`, `dept-check-area-managers.py`:
+- New `smtp_login(s, smtp)` replaces the six `s.login(...)` calls. It uses the
+  saved method. Without one, it behaves exactly as before.
+
+Tested against a local fake SMTP server that rejects PLAIN and one-line LOGIN
+with the same 454 error and accepts step-by-step LOGIN:
+- The diagnostic picks LOGIN step-by-step.
+- A total failure lists every method's answer, with no secret in the message.
+- The email script logs in with the saved method and sends.
+- The existing helper tests all still pass.
+
+On the PC: `git pull`, run `scripts\deploy-scripts.ps1`, re-run the helper, and
+send the printed lines if it still fails.
+
 ### 2026-11-10 — Phase 9: every scheduled job ran on its own; source files now arrive late
 
 First unattended night on the rebuilt PC, from `sync_runs` (Irish time):

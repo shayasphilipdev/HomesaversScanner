@@ -429,6 +429,19 @@ def build_html(last, prev, cfg, revise_note=None):
 
 # -- send ----------------------------------------------------------------------
 
+def smtp_login(s, smtp):
+    """Log in with the method setup-email-configs.py found working (saved as
+    smtp.auth / smtp.auth_initial_response); without one, Python's default."""
+    mech = (smtp.get("auth") or "").upper()
+    if not mech:
+        s.login(smtp["username"], smtp["password"])
+        return
+    s.ehlo_or_helo_if_needed()
+    s.user, s.password = smtp["username"], smtp["password"]
+    s.auth(mech, getattr(s, "auth_" + mech.lower().replace("-", "_")),
+           initial_response_ok=bool(smtp.get("auth_initial_response", True)))
+
+
 def send_email(cfg, html, subject, recipients, cc=None):
     smtp = cfg["smtp"]
     msg = EmailMessage()
@@ -445,14 +458,14 @@ def send_email(cfg, html, subject, recipients, cc=None):
     if security == "ssl":
         with smtplib.SMTP_SSL(host, port, timeout=60) as s:
             if smtp.get("username"):
-                s.login(smtp["username"], smtp["password"])
+                smtp_login(s, smtp)
             s.send_message(msg)
     else:
         with smtplib.SMTP(host, port, timeout=60) as s:
             if security == "starttls":
                 s.starttls()
             if smtp.get("username"):
-                s.login(smtp["username"], smtp["password"])
+                smtp_login(s, smtp)
             s.send_message(msg)
 
 

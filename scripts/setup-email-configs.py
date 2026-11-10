@@ -21,6 +21,7 @@ import json
 import os
 import re
 import smtplib
+import ssl
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -60,6 +61,14 @@ def ask_secret(label, existing, check=None):
         if any(ord(c) < 32 or ord(c) == 127 for c in val):
             print("  That didn't paste properly (Ctrl+V doesn't work here). Paste with RIGHT-CLICK, then Enter.")
             continue
+        # Copying from a web page can bring along an invisible character
+        # (non-breaking or zero-width space) that the server cannot parse.
+        odd = [c for c in val if ord(c) > 126 or c.isspace()]
+        if odd:
+            print(f"  The pasted text contains {len(odd)} hidden/non-standard character(s) "
+                  f"({', '.join(sorted({f'U+{ord(c):04X}' for c in odd}))}). "
+                  "Copy the key again (Brevo's copy button) and paste with right-click.")
+            continue
         print(f"  received {len(val)} characters")
         if check:
             problem = check(val)
@@ -90,10 +99,77 @@ def ask_list(label, default, required):
             return items
 
 
-def test_login(smtp):
+# Login methods to try, each on its own fresh connection. Python's own
+# s.login() tries CRAM-MD5, PLAIN and LOGIN in turn and reports only the
+# LAST error, which hides which method the server actually objected to.
+METHODS = (
+    ("PLAIN", True),     # AUTH PLAIN <credentials> on one line
+    ("LOGIN", False),    # AUTH LOGIN, then username and key on separate lines
+    ("LOGIN", True),     # AUTH LOGIN <username>, then key
+    ("CRAM-MD5", False),
+)
+
+
+def _describe_tls(s):
+    try:
+        cert = s.sock.getpeercert() or {}
+    except Exception:
+        return "unknown"
+    subj = dict(x[0] for x in cert.get("subject", ()))
+    issuer = dict(x[0] for x in cert.get("issuer", ()))
+    return (f"server {subj.get('commonName', '?')}, issued by "
+            f"{issuer.get('organizationName') or issuer.get('commonName', '?')}")
+
+
+def _try_method(smtp, mech, initial):
+    """One connection, one method. Returns (ok, detail). Never prints secrets."""
     with smtplib.SMTP(smtp["host"], smtp["port"], timeout=30) as s:
-        s.starttls()
-        s.login(smtp["username"], smtp["password"])
+        s.ehlo()
+        s.starttls(context=ssl.create_default_context())
+        s.ehlo()
+        info = {"tls": _describe_tls(s), "auth": s.esmtp_features.get("auth", "").strip()}
+        if mech not in info["auth"].upper().split():
+            return False, "not offered by the server", info
+        s.user, s.password = smtp["username"], smtp["password"]
+        authobj = getattr(s, "auth_" + mech.lower().replace("-", "_"))
+        try:
+            s.auth(mech, authobj, initial_response_ok=initial)
+        except smtplib.SMTPAuthenticationError as e:
+            return False, f"{e.smtp_code} {e.smtp_error.decode(errors='replace')}", info
+        except smtplib.SMTPException as e:
+            return False, str(e), info
+        return True, "accepted", info
+
+
+def test_login(smtp):
+    """Find a login method the server accepts. Prints what each method was
+    answered (never the secrets) and returns the settings to save, e.g.
+    {"auth": "PLAIN", "auth_initial_response": True}. Raises on total failure."""
+    print()
+    print(f"  login: {smtp['username']}  key: {len(smtp['password'])} characters, "
+          f"{'starts xsmtpsib-' if smtp['password'].startswith('xsmtpsib-') else 'does NOT start xsmtpsib-'}")
+    shown = False
+    answers = []
+    for mech, initial in METHODS:
+        label = f"{mech}{' (one line)' if initial and mech == 'LOGIN' else ''}"
+        try:
+            ok, detail, info = _try_method(smtp, mech, initial)
+        except ssl.SSLCertVerificationError as e:
+            raise RuntimeError(
+                f"the secure connection to {smtp['host']} was not trusted ({e.verify_message}). "
+                "Something on this PC or network (often antivirus 'email scanning' / 'SSL scanning') "
+                "is intercepting port 587 - turn that off for smtp-relay.brevo.com") from e
+        if not shown:
+            print(f"  secure connection: {info['tls']}")
+            print(f"  login methods offered: {info['auth'] or '(none)'}")
+            if "brevo" not in info["tls"].lower() and "sendinblue" not in info["tls"].lower():
+                print("  WARNING: the certificate is not Brevo's - antivirus/firewall may be intercepting email.")
+            shown = True
+        print(f"  {label:<18} {detail}")
+        answers.append(f"{label}: {detail}")
+        if ok:
+            return {"auth": mech, "auth_initial_response": initial}
+    raise RuntimeError("every login method was refused:\n    " + "\n    ".join(answers))
 
 
 def main():
@@ -117,12 +193,13 @@ def main():
     }
     print("Testing the Brevo login...", end=" ", flush=True)
     try:
-        test_login(smtp)
+        smtp.update(test_login(smtp) or {})
     except Exception as e:
         print("FAILED")
         sys.exit(f"Brevo login failed: {e}\nNothing was written. Check the SMTP login and the SMTP key "
-                 f"(Brevo -> SMTP & API -> SMTP tab; a newly generated key, pasted with right-click) and run again.")
-    print("OK")
+                 f"(Brevo -> SMTP & API -> SMTP tab; a newly generated key, pasted with right-click) and run again.\n"
+                 f"If it still fails, send the lines above (they contain no secrets).")
+    print(f"OK (login method {smtp.get('auth', 'default')})")
 
     a, w, m = (current[n] or {} for n in NAMES)
     print("\n== Aging report (Wednesday 08:00) ==")

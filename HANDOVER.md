@@ -584,3 +584,15 @@ First night on the new PC with no one touching it:
 The report emails are still waiting on the Brevo SMTP key.
 
 Full write-up in `Project_Status.MD` §11.
+
+---
+
+## Email setup: the Brevo login failed again, so the helper now shows exactly why
+
+With the full 90-character key the login still failed, with the same "Invalid syntax (unable to parse)" answer. That answer isn't "wrong key". It means Brevo couldn't read how the login was sent. Python tries three login methods one after another and only shows the last error, which hid the real cause.
+
+The helper now tries each login method separately and prints what Brevo answered to each one. It also shows who issued the secure connection's certificate. If that isn't Brevo, antivirus "email scanning" on this PC is getting in the way, and the helper says so. As soon as one method works, it's saved, and all three report emails use that method from then on. It also catches invisible characters that can come along when a key is copied from a web page. The key itself is never shown.
+
+Next on the PC: `git pull`, run `scripts\deploy-scripts.ps1`, then run the email helper again. If it still fails, send the lines it prints (they contain no secrets).
+
+Full write-up in `Project_Status.MD` §11.
