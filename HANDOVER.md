@@ -648,3 +648,16 @@ The website, the nightly archiver and the area-manager email all use one Supabas
 Both are waiting until you have time. Nothing has changed for the stores: everything still uses the old key, and the new code works with either one.
 - **Key switch:** follow the steps above, ideally after the stores close. It has to be done before the end of 2026, when Supabase retires the old keys.
 - **Emails:** the helper no longer needs the Supabase key. Press Enter to skip it. The Aging Report doesn't use it, and the area-manager email is paused. So you can finish the Aging Report email without touching the key: run the helper → test send → run the task installer.
+
+---
+
+## B&M Daily now comes straight from the SFTP server
+
+The B&M Daily file is now taken from the SFTP server (`Inbound File\Product File`) instead of the Excel file on the shared drive. Every 30 minutes from 07:00 to 12:00, the PC checks for a new product CSV. When one arrives, it:
+- saves the CSV unchanged to `B:\Supply Chain & Buying - Shared\Data\Product File CSV`
+- builds the usual `HomeSavers_YYYYMMDD.xlsx` in `B:\...\B&M Product File Excel\2026`, matching the old file column for column (checked against your 9 Nov file: identical)
+- updates the scanner app
+
+If an Excel file for that date already exists, it's left alone. If today's file still hasn't arrived by 11:30, Admin → Settings → Data Sync shows a failure saying so. A file that looks broken (far fewer products than usual) is refused, and the current data stays. Excel no longer needs to be installed for this job, and no window pops up.
+
+The old Excel-based job is kept as a manual backup: `run_sync.bat bm-daily-excel`.

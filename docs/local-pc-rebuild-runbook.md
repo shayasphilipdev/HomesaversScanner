@@ -141,6 +141,24 @@ show the exact shape each config file needs — copy and fill in.
   next to it.
 
 ### 4.3 B&M Daily File
+**Since 2026-11-10: `scripts/sync-bm-daily.py`, from SFTP.**
+- Reads the newest `HSVPRD<yyyymmdd><hhmmss>.CSV` from SFTP
+  `192.168.1.77:22`, folder `Inbound File/Product File`. Same login, password
+  file and pinned host key as the manifest job; read-only on the server.
+- Saves the CSV unchanged to `...\Data\Product File CSV`.
+- Builds `HomeSavers_<yyyymmdd>.xlsx` into
+  `...\Data\B&M Product File Excel\<year>`, the same layout as the old file
+  (checked cell by cell). It never overwrites an existing file.
+- Uploads the ProductIDs (`Grp/SubGrp`+`Item`+`Option` → `01-01-000-00`).
+- Task "Homesavers B&M Daily Sync" runs it with `pythonw` every 30 min,
+  07:00–12:00. A run with no new file exits at once. A file still missing at
+  11:30 shows as failed on Data Sync.
+- State is kept in `C:\Homesavers\bm-daily-state.json`; downloads go to
+  `C:\Homesavers\bm-daily-inbound`.
+- A file with less than half the previous product count is refused.
+- Flags: `--list`, `--dry-run`, `--force`, `--file X.CSV`.
+
+**Old route, kept as a manual fallback (`run_sync.bat bm-daily-excel`):**
 - **Script**: `scripts/sync-bm-daily.ps1`
 - **Reads**: latest `HomeSavers_*.xlsx` from
   `\\192.168.1.205\Buying Data\Supply Chain & Buying - Shared\Data\B&M Product File Excel\2026`

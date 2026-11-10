@@ -209,7 +209,7 @@ logged-on user:
 | Homesavers CN Code Sync | daily 02:45 | `run_sync.bat cn-codes` |
 | Homesavers Prices Sync | daily 07:00 | `run_sync.bat prices` |
 | Homesavers Alt Barcodes Sync | daily 07:30 | `run_sync.bat alt-barcodes` |
-| Homesavers B&M Daily Sync | daily 08:15 | `run_sync.bat bm-daily` |
+| Homesavers B&M Daily Sync | every 30 min, 07:00–12:00 (since 2026-11-10; was daily 08:15) | `pythonw sync-bm-daily.py` — SFTP product CSV |
 | Homesavers Manifest | every 30 min, 07:05–19:05 | `run-manifest.vbs` |
 | Homesavers Upload Server | at logon | `pythonw local_upload_server.py` |
 

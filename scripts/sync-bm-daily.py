@@ -227,16 +227,65 @@ def product_id(row):
 
 # ── Excel ───────────────────────────────────────────────────────────────────
 
-def build_excel(header, data, path):
-    """B&M Daily Excel. Layout: see EXCEL LAYOUT notes in Project_Status.MD."""
+# Matches HomeSavers_20261109.xlsx (made by the old process), checked cell by
+# cell against the 9 Nov CSV: one sheet "First Sheet"; VarianceCode
+# (<file date>-01) and ProductID in front of the CSV's columns; the CSV's
+# "Barcode list" becomes Barcodelist (its first entry, the B&M short code) then
+# Barcode1..BarcodeN - N is however many the longest row needs (735 on 9 Nov).
+# Values are trimmed; a plain number becomes a real number unless it has a
+# leading zero (0101, 000, 0506305461581 stay text, as in the original);
+# blanks stay empty.
+EXCEL_FIXED = ["VarianceCode", "ProductID", "GrpSubGrp", "ItemNo", "OptionNo", "SubGroup",
+               "ItemName", "OptionName", "SellPrice", "DCstock", "Units on Pallet", "Producttype",
+               "Promotiondetails", "Wholesalecost", "Casesize", "Groupdescription", "Till message",
+               "ZZ_Trigger", "Z_Trigger", "A_Trigger", "B_Trigger", "C_Trigger", "D_Trigger",
+               "W777", "W750", "W970", "W950", "W850", "Pricelabel", "Import Commodity code",
+               "Export Commodity Code", "CoO", "Barcodelist"]
+EXCEL_WIDTHS = {"A": 13.43, "B": 12.14, "C": 10.86, "D": 7.71, "E": 9.71, "F": 30.0, "G": 20.57,
+                "H": 14.71, "I": 8.71, "J": 8.0, "K": 14.14, "L": 19.0, "M": 20.86, "N": 14.29,
+                "O": 8.57, "P": 24.86, "Q": 101.71, "R": 10.14, "T": 9.43, "U": 9.29, "W": 9.43,
+                "X": 7.0, "AB": 6.0, "AC": 9.86, "AD": 22.86, "AF": 4.71, "AG": 10.86, "AH": 17.29,
+                "AI": 15.14}
+_NUM = re.compile(r"^-?\d+(\.\d+)?$")
+
+
+def excel_value(v):
+    v = v.strip()
+    if not v:
+        return None
+    if _NUM.match(v):
+        digits = v.lstrip("-")
+        if len(digits) > 1 and digits[0] == "0" and digits[1] != ".":
+            return v                                   # leading zero: keep as text
+        if "." in v:
+            f = float(v)
+            return int(f) if f.is_integer() else f
+        return int(v)
+    return v
+
+
+def build_excel(header, data, path, variance):
     from openpyxl import Workbook
+    from openpyxl.cell import WriteOnlyCell
+    from openpyxl.styles import Font
+    if len(header) != len(EXCEL_FIXED) - 2:
+        raise ValueError(f"the CSV has {len(header)} columns, expected {len(EXCEL_FIXED) - 2} - "
+                         "the file layout changed; Excel not built")
     wb = Workbook(write_only=True)
     ws = wb.create_sheet("First Sheet")
-    fixed = header[:-1]                              # everything before "Barcode list"
-    n_extra = max(len(r) for r in data) - len(fixed)
-    ws.append(["ProductID"] + fixed + [f"Barcode {i}" for i in range(1, n_extra + 1)])
+    for col, w in EXCEL_WIDTHS.items():
+        ws.column_dimensions[col].width = w
+    n_barcodes = max(len(r) for r in data) - (len(header) - 1)     # entries in "Barcode list"
+    head = EXCEL_FIXED + [f"Barcode{i}" for i in range(1, n_barcodes)]
+    bold = Font(name="Calibri", size=11, bold=True)
+    hdr_cells = []
+    for h in head:
+        c = WriteOnlyCell(ws, value=h); c.font = bold; c.number_format = "@"
+        hdr_cells.append(c)
+    ws.append(hdr_cells)
     for r in data:
-        ws.append([product_id(r)] + [c.strip() for c in r])
+        vc = WriteOnlyCell(ws, value=variance); vc.number_format = "@"
+        ws.append([vc, product_id(r)] + [excel_value(v) if j > 2 else v.strip() for j, v in enumerate(r)])
     tmp = path + ".part.xlsx"
     wb.save(tmp)
     os.replace(tmp, path)
@@ -340,9 +389,9 @@ def main():
         xlsx_name = f"HomeSavers_{fdate:%Y%m%d}.xlsx"
         notes = []
         if args.dry_run:
-            out = args.excel_out or os.path.join(INBOUND_DIR, xlsx_name)
+            out = os.path.abspath(args.excel_out or os.path.join(INBOUND_DIR, xlsx_name))
             os.makedirs(os.path.dirname(out), exist_ok=True)
-            build_excel(header, data, out)
+            build_excel(header, data, out, f"{fdate:%Y%m%d}-01")
             log(f"Dry run: Excel written to {out}; first IDs {', '.join(codes[:5])}")
             log("=== Dry run complete (nothing uploaded or copied) ===")
             return 0
@@ -365,7 +414,7 @@ def main():
             if os.path.exists(dest):
                 log(f"Excel already there, left as it is: {dest}")
             else:
-                build_excel(header, data, dest); log(f"Excel saved: {dest}")
+                build_excel(header, data, dest, f"{fdate:%Y%m%d}-01"); log(f"Excel saved: {dest}")
         for n in notes:
             log(n, "WARN")
 

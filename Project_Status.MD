@@ -631,6 +631,61 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-10 — B&M Daily now comes from the SFTP product CSV (`scripts/sync-bm-daily.py`)
+
+B&M put a daily product CSV on the same SFTP server as the manifests:
+`Inbound File/Product File/HSVPRD<yyyymmdd><hhmmss>.CSV`. The new job replaces
+the Excel-based `sync-bm-daily.ps1`, which is kept as `run_sync.bat bm-daily-excel`.
+
+**Verified against 9 Nov:**
+- ProductID = `Grp/SubGrp[:2]-Grp/SubGrp[2:]-Item-Option`. The CSV's 14,213
+  IDs equal the live `bm_daily_file` (md5 of the sorted list matches).
+- The Excel built from the CSV matches the user's trimmed
+  `HomeSavers_20261109.xlsx` exactly: 0 differences in 7,680 cells, values and
+  types. Full size is 14,214 × 768, the same as the original.
+- Layout:
+  - Sheet `First Sheet`.
+  - `VarianceCode` (`<date>-01`), then `ProductID`, then the CSV columns renamed.
+  - `Barcode list` becomes `Barcodelist` (its first entry, the B&M short code)
+    plus `Barcode1..N`, with N as large as the longest row needs.
+  - Values trimmed. Numbers become numeric unless they have a leading zero
+    (stays text). Blanks are empty.
+  - Bold header, `@` format.
+  - Column widths copied from the original.
+- Assumptions:
+  - `-01` in VarianceCode: only one sample was available.
+  - Trimming text cells: no sample row had padded text, and 492 such cells
+    exist in the CSV.
+
+**Behaviour:**
+- Every 30 min from 07:00 to 12:00, via `pythonw`, so no window opens.
+- Exits at once if the newest settled file (unchanged for 120 s) was already
+  synced (`C:\Homesavers\bm-daily-state.json`).
+- If today's file is still missing at 11:30, it records one failed run on Data
+  Sync per day.
+- Saves the CSV to `...\Data\Product File CSV` and the Excel to
+  `...\Data\B&M Product File Excel\<year>`. It never overwrites, and a share
+  outage is reported but doesn't block the upload.
+- Uploads with the same reset + chunk API, with retries.
+- Refuses a file with less than half the previous product count.
+- Checks that the CSV still has 31 header columns before building the Excel.
+
+**Other files changed:**
+- `run_sync.bat`: `bm-daily` runs the new job; `bm-daily-excel` runs the old one.
+- `deploy-scripts.ps1`: deploys both.
+- `install-scheduled-tasks.ps1`: the B&M task is now the 07:00–12:00 repeating
+  pythonw task.
+- The runbook §4.3 and the restoration plan's tasks table are updated.
+
+Tests (fake SFTP):
+- Picks the newest settled file.
+- Skips a file that's already synced.
+- Warns once a day when the file is late.
+- Doesn't overwrite an existing Excel.
+- Refuses a broken short file.
+- Still uploads when the share is down.
+- A manual `--file` of an older CSV doesn't move the state back.
+
 ### 2026-11-10 — Key rotation and email setup postponed by the user; Supabase key optional in the helper
 
 The user put off the Supabase key switch, because doing it in store hours could
