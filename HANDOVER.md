@@ -808,3 +808,9 @@ Pending HO-review records (UOM Errors, Non-Scans, Wrong Prices, Wrong Descriptio
 The 42 pending HO records that had already moved out (22 Non-Scans, 19 Wrong Prices, 1 Promotion Error, from 17–26 Oct) come back into the app automatically on the archive job's next run. Their old messages were deleted when they first moved out, so they come back without them.
 
 **On the PC (needed once):** in PowerShell, `$env:Path += ";C:\Program Files\nodejs"`, `cd C:\Apps\HomesaversScanner`, `git pull`, `cd workers\archiver`, `npx.cmd wrangler deploy`.
+
+---
+
+## 10 Nov: archive job redeployed with the pending-records change
+
+The redeploy was done on the PC and checked from here: the live archive job has the new rules. Pending HO records are kept in the app, a changed record replaces its old archive copy, and the one-time return of the 42 pending records is in place. That return happens on the next run (22:30 tonight, or 01:30 if tonight's allowance is used up). Claude checks it tomorrow at 09:10.
