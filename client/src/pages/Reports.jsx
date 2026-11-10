@@ -854,6 +854,9 @@ function HQReports() {
   // assigning something to a colleague, rather than it sitting wherever
   // created_at happened to put it. Stable otherwise: each partition keeps the
   // server's own order.
+  // A record is shown once even if, for a moment, it exists in both places.
+  const liveIdSet = useMemo(() => new Set(records.map(r => r.id)), [records])
+
   const displayRecords = useMemo(() => {
     if (!session.userId) return records
     const mine = [], rest = []
@@ -1506,7 +1509,7 @@ function HQReports() {
                     </Fragment>
                   )
                 })}
-                {!hasMore && (archivedRecords || []).map(r => {
+                {!hasMore && (archivedRecords || []).filter(r => !liveIdSet.has(r.id)).map(r => {
                   const desc = r.item_name || r.description || r.product_name_label || ''
                   return (
                     <tr key={'arch-' + r.id} style={{ background: 'var(--bg-muted, #f6f6f6)' }}

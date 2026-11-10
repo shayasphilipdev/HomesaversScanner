@@ -798,3 +798,13 @@ The screen now lists the same records as the Excel. Records older than 14 days a
 - **"Archived" status:** a button people press to say a record is dealt with and hide it from the normal view. It's still a normal record in the app.
 - **Older records:** after 14 days (7 for Department Check), the system automatically moves records to separate long-term storage, so the app's database stays under its 500 MB limit. They're kept there another 35 days, then deleted (49 days in total).
 - Photos are deleted after 21 days. Daily dashboard counts are kept 180 days.
+
+---
+
+## Pending HO records now stay in the app, with every option
+
+Pending HO-review records (UOM Errors, Non-Scans, Wrong Prices, Wrong Description, Price Marked, DRS, Promotion, Miscellaneous, Expiry Date Check, Wrong Was/Now) no longer move out after 14 days. They stay in the app, with Complete, No change, Undo, Assign, Messages and Archive, until someone deals with them, for up to 49 days. Once dealt with, they move out after 14 days as before. The stores' own checks (Department Check, Price Check, Stock Count, Routine Expiry Sweep) are unchanged.
+
+The 42 pending HO records that had already moved out (22 Non-Scans, 19 Wrong Prices, 1 Promotion Error, from 17–26 Oct) come back into the app automatically on the archive job's next run. Their old messages were deleted when they first moved out, so they come back without them.
+
+**On the PC (needed once):** in PowerShell, `$env:Path += ";C:\Program Files\nodejs"`, `cd C:\Apps\HomesaversScanner`, `git pull`, `cd workers\archiver`, `npx.cmd wrangler deploy`.

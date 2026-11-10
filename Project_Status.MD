@@ -631,6 +631,53 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-10 — Pending HO-review records stay in the app (every action works on them)
+
+The user wants every option (Complete, No change, Undo, Assign, Messages,
+Archive) on older records, but only for **pending** records in **HO records**.
+
+**Approach:** pending records of the HO-review types are kept in Postgres
+instead of moving to D1 at 14 days. That covers every type except the stores'
+own checks: J Department Check, K Price Check, M Routine Expiry Sweep and
+H Stock Count. The existing buttons and routes then work on them unchanged.
+Once reviewed, they follow the normal 14-day rule. Pending ones leave at their
+total life (14 + 35 = 49 days).
+
+**Database** (applied: migration `keep_pending_ho_records`, file
+`supabase-migration-keep-pending-ho.sql`):
+- `purge_old_task_records()`: the non-J delete skips
+  `status='pending' AND task_type NOT IN (K,M,H) AND created_at >= now() - (14+35) days`.
+- New trigger `trg_task_records_reset_d1_copy` (BEFORE UPDATE): clears
+  `d1_copied_at` when status, review_notes, notes, details or cleared_at
+  change on an already-copied row. The purge then waits until the current
+  version is archived.
+
+**Archiver** (`workers/archiver/src/index.js`; needs `npx.cmd wrangler deploy`):
+- The selection adds the same pending-HO exclusion and `d1_copied_at=is.null`.
+  Before this, the 01:30 run re-read everything the 22:30 run had copied but
+  the purge hadn't yet removed.
+- `INSERT OR REPLACE` (was `INSERT OR IGNORE`), so a re-copied record
+  overwrites its stale D1 version.
+- **One-off `restorePendingHO()`**, run once, guarded by D1
+  `maintenance_flags.restore_pending_ho_v1`:
+  - Copies the pending HO-type records still within 49 days back to Postgres,
+    with the same id and `d1_copied_at` null.
+  - Then deletes them from D1.
+  - 42 on 10 Nov: 22 Non-Scans, 19 Wrong Prices, 1 Promotion Error.
+  - It adds its subrequests to the budget.
+
+**Client:** the older-record rows skip any id that's also live.
+
+**Note:** messages and history of these 42 were already deleted when they
+first left Postgres (`ON DELETE CASCADE` on `task_record_messages` and
+`task_record_events`), so they come back without their old messages.
+
+**Tests:**
+- Mocks: the restore runs once and deletes the D1 copies only after the insert
+  succeeds; the filters are present in the query; the earlier archiver tests
+  pass.
+- JSX parses cleanly.
+
 ### 2026-11-10 — HO records: older (D1) records now listed on screen too (API_REVISION 2026-11-10-archive-on-screen)
 
 The user wants the screen to show everything the Excel export has. This

@@ -55,7 +55,7 @@ const MARK_FLUSH_PAGES  = 4      // pages to accumulate before one mark call
 // Raising it is safe in every direction that matters:
 //   - The work is almost entirely network I/O, not CPU, so a longer wall clock
 //     does not approach the Worker CPU limit.
-//   - The run is idempotent (INSERT OR IGNORE on the primary key), so being cut
+//   - The run is idempotent (INSERT OR REPLACE on the primary key), so being cut
 //     off part-way costs nothing -- the next run resumes from the same sweep.
 //   - It finishes 30 minutes before the 02:00 purge either way.
 //   - Nothing is deleted that this has not archived, so falling behind delays
@@ -330,7 +330,7 @@ function toArchiveRow(r, storeNames, archivedAtMs) {
 }
 
 const INSERT_SQL = `
-  INSERT OR IGNORE INTO task_record_archive
+  INSERT OR REPLACE INTO task_record_archive
     (id, created_at_ms, updated_at_ms, cleared_at_ms, store_id, store_name,
      product_code, barcode_no, product_barcode, item_name, supl_id,
      supplier_code, item_status, barcode_status, department, status, source,
@@ -343,6 +343,70 @@ const INSERT_SQL = `
 
 // opts.maxRecords caps how many records this run may move (the allowance-
 // limited extra run); opts.skipPurge leaves both D1 purges to the 01:30 runs.
+
+// ── One-off (2026-11-10): bring PENDING HO-review records back from D1 ──────
+//
+// Until 2026-11-10 every record left Postgres after 14 days, pending or not.
+// From now on a pending HO-review record (not J/K/M/H) stays in Postgres until
+// its total life is up, where it can still be reviewed, assigned and messaged.
+// The ones moved BEFORE that change are copied back here once (same id, not
+// marked as copied) and then removed from D1, so each record lives in exactly
+// one place. Guarded by a row in maintenance_flags so it runs once.
+const RESTORE_FLAG = 'restore_pending_ho_v1'
+
+async function restorePendingHO(env, purgeMs) {
+  const done = await env.ARCHIVE.prepare('SELECT 1 FROM maintenance_flags WHERE key = ?')
+    .bind(RESTORE_FLAG).first().catch(() => null)
+  if (done) return { restored: 0, calls: 1 }
+  const res = await env.ARCHIVE.prepare(
+    `SELECT * FROM task_record_archive
+      WHERE created_at_ms >= ? AND status = 'pending'
+        AND task_type NOT IN ('J','K','M','H')
+      ORDER BY created_at_ms LIMIT 500`).bind(purgeMs).all()
+  const rows = res?.results || []
+  const iso = ms => (ms == null ? null : new Date(Number(ms)).toISOString())
+  if (rows.length) {
+    const body = rows.map(r => {
+      let details = {}
+      try { details = r.details_json ? JSON.parse(r.details_json) : {} } catch { details = {} }
+      if ((!details || !Object.keys(details).length) && r.department) details = { item_group: r.department }
+      return {
+        id: r.id, store_id: r.store_id, product_code: r.product_code, description: r.description,
+        uom: r.uom, quantity: r.quantity, status: r.status, marked_for_deletion: !!r.marked_for_deletion,
+        completed_at: iso(r.completed_at_ms), store_completed_at: iso(r.store_completed_at_ms),
+        created_at: iso(r.created_at_ms), updated_at: iso(r.updated_at_ms || r.created_at_ms),
+        task_type: r.task_type, supplier_name_text: r.supplier_name_text, notes: r.notes,
+        product_barcode: r.product_barcode, product_name_label: r.product_name_label,
+        photo_product_url: r.photo_product_url, photo_barcode_url: r.photo_barcode_url,
+        details: details || {}, review_notes: r.review_notes, reviewed_at: iso(r.reviewed_at_ms),
+        cleared_at: iso(r.cleared_at_ms), barcode_no: r.barcode_no, item_name: r.item_name,
+        supl_id: r.supl_id, supplier_code: r.supplier_code, item_status: r.item_status,
+        barcode_status: r.barcode_status, actual_product_name: r.actual_product_name,
+        priced_at: iso(r.priced_at_ms), pricing_removed_at: iso(r.pricing_removed_at_ms),
+        source: r.source, d1_copied_at: null,
+      }
+    })
+    const ins = await fetch(`${env.SUPABASE_URL}/rest/v1/task_records?on_conflict=id`, {
+      method: 'POST',
+      headers: {
+        apikey: env.SUPABASE_ANON_KEY, ...sbBearer(env.SUPABASE_ANON_KEY),
+        'Content-Type': 'application/json', Prefer: 'return=minimal,resolution=ignore-duplicates',
+      },
+      body: JSON.stringify(body),
+    })
+    if (!ins.ok) throw new Error(`restore insert ${ins.status}: ${(await ins.text()).slice(0, 300)}`)
+    // Only after Postgres has them: remove the D1 copies.
+    const ids = rows.map(r => r.id)
+    await env.ARCHIVE.prepare(
+      `DELETE FROM task_record_archive WHERE id IN (${ids.map(() => '?').join(',')})`).bind(...ids).run()
+  }
+  if (rows.length < 500) {
+    await env.ARCHIVE.prepare('INSERT OR REPLACE INTO maintenance_flags (key, done_at_ms, note) VALUES (?,?,?)')
+      .bind(RESTORE_FLAG, Date.now(), `restored ${rows.length} pending HO records`).run()
+  }
+  return { restored: rows.length, calls: 5 }
+}
+
 export async function runArchive(env, triggerKind, opts = {}) {
   const maxRecords = Number.isFinite(opts.maxRecords) ? opts.maxRecords : Infinity
   const skipPurge  = !!opts.skipPurge
@@ -359,6 +423,13 @@ export async function runArchive(env, triggerKind, opts = {}) {
     cutoffSeen    = cfg.cutoffIso
     const cutoffIso     = cfg.cutoffIso      // non-J move cutoff (e.g. 14 days)
     const deptCutoffIso = cfg.deptCutoffIso  // Department Check move cutoff (e.g. 7 days)
+    // One-off restore (see restorePendingHO). Never blocks the archive run.
+    let restored = 0, restoreCalls = 0
+    if (!shadow) {
+      try { ({ restored, calls: restoreCalls } = await restorePendingHO(env, cfg.purgeMs)) }
+      catch (e) { restoreCalls = 5; error = `restore: ${String(e?.message || e).slice(0, 300)}` }
+    }
+    if (restored) console.log(`restored ${restored} pending HO records from D1`)
     const storeNames = await storeNameMap(env)
     const stmt       = env.ARCHIVE.prepare(INSERT_SQL)
 
@@ -370,7 +441,7 @@ export async function runArchive(env, triggerKind, opts = {}) {
     let cursor = '1970-01-01T00:00:00Z'
 
     // Subrequests already spent: 3 settings reads (scan/archive/dept) + 1 stores read.
-    let subreq = 4 + (opts.subrequestsUsed || 0)   // + the extra run's analytics call
+    let subreq = 4 + (opts.subrequestsUsed || 0) + restoreCalls   // + analytics call, + one-off restore
     // Ids archived but not yet stamped. Flushed every MARK_FLUSH_PAGES so one
     // mark call covers several pages. Unflushed ids are simply re-archived next
     // run (INSERT OR IGNORE), so losing them costs nothing but a repeat.
@@ -412,8 +483,17 @@ export async function runArchive(env, triggerKind, opts = {}) {
         `task_records?select=${SELECT_COLS}` +
         `&created_at=gte.${encodeURIComponent(cursor)}` +
         `&store_id=not.is.null` +
+        // Only records not yet copied (or changed since: a trigger clears
+        // d1_copied_at on any edit). Without this the 01:30 run re-read
+        // everything the 22:30 run had copied but the purge had not removed yet.
+        `&d1_copied_at=is.null` +
         `&or=(and(task_type.eq.J,created_at.lt.${encodeURIComponent(deptCutoffIso)}),` +
-        `and(task_type.neq.J,created_at.lt.${encodeURIComponent(cutoffIso)}))` +
+        `and(task_type.neq.J,created_at.lt.${encodeURIComponent(cutoffIso)},` +
+        // 2026-11-10: a PENDING HO-review record (not the stores' own K/M/H)
+        // stays in Postgres -- where it can still be reviewed, assigned and
+        // messaged -- until its total life is up. Must match
+        // purge_old_task_records(), which keeps it for the same reason.
+        `or(status.neq.pending,task_type.in.(K,M,H),created_at.lt.${encodeURIComponent(new Date(cfg.purgeMs).toISOString())})))` +
         `&order=created_at.asc,id.asc&limit=${want}`)
 
       subreq += 1
