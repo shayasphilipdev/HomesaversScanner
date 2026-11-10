@@ -631,6 +631,21 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-10 — Brevo working; Aging Report emails on; Department Check emails paused
+
+- With the office IP on Brevo's Authorised IPs list, the email helper logged in
+  OK and wrote all three configs.
+- `scripts/install-scheduled-tasks.ps1`: the two Department Check email entries
+  (`Homesavers Department Check Weekly`, and `Homesavers Dept Check Area Mon` /
+  `Thu`) are marked `Paused = $true`. The installer doesn't register a paused
+  task, and removes it if an earlier run registered it.
+  **Homesavers Aging Report** (Wed 08:00) is the only email task registered.
+- Why they're paused: department checks no longer happen every week. They
+  follow a schedule the user will share. When it comes, replace the weekly
+  triggers with that schedule and set `Paused` to `$false`.
+- The configs stay in place, so a test send with `--to` still works for all
+  three.
+
 ### 2026-11-10 — Brevo login cause found: "525 5.7.1 Unauthorized IP address"
 
 The per-method diagnostic run on the PC answered it:

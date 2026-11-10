@@ -180,6 +180,13 @@ Done last (order 8 → 7 → 9 → 6) because it needs the Brevo login.
    email is settled as **08:00** — the setup doc's actual registration
    commands and its recorded "next runs" both say 08:00.
 
+   **Paused 2026-11-10:** only the Aging Report is registered. The two
+   Department Check emails (weekly, and area managers Mon/Thu) are marked
+   `Paused` in the installer. Department checks now follow a schedule (not
+   every week) that is still to be confirmed. The installer skips paused
+   tasks, and removes them if they were registered earlier. Their configs
+   stay in place, so a test send with `--to` still works.
+
 ## Phase 7 — Local upload server (lowest priority)
 
 The small server behind Admin → Settings → Manual Upload

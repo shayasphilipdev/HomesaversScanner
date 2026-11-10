@@ -606,3 +606,11 @@ The new check gave a clear answer. Brevo replied **"Unauthorized IP address"** t
 **Fix (in Brevo):** profile menu (top right) → **Security** → **Authorised IPs** → add `93.107.17.189`. You can also approve it from Brevo's "new IP address" email if one arrived. Then run the email helper again.
 
 The helper now recognises this error and gives these steps itself.
+
+---
+
+## Report emails: Brevo works; only the Aging Report goes out automatically
+
+After the office IP was added in Brevo, the email helper logged in OK and saved the three email settings files.
+
+As you asked, the two **Department Check emails** (the weekly one to Jeff's list, and the area-manager ones on Monday and Thursday) **are not switched on**. Department checks now follow a schedule rather than running every week. The task installer now leaves them out, and removes them if they were added before. Only the **Aging Report** (Wednesday 08:00) is scheduled. You can still test-send all three by hand. When you share the department check schedule, I'll set those two emails to follow it.

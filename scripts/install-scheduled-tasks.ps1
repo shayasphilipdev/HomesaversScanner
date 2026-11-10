@@ -15,6 +15,11 @@
 #
 # The report emails (Phase 6) are registered only once their config files exist
 # (scripts\setup-email-configs.py writes them); re-run this after that.
+#
+# PAUSED (2026-11-10): the two Department Check emails (weekly + area managers).
+# Department checks no longer happen every week - they follow a schedule that
+# is still to be confirmed. Paused tasks are not registered, and are removed if
+# an earlier run registered them. To bring one back, set its Paused to $false.
 
 [CmdletBinding()]
 param([switch]$Remove)
@@ -32,9 +37,9 @@ $daily = @(
 # Report emails: registered only when their config file exists.
 $emails = @(
   @{ Name = 'Homesavers Aging Report';            Day = 'Wednesday'; At = '08:00'; Script = 'aging-report.py';             Config = 'aging-report.config.json';             Args = '' },
-  @{ Name = 'Homesavers Department Check Weekly'; Day = 'Monday';    At = '09:00'; Script = 'dept-check-weekly.py';        Config = 'dept-check-weekly.config.json';        Args = '' },
-  @{ Name = 'Homesavers Dept Check Area Mon';     Day = 'Monday';    At = '08:00'; Script = 'dept-check-area-managers.py'; Config = 'dept-check-area-managers.config.json'; Args = '--period full-week' },
-  @{ Name = 'Homesavers Dept Check Area Thu';     Day = 'Thursday';  At = '08:00'; Script = 'dept-check-area-managers.py'; Config = 'dept-check-area-managers.config.json'; Args = '--period mid-week' }
+  @{ Name = 'Homesavers Department Check Weekly'; Day = 'Monday';    At = '09:00'; Script = 'dept-check-weekly.py';        Config = 'dept-check-weekly.config.json';        Args = '';                   Paused = $true },
+  @{ Name = 'Homesavers Dept Check Area Mon';     Day = 'Monday';    At = '08:00'; Script = 'dept-check-area-managers.py'; Config = 'dept-check-area-managers.config.json'; Args = '--period full-week'; Paused = $true },
+  @{ Name = 'Homesavers Dept Check Area Thu';     Day = 'Thursday';  At = '08:00'; Script = 'dept-check-area-managers.py'; Config = 'dept-check-area-managers.config.json'; Args = '--period mid-week';  Paused = $true }
 )
 $names = @($daily | ForEach-Object { $_.Name }) +
          @('Homesavers Manifest', 'Homesavers Upload Server') +
@@ -97,6 +102,15 @@ Start-ScheduledTask -TaskName 'Homesavers Upload Server'
 
 # Phase 6: report emails, windowless; each script logs to C:\Homesavers\logs
 foreach ($e in $emails) {
+  if ($e.Paused) {
+    if (Get-ScheduledTask -TaskName $e.Name -ErrorAction SilentlyContinue) {
+      Unregister-ScheduledTask -TaskName $e.Name -Confirm:$false
+      Write-Host "Removed     $($e.Name) - paused (department check schedule to be confirmed)" -ForegroundColor Yellow
+    } else {
+      Write-Host "Paused      $($e.Name) - not registered (department check schedule to be confirmed)" -ForegroundColor Yellow
+    }
+    continue
+  }
   if (-not (Test-Path (Join-Path $S $e.Config))) {
     Write-Host "Skipped     $($e.Name) - no $($e.Config) yet (run setup-email-configs.py)" -ForegroundColor Yellow
     continue
