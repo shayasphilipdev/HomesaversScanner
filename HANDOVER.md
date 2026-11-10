@@ -667,3 +667,14 @@ The old Excel-based job is kept as a manual backup: `run_sync.bat bm-daily-excel
 ## Item Master / alternate barcode syncs: removed a harmless warning
 
 The Item Master sync printed a "DeprecationWarning: datetime.datetime.utcnow() is deprecated" message. It was only a notice from the newer Python on the rebuilt PC, and it never affected the sync. Both scripts now use the newer form, and the timestamp they send is exactly the same as before.
+
+---
+
+## 10 Nov: Item Master re-synced with today's file
+
+The Item Master was synced by hand at 11:15 with `ItemMaster_2026_11_10 VRS.xlsx` (today's file; the 07:00 run had used 9 Nov). Checked on the server:
+- 101,980 products imported, 1 skipped
+- every product was refreshed by this run, nothing stale left over
+- none is missing a price
+
+Alternate barcodes are still on the 9 Nov file.
