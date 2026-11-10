@@ -631,6 +631,47 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-10 — Why Supabase shows 72%: the Department Check archive backlog
+
+The database is 362 MB of the 500 MB free-plan limit.
+
+**Largest tables:**
+- `task_records`: 118 MB, 211k rows, 99.9% Task J.
+- `alt_barcodes`: 104 MB. This is steady; it's refreshed daily.
+- `task_record_events`: 43 MB.
+- `prices`: 32 MB.
+
+**Cause:**
+- Department Check scans ran at 17k–31k a day from 2 to 8 Nov.
+- The archiver Worker moves a fixed **17,984 records a night**: 2 cron runs,
+  each capped by the 50-subrequest limit.
+- The purge only deletes records stamped `d1_copied_at`, so the excess stays
+  in Postgres.
+- D1 is current only to records created up to 30 Oct 14:34, while
+  `dept_check_retention_days` = 7. Roughly 50k J records (30 Oct – 2 Nov) are
+  already past their move date.
+- Nothing is lost; the records just wait in Postgres.
+
+**Outlook:**
+- Scans were down to 8.7k on 9 Nov and 3k by late morning on 10 Nov, and the
+  checks now follow a schedule rather than running weekly.
+- At 18k out per night, the backlog (~190k due by 15 Nov) clears in about 10–11
+  nights. The database then drops back.
+
+**Also watch:**
+- D1 is at 336 MB of the 500 MB per-database free limit (711k rows; records
+  leave after 14 + 35 days).
+- D1 writes: about 2 per archived row, plus up to 40k for the D1 purge and
+  40k for the device-log purge, against 100k a day.
+
+**Levers if it needs to go faster:**
+- A 3rd archiver cron, added in the Cloudflare dashboard (no code deploy).
+  About +9k a night, but check the D1 write budget.
+- Workers Paid, which raises the subrequest cap.
+
+**Not recommended:**
+- `VACUUM FULL alt_barcodes` during store hours: it locks scanner lookups.
+
 ### 2026-11-10 — B&M one-off backfill: `sync-bm-daily.py --backfill-from YYYY-MM-DD`
 
 The user wanted the share folders filled in from 28 Oct, using the files still

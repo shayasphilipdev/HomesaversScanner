@@ -690,3 +690,11 @@ This is a one-time job that fills the gaps in the two B&M folders from the files
 ## 10 Nov: B&M backfill done
 
 The one-time fill-in from 28 Oct finished on the PC. The app was checked afterwards and is unchanged: the B&M list is still today's 14,131 products from `HSVPRD20261110060002.CSV`, and no new sync run was recorded. From now on, the 07:00–12:00 job saves each new day's CSV and Excel automatically.
+
+---
+
+## Why the database shows 72% full
+
+It's the Department Check scans. From 2 to 8 Nov stores logged 17,000–31,000 a day, but the nightly job that moves old records to the archive can only move about 18,000 a night. The rest are waiting in the main database. Nothing is lost.
+
+Now that Department Checks follow a schedule (9 Nov: 8,700; today so far: 3,000), the archive job should catch up in about 10–11 nights and the figure should come back down. Claude will keep an eye on it. If it ever needs to go faster, a third nightly run can be added in Cloudflare with no code change.
