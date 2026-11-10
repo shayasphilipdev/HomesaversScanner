@@ -631,6 +631,21 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-10 — Key rotation and email setup postponed by the user; Supabase key optional in the helper
+
+The user put off the Supabase key switch, because doing it in store hours could
+affect the stores, and will finish the emails later. Current state:
+- Live site, archiver and all configs still use the **legacy** anon key.
+- The merged code works with either kind of key, so nothing changes until the
+  user acts.
+- **Open:**
+  - The key-switch steps in HANDOVER.md, best done out of store hours.
+  - Email helper → test sends → `install-scheduled-tasks.ps1` (Aging Report only).
+  - Disable the legacy keys before Supabase retires them at the end of 2026.
+- `setup-email-configs.py`: the Supabase key question can now be skipped with
+  Enter, since only the paused area-manager email uses it. The Aging Report can
+  be finished without touching the key.
+
 ### 2026-11-10 — Supabase key rotation: code accepts the new `sb_secret_` keys (API_REVISION 2026-11-10-new-supabase-keys)
 
 The user wants to roll the Supabase anon key, because it was on the PC that was

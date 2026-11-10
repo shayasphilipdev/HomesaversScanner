@@ -47,12 +47,12 @@ def ask(label, default=""):
     return val or default
 
 
-def ask_secret(label, existing, check=None):
-    hint = " [Enter = keep the saved one]" if existing else ""
+def ask_secret(label, existing, check=None, required=True):
+    hint = " [Enter = keep the saved one]" if existing else ("" if required else " [Enter = skip for now]")
     while True:
         val = getpass.getpass(f"{label}{hint}: ").strip()
         if not val:
-            if existing:
+            if existing or not required:
                 return existing
             print("  required")
             continue
@@ -226,7 +226,8 @@ def main():
     print("   Each area manager's own address comes from Admin -> Employees.")
     area_bcc = ask_list("Bcc", m.get("bcc", templates["dept-check-area-managers"].get("bcc", [])), required=False)
     anon = ask_secret("Supabase secret key, sb_secret_... (Supabase -> Project Settings -> API Keys; "
-                      "paste with right-click)", m.get("supabase_anon_key", ""), check_supabase_key)
+                      "paste with right-click)", m.get("supabase_anon_key", ""), check_supabase_key,
+                      required=False)  # only the (paused) area-manager email uses it
 
     def build(name, **over):
         cfg = {k: v for k, v in templates[name].items() if k != "_comment"}

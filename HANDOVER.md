@@ -640,3 +640,11 @@ The website, the nightly archiver and the area-manager email all use one Supabas
 **6. Switch off the old keys.** Supabase → Project Settings → API Keys → "Legacy API keys" tab → disable them. If anything breaks, you can switch them back on from the same place. Then check the site again.
 
 **7. Next morning.** Check that the archiver ran at 01:30. Claude can check this.
+
+---
+
+## On hold: the database key switch and the email setup
+
+Both are waiting until you have time. Nothing has changed for the stores: everything still uses the old key, and the new code works with either one.
+- **Key switch:** follow the steps above, ideally after the stores close. It has to be done before the end of 2026, when Supabase retires the old keys.
+- **Emails:** the helper no longer needs the Supabase key. Press Enter to skip it. The Aging Report doesn't use it, and the area-manager email is paused. So you can finish the Aging Report email without touching the key: run the helper → test send → run the task installer.
