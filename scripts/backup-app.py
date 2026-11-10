@@ -62,8 +62,9 @@ NPX          = r"C:\Program Files\nodejs\npx.cmd"
 
 PROJECT_REF  = "eggspkdengnxktwkdwpw"
 DB_USER      = f"postgres.{PROJECT_REF}"
-POOLER_HOSTS = ["aws-0-eu-central-1.pooler.supabase.com",
-                "aws-1-eu-central-1.pooler.supabase.com"]
+# aws-1 is this project's pooler (confirmed 2026-11-10: aws-0 answers "tenant not found").
+POOLER_HOSTS = ["aws-1-eu-central-1.pooler.supabase.com",
+                "aws-0-eu-central-1.pooler.supabase.com"]
 PHOTO_BUCKET = "task-photos"
 PHOTO_URL    = f"https://{PROJECT_REF}.supabase.co/storage/v1/object/public/{PHOTO_BUCKET}/"
 D1_NAME      = "homesavers-archive"
@@ -219,7 +220,7 @@ def setup():
             sys.exit("Nothing usable was pasted (Ctrl+V does not work here - use right-click).")
         with open(PW_FILE, "w", encoding="utf-8") as f:
             f.write(pw)
-        log(f"Password saved to {PW_FILE} (this PC only)")
+        log(f"Password saved to {PW_FILE} (this PC only; {len(pw)} characters received)")
 
     for host in POOLER_HOSTS:
         log(f"Testing the database connection via {host} ...")
@@ -231,6 +232,10 @@ def setup():
             break
         except Exception as e:
             log(f"  failed: {e}", "WARN")
+            if "password authentication failed" in str(e):
+                sys.exit("This is the right server, but it refused the PASSWORD. A password reset takes "
+                         "a minute or two to apply: wait, then run --setup again and answer n to re-enter it "
+                         "(copy it with Supabase's copy button, paste with right-click).")
     else:
         sys.exit("Could not connect to the database. Check the password (Supabase -> Project Settings -> "
                  "Database) and that this PC can reach the internet on port 5432, then run --setup again.")
