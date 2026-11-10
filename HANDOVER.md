@@ -571,3 +571,16 @@ The first email setup attempt failed at the Brevo login, and as designed, nothin
 The scheduled tasks for the syncs, the manifest and the upload server are all installed. The four email tasks get added once the email setup succeeds.
 
 Pushed and merged to `main`. Full write-up in `Project_Status.MD` §11.
+
+---
+
+## Phase 9: everything ran on its own overnight, but the source files are arriving late
+
+First night on the new PC with no one touching it:
+- **CN codes ran at 02:45, Item Master at 07:00, alternate barcodes at 07:30, B&M Daily at 08:15.** All succeeded, with the same row counts as yesterday. The scheduling works.
+- **The data is a day behind.** All three files the jobs picked up were from **9 Nov**, because today's hadn't arrived yet. Before the attack, today's file was almost always there by 07:00. Yesterday they arrived at 10:53, 15:57 and 16:22, so the exports that produce them seem to be running late since the attack.
+- **Manifests:** none built yet this morning, which is normal before the morning's deliveries arrive.
+
+The report emails are still waiting on the Brevo SMTP key.
+
+Full write-up in `Project_Status.MD` §11.

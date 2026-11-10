@@ -631,6 +631,33 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-10 — Phase 9: every scheduled job ran on its own; source files now arrive late
+
+First unattended night on the rebuilt PC, from `sync_runs` (Irish time):
+
+| Job | Ran | Status | File | Rows |
+|---|---|---|---|---|
+| CN codes | 02:45 | ok | export | 43,061 (= 9 Nov) |
+| Prices | 07:00–07:03 | ok | `ItemMaster_2026_11_09` | 101,980 (= 9 Nov) |
+| Alt barcodes | 07:30–07:35 | ok | `ALT Barcode Master_2026_11_09` | 214,786 |
+| B&M Daily | 08:15 | ok | `HomeSavers_20261109` | 14,213 (= 9 Nov) |
+
+Scheduled Tasks, Python path, sync secret, Excel and the network shares
+all work unattended. Manifest: no run logged yet — it only logs when it
+builds a new manifest, and deliveries usually land 08:30–15:00.
+
+**Gap found:** all three file syncs picked up **yesterday's** file.
+Before the attack the 07:00–08:15 runs found the same day's file almost
+every day (Oct: B&M 27/27, alt 26/27, prices 24/28); on 9 Nov the source
+files only landed at 10:53 (Item Master), 15:57 (ALT) and 16:22 (B&M). The
+upstream exports that write to `\\192.168.1.205\Buying Data\...` appear not
+to be back on their early-morning schedule — likely also affected by the
+attack. Options put to the user: get those exports back to early morning,
+and/or add a late-afternoon re-run of the three syncs (prices/alt upsert,
+B&M reloads — all safe to repeat).
+
+Phase 6 (report emails) still pending the Brevo SMTP key.
+
 ### 2026-11-09 — Phase 6 first attempt: Brevo login failed; helper now catches bad pastes
 
 First `setup-email-configs.py` run on the PC: login `c240c0001@smtp-brevo.com`
