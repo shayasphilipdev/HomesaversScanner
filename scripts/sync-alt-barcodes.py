@@ -103,7 +103,7 @@ def record_run(headers, *, file_name, file_size, imported, skipped, status, mess
 
 
 def main():
-    started_at = datetime.datetime.utcnow().isoformat() + "Z"
+    started_at = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None).isoformat() + "Z"
     file_name, file_size = None, None
     log("=== Alt-barcode sync starting ===")
 

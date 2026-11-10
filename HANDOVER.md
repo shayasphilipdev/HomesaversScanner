@@ -661,3 +661,9 @@ The B&M Daily file is now taken from the SFTP server (`Inbound File\Product File
 If an Excel file for that date already exists, it's left alone. If today's file still hasn't arrived by 11:30, Admin → Settings → Data Sync shows a failure saying so. A file that looks broken (far fewer products than usual) is refused, and the current data stays. Excel no longer needs to be installed for this job, and no window pops up.
 
 The old Excel-based job is kept as a manual backup: `run_sync.bat bm-daily-excel`.
+
+---
+
+## Item Master / alternate barcode syncs: removed a harmless warning
+
+The Item Master sync printed a "DeprecationWarning: datetime.datetime.utcnow() is deprecated" message. It was only a notice from the newer Python on the rebuilt PC, and it never affected the sync. Both scripts now use the newer form, and the timestamp they send is exactly the same as before.

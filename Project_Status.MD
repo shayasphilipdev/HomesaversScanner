@@ -631,6 +631,13 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-10 — `utcnow()` deprecation warning removed from the price / alt-barcode syncs
+
+Python 3.13 on the rebuilt PC warns that `datetime.utcnow()` is deprecated.
+`sync-prices.py` and `sync-alt-barcodes.py` now use
+`datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"`, which
+produces the identical `started_at` string. Cosmetic only.
+
 ### 2026-11-10 — B&M Daily now comes from the SFTP product CSV (`scripts/sync-bm-daily.py`)
 
 B&M put a daily product CSV on the same SFTP server as the manifests:
