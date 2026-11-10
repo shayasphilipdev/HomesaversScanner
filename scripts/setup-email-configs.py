@@ -86,6 +86,14 @@ def check_smtp_key(key):
     return None
 
 
+def check_supabase_key(key):
+    if key.startswith("sb_publishable_"):
+        return "That is the publishable key. Use the SECRET key (sb_secret_..., press the eye/copy button)."
+    if not (key.startswith("sb_secret_") or key.startswith("eyJ")):
+        return "Supabase keys start with sb_secret_ (or eyJ for the old anon key) - check you copied the whole key."
+    return None
+
+
 def ask_list(label, default, required):
     while True:
         raw = ask(f"{label} (comma-separated)", ", ".join(default))
@@ -217,8 +225,8 @@ def main():
     print("\n== Area-manager Department Check (paused - not scheduled) ==")
     print("   Each area manager's own address comes from Admin -> Employees.")
     area_bcc = ask_list("Bcc", m.get("bcc", templates["dept-check-area-managers"].get("bcc", [])), required=False)
-    anon = ask_secret("Supabase anon key (Supabase -> Project Settings -> API keys; paste with right-click)",
-                      m.get("supabase_anon_key", ""))
+    anon = ask_secret("Supabase secret key, sb_secret_... (Supabase -> Project Settings -> API Keys; "
+                      "paste with right-click)", m.get("supabase_anon_key", ""), check_supabase_key)
 
     def build(name, **over):
         cfg = {k: v for k, v in templates[name].items() if k != "_comment"}

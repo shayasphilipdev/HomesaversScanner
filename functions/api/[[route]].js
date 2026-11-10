@@ -9,12 +9,20 @@
 
 // ── Supabase REST helper ────────────────────────────────────────────────────
 
+// SUPABASE_ANON_KEY may hold the legacy JWT anon key (eyJ...) or one of the
+// new non-JWT keys (sb_secret_... / sb_publishable_...). The new keys must be
+// sent on `apikey` ONLY: in `Authorization: Bearer` Supabase tries to parse
+// them as a JWT and rejects the request. So Bearer is added for JWTs only.
+function sbBearer(key) {
+  return typeof key === 'string' && key.startsWith('eyJ') ? { 'Authorization': `Bearer ${key}` } : {}
+}
+
 function sb(env) {
   const url = env.SUPABASE_URL
   const key = env.SUPABASE_ANON_KEY
   const headers = {
     'apikey':        key,
-    'Authorization': `Bearer ${key}`,
+    ...sbBearer(key),
     'Content-Type':  'application/json',
     'Prefer':        'return=representation'
   }
@@ -150,7 +158,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-11-09-prefixed-scan-fallback'
+const API_REVISION   = '2026-11-10-new-supabase-keys'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -705,7 +713,7 @@ async function ensureInstancesExist(db, env, storeId, date) {
     method: 'POST',
     headers: {
       'apikey':        env.SUPABASE_ANON_KEY,
-      'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`,
+      ...sbBearer(env.SUPABASE_ANON_KEY),
       'Content-Type':  'application/json',
       'Prefer':        'return=representation,resolution=ignore-duplicates'
     },
@@ -735,7 +743,7 @@ async function deleteStoragePaths(env, paths) {
       method:  'DELETE',
       headers: {
         'apikey':        env.SUPABASE_ANON_KEY,
-        'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`,
+        ...sbBearer(env.SUPABASE_ANON_KEY),
         'Content-Type':  'application/json'
       },
       body: JSON.stringify({ prefixes: chunk })
@@ -758,7 +766,7 @@ async function runAutoCleanup(db, env) {
     await fetch(`${env.SUPABASE_URL}/rest/v1/app_settings?on_conflict=key`, {
       method:  'POST',
       headers: {
-        'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`,
+        'apikey': env.SUPABASE_ANON_KEY, ...sbBearer(env.SUPABASE_ANON_KEY),
         'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates,return=minimal'
       },
       body: JSON.stringify({ key: 'last_auto_cleanup_at', value: now, updated_at: now })
@@ -909,7 +917,9 @@ export async function onRequest(context) {
       // a window where old code against the new schema would have truncated
       // the product master at 06:30 and then failed every chunk. Bump this
       // whenever a deploy has to be confirmed before something unattended runs.
-      return json({ ok: true, ts: new Date().toISOString(), rev: API_REVISION })
+      return json({ ok: true, ts: new Date().toISOString(), rev: API_REVISION,
+        // which KIND of Supabase key is configured (never the key itself)
+        dbKey: String(env.SUPABASE_ANON_KEY || '').startsWith('eyJ') ? 'legacy' : (String(env.SUPABASE_ANON_KEY || '').startsWith('sb_secret_') ? 'secret' : (env.SUPABASE_ANON_KEY ? 'other' : 'missing')) })
     }
 
     if (path === '/stores' && method === 'GET') {
@@ -1015,7 +1025,7 @@ export async function onRequest(context) {
         method: 'POST',
         headers: {
           'apikey':        env.SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`,
+          ...sbBearer(env.SUPABASE_ANON_KEY),
           'Content-Type':  'application/json',
           'Prefer':        'return=representation,resolution=merge-duplicates'
         },
@@ -1080,7 +1090,7 @@ export async function onRequest(context) {
         method: 'POST',
         headers: {
           'apikey':        env.SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`,
+          ...sbBearer(env.SUPABASE_ANON_KEY),
           'Content-Type':  'application/json',
           'Prefer':        'return=representation,resolution=merge-duplicates'
         },
@@ -1172,7 +1182,7 @@ export async function onRequest(context) {
       if (!clean.length) return json({ written: 0, skipped })
       const upRes = await fetch(`${env.SUPABASE_URL}/rest/v1/cn_code_master?on_conflict=product_prism_code`, {
         method: 'POST',
-        headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal,resolution=merge-duplicates' },
+        headers: { 'apikey': env.SUPABASE_ANON_KEY, ...sbBearer(env.SUPABASE_ANON_KEY), 'Content-Type': 'application/json', 'Prefer': 'return=minimal,resolution=merge-duplicates' },
         body: JSON.stringify(clean)
       })
       if (!upRes.ok) return err(`CN-code upsert failed: ${(await upRes.text()).slice(0, 400)}`, 400)
@@ -1206,7 +1216,7 @@ export async function onRequest(context) {
       if (!clean.length) return json({ written: 0, skipped })
       const upRes = await fetch(`${env.SUPABASE_URL}/rest/v1/bm_daily_file?on_conflict=product_id`, {
         method: 'POST',
-        headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal,resolution=merge-duplicates' },
+        headers: { 'apikey': env.SUPABASE_ANON_KEY, ...sbBearer(env.SUPABASE_ANON_KEY), 'Content-Type': 'application/json', 'Prefer': 'return=minimal,resolution=merge-duplicates' },
         body: JSON.stringify(clean)
       })
       if (!upRes.ok) return err(`B&M daily upsert failed: ${(await upRes.text()).slice(0, 400)}`, 400)
@@ -1728,7 +1738,7 @@ export async function onRequest(context) {
       if (!clean.length) return json({ written: 0, skipped })
       const upRes = await fetch(`${env.SUPABASE_URL}/rest/v1/alt_barcodes?on_conflict=barcode_no,ean_barcode`, {
         method: 'POST',
-        headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation,resolution=merge-duplicates' },
+        headers: { 'apikey': env.SUPABASE_ANON_KEY, ...sbBearer(env.SUPABASE_ANON_KEY), 'Content-Type': 'application/json', 'Prefer': 'return=representation,resolution=merge-duplicates' },
         body: JSON.stringify(clean)
       })
       if (!upRes.ok) return err(`Alt-barcode upsert failed: ${(await upRes.text()).slice(0, 400)}`, 400)
@@ -1767,7 +1777,7 @@ export async function onRequest(context) {
       if (!clean.length) return json({ written: 0, skipped })
       const upRes = await fetch(`${env.SUPABASE_URL}/rest/v1/prices?on_conflict=ean_barcode`, {
         method: 'POST',
-        headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation,resolution=merge-duplicates' },
+        headers: { 'apikey': env.SUPABASE_ANON_KEY, ...sbBearer(env.SUPABASE_ANON_KEY), 'Content-Type': 'application/json', 'Prefer': 'return=representation,resolution=merge-duplicates' },
         body: JSON.stringify(clean)
       })
       if (!upRes.ok) return err(`Prices upsert failed: ${(await upRes.text()).slice(0, 400)}`, 400)
@@ -1836,7 +1846,7 @@ export async function onRequest(context) {
       if (!clean.length) return json({ written: 0, skipped })
       const upRes = await fetch(`${env.SUPABASE_URL}/rest/v1/prices?on_conflict=ean_barcode`, {
         method: 'POST',
-        headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation,resolution=merge-duplicates' },
+        headers: { 'apikey': env.SUPABASE_ANON_KEY, ...sbBearer(env.SUPABASE_ANON_KEY), 'Content-Type': 'application/json', 'Prefer': 'return=representation,resolution=merge-duplicates' },
         body: JSON.stringify(clean)
       })
       if (!upRes.ok) return err(`Upsert failed: ${(await upRes.text()).slice(0,400)}`, 400)
@@ -1888,7 +1898,7 @@ export async function onRequest(context) {
       if (!clean.length) return json({ written: 0, skipped })
       const upRes = await fetch(`${env.SUPABASE_URL}/rest/v1/alt_barcodes?on_conflict=barcode_no,ean_barcode`, {
         method: 'POST',
-        headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation,resolution=merge-duplicates' },
+        headers: { 'apikey': env.SUPABASE_ANON_KEY, ...sbBearer(env.SUPABASE_ANON_KEY), 'Content-Type': 'application/json', 'Prefer': 'return=representation,resolution=merge-duplicates' },
         body: JSON.stringify(clean)
       })
       if (!upRes.ok) return err(`Upsert failed: ${(await upRes.text()).slice(0,400)}`, 400)
@@ -2828,7 +2838,7 @@ export async function onRequest(context) {
         method: 'HEAD',
         headers: {
           'apikey':         env.SUPABASE_ANON_KEY,
-          'Authorization':  `Bearer ${env.SUPABASE_ANON_KEY}`,
+          ...sbBearer(env.SUPABASE_ANON_KEY),
           'Prefer':         'count=exact',
           'Range-Unit':     'items',
           'Range':          '0-0'
@@ -2863,7 +2873,7 @@ export async function onRequest(context) {
         method: 'HEAD',
         headers: {
           'apikey':         env.SUPABASE_ANON_KEY,
-          'Authorization':  `Bearer ${env.SUPABASE_ANON_KEY}`,
+          ...sbBearer(env.SUPABASE_ANON_KEY),
           'Prefer':         'count=exact',
           'Range-Unit':     'items',
           'Range':          '0-0'
@@ -2899,7 +2909,7 @@ export async function onRequest(context) {
         method: 'POST',
         headers: {
           'apikey':         env.SUPABASE_ANON_KEY,
-          'Authorization':  `Bearer ${env.SUPABASE_ANON_KEY}`,
+          ...sbBearer(env.SUPABASE_ANON_KEY),
           'Content-Type':   'application/json'
         },
         body: '{}'
@@ -3166,7 +3176,7 @@ export async function onRequest(context) {
         method: 'POST',
         headers: {
           'apikey':        env.SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`,
+          ...sbBearer(env.SUPABASE_ANON_KEY),
           'Content-Type':  'application/json',
           'Prefer':        'return=representation,resolution=merge-duplicates'
         },
@@ -3997,7 +4007,7 @@ export async function onRequest(context) {
         method: 'POST',
         headers: {
           'apikey':        env.SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`,
+          ...sbBearer(env.SUPABASE_ANON_KEY),
           'Content-Type':  'application/json'
         },
         body: JSON.stringify({
@@ -4160,7 +4170,7 @@ export async function onRequest(context) {
         method: 'POST',
         headers: {
           'apikey':        env.SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`,
+          ...sbBearer(env.SUPABASE_ANON_KEY),
           'Content-Type':  file.type || 'application/octet-stream',
           'x-upsert':      'true'
         },
@@ -4183,7 +4193,7 @@ export async function onRequest(context) {
       const delUrl = `${env.SUPABASE_URL}/storage/v1/object/task-photos/${objectPath}`
       const dRes   = await fetch(delUrl, {
         method:  'DELETE',
-        headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}` }
+        headers: { 'apikey': env.SUPABASE_ANON_KEY, ...sbBearer(env.SUPABASE_ANON_KEY) }
       })
       if (!dRes.ok && dRes.status !== 404) return err(`Storage delete failed: ${await dRes.text()}`, 500)
       return json({ ok: true })
@@ -5156,7 +5166,7 @@ export async function onRequest(context) {
         if (typeof u !== 'string' || !u.startsWith(storageBase)) continue
         await fetch(`${env.SUPABASE_URL}/storage/v1/object/task-photos/${u.slice(storageBase.length)}`, {
           method:  'DELETE',
-          headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}` }
+          headers: { 'apikey': env.SUPABASE_ANON_KEY, ...sbBearer(env.SUPABASE_ANON_KEY) }
         }).catch(() => {})
       }
       return json({ ok: true })
@@ -5634,7 +5644,7 @@ export async function onRequest(context) {
         const objectPath = photoUrl.slice(storageBase.length)
         await fetch(`${env.SUPABASE_URL}/storage/v1/object/task-photos/${objectPath}`, {
           method:  'DELETE',
-          headers: { 'apikey': env.SUPABASE_ANON_KEY, 'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}` }
+          headers: { 'apikey': env.SUPABASE_ANON_KEY, ...sbBearer(env.SUPABASE_ANON_KEY) }
         }).catch(() => {})
       }
       return json({ ok: true })
@@ -6108,7 +6118,7 @@ export async function onRequest(context) {
             method: 'POST',
             headers: {
               'apikey':        env.SUPABASE_ANON_KEY,
-              'Authorization': `Bearer ${env.SUPABASE_ANON_KEY}`,
+              ...sbBearer(env.SUPABASE_ANON_KEY),
               'Content-Type':  'application/json'
             },
             body: JSON.stringify({

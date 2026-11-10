@@ -111,7 +111,7 @@ async function markArchived(env, ids, nowIso) {
     method: 'POST',
     headers: {
       apikey: env.SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${env.SUPABASE_ANON_KEY}`,
+      ...sbBearer(env.SUPABASE_ANON_KEY),
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ p_ids: ids, p_at: nowIso }),
@@ -202,7 +202,7 @@ async function sb(env, path) {
   const res = await fetch(`${env.SUPABASE_URL}/rest/v1/${path}`, {
     headers: {
       apikey: env.SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${env.SUPABASE_ANON_KEY}`,
+      ...sbBearer(env.SUPABASE_ANON_KEY),
       Accept: 'application/json',
     },
   })
@@ -500,6 +500,13 @@ export async function runArchive(env, triggerKind) {
       ? retentionDays + archiveDays
       : null,
   }
+}
+
+// SUPABASE_ANON_KEY may be the legacy JWT anon key (eyJ...) or a new non-JWT
+// key (sb_secret_...). New keys go on `apikey` only; Supabase rejects them in
+// `Authorization: Bearer`. So Bearer is sent for JWTs only.
+function sbBearer(key) {
+  return typeof key === 'string' && key.startsWith('eyJ') ? { Authorization: `Bearer ${key}` } : {}
 }
 
 export default {

@@ -631,6 +631,43 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-10 — Supabase key rotation: code accepts the new `sb_secret_` keys (API_REVISION 2026-11-10-new-supabase-keys)
+
+The user wants to roll the Supabase anon key, because it was on the PC that was
+hit by ransomware. With no RLS, that key has full access to the database.
+Rolling the **legacy** anon key means rotating the project's JWT secret. That
+changes anon and service_role together and breaks the live site until every
+consumer is updated. Supabase's recommended route is a new **secret key**
+(`sb_secret_...`): create it, switch each consumer over, then deactivate the
+legacy keys. Deactivating is reversible. (Supabase docs also say the legacy keys
+stop working at the end of 2026, so this migration was due anyway.)
+
+The new keys aren't JWTs. Supabase rejects them in `Authorization: Bearer`, so
+they must go on `apikey` only. Changes:
+- `functions/api/[[route]].js`: new `sbBearer(key)` adds the Bearer header only
+  for a JWT (`eyJ...`). All 21 `Authorization: Bearer ${SUPABASE_ANON_KEY}`
+  sites and `sb()` now use it, so either key type works and the switch needs
+  no downtime.
+- `/api/ping` now also returns `dbKey`: `legacy` / `secret` / `other` /
+  `missing`. It shows the kind of key only, never the key itself.
+- `workers/archiver/src/index.js`: the same helper is used at both PostgREST
+  calls. This Worker isn't deployed by the Pages push; it needs
+  `npx wrangler deploy` from `workers/archiver`.
+- `scripts/dept-check-area-managers.py`: `apikey` only for non-JWT keys.
+- `scripts/setup-email-configs.py`: asks for the secret key, rejects a
+  publishable key and anything that doesn't start `sb_secret_` / `eyJ`.
+
+Every Supabase key consumer is in this list. The browser client never talks to
+Supabase directly, and the sync scripts go through the API with
+`PRODUCT_SYNC_SECRET`. Order of operations (user steps in HANDOVER.md):
+1. Create the secret key.
+2. Deploy this code.
+3. Change the Pages secret and redeploy; check `dbKey: secret`.
+4. Deploy the archiver Worker with the new code and secret.
+5. Set the key in the email helper.
+6. Deactivate the legacy keys.
+7. Check the site and the next 01:30 archiver run.
+
 ### 2026-11-10 — Email test sends: "Config not found", because the helper hadn't finished
 
 The helper printed "Testing the Brevo login... OK", but the three

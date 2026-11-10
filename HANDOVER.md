@@ -620,3 +620,23 @@ As you asked, the two **Department Check emails** (the weekly one to Jeff's list
 ## Email test sends said "Config not found": the helper hadn't finished
 
 The email helper only saves its settings files at the very end, after all its questions are answered. The run stopped after "Brevo login... OK", so nothing was saved. It was waiting for the weekly Department Check list, which you don't have yet. That list can now be left blank, since the email is paused. The helper also says "Not finished yet" after the login check, and "Done - all three settings files saved" at the end.
+
+---
+
+## Changing the Supabase database key (the old one was on the attacked PC)
+
+The website, the nightly archiver and the area-manager email all use one Supabase key to reach the database. Changing the old-style key directly would take the website down until everything was updated. Instead we switch to Supabase's new-style **secret key**, one place at a time, and only switch off the old key at the end. The code now accepts both kinds, so there is no downtime. Supabase is retiring the old keys at the end of 2026 anyway.
+
+**1. Create the new key (no effect yet).** Supabase → project → Project Settings → API Keys → "Publishable and secret API keys" tab → *Create new API keys* if shown → copy the **secret** key (`sb_secret_...`).
+
+**2. Check the new code is live.** Open `https://homesaversscanner.pages.dev/api/ping`. It should show `"rev":"2026-11-10-new-supabase-keys"` and `"dbKey":"legacy"`.
+
+**3. Website.** Cloudflare → Workers & Pages → homesaversscanner → Settings → Variables and Secrets → `SUPABASE_ANON_KEY` → Edit → paste the secret key → Save. Then Deployments → latest → ⋯ → Retry deployment. When that finishes, `/api/ping` should show `"dbKey":"secret"`. Log in and scan one product to check.
+
+**4. Archiver (nightly copy to the archive).** On the PC: `winget install OpenJS.NodeJS.LTS`, open a new PowerShell, `cd C:\Apps\HomesaversScanner\workers\archiver`, `npx wrangler login`, `npx wrangler deploy`, `npx wrangler secret put SUPABASE_ANON_KEY` (paste the secret key with right-click).
+
+**5. Email helper.** Run the email helper again and paste the secret key when it asks for the Supabase key.
+
+**6. Switch off the old keys.** Supabase → Project Settings → API Keys → "Legacy API keys" tab → disable them. If anything breaks, you can switch them back on from the same place. Then check the site again.
+
+**7. Next morning.** Check that the archiver ran at 01:30. Claude can check this.

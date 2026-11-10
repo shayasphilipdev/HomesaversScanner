@@ -99,8 +99,14 @@ def _iso_week(d):
 
 
 def _supabase_headers(cfg):
-    anon_key = cfg.get("supabase_anon_key", "")
-    return {"apikey": anon_key, "Authorization": f"Bearer {anon_key}"}
+    # Legacy anon key (a JWT, "eyJ...") or a new key ("sb_secret_..." /
+    # "sb_publishable_..."). New keys go on apikey only: Supabase rejects them
+    # in "Authorization: Bearer".
+    key = cfg.get("supabase_anon_key", "")
+    h = {"apikey": key}
+    if key.startswith("eyJ"):
+        h["Authorization"] = f"Bearer {key}"
+    return h
 
 
 def fetch_area_managers_from_db(cfg):

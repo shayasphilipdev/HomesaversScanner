@@ -126,7 +126,7 @@ up to date. Worth setting up once, costs nothing to maintain.
 
 | Secret | Where it's configured today | Needed for |
 |---|---|---|
-| `SUPABASE_URL`, `SUPABASE_ANON_KEY` | Cloudflare Pages → environment variables; also `.dev.vars` for local dev | Every API call the website makes to the database |
+| `SUPABASE_URL`, `SUPABASE_ANON_KEY` | Cloudflare Pages → environment variables; the `homesavers-archiver` Worker; `dept-check-area-managers.config.json` (`supabase_anon_key`); also `.dev.vars` for local dev | Every API call the website makes to the database. Since 2026-11-10 it holds a Supabase **secret key** (`sb_secret_...`) despite the name; the code sends non-JWT keys on `apikey` only. The legacy anon key also still works. |
 | `SESSION_SECRET` | Cloudflare Pages → environment variables | Signing login tokens |
 | `PRODUCT_SYNC_SECRET` | Cloudflare Pages → environment variables, and `C:\Homesavers\.sync-secret` on the PC | Letting the PC's sync scripts talk to the website |
 | `ARCHIVE_TRIGGER_SECRET` | Cloudflare Pages env vars + the archiver Worker's own secret store | Letting the archiver Worker talk to the website |
