@@ -631,6 +631,28 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-10 — HO records: screen 56 vs Excel 79 explained; on-screen note added
+
+The user saw 56 records on Reports → HO records but 79 in the Excel export.
+
+**Cause:** by design, the grid (`GET /task-records`) reads only the **live**
+Supabase records. `downloadXLSX` also reads the **D1 archive**
+(`/reports/archive`) whenever `from` is earlier than
+`now − (live_days − 1)` days. `live_days` = `scan_record_retention_days` = 14,
+and the default range is the last 30 days, so with defaults the Excel always
+adds the archived records from 10–27 Oct.
+
+For scale: the archive holds, since 10 Oct, for example C (36), H pending (23)
+and B (58), so a 23-row difference is consistent.
+
+**Change:** the grid header now shows "· ↓ Excel also includes archived records
+older than 14 days" (with a tooltip) whenever the chosen range reaches the
+archive. The counts and the export are unchanged.
+
+**Smaller inconsistency, not changed:** the archive part of the export ignores
+the Product / Barcode status filters (`/reports/archive` doesn't take them).
+The client build couldn't be run here (npm blocked).
+
 ### 2026-11-10 — Backup photos: 7-day grace after the app deletes them (user decision)
 
 The user said photos aren't important and asked to keep only what's in the

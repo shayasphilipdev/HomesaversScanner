@@ -779,3 +779,11 @@ Still to do when there's time:
 - Set up the Aging Report email.
 - Do the Supabase key switch.
 - Share the Department Check schedule.
+
+---
+
+## HO records: why the Excel has more rows than the screen
+
+Records older than 14 days are moved from the app into the archive. The **screen** only lists the records still in the app, the last 14 days. The **Excel** download also adds the archived records for the dates you chose. The report's default range is the last 30 days, so the Excel normally has more rows: the extra ones are the older, archived records.
+
+The screen now says "↓ Excel also includes archived records older than 14 days" whenever this applies. To make both match, set the **From** date to within the last 14 days.

@@ -1191,6 +1191,20 @@ function HQReports() {
               {total > records.length && <> of {total.toLocaleString('en-IE')}</>}
               {' '}record{records.length !== 1 ? 's' : ''}
             </span>
+            {(() => {
+              // The grid reads only the live records; the Excel export ALSO adds
+              // archived ones (older than the live window) when the date range
+              // reaches back that far -- same rule as downloadXLSX. Say so, or
+              // the two counts look like a bug.
+              const liveDays = appConfig?.retention?.live_days ?? 21
+              const reachesArchive = new Date(from).getTime() < Date.now() - (liveDays - 1) * 86400000
+              return reachesArchive ? (
+                <span className="note" style={{ fontSize: 12 }}
+                      title={`Records older than ${liveDays} days are moved to the archive. They are not listed on this screen, but ↓ Excel includes them for the dates chosen.`}>
+                  · ↓ Excel also includes archived records older than {liveDays} days
+                </span>
+              ) : null
+            })()}
             {pendingIds.length > 0 && isBO && (
               <span className="note" style={{ fontSize: 12 }}>· {pendingIds.length} pending</span>
             )}
