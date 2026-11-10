@@ -390,7 +390,11 @@ def backfill(since, preview=False):
         problems = 0
         for a, need_csv, need_xl in todo:
             try:
-                local = sftp_download(sftp, SFTP_REMOTE_DIR, a)
+                share_copy = os.path.join(csv_dir, a.filename)
+                if not need_csv and os.path.getsize(share_copy) == a.st_size:
+                    local = share_copy          # CSV already on the share: build from it
+                else:
+                    local = sftp_download(sftp, SFTP_REMOTE_DIR, a)
                 if need_csv:
                     shutil.copy2(local, os.path.join(csv_dir, a.filename))
                     log(f"CSV copy saved: {os.path.join(csv_dir, a.filename)}")
