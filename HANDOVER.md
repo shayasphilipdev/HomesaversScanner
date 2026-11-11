@@ -814,3 +814,13 @@ The 42 pending HO records that had already moved out (22 Non-Scans, 19 Wrong Pri
 ## 10 Nov: archive job redeployed with the pending-records change
 
 The redeploy was done on the PC and checked from here: the live archive job has the new rules. Pending HO records are kept in the app, a changed record replaces its old archive copy, and the one-time return of the 42 pending records is in place. That return happens on the next run (22:30 tonight, or 01:30 if tonight's allowance is used up). Claude checks it tomorrow at 09:10.
+
+---
+
+## 11 Nov morning check
+
+- **The 42 pending HO records are back in the app** with every option. None are left in the archive, and nothing is listed twice.
+- **Database:** down from 72% to **70%** (352 MB). Last night's archive runs moved 17,000 older Department Check records out. Department Check scans have dropped (4,329 on 10 Nov), so the backlog is shrinking each night.
+- **Nightly backup at 03:00:** OK, 36 MB.
+- **B&M Daily from SFTP at 07:00:** OK, today's file, 14,020 products.
+- **Not working yet: the extra 22:30 archive run.** It skipped itself because Cloudflare rejected its usage check, most likely a hidden line break in the pasted token. Fixed in the code; it needs one more redeploy from the PC (`npx.cmd wrangler deploy` in `workers\archiver`).

@@ -631,6 +631,40 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-11 — Morning check: restore done, backlog shrinking, backup and B&M SFTP OK; 22:30 run fixed
+
+**One-off restore:**
+- D1 `maintenance_flags.restore_pending_ho_v1` set at 01:30 UTC ("restored 42
+  pending HO records").
+- The records are back in Postgres (sample of 4 checked). 0 pending HO-type
+  records within 49 days remain in D1, and 0 live old pending HO records carry
+  `d1_copied_at`, so none is in both places.
+- 46 pending HO records older than 14 days now sit in the app with every
+  action available.
+
+**Archiver:**
+- The 01:30 run: 8,000 records in (one page used by the restore), 13,575 purged
+  from D1.
+- The 01:45 run: 9,000 records.
+- D1 newest archived moved from 30 Oct 14:34 to 31 Oct 11:28.
+- Supabase went from 362 MB to **352 MB (70.3%)**.
+- J inflow per day: 10 Nov 4,329; 11 Nov 106 by 09:00. The backlog (31 Oct – 8 Nov,
+  about 190k) is now shrinking at ~17–18k a night.
+
+**22:30 extra run skipped:** "D1 analytics failed: 400" with a non-JSON body.
+That's typical of an invalid Authorization header, most likely a trailing
+CR/LF on the `CLOUDFLARE_API_TOKEN` secret pasted on Windows.
+- **Fix:** the token is trimmed, the query adds `dimensions { date }` (same
+  shape as the Pages usage chart), and the error now includes status and
+  body.
+- Needs `npx.cmd wrangler deploy` from `workers/archiver`.
+
+**App backup at 03:00:** ok, 36 MB in 1 minute. The archive export isn't due
+until Sunday.
+
+**B&M SFTP at 07:00:** ok. `HSVPRD20261111060001.CSV`, 14,020 product IDs. Today's
+file was picked up on the first run.
+
 ### 2026-11-10 — Excel download "Server returned 500": error now shows the server's reason
 
 The user got "Server returned 500" downloading Reports → HO records to Excel.

@@ -613,7 +613,11 @@ const WRITE_RESERVE       = 10_000   // late-evening device logs etc. + analytic
 const WRITES_PER_RECORD   = 3        // row + index, rounded UP from the ~2 observed
 
 async function d1RowsWrittenToday(env) {
-  if (!env.CLOUDFLARE_API_TOKEN || !env.CLOUDFLARE_ACCOUNT_ID) {
+  // Trimmed: a secret pasted on Windows can carry a trailing CR/LF, which makes
+  // the Authorization header invalid and Cloudflare answers a bare 400
+  // (what the first 22:30 run on 2026-11-10 got).
+  const token = String(env.CLOUDFLARE_API_TOKEN || '').trim()
+  if (!token || !env.CLOUDFLARE_ACCOUNT_ID) {
     throw new Error('CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID not configured')
   }
   const now = new Date()
@@ -622,17 +626,19 @@ async function d1RowsWrittenToday(env) {
     viewer { accounts(filter: { accountTag: $a }) {
       d1AnalyticsAdaptiveGroups(limit: 1000,
         filter: { databaseId: $db, datetime_geq: $since, datetime_leq: $until }) {
-        sum { rowsWritten } } } } }`
+        dimensions { date } sum { rowsWritten } } } } }`
   const res = await fetch('https://api.cloudflare.com/client/v4/graphql', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}`, 'Content-Type': 'application/json' },
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ query, variables: {
       a: env.CLOUDFLARE_ACCOUNT_ID, db: env.D1_ARCHIVE_DATABASE_ID,
       since: since.toISOString(), until: now.toISOString() } }),
   })
-  const j = await res.json().catch(() => null)
+  const text = await res.text().catch(() => '')
+  let j = null
+  try { j = JSON.parse(text) } catch { j = null }
   if (!res.ok || !j || j.errors || !j.data) {
-    throw new Error(`D1 analytics failed: ${JSON.stringify(j?.errors || j || res.status).slice(0, 300)}`)
+    throw new Error(`D1 analytics failed: ${res.status} ${JSON.stringify(j?.errors || text).slice(0, 300)}`)
   }
   const groups = j.data.viewer?.accounts?.[0]?.d1AnalyticsAdaptiveGroups || []
   return groups.reduce((t, g) => t + (g.sum?.rowsWritten || 0), 0)
