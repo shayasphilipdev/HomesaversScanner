@@ -631,6 +631,24 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-12 — Morning check
+
+- **Archiver:**
+  - 01:30 run: 9,000 records in, 10,085 purged from D1.
+  - 01:45 run: 9,000 records in.
+  - D1 newest archived moved from 31 Oct 11:28 to **2 Nov 10:14**.
+  - J live: 183,802.
+  - J inflow: 11 Nov 5,979.
+- **Supabase:** **343 MB (68.6%)**, down from 352 MB.
+- **22:30 extra run:** skipped again with "D1 analytics failed: 400", in the
+  OLD message format (the fixed code reports status plus body). So the
+  token-trim fix (222f0c4) hasn't been deployed yet; it needs
+  `npx.cmd wrangler deploy` in `workers/archiver`.
+- **App backup at 03:00:** ok, 34 MB.
+- **B&M SFTP at 07:00:** ok. `HSVPRD20261112060002.CSV`, 13,974 product IDs,
+  first run.
+- **Excel 500:** no new error message from the user yet.
+
 ### 2026-11-11 — Morning check: restore done, backlog shrinking, backup and B&M SFTP OK; 22:30 run fixed
 
 **One-off restore:**

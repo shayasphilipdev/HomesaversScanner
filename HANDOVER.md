@@ -824,3 +824,13 @@ The redeploy was done on the PC and checked from here: the live archive job has 
 - **Nightly backup at 03:00:** OK, 36 MB.
 - **B&M Daily from SFTP at 07:00:** OK, today's file, 14,020 products.
 - **Not working yet: the extra 22:30 archive run.** It skipped itself because Cloudflare rejected its usage check, most likely a hidden line break in the pasted token. Fixed in the code; it needs one more redeploy from the PC (`npx.cmd wrangler deploy` in `workers\archiver`).
+
+---
+
+## 12 Nov morning check
+
+- **Database:** **69%** (343 MB), down from 70%. Another 18,000 older Department Check records were archived overnight; the archive is now up to 2 Nov.
+- **Nightly backup:** OK, 34 MB.
+- **B&M Daily from SFTP:** OK, today's file at 07:00 (13,974 products).
+- **The 22:30 extra archive run is still skipping.** The fix is ready but hasn't been deployed. On the PC: `$env:Path += ";C:\Program Files\nodejs"`, `cd C:\Apps\HomesaversScanner`, `git pull`, `cd workers\archiver`, `npx.cmd wrangler deploy`.
+- **Excel download error:** waiting for the new error message, if it happens again.
