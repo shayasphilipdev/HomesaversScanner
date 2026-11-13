@@ -834,3 +834,16 @@ The redeploy was done on the PC and checked from here: the live archive job has 
 - **B&M Daily from SFTP:** OK, today's file at 07:00 (13,974 products).
 - **The 22:30 extra archive run is still skipping.** The fix is ready but hasn't been deployed. On the PC: `$env:Path += ";C:\Program Files\nodejs"`, `cd C:\Apps\HomesaversScanner`, `git pull`, `cd workers\archiver`, `npx.cmd wrangler deploy`.
 - **Excel download error:** waiting for the new error message, if it happens again.
+
+---
+
+## 13 Nov: Space Plan data exported to Excel
+
+All Space Plan data from the database was exported to one Excel file and sent in the chat: "Space Plan - all data - 2026-11-13.xlsx". It contains:
+- **Summary:** planned vs audited per store and equipment, with the difference
+- **Audited Counts:** 2,249 rows
+- **Planned Counts:** 1,242 rows
+- **Audited by Category:** stores × the 26 categories
+- the **Equipment**, **Sub-categories** and **Categories** lists
+
+58 stores in total. Store names and areas are shown instead of database IDs.
