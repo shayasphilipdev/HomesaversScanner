@@ -9,6 +9,23 @@ Pattern borrowed from the existing price-tracker Python scripts.
 import os, sys, json, pathlib, datetime, time, requests
 import pandas as pd
 
+# Pick the file by the DATE IN ITS NAME (e.g. ItemMaster_2026_11_16), not by the
+# file's modified time. A file copied onto the network share usually keeps its
+# ORIGINAL timestamp, so today's file can land with an older modified time than
+# yesterday's and "newest modified" then picks yesterday's. The name's date is
+# the source of truth; modified time is only a tie-break / fallback.
+_DATE_RE = re.compile(r"(20\d\d)[._-](\d{2})[._-](\d{2})")
+
+def _file_key(p):
+    m = _DATE_RE.search(p.name)
+    if m:
+        y, mo, d = (int(x) for x in m.groups())
+        try:
+            return (1, datetime.date(y, mo, d).toordinal(), p.stat().st_mtime)
+        except ValueError:
+            pass
+    return (0, 0, p.stat().st_mtime)
+
 BASE_URL    = "https://homesaversscanner.pages.dev"
 SECRET_FILE = r"C:\Homesavers\.sync-secret"
 LOG_FILE    = r"C:\Homesavers\logs\sync-alt-barcodes-py.log"
@@ -153,7 +170,7 @@ def main():
     if not candidates:
         fail(f"No files matching '{pattern}' in {folder}")
 
-    latest = max(candidates, key=lambda p: p.stat().st_mtime)
+    latest = max(candidates, key=_file_key)
     file_name = latest.name
     file_size = latest.stat().st_size
     size_mb = round(file_size / 1_048_576, 1)

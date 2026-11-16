@@ -847,3 +847,13 @@ All Space Plan data from the database was exported to one Excel file and sent in
 - the **Equipment**, **Sub-categories** and **Categories** lists
 
 58 stores in total. Store names and areas are shown instead of database IDs.
+
+---
+
+## 16 Nov: Item Master sync was picking yesterday's file
+
+The Item Master (Prices) sync kept loading a day-old file even when today's had arrived. Cause: it chose "the newest file" by the file's last-changed time, but when Windows copies a file onto the network folder it keeps the original timestamp. So today's file could sit there with an older time than yesterday's, and the sync picked yesterday's. (That is also why on some days alt-barcodes got today's file but prices didn't - it came down to each file's copied-over time.)
+
+Fix: both syncs now choose by the DATE IN THE FILE NAME (e.g. ItemMaster_2026_11_16), and only fall back to the file time for names with no date. The delivery-manifest generator had the same flaw for its Item Master lookup and is fixed too (the HSVMAN delivery files have no date in the name, so they keep using the file time, which is correct for them).
+
+On the PC: `git pull`, then `scripts\deploy-scripts.ps1`. No schedule change. Next 07:00 run will pick the right file; to confirm sooner, run `run_sync.bat prices` by hand after today's file has arrived.

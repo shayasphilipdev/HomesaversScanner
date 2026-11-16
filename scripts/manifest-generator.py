@@ -260,9 +260,27 @@ def load_itemmaster_lookup(path):
     return lookup
 
 
+# Prefer the DATE IN THE NAME (e.g. ItemMaster_2026_11_16) over the file's
+# modified time: a file copied onto the share keeps its original timestamp, so
+# today's file can arrive with an older mtime than yesterday's and "newest
+# mtime" then picks yesterday's. mtime is only a tie-break / fallback.
+_NAME_DATE_RE = re.compile(r"(20\d\d)[._-](\d{2})[._-](\d{2})")
+
+
+def _name_date_key(path):
+    m = _NAME_DATE_RE.search(os.path.basename(path))
+    if m:
+        y, mo, d = (int(x) for x in m.groups())
+        try:
+            return (1, dt.date(y, mo, d).toordinal(), os.path.getmtime(path))
+        except ValueError:
+            pass
+    return (0, 0, os.path.getmtime(path))
+
+
 def latest(pattern_dir, pattern):
     files = glob.glob(os.path.join(pattern_dir, pattern))
-    return max(files, key=os.path.getmtime) if files else None
+    return max(files, key=_name_date_key) if files else None
 
 
 def first_existing(paths):

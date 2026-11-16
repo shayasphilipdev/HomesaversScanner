@@ -631,6 +631,26 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-16 — Item Master / alt-barcode sync picked the wrong file (name date, not mtime)
+
+Symptom: the 07:00 Prices run kept importing a day-old `ItemMaster_*.xlsx`
+although today's file was in the folder by 05:11. `sync_runs` showed prices
+lagging a day repeatedly while alt-barcodes sometimes got today's file.
+
+Cause: `max(candidates, key=st_mtime)`. A file copied onto the SMB share keeps
+its source modified time, so today's file often has an OLDER mtime than
+yesterday's already-present file, and "newest mtime" selects yesterday's.
+
+Fix (`sync-prices.py`, `sync-alt-barcodes.py`): new `_file_key()` sorts by the
+date parsed from the file name (`(20\d\d)[._-](\d{2})[._-](\d{2})`), then mtime
+as tie-break; files with no date in the name fall back to mtime. Same fix in
+`manifest-generator.py` `latest()` via `_name_date_key()` — used for the
+ItemMaster lookup; HSVMAN delivery files carry no name date so they keep
+mtime ordering (correct, since their names don't encode the delivery date).
+
+Tested: a 11_16 file with an older mtime than a 11_15 file is now picked; the
+no-date fallback still uses mtime. Needs `deploy-scripts.ps1` on the PC.
+
 ### 2026-11-12 — Morning check
 
 - **Archiver:**
