@@ -857,3 +857,21 @@ The Item Master (Prices) sync kept loading a day-old file even when today's had 
 Fix: both syncs now choose by the DATE IN THE FILE NAME (e.g. ItemMaster_2026_11_16), and only fall back to the file time for names with no date. The delivery-manifest generator had the same flaw for its Item Master lookup and is fixed too (the HSVMAN delivery files have no date in the name, so they keep using the file time, which is correct for them).
 
 On the PC: `git pull`, then `scripts\deploy-scripts.ps1`. No schedule change. Next 07:00 run will pick the right file; to confirm sooner, run `run_sync.bat prices` by hand after today's file has arrived.
+
+---
+
+## 17 Nov: Prices + Alt Barcode syncs stopped running (my mistake, now fixed)
+
+Yesterday's "pick file by name date" change used `re.compile` but I forgot to add `import re`. So both scripts crashed the instant they started, before doing anything. Result: on 17 Nov the Item Master (Prices) 07:00 and Alt Barcode 07:30 syncs did not run at all. (CN codes, backup, B&M Daily and manifests were unaffected and ran fine.)
+
+Fix: added `re` to the imports in both scripts. Verified both load cleanly and still pick the newest dated file.
+
+On the PC, as soon as possible:
+```
+cd C:\Apps\HomesaversScanner
+git pull
+powershell -ExecutionPolicy Bypass -File scripts\deploy-scripts.ps1
+run_sync.bat prices
+run_sync.bat alt-barcodes
+```
+That catches today up now; the scheduled runs resume tomorrow at 07:00 / 07:30. The data was never wrong - the syncs simply didn't run for a day, so prices/alt-barcodes are showing 15-16 Nov until this runs.

@@ -631,6 +631,17 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-17 — Prices/alt-barcode syncs crashed on startup (missing `import re`)
+
+Regression from the 2026-11-16 name-date change: `_DATE_RE = re.compile(...)`
+runs at module load, but `re` was not imported, so `sync-prices.py` and
+`sync-alt-barcodes.py` raised `NameError` immediately and neither ran on
+17 Nov (sync_runs has no prices/alt_barcodes row for the 17th; cn_codes,
+backup, bm_daily, manifest all ran). Fix: add `re` to the import line in both.
+Verified the module bodies execute and `_file_key` still prefers the newest
+name-date. Needs `deploy-scripts.ps1` + a manual `run_sync.bat prices` /
+`alt-barcodes` to catch up today.
+
 ### 2026-11-16 — Item Master / alt-barcode sync picked the wrong file (name date, not mtime)
 
 Symptom: the 07:00 Prices run kept importing a day-old `ItemMaster_*.xlsx`

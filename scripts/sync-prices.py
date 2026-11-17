@@ -6,7 +6,7 @@ posts to /api/prices/sync in chunks of 2000 rows.
 Pattern borrowed from the existing price-tracker Python scripts.
 """
 
-import os, sys, json, pathlib, datetime, time, requests
+import os, sys, json, pathlib, datetime, time, re, requests
 import pandas as pd
 
 # Pick the file by the DATE IN ITS NAME (e.g. ItemMaster_2026_11_16), not by the
