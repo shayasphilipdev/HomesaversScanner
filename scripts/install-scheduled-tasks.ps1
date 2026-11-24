@@ -30,7 +30,7 @@ $user = "$env:USERDOMAIN\$env:USERNAME"
 
 $daily = @(
   @{ Name = 'Homesavers CN Code Sync';      At = '02:45'; Job = 'cn-codes' },
-  @{ Name = 'Homesavers Prices Sync';       At = '07:00'; Job = 'prices' },
+  @{ Name = 'Homesavers Prices Sync';       At = '07:45'; Job = 'prices' },
   @{ Name = 'Homesavers Alt Barcodes Sync'; At = '07:30'; Job = 'alt-barcodes' }
 )
 # Report emails: registered only when their config file exists.
