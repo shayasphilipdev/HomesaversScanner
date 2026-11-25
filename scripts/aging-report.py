@@ -32,6 +32,7 @@ import os
 import smtplib
 import sys
 from email.message import EmailMessage
+from email.utils import parseaddr
 
 import requests
 from openpyxl import Workbook
@@ -383,20 +384,24 @@ def send_email(cfg, html, attachments, recipients, cc=None):
             filename=filename,
         )
 
+    # Envelope sender must be the bare address (the mail server checks it is owned
+    # by the logged-in user); a "Name <addr>" string would be read as just "Name".
+    env_from = parseaddr(smtp["from"])[1] or smtp.get("username") or smtp["from"]
+    rcpts    = list(recipients) + (list(cc) if cc else [])
     host, port = smtp["host"], int(smtp.get("port", 587))
     security = (smtp.get("security") or "starttls").lower()
     if security == "ssl":
         with smtplib.SMTP_SSL(host, port, timeout=60) as s:
             if smtp.get("username"):
                 smtp_login(s, smtp)
-            s.send_message(msg)
+            s.send_message(msg, from_addr=env_from, to_addrs=rcpts)
     else:
         with smtplib.SMTP(host, port, timeout=60) as s:
             if security == "starttls":
                 s.starttls()
             if smtp.get("username"):
                 smtp_login(s, smtp)
-            s.send_message(msg)
+            s.send_message(msg, from_addr=env_from, to_addrs=rcpts)
 
 
 # -- main ----------------------------------------------------------------------

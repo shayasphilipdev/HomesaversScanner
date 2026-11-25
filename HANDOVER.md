@@ -900,3 +900,9 @@ The setup helper (`setup-email-configs.py`) now asks for the mailbox password in
 4. Nothing else changes — the schedules and recipients stay as they are.
 
 Note: like the current Brevo key, the mailbox password is stored in the git-ignored config file in C:\Homesavers\scripts (the Price Intelligence app keeps it in Windows Credential Manager instead; we can move the scanner to that later if you want).
+
+---
+
+## Email test sends rejected: envelope sender fixed
+
+The first test sends to remote.a-i-m.ie connected and logged in fine but were rejected: "Sender address rejected" (aging/weekly) and "no valid recipients" (area managers). Cause: the scripts handed the server the whole "Buying Admin <buyingadmin@supplychain1.ie>" as the sender, so it read only the first word ("Buying") and refused it. Fixed: all three scripts now send the bare address buyingadmin@supplychain1.ie as the envelope sender. Re-run the three test commands after deploying.

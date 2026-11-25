@@ -631,6 +631,18 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-25 — Email envelope sender fix (remote.a-i-m.ie rejected "Buying Admin <...>")
+
+First sends via remote.a-i-m.ie failed: aging/weekly got
+`553 5.7.1 <Buying>: Sender address rejected: not owned by user buyingadmin@supplychain1.ie`;
+area-managers got `554 5.5.1 no valid recipients`. Root cause: the whole
+`From` display string was used as the SMTP envelope sender, so the server read
+only "Buying". Fix (all 3 send scripts): `env_from = parseaddr(smtp["from"])[1]
+or username`, passed explicitly — `send_message(msg, from_addr=env_from,
+to_addrs=recipients+cc)` for aging/weekly, `sendmail(env_from, all_rcpt, ...)`
+for area-managers. Verified with a fake SMTP: envelope sender is now
+`buyingadmin@supplychain1.ie` with the correct recipient list.
+
 ### 2026-11-25 — Report emails moved from Brevo to remote.a-i-m.ie (domain SPF fix)
 
 Mirrors the Price Intelligence app. Brevo was dropped because

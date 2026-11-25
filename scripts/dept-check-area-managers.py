@@ -23,6 +23,7 @@ import os
 import smtplib
 import sys
 from email.message import EmailMessage
+from email.utils import parseaddr
 
 import requests
 
@@ -453,6 +454,7 @@ def send_email(cfg, html, subject, to_addrs, bcc=None):
     msg.add_alternative(html, subtype="html")
 
     all_rcpt = list(to_addrs) + (list(bcc) if bcc else [])
+    env_from = parseaddr(smtp["from"])[1] or smtp.get("username") or smtp["from"]
 
     host, port = smtp["host"], int(smtp.get("port", 587))
     security   = (smtp.get("security") or "starttls").lower()
@@ -460,14 +462,14 @@ def send_email(cfg, html, subject, to_addrs, bcc=None):
         with smtplib.SMTP_SSL(host, port, timeout=60) as s:
             if smtp.get("username"):
                 smtp_login(s, smtp)
-            s.sendmail(smtp["from"], all_rcpt, msg.as_string())
+            s.sendmail(env_from, all_rcpt, msg.as_string())
     else:
         with smtplib.SMTP(host, port, timeout=60) as s:
             if security == "starttls":
                 s.starttls()
             if smtp.get("username"):
                 smtp_login(s, smtp)
-            s.sendmail(smtp["from"], all_rcpt, msg.as_string())
+            s.sendmail(env_from, all_rcpt, msg.as_string())
 
 
 # -- main ----------------------------------------------------------------------
