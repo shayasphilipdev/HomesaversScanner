@@ -906,3 +906,22 @@ Note: like the current Brevo key, the mailbox password is stored in the git-igno
 ## Email test sends rejected: envelope sender fixed
 
 The first test sends to remote.a-i-m.ie connected and logged in fine but were rejected: "Sender address rejected" (aging/weekly) and "no valid recipients" (area managers). Cause: the scripts handed the server the whole "Buying Admin <buyingadmin@supplychain1.ie>" as the sender, so it read only the first word ("Buying") and refused it. Fixed: all three scripts now send the bare address buyingadmin@supplychain1.ie as the envelope sender. Re-run the three test commands after deploying.
+
+---
+
+## Email sender rejection — second fix (envelope = the login)
+
+The first fix (bare parsed address) still failed with the same 553 `<Buying>`
+error, which means the `from` value saved in the live config on the PC is
+malformed — parsing it still yields "Buying". So the scripts no longer parse
+`from` for the envelope at all: the envelope **MAIL FROM is now always the
+authenticated login** (`smtp.username` = `buyingadmin@supplychain1.ie`), which
+is exactly what remote.a-i-m.ie requires. The display name stays only in the
+visible From header. Verified locally against a stand-in SMTP with a
+deliberately broken `from`: MAIL FROM came out as `buyingadmin@supplychain1.ie`
+for all three scripts. Commit `416c8bd` on `main`.
+
+**On the PC:** `cd C:\Apps\HomesaversScanner` → `git pull` →
+`deploy-scripts.ps1`, then re-run the three `--to` test sends. If it still
+fails, it is the live config's `username` value — check it is
+`buyingadmin@supplychain1.ie` (re-run `setup-email-configs.py` to reset it).
