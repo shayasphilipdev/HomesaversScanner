@@ -16,3 +16,6 @@ scripts/dept-check-weekly-preview.html
 scripts/dept-check-area-preview-*.html
 scripts/aging-report-preview.html
 scripts/__pycache__/
+
+# Space Plan status report deliverables (generated, not source)
+Space Plan Status*.xlsx
