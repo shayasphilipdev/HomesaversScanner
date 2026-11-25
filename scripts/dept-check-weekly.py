@@ -36,6 +36,8 @@ from email.utils import parseaddr
 
 import requests
 
+import dept_check_cycle as cycle
+
 # Resolve config + secret next to the script unless overridden. Same convention
 # and the same secret file as aging-report.py.
 HERE        = os.path.dirname(os.path.abspath(__file__))
@@ -87,9 +89,12 @@ def fetch_week(cfg, secret, frm=None, to=None):
 
 
 def fetch(cfg, secret, week_monday=None):
-    """Last week plus the week before it, for the side-by-side snapshot.
+    """Last week plus the same kind of week one cycle earlier, for comparison.
 
-    The API works out "last week" itself; the previous week is derived from the
+    The stores run a 3-week cycle (see dept_check_cycle.py), so the week just
+    before is always a different kind; the comparison is 3 weeks back.
+
+    The API works out "last week" itself; the comparison week is derived from the
     bounds it returns rather than recomputed here, so the two can never disagree
     about where a week starts -- which matters at a year boundary, where
     2024-12-30 is week 1 of ISO-2025.
@@ -102,12 +107,14 @@ def fetch(cfg, secret, week_monday=None):
         last = fetch_week(cfg, secret)
 
     lf = dt.datetime.fromisoformat(last["week"]["from"].replace("Z", "+00:00"))
-    prev_from = lf - dt.timedelta(days=7)
-    prev_to = lf - dt.timedelta(microseconds=1)
+    prev_from = lf - dt.timedelta(days=21)
+    prev_to = prev_from + dt.timedelta(days=7) - dt.timedelta(microseconds=1)
+    if cycle.week_type(last["week"]["from"], cfg) == cycle.OFF:
+        return last, None                     # caller skips the send; nothing to compare
     try:
         prev = fetch_week(cfg, secret, prev_from, prev_to)
     except Exception as e:
-        log(f"Previous week unavailable ({e}); showing last week only.", "WARN")
+        log(f"Comparison week unavailable ({e}); showing last week only.", "WARN")
         prev = None
     return last, prev
 
@@ -272,8 +279,10 @@ def stacked_bar(bd, palette, total, width_pct):
             f'table-layout:fixed;"><tr>{"".join(cells)}</tr></table>')
 
 
-def build_html(last, prev, cfg, revise_note=None):
+def build_html(last, prev, cfg, revise_note=None, kind=None):
     wk = last.get("week", {}) or {}
+    group = cycle.LABELS.get(kind, "")
+    short = cycle.SHORT.get(kind, "")
     stores = [s for s in (last.get("stores") or []) if s.get("records", 0) > 0]
     # Highest count first, as asked.
     stores.sort(key=lambda s: (-s.get("records", 0), -s.get("departments", 0)))
@@ -360,7 +369,9 @@ def build_html(last, prev, cfg, revise_note=None):
              f'<div style="font-size:21px;font-weight:700;color:{WHITE};margin-top:6px;'
              f'line-height:1.25;">Department Check &mdash; Weekly Report</div>'
              f'<div style="font-size:13px;color:#C9B79E;margin-top:5px;">'
-             f'{esc(wk.get("label",""))}</div></td></tr>')
+             f'{esc(wk.get("label",""))}'
+             + (f' &middot; {esc(group)}' if group else '')
+             + '</div></td></tr>')
 
     # ---- revision banner (only when re-sending a correction) ------------
     # bgcolor attribute AND inline background-color, table-based, red left rule:
@@ -382,22 +393,28 @@ def build_html(last, prev, cfg, revise_note=None):
     H.append(f'<tr><td align="left" style="padding:14px 4px 16px;font-family:{FONT};'
              f'font-size:14px;color:{ESPRESSO};line-height:1.55;">'
              f'Hi All,<br>'
-             f'Here is last week&rsquo;s Department Check report &mdash; the stores that '
-             f'missed a check, and how many records each store logged by department.'
-             f'</td></tr>')
+             + (f'Last week was a <strong>{esc(short)}</strong> Department Check week. '
+                f'Here are the stores that did not check those departments, and how many '
+                f'{esc(short)} records each store logged by department.'
+                if kind else
+                f'Here is last week&rsquo;s Department Check report &mdash; the stores that '
+                f'missed a check, and how many records each store logged by department.')
+             + '</td></tr>')
 
     # ---- card 1: not done, two weeks ------------------------------------
     H.append(_card_open("Stores that did not do a Department Check",
-                        "Last week, with the week before for comparison", RED, WHITE, "#F3D6CF"))
+                        (f"Last week ({esc(short)}), with the last {esc(short)} week for comparison"
+                         if kind else "Last week, with the week before for comparison"),
+                        RED, WHITE, "#F3D6CF"))
     H.append(_week_block(last, "last week"))
     if prev:
         H.append(f'<tr><td style="padding:0 16px;"><div style="height:1px;background-color:{TAN};'
                  f'font-size:0;line-height:0;">&nbsp;</div></td></tr>')
-        H.append(_week_block(prev, "previous week"))
+        H.append(_week_block(prev, f"last {esc(short)} week" if kind else "previous week"))
     H.append(_card_close())
 
     # ---- card 2: counts --------------------------------------------------
-    H.append(_card_open("Department Check records by department",
+    H.append(_card_open(f"{esc(group) if kind else 'Department Check records by department'}",
                         f'{esc(wk.get("label",""))} &middot; busiest store first', BROWN))
     H.append(f'<tr><td style="padding:12px 14px 4px;">{legend()}</td></tr>')
     H.append(f'<tr><td style="padding:0;">'
@@ -488,6 +505,8 @@ def main():
                                    "Default: the last complete week.")
     ap.add_argument("--note", help="Short correction note. Adds a 'Revised report' "
                                    "banner at the top and '[Revised]' to the subject.")
+    ap.add_argument("--force", action="store_true",
+                    help="Send even when last week was an off week of the 3-week cycle.")
     args = ap.parse_args()
 
     log("=== Department Check weekly report starting ===")
@@ -500,14 +519,28 @@ def main():
         log(f"Could not fetch report data: {e}", "ERROR")
         sys.exit(1)
 
-    week   = data.get("week", {}) or {}
+    week = data.get("week", {}) or {}
+    kind = cycle.week_type(week["from"], cfg)
+    log(f"{week.get('label','?')} is a {cycle.SHORT[kind]} week of the 3-week cycle.")
+    if kind == cycle.OFF:
+        if not args.force:
+            log("No Department Check that week - no email sent.")
+            log("=== Done ===")
+            return
+        kind = None                           # forced: report every department, as before
+    else:
+        data = cycle.filter_report(data, kind, cfg)
+        prev = cycle.filter_report(prev, kind, cfg)
+
     totals = data.get("totals", {}) or {}
     log(f"{week.get('label','?')}: {totals.get('missed',0)} of {totals.get('stores',0)} "
         f"stores missed; {totals.get('records',0)} records, "
         f"{totals.get('departments',0)} departments.")
 
-    html    = build_html(data, prev, cfg, revise_note=args.note)
+    html    = build_html(data, prev, cfg, revise_note=args.note, kind=kind)
     subject = f'{cfg.get("subject_prefix", "Homesavers Department Check")} - {week.get("label", "")}'
+    if kind:
+        subject += f' - {cycle.SHORT[kind]}'
     if args.note:
         subject = f'[Revised] {subject}'
 

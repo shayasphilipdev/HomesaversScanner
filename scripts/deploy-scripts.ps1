@@ -39,6 +39,7 @@ $files = @(
   'manifest-generator.py',
   'run-manifest.vbs',
   'aging-report.py',
+  'dept_check_cycle.py',               # 3-week FMCG / non-FMCG / off cycle, used by both below
   'dept-check-weekly.py',              # Monday 09:00 "who missed Department Check" email
   'dept-check-area-managers.py'        # Thursday 08:00 + Monday 08:00 per-area-manager email
 )

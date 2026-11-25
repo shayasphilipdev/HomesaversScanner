@@ -27,7 +27,9 @@ from email.utils import parseaddr
 
 import requests
 
-HERE        = os.path.dirname(os.path.abspath(__file__))
+import dept_check_cycle as cycle
+
+HERE       = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.environ.get("DEPT_CHECK_AREA_CONFIG",
                              os.path.join(HERE, "dept-check-area-managers.config.json"))
 SECRET_FILE = r"C:\Homesavers\.sync-secret"
@@ -296,8 +298,10 @@ def stacked_bar(bd, palette, total, width_pct):
             f'table-layout:fixed;"><tr>{"".join(cells)}</tr></table>')
 
 
-def build_html(last, cfg, first_name, area_name, period_label, is_mid_week):
+def build_html(last, cfg, first_name, area_name, period_label, is_mid_week, kind=None):
     wk     = last.get("week", {}) or {}
+    short  = cycle.SHORT.get(kind, "")
+    group  = cycle.LABELS.get(kind, "")
     stores = [s for s in (last.get("stores") or []) if s.get("records", 0) > 0]
     stores.sort(key=lambda s: (-s.get("records", 0), -s.get("departments", 0)))
     top    = max([s.get("records", 0) for s in stores] or [1])
@@ -365,6 +369,10 @@ def build_html(last, cfg, first_name, area_name, period_label, is_mid_week):
             f"({esc(period_label)})."
         )
         missed_sub = "Stores that did not do a Department Check last week"
+    if kind:
+        greeting_body += (f" This is a <strong>{esc(short)}</strong> week, so only "
+                          f"{esc(short)} departments count.")
+        missed_sub += f" ({short} departments)"
 
     H = []
     H.append('<!DOCTYPE html><html><head><meta charset="utf-8">'
@@ -385,7 +393,9 @@ def build_html(last, cfg, first_name, area_name, period_label, is_mid_week):
              f'<div style="font-size:21px;font-weight:700;color:{WHITE};margin-top:6px;'
              f'line-height:1.25;">Department Check &mdash; {esc(report_type)}</div>'
              f'<div style="font-size:13px;color:#C9B79E;margin-top:5px;">'
-             f'{esc(area_name)} &middot; {esc(period_label)}</div></td></tr>')
+             f'{esc(area_name)} &middot; {esc(period_label)}'
+             + (f' &middot; {esc(group)}' if group else '')
+             + '</div></td></tr>')
 
     # greeting
     H.append(f'<tr><td align="left" style="padding:14px 4px 16px;font-family:{FONT};'
@@ -400,7 +410,7 @@ def build_html(last, cfg, first_name, area_name, period_label, is_mid_week):
     H.append(_card_close())
 
     # card 2: counts
-    H.append(_card_open("Department Check records by department",
+    H.append(_card_open(esc(group) if kind else "Department Check records by department",
                         f'{esc(period_label)} &middot; busiest store first', BROWN))
     H.append(f'<tr><td style="padding:12px 14px 4px;">{legend()}</td></tr>')
     H.append(f'<tr><td style="padding:0;">'
@@ -485,6 +495,8 @@ def main():
     ap.add_argument("--dry-run", action="store_true",
                     help="Build HTML files but do not send.")
     ap.add_argument("--to", help="Send all area emails to this address only (for testing).")
+    ap.add_argument("--force", action="store_true",
+                    help="Send even in an off week of the 3-week cycle.")
     args = ap.parse_args()
 
     log(f"=== Dept Check area-manager report starting (period={args.period}) ===")
@@ -494,6 +506,15 @@ def main():
     frm, to, period_label = period_dates(args.period)
     is_mid_week = (args.period == "mid-week")
     log(f"Period: {frm.date()} to {to.date()} — {period_label}")
+
+    kind = cycle.week_type(frm.date(), cfg)
+    log(f"That is a {cycle.SHORT[kind]} week of the 3-week cycle.")
+    if kind == cycle.OFF:
+        if not args.force:
+            log("No Department Check that week - no emails sent.")
+            log("=== Done ===")
+            return
+        kind = None                         # forced: every department, as before
 
     log("Fetching area managers from database…")
     try:
@@ -513,6 +534,8 @@ def main():
 
     subject_prefix = cfg.get("subject_prefix", "Homesavers Department Check")
     subject = f'{subject_prefix} — Your Area — {period_label}'
+    if kind:
+        subject += f' — {cycle.SHORT[kind]}'
 
     errors = 0
     for mgr in managers:
@@ -540,11 +563,13 @@ def main():
             errors += 1
             continue
 
+        if kind:
+            data = cycle.filter_report(data, kind, cfg)
         totals = data.get("totals", {}) or {}
         log(f"  {name}: {totals.get('missed',0)} missed / {totals.get('stores',0)} stores, "
             f"{totals.get('records',0):,} records.")
 
-        html = build_html(data, cfg, first_name, area_label, period_label, is_mid_week)
+        html = build_html(data, cfg, first_name, area_label, period_label, is_mid_week, kind)
 
         if args.dry_run:
             out = os.path.join(HERE, f"dept-check-area-preview-{slug}.html")
