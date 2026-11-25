@@ -153,15 +153,26 @@ Needs the password in `C:\Homesavers\.manifest-sftp-password`; set
 
 ## Phase 6 — The 3 report emails
 
-Done last (order 8 → 7 → 9 → 6) because it needs the Brevo login.
+Done last (order 8 → 7 → 9 → 6) because it needs the mail login.
 
-1. Get the Brevo SMTP login and an SMTP key: Brevo → **SMTP & API → SMTP**.
-   Also the Supabase **anon** key (Supabase → Project Settings → API keys),
-   which the area-manager email uses to read who the area managers are.
+**Mail server (changed 25 Nov 2026): the emails now send through the domain's
+own server `remote.a-i-m.ie`, not Brevo.** Brevo was dropped because
+`supplychain1.ie`'s SPF record (`v=spf1 a mx -all`) does not authorise Brevo's
+servers, so every message hard-failed SPF and was binned (nothing arrived, not
+even in Junk). `remote.a-i-m.ie` is authorised by that record. Settings:
+host `remote.a-i-m.ie`, port 587, STARTTLS, login + sender
+`buyingadmin@supplychain1.ie`. This mirrors the Price Intelligence app. The old
+Brevo settings are kept in each `*.config.example.json` under `_brevo` for
+rollback.
+
+1. Get the mailbox password for `buyingadmin@supplychain1.ie` (the sending
+   address). Also the Supabase **secret** key (Supabase → Project Settings →
+   API Keys), which the area-manager email uses to read who the area managers
+   are.
 2. `git pull`, run `scripts\deploy-scripts.ps1`, then
    `& (Get-Content C:\Homesavers\python-path.txt) scripts\setup-email-configs.py`.
-   It asks for the login, key (hidden), sender, and recipients, **tests the
-   Brevo login before writing anything**, then writes the three config files
+   It asks for the login, password (hidden), sender, and recipients, **tests the
+   mail login before writing anything**, then writes the three config files
    into `C:\Homesavers\scripts`. Defaults offered:
    - Aging report — To naeem@a-i-m.ie, jeff@homesavers.ie,
      shauna@supplychain1.ie; Cc shayas.philip@supplychain1.ie,

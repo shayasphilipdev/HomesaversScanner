@@ -631,6 +631,36 @@ docs/  user-manual.html · department-check-guide.html · phase8-roles-...md
 
 ## 11. Recent work
 
+### 2026-11-25 — Report emails moved from Brevo to remote.a-i-m.ie (domain SPF fix)
+
+Mirrors the Price Intelligence app. Brevo was dropped because
+`supplychain1.ie` SPF (`v=spf1 a mx -all`) does not authorise Brevo, so every
+message hard-failed SPF and was discarded (confirmed in the PI app's history).
+The domain's own server `remote.a-i-m.ie` is authorised by that record.
+
+New SMTP: host `remote.a-i-m.ie`, port 587, STARTTLS, LOGIN; username and
+sender `buyingadmin@supplychain1.ie` (From `Buying Admin <...>`).
+
+Changes (scanner):
+- `aging-report.config.example.json`, `dept-check-weekly...`,
+  `dept-check-area-managers...`: smtp host/port/security/username/from set to
+  the new server; old Brevo settings preserved under `smtp._brevo` for rollback.
+- `setup-email-configs.py`: `check_smtp_key` -> `check_mail_password` (now
+  warns only if an old Brevo key is pasted); prompts, header and the test-login
+  diagnostic no longer reference Brevo; the cert-is-not-Brevo warning removed;
+  default login/sender default to buyingadmin@supplychain1.ie; failure message
+  generalised. The per-method login test is unchanged and still finds LOGIN.
+- The three send scripts are host-agnostic (read host/from/auth from config)
+  and needed no change.
+
+Tested against a fake remote.a-i-m.ie (STARTTLS + LOGIN): test_login picks
+LOGIN; main() writes host=remote.a-i-m.ie, user/from=buyingadmin, auth=LOGIN;
+check_mail_password rejects an xsmtpsib- key and accepts a normal password.
+
+PC steps unchanged except the password is now the buyingadmin mailbox password.
+The password is still stored in the git-ignored config file (PI app uses
+Windows Credential Manager; optional future change).
+
 ### 2026-11-17 — Prices/alt-barcode syncs crashed on startup (missing `import re`)
 
 Regression from the 2026-11-16 name-date change: `_DATE_RE = re.compile(...)`

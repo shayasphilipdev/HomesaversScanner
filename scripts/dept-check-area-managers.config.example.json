@@ -1,16 +1,24 @@
 {
-  "_comment": "Copy to dept-check-area-managers.config.json and fill in SMTP credentials. Do NOT commit the real file. Area manager emails are read from the users table — set them in Admin → Employees.",
+  "_comment": "Copy to dept-check-area-managers.config.json and fill in SMTP credentials. Do NOT commit the real file. Area manager emails are read from the users table \u2014 set them in Admin \u2192 Employees.",
   "base_url": "https://homesaversscanner.pages.dev",
   "supabase_url": "https://eggspkdengnxktwkdwpw.supabase.co",
   "supabase_anon_key": "PUT-YOUR-SUPABASE-ANON-KEY-HERE",
-  "bcc": ["shayas.philip@supplychain1.ie"],
+  "bcc": [
+    "shayas.philip@supplychain1.ie"
+  ],
   "subject_prefix": "Homesavers Department Check",
   "smtp": {
-    "host": "smtp-relay.brevo.com",
+    "host": "remote.a-i-m.ie",
     "port": 587,
     "security": "starttls",
-    "username": "PUT-YOUR-BREVO-LOGIN-EMAIL-HERE",
-    "password": "PUT-YOUR-BREVO-SMTP-KEY-HERE",
-    "from": "Homesavers Scanner <orders.homesavers@outlook.com>"
+    "username": "buyingadmin@supplychain1.ie",
+    "password": "PUT-THE-MAILBOX-PASSWORD-HERE",
+    "from": "Buying Admin <buyingadmin@supplychain1.ie>",
+    "_brevo": {
+      "host": "smtp-relay.brevo.com",
+      "port": 587,
+      "security": "starttls",
+      "note": "Previous sender. Brevo was dropped 24-25 Nov 2026: supplychain1.ie SPF (v=spf1 a mx -all) does not authorise Brevo, so messages hard-failed SPF and were binned. The domain's own server remote.a-i-m.ie IS authorised. To go back to Brevo, add include:spf.brevo.com + Brevo DKIM to the domain DNS (via a-i-m.ie) and verify the sender in Brevo."
+    }
   }
 }

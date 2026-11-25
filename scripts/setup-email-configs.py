@@ -78,11 +78,10 @@ def ask_secret(label, existing, check=None, required=True):
         return val
 
 
-def check_smtp_key(key):
-    if key.startswith("xkeysib-"):
-        return "That is a Brevo API key. This needs the SMTP key (SMTP & API -> SMTP tab, starts with xsmtpsib-)."
-    if not key.startswith("xsmtpsib-"):
-        print("  note: Brevo SMTP keys normally start with 'xsmtpsib-' - check you copied the whole key.")
+def check_mail_password(pw):
+    # The mail server (remote.a-i-m.ie) wants the MAILBOX password, not a Brevo key.
+    if pw.startswith(("xsmtpsib-", "xkeysib-")):
+        return "That is an old Brevo key. This now needs the mailbox password for the sending address."
     return None
 
 
@@ -154,8 +153,7 @@ def test_login(smtp):
     answered (never the secrets) and returns the settings to save, e.g.
     {"auth": "PLAIN", "auth_initial_response": True}. Raises on total failure."""
     print()
-    print(f"  login: {smtp['username']}  key: {len(smtp['password'])} characters, "
-          f"{'starts xsmtpsib-' if smtp['password'].startswith('xsmtpsib-') else 'does NOT start xsmtpsib-'}")
+    print(f"  login: {smtp['username']}  password: {len(smtp['password'])} characters")
     shown = False
     answers = []
     for mech, initial in METHODS:
@@ -166,12 +164,10 @@ def test_login(smtp):
             raise RuntimeError(
                 f"the secure connection to {smtp['host']} was not trusted ({e.verify_message}). "
                 "Something on this PC or network (often antivirus 'email scanning' / 'SSL scanning') "
-                "is intercepting port 587 - turn that off for smtp-relay.brevo.com") from e
+                f"is intercepting port 587 - turn that off for {smtp['host']}") from e
         if not shown:
             print(f"  secure connection: {info['tls']}")
             print(f"  login methods offered: {info['auth'] or '(none)'}")
-            if "brevo" not in info["tls"].lower() and "sendinblue" not in info["tls"].lower():
-                print("  WARNING: the certificate is not Brevo's - antivirus/firewall may be intercepting email.")
             shown = True
         print(f"  {label:<18} {detail}")
         answers.append(f"{label}: {detail}")
@@ -192,25 +188,20 @@ def main():
     cur_smtp = next((c["smtp"] for c in current.values() if c and c.get("smtp")), {})
     tpl_smtp = templates["aging-report"]["smtp"]
 
-    print("\n== Brevo (Brevo -> SMTP & API -> SMTP) - shared by all three emails ==")
+    print("\n== Mail server (remote.a-i-m.ie) - shared by all three emails ==")
     smtp = {
         "host": tpl_smtp["host"], "port": tpl_smtp["port"], "security": tpl_smtp["security"],
-        "username": ask("SMTP login", cur_smtp.get("username", "")),
-        "password": ask_secret("SMTP key (paste with right-click)", cur_smtp.get("password", ""), check_smtp_key),
-        "from": ask("From (must be a sender verified in Brevo)", cur_smtp.get("from", tpl_smtp["from"])),
+        "username": ask("Mail login (sending address)", cur_smtp.get("username") or tpl_smtp.get("username", "")),
+        "password": ask_secret("Mailbox password (paste with right-click)", cur_smtp.get("password", ""), check_mail_password),
+        "from": ask("From (sender shown to recipients)", cur_smtp.get("from", tpl_smtp.get("from", ""))),
     }
-    print("Testing the Brevo login...", end=" ", flush=True)
+    print("Testing the mail login...", end=" ", flush=True)
     try:
         smtp.update(test_login(smtp) or {})
     except Exception as e:
         print("FAILED")
-        if "unauthorized ip" in str(e).lower():
-            sys.exit(f"Brevo login failed: {e}\nNothing was written. The key and login are fine - Brevo is "
-                     "blocking this office's internet address. In Brevo: profile menu -> Security -> "
-                     "Authorised IPs (https://app.brevo.com/security/authorised_ips), add the office's public "
-                     "IP (or approve it from Brevo's 'new IP' email), then run this again.")
-        sys.exit(f"Brevo login failed: {e}\nNothing was written. Check the SMTP login and the SMTP key "
-                 f"(Brevo -> SMTP & API -> SMTP tab; a newly generated key, pasted with right-click) and run again.\n"
+        sys.exit(f"Mail login failed: {e}\nNothing was written. Check the sending address and its mailbox "
+                 f"password (the login is the full email address), then run again.\n"
                  f"If it still fails, send the lines above (they contain no secrets).")
     print(f"OK (login method {smtp.get('auth', 'default')})")
     print("Not finished yet - answer the questions below; the files are written at the end.")

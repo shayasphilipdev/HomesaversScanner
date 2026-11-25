@@ -875,3 +875,28 @@ run_sync.bat prices
 run_sync.bat alt-barcodes
 ```
 That catches today up now; the scheduled runs resume tomorrow at 07:00 / 07:30. The data was never wrong - the syncs simply didn't run for a day, so prices/alt-barcodes are showing 15-16 Nov until this runs.
+
+---
+
+## Report emails moved off Brevo to the domain's own server (remote.a-i-m.ie)
+
+The three report emails now send through **remote.a-i-m.ie** instead of Brevo, matching the Price Intelligence app. Reason: emails sent via Brevo were silently dropped, because supplychain1.ie's SPF record doesn't allow Brevo to send for it, so every message failed the anti-spoofing check and was binned (nothing arrived, not even in Junk). remote.a-i-m.ie is the domain's own mail server and is allowed to send, so the emails get through.
+
+New settings (built into the config templates and the setup helper):
+- Server: `remote.a-i-m.ie`, port 587, STARTTLS
+- Login and sender: `buyingadmin@supplychain1.ie`
+- Password: that mailbox's own password (NOT a Brevo key)
+
+The setup helper (`setup-email-configs.py`) now asks for the mailbox password instead of a Brevo key, tests the login against remote.a-i-m.ie, and no longer mentions Brevo. The old Brevo settings are kept in each `*.config.example.json` under `_brevo` in case we ever switch back.
+
+**On the PC (your part, ~2 hours):**
+1. `cd C:\Apps\HomesaversScanner` → `git pull` → `powershell -ExecutionPolicy Bypass -File scripts\deploy-scripts.ps1`
+2. `& (Get-Content C:\Homesavers\python-path.txt) scripts\setup-email-configs.py`
+   - Mail login: `buyingadmin@supplychain1.ie` (press Enter to accept)
+   - Mailbox password: paste with right-click
+   - From: press Enter to accept `Buying Admin <buyingadmin@supplychain1.ie>`
+   - It tests the login, then writes the config files.
+3. Test send to yourself: `& $py scripts\aging-report.py --to you@domain`
+4. Nothing else changes — the schedules and recipients stay as they are.
+
+Note: like the current Brevo key, the mailbox password is stored in the git-ignored config file in C:\Homesavers\scripts (the Price Intelligence app keeps it in Windows Credential Manager instead; we can move the scanner to that later if you want).
