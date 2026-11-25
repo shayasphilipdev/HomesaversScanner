@@ -454,7 +454,10 @@ def send_email(cfg, html, subject, to_addrs, bcc=None):
     msg.add_alternative(html, subtype="html")
 
     all_rcpt = list(to_addrs) + (list(bcc) if bcc else [])
-    env_from = parseaddr(smtp["from"])[1] or smtp.get("username") or smtp["from"]
+    # Envelope sender = the authenticated login. remote.a-i-m.ie rejects any MAIL FROM
+    # not owned by the login, and a display-name "From" must never leak into the envelope
+    # (that is what made the server see the sender as just "Buying").
+    env_from = smtp.get("username") or parseaddr(smtp["from"])[1] or smtp["from"]
 
     host, port = smtp["host"], int(smtp.get("port", 587))
     security   = (smtp.get("security") or "starttls").lower()

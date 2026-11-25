@@ -386,7 +386,10 @@ def send_email(cfg, html, attachments, recipients, cc=None):
 
     # Envelope sender must be the bare address (the mail server checks it is owned
     # by the logged-in user); a "Name <addr>" string would be read as just "Name".
-    env_from = parseaddr(smtp["from"])[1] or smtp.get("username") or smtp["from"]
+    # Envelope sender = the authenticated login. remote.a-i-m.ie rejects any MAIL FROM
+    # not owned by the login, and a display-name "From" must never leak into the envelope
+    # (that is what made the server see the sender as just "Buying").
+    env_from = smtp.get("username") or parseaddr(smtp["from"])[1] or smtp["from"]
     rcpts    = list(recipients) + (list(cc) if cc else [])
     host, port = smtp["host"], int(smtp.get("port", 587))
     security = (smtp.get("security") or "starttls").lower()
