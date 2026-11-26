@@ -413,6 +413,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true", help="Build the email but do not send; write HTML to disk.")
     ap.add_argument("--to", help="Send only to this address (overrides recipients) - for testing.")
+    ap.add_argument("--cc", action="append", default=[],
+                    help="With --to: also CC this address (repeatable). Ignored without --to.")
     args = ap.parse_args()
 
     log("=== Aging report starting ===")
@@ -446,10 +448,10 @@ def main():
         log(f"DRY RUN - wrote preview to {out}; {len(attachments)} attachment(s) prepared. No email sent.")
         return
 
-    # A --to test send goes to that one address only (no CC); otherwise use the
-    # configured To recipients + CC list.
+    # A --to test send goes to that one address, CC only what --cc names (never
+    # the configured CC list); otherwise use the configured To recipients + CC.
     recipients = [args.to] if args.to else [r for r in cfg.get("recipients", []) if r]
-    cc = [] if args.to else [c for c in cfg.get("cc", []) if c]
+    cc = [c for c in args.cc if c] if args.to else [c for c in cfg.get("cc", []) if c]
     if not recipients:
         log("No recipients configured (config.recipients) and no --to given.", "ERROR")
         sys.exit(1)
