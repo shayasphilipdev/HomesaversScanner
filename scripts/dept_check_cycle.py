@@ -1,16 +1,16 @@
 """The stores' 3-week Department Check cycle, shared by the two dept-check emails.
 
-Since week 44 of 2026 the stores no longer check every department every week.
-They run a repeating 3-week cycle:
+The stores no longer check every department every week. They run a repeating
+3-week cycle, in this order (confirmed by the business on 2026-11-26):
 
-    week 1  FMCG departments        (anchor: Monday 2026-10-26, week 44)
-    week 2  all other departments   (2026-11-02, week 45)
-    week 3  no Department Check     (2026-11-09, week 46)
-    ...then FMCG again              (2026-11-16, week 47)
+    week 1  FMCG departments        (anchor: Monday 2026-11-16, week 47)
+    week 2  no Department Check     (2026-11-23, week 48)
+    week 3  all other departments   (2026-11-30, week 49)
+    ...then FMCG again              (2026-12-07, week 50)
 
-This was read from the records, not assumed: in weeks 44 and 47 about 90% of
-records were FMCG departments, in week 45 about 90% were non-FMCG, and week 46
-had a sixth of a normal week's volume, from only 35 stores.
+History: weeks 44-46 ran in a different order (FMCG, other, none), so a
+--week re-run of one of those weeks is labelled by the current order, not by
+what the stores actually did then.
 
 Consequences for the emails:
   * an "off" week gets no email at all;
@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-DEFAULT_ANCHOR = "2026-10-26"          # Monday of an FMCG week
+DEFAULT_ANCHOR = "2026-11-16"          # Monday of an FMCG week
 
 DEFAULT_FMCG = [
     "HEALTH & BEAUTY",
@@ -58,7 +58,7 @@ def week_type(day, cfg=None):
     """'fmcg', 'other' or 'off' for the week containing `day`."""
     anchor = _monday((cfg or {}).get("cycle_anchor") or DEFAULT_ANCHOR)
     weeks = (_monday(day) - anchor).days // 7
-    return (FMCG, OTHER, OFF)[weeks % 3]
+    return (FMCG, OFF, OTHER)[weeks % 3]
 
 
 def fmcg_set(cfg=None):
