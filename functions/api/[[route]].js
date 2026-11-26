@@ -158,7 +158,7 @@ async function authenticate(request, env) {
 // buying_head · admin.
 // Bumped by hand when a deploy needs to be verifiable from outside; returned
 // by the public GET /ping so `curl .../api/ping` says which build is live.
-const API_REVISION   = '2026-11-10-archive-on-screen'
+const API_REVISION   = '2026-11-26-aging-partial-index'
 
 const STORE_ROLES    = ['sales_assistant', 'supervisor', 'assistant_store_manager', 'store_manager']
 const BO_ROLES       = ['area_manager', 'support_admin', 'buying_manager', 'buying_head', 'admin']
@@ -1604,17 +1604,26 @@ export async function onRequest(context) {
           // count as real work. Postgres and D1 are filtered identically, which
           // is what matters -- a rule applied to one half only would make the
           // 14-day boundary visible as a step in the numbers.
+          //
+          // The status and task_type terms are LITERALS, written exactly as in
+          // the partial index idx_archive_pending_af (d1-migration-aging-index.sql).
+          // SQLite only uses a partial index when the query's WHERE visibly
+          // contains the index's WHERE; with bound "?" placeholders it cannot
+          // prove that and falls back to a range scan of the whole 49-day
+          // archive (~800k rows read per call). That scan is what used up D1's
+          // 5M/day read allowance on 2026-11-25. With the index: a few rows.
+          // TYPES must stay A-F to match the index.
           const aSql = `SELECT id, created_at_ms, store_id, store_name, task_type,
                                product_code, product_barcode, description,
                                product_name_label, item_name, quantity
                           FROM task_record_archive
                          WHERE status = 'pending'
-                           AND task_type IN (${TYPES.map(() => '?').join(',')})
+                           AND task_type IN ('A','B','C','D','E','F')
                            AND created_at_ms >= ?
                            AND (marked_for_deletion IS NULL OR marked_for_deletion = 0)
                          ORDER BY created_at_ms ASC
                          LIMIT 20000`
-          const aRes = await env.ARCHIVE.prepare(aSql).bind(...TYPES, floorMs).all()
+          const aRes = await env.ARCHIVE.prepare(aSql).bind(floorMs).all()
           const aRows = aRes?.results || []
 
           if (aRows.length) {

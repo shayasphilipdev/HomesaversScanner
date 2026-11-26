@@ -168,6 +168,12 @@ CREATE TABLE IF NOT EXISTS task_record_archive (
 CREATE INDEX IF NOT EXISTS idx_archive_store_created
   ON task_record_archive (store_id, created_at_ms);
 
+-- Aging report: pending A-F queries only (see d1-migration-aging-index.sql).
+-- Partial, so archiving Department Checks writes nothing extra to it.
+CREATE INDEX IF NOT EXISTS idx_archive_pending_af
+  ON task_record_archive (created_at_ms)
+  WHERE status = 'pending' AND task_type IN ('A','B','C','D','E','F');
+
 -- ── Run log ──────────────────────────────────────────────────────────────────
 -- One row per archiver run. Phase 2 runs in shadow mode, so the only way to
 -- know whether the archiver is correct is to compare what it says it moved
