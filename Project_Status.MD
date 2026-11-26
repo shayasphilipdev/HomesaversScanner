@@ -4138,6 +4138,17 @@ scanning) and the DB size alarm crossing 60%+.
 
 ---
 
+## Pending — to start Monday 2026-11-30 (not researched, not started)
+
+1. **New task "PO to Order".** Same as Department Check, plus one field: case
+   quantity to order (whole number, no decimals).
+2. **B: → SFTP order files.** On Mondays and Thursdays only, check a specific B:
+   folder (path to confirm); copy any files to the SFTP `Outbound/New Order`
+   folder, then delete them from B: so they are never sent twice. Email a
+   confirmation to Chamya and the user.
+
+---
+
 ## 12. Known issues / watch-outs
 
 - **Scan Doctor is deliberately test-only — do not ship it to live.** Decided by
